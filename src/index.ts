@@ -5,6 +5,7 @@ import { loginCommand } from './commands/login';
 import { logoutCommand } from './commands/logout';
 import { updateCommand } from './commands/update';
 import { creditsCommand } from './commands/credits';
+import { searchCommand } from './commands/search';
 
 const program = new Command();
 program
@@ -17,5 +18,6 @@ program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 program.addCommand(updateCommand);
 program.addCommand(creditsCommand);
+program.addCommand(searchCommand);
 
 program.parse();

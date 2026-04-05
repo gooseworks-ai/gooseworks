@@ -25,6 +25,7 @@ jest.mock('../../src/auth/oauth-server', () => ({
 
 jest.mock('../../src/skills/installer', () => ({
   installMasterSkill: jest.fn(),
+  removeAllSkills: jest.fn(),
   getInstalledSkills: jest.fn().mockReturnValue([]),
 }));
 

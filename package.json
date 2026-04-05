@@ -1,5 +1,5 @@
 {
-  "name": "@gooseworks/cli",
+  "name": "gooseworks",
   "version": "0.1.0",
   "description": "GooseWorks CLI — give your coding agent real data tools",
   "bin": {

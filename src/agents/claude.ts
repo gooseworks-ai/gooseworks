@@ -17,6 +17,26 @@ export function configureClaude(): number {
 
   fs.mkdirSync(CLAUDE_SKILLS_DIR, { recursive: true });
 
+  // Clean up ALL old gooseworks-* symlinks first
+  try {
+    const existing = fs.readdirSync(CLAUDE_SKILLS_DIR);
+    for (const entry of existing) {
+      if (!entry.startsWith('gooseworks-')) continue;
+      const target = path.join(CLAUDE_SKILLS_DIR, entry);
+      try {
+        const stat = fs.lstatSync(target);
+        if (stat.isSymbolicLink()) {
+          fs.unlinkSync(target);
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  } catch {
+    // Directory might not exist yet
+  }
+
+  // Symlink only what's currently in ~/.agents/skills/
   const skillDirs = fs.readdirSync(skillsBase)
     .filter((entry) => entry.startsWith('gooseworks-'));
 
@@ -25,17 +45,13 @@ export function configureClaude(): number {
     const source = path.join(skillsBase, skillDir);
     const target = path.join(CLAUDE_SKILLS_DIR, skillDir);
 
-    // Remove existing symlink/directory if present
     try {
-      const stat = fs.lstatSync(target);
-      if (stat.isSymbolicLink() || stat.isDirectory()) {
-        fs.rmSync(target, { recursive: true, force: true });
-      }
+      fs.symlinkSync(source, target, 'dir');
     } catch {
-      // Target doesn't exist, that's fine
+      // If it somehow still exists, remove and retry
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.symlinkSync(source, target, 'dir');
     }
-
-    fs.symlinkSync(source, target, 'dir');
     linked++;
   }
 

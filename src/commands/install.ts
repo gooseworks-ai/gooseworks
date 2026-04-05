@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
-import { installMasterSkill } from '../skills/installer';
+import { installMasterSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
@@ -29,8 +29,9 @@ export const installCommand = new Command('install')
     const creds = await ensureLoggedIn(opts.apiBase);
     logger.success(`Logged in as ${creds.email}`);
 
-    // Step 2: Install master skill
+    // Step 2: Install master skill (clean old skills first)
     logger.step(2, 3, 'Installing GooseWorks skill...');
+    removeAllSkills();
     const masterContent = getMasterSkillContent(creds.api_base);
     installMasterSkill(masterContent);
     logger.success('Installed GooseWorks skill to ~/.agents/skills/gooseworks-master/');
