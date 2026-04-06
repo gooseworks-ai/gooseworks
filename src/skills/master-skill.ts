@@ -8,13 +8,15 @@ export function getMasterSkillContent(_apiBase?: string): string {
 name: GooseWorks
 slug: gooseworks-master
 description: >
-  GooseWorks data toolkit. Search and scrape Twitter/X, Reddit, websites, and the web.
+  GooseWorks data toolkit. Search and scrape Twitter/X, Reddit, LinkedIn, websites, and the web.
   Find people, emails, and company info. Enrich contacts and companies.
-  Use this for ANY data lookup, web scraping, people search, or research task.
+  GTM tasks: lead generation, prospect research, ICP identification, competitor analysis, outbound list building.
+  LinkedIn scraping: extract post engagers, commenters, profile data, and job postings.
+  Use this for ANY data lookup, web scraping, people search, lead gen, GTM, or research task.
 category: general
 version: 1.0.0
 author: GooseWorks
-tags: [gooseworks, data, scraping, search, reddit, twitter, email, people, research]
+tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
 
 # GooseWorks
@@ -26,7 +28,7 @@ You have access to GooseWorks — a toolkit with 100+ data skills for scraping, 
 Read your credentials from ~/.gooseworks/credentials.json:
 \`\`\`bash
 export GOOSEWORKS_API_KEY=$(python3 -c "import json;print(json.load(open('$HOME/.gooseworks/credentials.json'))['api_key'])")
-export GOOSEWORKS_API_BASE=$(python3 -c "import json;print(json.load(open('$HOME/.gooseworks/credentials.json')).get('api_base','https://app.gooseworks.ai'))")
+export GOOSEWORKS_API_BASE=$(python3 -c "import json;print(json.load(open('$HOME/.gooseworks/credentials.json')).get('api_base','https://api.gooseworks.ai'))")
 \`\`\`
 
 If ~/.gooseworks/credentials.json does not exist, tell the user to run: \`npx gooseworks login\`

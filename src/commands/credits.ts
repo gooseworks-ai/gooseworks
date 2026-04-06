@@ -7,9 +7,9 @@ import * as logger from '../utils/logger';
 interface CreditsResponse {
   status: string;
   data: {
-    available: number;
-    subscription: number;
-    purchased: number;
+    available_credits: number;
+    subscription_credits: number;
+    purchased_credits: number;
   };
 }
 
@@ -55,9 +55,9 @@ export const creditsCommand = new Command('credits')
         logger.error('Failed to fetch credits');
         process.exit(1);
       }
-      const { available, subscription, purchased } = response.data;
+      const { available_credits, subscription_credits, purchased_credits } = response.data;
       logger.success(
-        `Credits: ${available.toLocaleString()} available (${subscription.toLocaleString()} subscription + ${purchased.toLocaleString()} purchased)`
+        `Credits: ${available_credits.toLocaleString()} available (${subscription_credits.toLocaleString()} subscription + ${purchased_credits.toLocaleString()} purchased)`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to fetch credits';
