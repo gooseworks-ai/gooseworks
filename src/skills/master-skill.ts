@@ -55,18 +55,38 @@ curl -s $GOOSEWORKS_API_BASE/api/skills/catalog/<slug> \\
 This returns:
 - **content**: The skill's instructions (SKILL.md) — follow these step by step
 - **scripts**: Python scripts the skill uses — save them locally and run them
+- **requiresSkills**: Array of dependency skill slugs (for composite skills)
+- **dependencySkills**: Full content and scripts for each dependency
 
-### Step 3: Run the skill
+### Step 3: Set up dependency skills (if any)
+If the response includes \`dependencySkills\` (non-empty array), set up each dependency BEFORE running the main skill:
+1. For each dependency in \`dependencySkills\`:
+   - Save its scripts to \`/tmp/gooseworks-scripts/<dep-slug>/\`
+   - Install any pip dependencies it needs
+2. When the main skill's instructions reference a dependency script (e.g. \`python3 skills/reddit-scraper/scripts/scrape_reddit.py\`), run it from \`/tmp/gooseworks-scripts/<dep-slug>/\` instead
+
+### Step 4: Run the skill
 Follow the instructions in the skill's \`content\` field. If the skill includes \`scripts\`:
 1. Save each script to \`/tmp/gooseworks-scripts/<slug>/\` — **NEVER save scripts into the user's project directory**
 2. Install any required pip dependencies mentioned in the instructions
 3. Run the script with the parameters described in the instructions
+4. When instructions reference dependency scripts, use paths from Step 3: \`/tmp/gooseworks-scripts/<dep-slug>/<script>\`
 
 ### Check credit balance
 \`\`\`bash
 curl -s $GOOSEWORKS_API_BASE/v1/credits \\
   -H "Authorization: Bearer $GOOSEWORKS_API_KEY"
 \`\`\`
+
+## Working Directory & Output Files
+
+- **Scripts** always go to \`/tmp/gooseworks-scripts/<slug>/\` — NEVER the user's project directory
+- **Output files** (CSVs, reports, data exports) go to a **GooseWorks working directory**:
+  1. If the user specifies where to save results, use that location
+  2. Otherwise, default to \`~/Gooseworks/\` — create it if it doesn't exist
+  3. **Before saving output**, confirm with the user: *"I'll save the results to ~/Gooseworks/<filename>. Would you like a different location?"*
+  4. Organize outputs in subfolders by task type when it makes sense (e.g. \`~/Gooseworks/reddit-scrapes/\`, \`~/Gooseworks/research/\`)
+- **Never overwrite existing files** without asking. If a file already exists, append a timestamp or ask the user
 
 ## Rules
 
@@ -76,5 +96,6 @@ curl -s $GOOSEWORKS_API_BASE/v1/credits \\
 4. **If GOOSEWORKS_API_KEY is not set**: tell the user to run \`npx gooseworks login\`
 5. **Parse JSON responses** and present data in a readable format to the user
 6. **When running scripts**: save to \`/tmp/gooseworks-scripts/\`, install pip deps, then execute. NEVER pollute the user's project directory
+7. **Output files default to \`~/Gooseworks/\`** — always confirm with the user before saving
 `;
 }

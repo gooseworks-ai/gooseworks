@@ -1,6 +1,6 @@
 {
   "name": "gooseworks",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "GooseWorks CLI — give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
@@ -39,5 +39,11 @@
     "ai-agents",
     "data-tools"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gooseworks-ai/gooseworks-app"
+  },
+  "homepage": "https://gooseworks.ai",
+  "author": "GooseWorks <hello@gooseworks.ai>"
 }
