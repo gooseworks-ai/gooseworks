@@ -56,7 +56,7 @@ export const installCommand = new Command('install')
       a === 'claude' ? 'Claude Code' : 'Cursor'
     ).join(' and ');
     logger.done(
-      `Setup complete! Open ${agentNames} and say "find me leads" to get started.`
+      `Setup complete! Open ${agentNames} and say "/gooseworks find me leads" to get started.`
     );
   });
 
