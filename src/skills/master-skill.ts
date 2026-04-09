@@ -57,6 +57,7 @@ curl -s $GOOSEWORKS_API_BASE/api/skills/catalog/<slug> \\
 This returns:
 - **content**: The skill's instructions (SKILL.md) — follow these step by step
 - **scripts**: Python scripts the skill uses — save them locally and run them
+- **files**: Extra files the skill needs (configs, shared tools like \`tools/apify_guard.py\`) — save them relative to \`/tmp/gooseworks-scripts/\`
 - **requiresSkills**: Array of dependency skill slugs (for composite skills)
 - **dependencySkills**: Full content and scripts for each dependency
 
@@ -67,12 +68,17 @@ If the response includes \`dependencySkills\` (non-empty array), set up each dep
    - Install any pip dependencies it needs
 2. When the main skill's instructions reference a dependency script (e.g. \`python3 skills/reddit-scraper/scripts/scrape_reddit.py\`), run it from \`/tmp/gooseworks-scripts/<dep-slug>/\` instead
 
-### Step 4: Run the skill
-Follow the instructions in the skill's \`content\` field. If the skill includes \`scripts\`:
-1. Save each script to \`/tmp/gooseworks-scripts/<slug>/\` — **NEVER save scripts into the user's project directory**
-2. Install any required pip dependencies mentioned in the instructions
-3. Run the script with the parameters described in the instructions
-4. When instructions reference dependency scripts, use paths from Step 3: \`/tmp/gooseworks-scripts/<dep-slug>/<script>\`
+### Step 4: Set up and run the skill
+Follow the instructions in the skill's \`content\` field. **Save ALL files from both \`scripts\` AND \`files\` before running anything:**
+
+1. Save each script from \`scripts\` to \`/tmp/gooseworks-scripts/<slug>/scripts/\` — **NEVER save scripts into the user's project directory**
+2. **IMPORTANT: Also save everything from \`files\`** — these contain required modules (like \`tools/apify_guard.py\`) that scripts import at runtime:
+   - Files starting with \`tools/\` → save to \`/tmp/gooseworks-scripts/tools/\` (shared path, NOT inside the skill dir)
+   - All other files → save to \`/tmp/gooseworks-scripts/<slug>/<path>\`
+   - **If you skip this step, scripts will crash with ImportError**
+3. Install any required pip dependencies mentioned in the instructions
+4. Run the script with the parameters described in the instructions
+5. When instructions reference dependency scripts, use paths from Step 3: \`/tmp/gooseworks-scripts/<dep-slug>/<script>\`
 
 ### Check credit balance
 \`\`\`bash
