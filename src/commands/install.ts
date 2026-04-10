@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
 import { installMasterSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
+import { configureCodex } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
 import * as logger from '../utils/logger';
@@ -11,6 +12,7 @@ import { API_BASE } from '../config';
 export const installCommand = new Command('install')
   .description('Install GooseWorks data tools into your coding agent')
   .option('--claude', 'Configure for Claude Code')
+  .option('--codex', 'Configure for Codex')
   .option('--cursor', 'Configure for Cursor')
   .option('--all', 'Configure for all detected agents')
   .option('--api-base <url>', 'API base URL', API_BASE)
@@ -20,7 +22,7 @@ export const installCommand = new Command('install')
     // Determine which agents to configure
     const targetAgents = resolveTargetAgents(opts);
     if (targetAgents.length === 0) {
-      logger.error('No agent specified. Use --claude, --cursor, or --all');
+      logger.error('No agent specified. Use --claude, --codex, --cursor, or --all');
       process.exit(1);
     }
 
@@ -44,6 +46,11 @@ export const installCommand = new Command('install')
         configureClaude();
         logger.success('Claude Code configured');
       }
+      if (agent === 'codex') {
+        logger.info('Creating symlinks in ~/.codex/skills/');
+        configureCodex();
+        logger.success('Codex configured');
+      }
       if (agent === 'cursor') {
         logger.info('Writing MCP config for Cursor');
         configureCursor();
@@ -53,7 +60,7 @@ export const installCommand = new Command('install')
 
     // Done
     const agentNames = targetAgents.map((a) =>
-      a === 'claude' ? 'Claude Code' : 'Cursor'
+      a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
     logger.done(
       `Setup complete! Open ${agentNames} and say "/gooseworks find me leads" to get started.`
@@ -62,6 +69,7 @@ export const installCommand = new Command('install')
 
 function resolveTargetAgents(opts: {
   claude?: boolean;
+  codex?: boolean;
   cursor?: boolean;
   all?: boolean;
 }): AgentType[] {
@@ -76,6 +84,7 @@ function resolveTargetAgents(opts: {
 
   const targets: AgentType[] = [];
   if (opts.claude) targets.push('claude');
+  if (opts.codex) targets.push('codex');
   if (opts.cursor) targets.push('cursor');
   return targets;
 }

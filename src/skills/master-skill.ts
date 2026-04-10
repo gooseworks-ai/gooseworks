@@ -38,8 +38,11 @@ All endpoints use Bearer auth: \`-H "Authorization: Bearer $GOOSEWORKS_API_KEY"\
 
 ## How to Use
 
+### If a specific skill is requested (e.g. --skill <slug> or "use the <name> skill")
+Skip search and go directly to **Step 2** with the given slug.
+
 ### Step 1: Search for a skill
-When the user asks you to do ANY data task (scrape reddit, find emails, research competitors, etc.), **always search the skill catalog first**:
+When the user asks you to do ANY data task (scrape reddit, find emails, research competitors, etc.) **without specifying a skill name**, search the skill catalog first:
 \`\`\`bash
 curl -s -X POST $GOOSEWORKS_API_BASE/api/skills/search \\
   -H "Authorization: Bearer $GOOSEWORKS_API_KEY" \\
@@ -48,7 +51,7 @@ curl -s -X POST $GOOSEWORKS_API_BASE/api/skills/search \\
 \`\`\`
 
 ### Step 2: Get the skill details
-Once you find a matching skill, fetch its full content and scripts:
+Once you have a skill slug (from search results or directly specified), fetch its full content and scripts:
 \`\`\`bash
 curl -s $GOOSEWORKS_API_BASE/api/skills/catalog/<slug> \\
   -H "Authorization: Bearer $GOOSEWORKS_API_KEY"

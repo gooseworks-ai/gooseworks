@@ -37,6 +37,10 @@ jest.mock('../../src/agents/claude', () => ({
   configureClaude: jest.fn(),
 }));
 
+jest.mock('../../src/agents/codex', () => ({
+  configureCodex: jest.fn(),
+}));
+
 jest.mock('../../src/agents/cursor', () => ({
   configureCursor: jest.fn(),
 }));
@@ -106,7 +110,7 @@ describe('install command', () => {
     ).rejects.toThrow('process.exit called');
 
     expect(loggerModule.error).toHaveBeenCalledWith(
-      'No agent specified. Use --claude, --cursor, or --all'
+      'No agent specified. Use --claude, --codex, --cursor, or --all'
     );
   });
 

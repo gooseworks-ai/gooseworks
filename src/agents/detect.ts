@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-export type AgentType = 'claude' | 'cursor';
+export type AgentType = 'claude' | 'cursor' | 'codex';
 
 export interface DetectedAgent {
   type: AgentType;
@@ -42,6 +42,16 @@ export function detectAgents(): DetectedAgent[] {
       });
       break;
     }
+  }
+
+  // Codex: ~/.codex/
+  const codexDir = path.join(home, '.codex');
+  if (fs.existsSync(codexDir)) {
+    agents.push({
+      type: 'codex',
+      name: 'Codex',
+      configDir: codexDir,
+    });
   }
 
   return agents;
