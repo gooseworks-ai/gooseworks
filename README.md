@@ -1,17 +1,39 @@
 # GooseWorks
 
-Give your coding agent (Claude Code, Cursor) access to 100+ data tools — scrape Twitter/Reddit/LinkedIn, find emails, enrich companies, research competitors — with one install.
+Give your coding agent (Claude Code, Cursor, Codex) access to 100+ data tools — scrape Twitter/Reddit/LinkedIn, find emails, enrich companies, research competitors — with one install.
 
-## Quick Start
+## Install
+
+Pick your agent:
 
 ```bash
+# Claude Code
 npx gooseworks install --claude
+
+# Cursor
+npx gooseworks install --cursor
+
+# Codex
+npx gooseworks install --codex
+
+# All detected agents
+npx gooseworks install --all
 ```
 
 This does three things:
 1. Opens browser for Google sign-in
-2. Installs the GooseWorks skill into Claude Code
-3. You're ready — ask Claude to "scrape reddit", "find leads", "research competitors"
+2. Installs the GooseWorks skill into your coding agent
+3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors"
+
+### Other install methods
+
+```bash
+# Via Vercel skills.sh
+npx skills add gooseworks-ai/gooseworks
+
+# Via Claude Code plugins
+/plugin install gooseworks
+```
 
 ## Commands
 
@@ -22,6 +44,7 @@ Full setup: login + install skill + configure your coding agent.
 ```bash
 npx gooseworks install --claude    # Configure for Claude Code
 npx gooseworks install --cursor    # Configure for Cursor
+npx gooseworks install --codex     # Configure for Codex
 npx gooseworks install --all       # Configure all detected agents
 ```
 
@@ -97,18 +120,18 @@ npx gooseworks update
 
 ## What's Included
 
-- Twitter/X scraping
-- Reddit scraping
-- LinkedIn profile & post scraping
-- Company research & enrichment
-- Contact/email finding (Apollo)
-- Lead qualification & scoring
-- Competitor intelligence
-- Job posting monitoring
-- SEO analysis
-- Google & Meta ad scraping
-- YouTube transcript extraction
-- And 90+ more skills
+100+ skills across these categories:
+
+| Category | Examples |
+|----------|---------|
+| Lead Generation | Apollo prospecting, company contact finder, signal scanning |
+| Outreach | Cold email, LinkedIn outreach, email drafting |
+| Scraping | Twitter/X, Reddit, LinkedIn, Product Hunt, Hacker News |
+| Research | Competitor intel, ICP identification, meeting briefs |
+| SEO | Content audit, domain analysis, programmatic SEO |
+| Ads | Google/Meta ad scraping, campaign analysis |
+| Enrichment | Contact enrichment, company research, tech stack |
+| Monitoring | Newsletter scanning, review site tracking |
 
 ## File Layout
 
@@ -144,9 +167,15 @@ Need more? Visit [gooseworks.ai/settings](https://app.gooseworks.ai/settings?tab
 
 - Node.js 18+
 - Python 3 (for running skill scripts)
-- Claude Code or Cursor
+- Claude Code, Cursor, or Codex
 
 ## Links
 
 - [GooseWorks](https://gooseworks.ai)
+- [Skills Catalog](https://skills.gooseworks.ai)
 - [Documentation](https://docs.gooseworks.ai)
+- [Discord](https://discord.gg/gooseworks)
+
+## License
+
+MIT

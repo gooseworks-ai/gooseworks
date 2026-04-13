@@ -29,7 +29,11 @@
     "node": ">=18"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    ".claude-plugin",
+    ".codex-plugin",
+    "LICENSE"
   ],
   "keywords": [
     "gooseworks",
