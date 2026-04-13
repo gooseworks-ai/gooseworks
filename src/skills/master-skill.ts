@@ -89,6 +89,48 @@ curl -s $GOOSEWORKS_API_BASE/v1/credits \\
   -H "Authorization: Bearer $GOOSEWORKS_API_KEY"
 \`\`\`
 
+## Raw API Discovery (fallback)
+
+If no GooseWorks skill matches the user's request, you can discover and call **any API** through the Orthogonal gateway. This gives you access to 300+ APIs (Hunter, Clearbit, PDL, ZoomInfo, etc.) without needing separate API keys.
+
+### Search for an API
+Find APIs that can handle the task:
+\`\`\`bash
+curl -s -X POST $GOOSEWORKS_API_BASE/v1/proxy/orthogonal/search \\
+  -H "Authorization: Bearer $GOOSEWORKS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"prompt":"find email by name and company","limit":5}'
+\`\`\`
+Returns matching APIs with endpoint descriptions and per-call pricing.
+
+### Get endpoint details
+Before calling an API, check its parameters:
+\`\`\`bash
+curl -s -X POST $GOOSEWORKS_API_BASE/v1/proxy/orthogonal/details \\
+  -H "Authorization: Bearer $GOOSEWORKS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"api":"hunter","path":"/v2/email-finder"}'
+\`\`\`
+
+### Call the API
+Execute the API call (billed per call based on provider cost):
+\`\`\`bash
+curl -s -X POST $GOOSEWORKS_API_BASE/v1/proxy/orthogonal/run \\
+  -H "Authorization: Bearer $GOOSEWORKS_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"api":"hunter","path":"/v2/email-finder","query":{"domain":"stripe.com","first_name":"John"}}'
+\`\`\`
+- Use \`"body":{...}\` for POST body parameters
+- Use \`"query":{...}\` for query string parameters
+- Response: \`{"status":"success","data":{...},"cost":{"priceCents":...,"credits":...}}\`
+- **Always tell the user the cost** from the response after each call
+
+### Workflow
+1. Search first — pick the best API + endpoint
+2. Get details — understand required parameters
+3. Run — call with the right parameters
+4. Parse \`.data\` from the response for the actual API result
+
 ## Working Directory & Output Files
 
 - **Scripts** always go to \`/tmp/gooseworks-scripts/<slug>/\` — NEVER the user's project directory
