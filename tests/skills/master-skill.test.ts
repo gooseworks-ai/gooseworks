@@ -10,7 +10,7 @@ describe('skills/master-skill', () => {
 
   it('contains YAML frontmatter with slug', () => {
     expect(content).toMatch(/^---\n/);
-    expect(content).toContain('slug: gooseworks-master');
+    expect(content).toContain('slug: gooseworks');
   });
 
   it('contains skill search instructions', () => {

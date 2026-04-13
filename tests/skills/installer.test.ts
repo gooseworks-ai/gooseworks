@@ -35,11 +35,11 @@ describe('skills/installer', () => {
       installMasterSkill('# GooseWorks Master');
 
       expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks-master`,
+        `${SKILLS_BASE}/gooseworks`,
         { recursive: true }
       );
       expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks-master/SKILL.md`,
+        `${SKILLS_BASE}/gooseworks/SKILL.md`,
         '# GooseWorks Master',
         'utf-8'
       );
@@ -80,19 +80,19 @@ describe('skills/installer', () => {
     it('removes only gooseworks- prefixed directories', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readdirSync.mockReturnValue([
+        'gooseworks',
         'gooseworks-twitter-scraper',
-        'gooseworks-master',
         'other-skill',
       ] as any);
 
       removeAllSkills();
 
       expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks-twitter-scraper`,
+        `${SKILLS_BASE}/gooseworks`,
         { recursive: true, force: true }
       );
       expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks-master`,
+        `${SKILLS_BASE}/gooseworks-twitter-scraper`,
         { recursive: true, force: true }
       );
       expect(mockFs.rmSync).not.toHaveBeenCalledWith(

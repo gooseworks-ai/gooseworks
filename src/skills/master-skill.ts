@@ -6,7 +6,7 @@
 export function getMasterSkillContent(_apiBase?: string): string {
   return `---
 name: gooseworks
-slug: gooseworks-master
+slug: gooseworks
 description: >
   GooseWorks data toolkit. Search and scrape Twitter/X, Reddit, LinkedIn, websites, and the web.
   Find people, emails, and company info. Enrich contacts and companies.

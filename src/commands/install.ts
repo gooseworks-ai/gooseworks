@@ -36,7 +36,7 @@ export const installCommand = new Command('install')
     removeAllSkills();
     const masterContent = getMasterSkillContent(creds.api_base);
     installMasterSkill(masterContent);
-    logger.success('Installed GooseWorks skill to ~/.agents/skills/gooseworks-master/');
+    logger.success('Installed GooseWorks skill to ~/.agents/skills/gooseworks/');
 
     // Step 3: Configure agents
     logger.step(3, 3, 'Configuring agents...');

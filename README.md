@@ -50,7 +50,7 @@ npx gooseworks install --all       # Configure all detected agents
 
 **What it does:**
 - Runs `login` if you don't have credentials yet
-- Writes the GooseWorks master skill to `~/.agents/skills/gooseworks-master/SKILL.md`
+- Writes the GooseWorks skill to `~/.agents/skills/gooseworks/SKILL.md`
 - Creates symlinks in `~/.claude/skills/` (Claude) or writes MCP config (Cursor)
 
 ### `login`
@@ -146,15 +146,15 @@ npx gooseworks update
 
 ```
 ~/.agents/skills/
-└── gooseworks-master/
-    └── SKILL.md          # Master skill — teaches your agent to use GooseWorks
+└── gooseworks/
+    └── SKILL.md          # GooseWorks skill — teaches your agent to use 100+ data tools
 ```
 
 ### Claude Code Symlinks
 
 ```
 ~/.claude/skills/
-└── gooseworks-master → ~/.agents/skills/gooseworks-master
+└── gooseworks → ~/.agents/skills/gooseworks
 ```
 
 ## Pricing

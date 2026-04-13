@@ -9,7 +9,7 @@ export function getSkillsBasePath(): string {
 }
 
 export function installMasterSkill(masterSkillMd: string): void {
-  const masterDir = path.join(SKILLS_BASE, 'gooseworks-master');
+  const masterDir = path.join(SKILLS_BASE, 'gooseworks');
   fs.mkdirSync(masterDir, { recursive: true });
   fs.writeFileSync(
     path.join(masterDir, 'SKILL.md'),
@@ -22,7 +22,7 @@ export function getInstalledSkills(): string[] {
   if (!fs.existsSync(SKILLS_BASE)) return [];
 
   return fs.readdirSync(SKILLS_BASE)
-    .filter((entry) => entry.startsWith('gooseworks-'))
+    .filter((entry) => entry === 'gooseworks' || entry.startsWith('gooseworks-'))
     .filter((entry) => {
       const skillMd = path.join(SKILLS_BASE, entry, 'SKILL.md');
       return fs.existsSync(skillMd);
@@ -34,7 +34,7 @@ export function removeAllSkills(): void {
 
   const entries = fs.readdirSync(SKILLS_BASE);
   for (const entry of entries) {
-    if (!entry.startsWith('gooseworks-')) continue;
+    if (entry !== 'gooseworks' && !entry.startsWith('gooseworks-')) continue;
     fs.rmSync(path.join(SKILLS_BASE, entry), { recursive: true, force: true });
   }
 }

@@ -137,7 +137,7 @@ describe('credentials', () => {
 
     it('returns default when no credentials', () => {
       mockFs.existsSync.mockReturnValue(false);
-      expect(getApiBase()).toBe('https://app.gooseworks.ai');
+      expect(getApiBase()).toBe('https://api.gooseworks.ai');
     });
   });
 });
