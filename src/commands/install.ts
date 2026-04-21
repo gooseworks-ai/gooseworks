@@ -59,7 +59,13 @@ export const installCommand = new Command('install')
       }
       if (agent === 'cursor') {
         logger.info('Writing MCP config for Cursor');
-        configureCursor();
+        const result = configureCursor();
+        logger.success(`Global config: ${result.globalPath}`);
+        if (result.projectPath) {
+          logger.success(`Project config: ${result.projectPath}`);
+        } else {
+          logger.info('No .cursor/ project directory found — skipped project-level config');
+        }
         logger.success('Cursor configured');
       }
     }

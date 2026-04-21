@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { getApiBase, getApiKey, getCredentials } from '../auth/credentials';
 
-function getCursorConfigPath(): string {
+function getGlobalCursorConfigPath(): string {
   const platform = process.platform;
   const home = os.homedir();
 
@@ -17,15 +17,36 @@ function getCursorConfigPath(): string {
   return path.join(home, 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'config.json');
 }
 
+/**
+ * Walk up from cwd to find the nearest directory containing `.cursor/`.
+ * Returns the path to `.cursor/mcp.json` if a `.cursor/` dir exists,
+ * or null if none found before hitting the filesystem root.
+ */
+function findProjectMcpConfigPath(): string | null {
+  let dir = process.cwd();
+  const root = path.parse(dir).root;
+
+  while (dir !== root) {
+    const cursorDir = path.join(dir, '.cursor');
+    if (fs.existsSync(cursorDir) && fs.statSync(cursorDir).isDirectory()) {
+      return path.join(cursorDir, 'mcp.json');
+    }
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+interface McpServerEntry {
+  type?: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+}
+
 interface CursorMcpConfig {
-  mcpServers?: Record<string, {
-    type?: string;
-    command?: string;
-    args?: string[];
-    url?: string;
-    headers?: Record<string, string>;
-    env?: Record<string, string>;
-  }>;
+  mcpServers?: Record<string, McpServerEntry>;
 }
 
 function normalizeMcpUrl(base: string): string {
@@ -33,45 +54,35 @@ function normalizeMcpUrl(base: string): string {
   return stripped.endsWith('/mcp') ? stripped : `${stripped}/mcp`;
 }
 
-export function configureCursor(): void {
-  const configPath = getCursorConfigPath();
-  const configDir = path.dirname(configPath);
-
-  fs.mkdirSync(configDir, { recursive: true });
-
-  let config: CursorMcpConfig = {};
+function readMcpConfig(configPath: string): CursorMcpConfig {
   try {
     if (fs.existsSync(configPath)) {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const raw = fs.readFileSync(configPath, 'utf-8').trim();
+      if (raw) return JSON.parse(raw);
     }
   } catch {
-    config = {};
+    // Corrupted or empty — start fresh
   }
+  return {};
+}
 
-  if (!config.mcpServers) {
-    config.mcpServers = {};
-  }
-
+function buildGooseworksEntries(): Record<string, McpServerEntry> {
   const apiBase = getApiBase();
   const apiKey = getApiKey();
   const creds = getCredentials();
 
-  // Main MCP (sandbox tools): skills, integrations, enrichment, research.
-  // HTTP MCP with Bearer auth in headers — `env` doesn't flow to remote HTTP
-  // servers, which is why the older config never actually authenticated.
-  config.mcpServers['gooseworks'] = {
-    type: 'http',
-    url: normalizeMcpUrl(apiBase),
-    headers: {
-      Authorization: `Bearer ${apiKey || ''}`,
+  const entries: Record<string, McpServerEntry> = {
+    gooseworks: {
+      type: 'http',
+      url: normalizeMcpUrl(apiBase),
+      headers: {
+        Authorization: `Bearer ${apiKey || ''}`,
+      },
     },
   };
 
-  // Filesystem MCP (read/write/upload files across agents + shared folders).
-  // Requires the files_mcp_url returned by the backend on login. If the token
-  // was issued by an older backend, skip silently.
   if (creds?.files_mcp_url) {
-    config.mcpServers['gooseworks-files'] = {
+    entries['gooseworks-files'] = {
       type: 'http',
       url: normalizeMcpUrl(creds.files_mcp_url),
       headers: {
@@ -80,14 +91,26 @@ export function configureCursor(): void {
     };
   }
 
+  return entries;
+}
+
+function writeMcpConfig(configPath: string, entries: Record<string, McpServerEntry>): void {
+  const configDir = path.dirname(configPath);
+  fs.mkdirSync(configDir, { recursive: true });
+
+  const config = readMcpConfig(configPath);
+  if (!config.mcpServers) {
+    config.mcpServers = {};
+  }
+
+  Object.assign(config.mcpServers, entries);
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 }
 
-export function removeCursor(): void {
-  const configPath = getCursorConfigPath();
+function removeGooseworksFromConfig(configPath: string): void {
   try {
     if (!fs.existsSync(configPath)) return;
-    const config: CursorMcpConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const config = readMcpConfig(configPath);
     let changed = false;
     if (config.mcpServers?.gooseworks) {
       delete config.mcpServers.gooseworks;
@@ -101,6 +124,34 @@ export function removeCursor(): void {
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
     }
   } catch {
-    // Ignore errors
+    // Best-effort
+  }
+}
+
+export interface CursorConfigResult {
+  globalPath: string;
+  projectPath: string | null;
+}
+
+export function configureCursor(): CursorConfigResult {
+  const entries = buildGooseworksEntries();
+
+  const globalPath = getGlobalCursorConfigPath();
+  writeMcpConfig(globalPath, entries);
+
+  const projectPath = findProjectMcpConfigPath();
+  if (projectPath) {
+    writeMcpConfig(projectPath, entries);
+  }
+
+  return { globalPath, projectPath };
+}
+
+export function removeCursor(): void {
+  removeGooseworksFromConfig(getGlobalCursorConfigPath());
+
+  const projectPath = findProjectMcpConfigPath();
+  if (projectPath) {
+    removeGooseworksFromConfig(projectPath);
   }
 }
