@@ -6,8 +6,15 @@ import { API_BASE } from '../config';
 export interface Credentials {
   api_key: string;
   email: string;
+  /** Current / default agent — used by skills/proxy routes that still expect an agent context. */
   agent_id: string;
   api_base: string;
+  /** 'agent' (legacy) or 'user' (new, filesystem MCP). */
+  scope_type?: 'agent' | 'user';
+  /** Mirror of agent_id for clarity when the token is user-scoped. */
+  default_agent_id?: string;
+  /** Base URL for the filesystem MCP server (e.g. http://localhost:6200 in dev). */
+  files_mcp_url?: string;
 }
 
 const CREDENTIALS_DIR = path.join(os.homedir(), '.gooseworks');

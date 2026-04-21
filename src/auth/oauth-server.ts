@@ -12,6 +12,9 @@ interface OAuthResult {
   api_key: string;
   email: string;
   agent_id: string;
+  scope_type?: 'agent' | 'user';
+  default_agent_id?: string;
+  files_mcp_url?: string;
 }
 
 export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
@@ -29,6 +32,9 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
         const token = url.searchParams.get('token');
         const email = url.searchParams.get('email');
         const agentId = url.searchParams.get('agent_id');
+        const scopeType = url.searchParams.get('scope_type') as 'agent' | 'user' | null;
+        const defaultAgentId = url.searchParams.get('default_agent_id');
+        const filesMcpUrl = url.searchParams.get('files_mcp_url');
         const returnedState = url.searchParams.get('state');
 
         if (returnedState !== state) {
@@ -55,6 +61,9 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
           email,
           agent_id: agentId,
           api_base: apiBase,
+          ...(scopeType ? { scope_type: scopeType } : {}),
+          ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
+          ...(filesMcpUrl ? { files_mcp_url: filesMcpUrl } : {}),
         };
         saveCredentials(creds);
 
@@ -64,7 +73,14 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
 
         // Force-close all open sockets so the server actually shuts down
         server.close(() => {
-          resolve({ api_key: token, email, agent_id: agentId });
+          resolve({
+            api_key: token,
+            email,
+            agent_id: agentId,
+            ...(scopeType ? { scope_type: scopeType } : {}),
+            ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
+            ...(filesMcpUrl ? { files_mcp_url: filesMcpUrl } : {}),
+          });
         });
         for (const socket of sockets) {
           socket.destroy();
@@ -89,7 +105,10 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
       }
 
       const port = addr.port;
-      const authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}`;
+      // Pass api_base so the frontend can route Google OAuth back through the
+      // correct backend (e.g. http://localhost:5999 for local dev vs. the
+      // ngrok/prod URL baked into NEXT_PUBLIC_API_URL).
+      const authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}&api_base=${encodeURIComponent(apiBase)}`;
 
       logger.info('Opening browser for Google sign-in...');
       open(authUrl).catch(() => {

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
 import { installMasterSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
+import { configureClaudeFilesMcp } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
@@ -44,6 +45,11 @@ export const installCommand = new Command('install')
       if (agent === 'claude') {
         logger.info('Creating symlinks in ~/.claude/skills/');
         configureClaude();
+        if (configureClaudeFilesMcp()) {
+          logger.success("Registered 'gooseworks-files' MCP server in ~/.claude.json");
+        } else {
+          logger.info("Skipped files MCP config (no files_mcp_url in credentials — older backend?)");
+        }
         logger.success('Claude Code configured');
       }
       if (agent === 'codex') {
