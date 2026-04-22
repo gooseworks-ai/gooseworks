@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
 import { installMasterSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
-import { configureClaudeFilesMcp } from '../agents/claude-mcp';
+import { configureClaudeMcp, configureClaudeFilesMcp } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
@@ -10,22 +10,38 @@ import * as logger from '../utils/logger';
 import { getMasterSkillContent } from '../skills/master-skill';
 import { API_BASE } from '../config';
 
-export const installCommand = new Command('install')
+interface InstallOptions {
+  claude?: boolean;
+  codex?: boolean;
+  cursor?: boolean;
+  all?: boolean;
+  mcp?: boolean;
+  filesMcp?: boolean;
+  apiBase?: string;
+}
+
+export function createInstallCommand(): Command {
+  return new Command('install')
   .description('Install GooseWorks data tools into your coding agent')
   .option('--claude', 'Configure for Claude Code')
   .option('--codex', 'Configure for Codex')
   .option('--cursor', 'Configure for Cursor')
-  .option('--all', 'Configure for all detected agents')
+  .option('--all', 'Configure for all detected agents (implies --mcp and --files-mcp)')
+  .option('--mcp', 'Also register the main GooseWorks MCP server (research, skills, email, etc.)')
+  .option('--files-mcp', 'Also register the GooseWorks files MCP server (read/write/list files)')
   .option('--api-base <url>', 'API base URL', API_BASE)
-  .action(async (opts) => {
+  .action(async (opts: InstallOptions) => {
     logger.banner('0.1.0');
 
-    // Determine which agents to configure
     const targetAgents = resolveTargetAgents(opts);
     if (targetAgents.length === 0) {
       logger.error('No agent specified. Use --claude, --codex, --cursor, or --all');
       process.exit(1);
     }
+
+    // --all implies both MCP flags
+    const wantMcp = !!(opts.mcp || opts.all);
+    const wantFilesMcp = !!(opts.filesMcp || opts.all);
 
     // Step 1: Authenticate
     logger.step(1, 3, 'Authenticating...');
@@ -45,10 +61,17 @@ export const installCommand = new Command('install')
       if (agent === 'claude') {
         logger.info('Creating symlinks in ~/.claude/skills/');
         configureClaude();
-        if (configureClaudeFilesMcp()) {
-          logger.success("Registered 'gooseworks-files' MCP server in ~/.claude.json");
-        } else {
-          logger.info("Skipped files MCP config (no files_mcp_url in credentials — older backend?)");
+        if (wantMcp) {
+          if (configureClaudeMcp()) {
+            logger.success("Registered 'gooseworks' MCP server in ~/.claude.json");
+          }
+        }
+        if (wantFilesMcp) {
+          if (configureClaudeFilesMcp()) {
+            logger.success("Registered 'gooseworks-files' MCP server in ~/.claude.json");
+          } else {
+            logger.info("Skipped files MCP (no files_mcp_url in credentials — older backend?)");
+          }
         }
         logger.success('Claude Code configured');
       }
@@ -58,19 +81,25 @@ export const installCommand = new Command('install')
         logger.success('Codex configured');
       }
       if (agent === 'cursor') {
-        logger.info('Writing MCP config for Cursor');
-        const result = configureCursor();
-        logger.success(`Global config: ${result.globalPath}`);
-        if (result.projectPath) {
-          logger.success(`Project config: ${result.projectPath}`);
+        if (wantMcp || wantFilesMcp) {
+          logger.info('Writing MCP config for Cursor');
+          const result = configureCursor({ mcp: wantMcp, filesMcp: wantFilesMcp });
+          logger.success(`Global config: ${result.globalPath}`);
+          if (result.projectPath) {
+            logger.success(`Project config: ${result.projectPath}`);
+          } else {
+            logger.info('No .cursor/ project directory found — skipped project-level config');
+          }
+          if (wantFilesMcp && !result.wroteFilesMcp) {
+            logger.info("Skipped files MCP (no files_mcp_url in credentials — older backend?)");
+          }
         } else {
-          logger.info('No .cursor/ project directory found — skipped project-level config');
+          logger.info('No MCP flags passed; skipping Cursor MCP config. (Pass --mcp or --files-mcp to register servers.)');
         }
         logger.success('Cursor configured');
       }
     }
 
-    // Done
     const agentNames = targetAgents.map((a) =>
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
@@ -78,13 +107,11 @@ export const installCommand = new Command('install')
       `Setup complete! Open ${agentNames} and say "/gooseworks find me leads" to get started.`
     );
   });
+}
 
-function resolveTargetAgents(opts: {
-  claude?: boolean;
-  codex?: boolean;
-  cursor?: boolean;
-  all?: boolean;
-}): AgentType[] {
+export const installCommand = createInstallCommand();
+
+function resolveTargetAgents(opts: InstallOptions): AgentType[] {
   if (opts.all) {
     const detected = detectAgents();
     if (detected.length === 0) {

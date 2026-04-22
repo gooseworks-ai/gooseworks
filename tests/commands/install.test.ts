@@ -37,12 +37,22 @@ jest.mock('../../src/agents/claude', () => ({
   configureClaude: jest.fn(),
 }));
 
+jest.mock('../../src/agents/claude-mcp', () => ({
+  configureClaudeMcp: jest.fn().mockReturnValue(true),
+  configureClaudeFilesMcp: jest.fn().mockReturnValue(true),
+}));
+
 jest.mock('../../src/agents/codex', () => ({
   configureCodex: jest.fn(),
 }));
 
 jest.mock('../../src/agents/cursor', () => ({
-  configureCursor: jest.fn(),
+  configureCursor: jest.fn().mockReturnValue({
+    globalPath: '/mock-home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/config.json',
+    projectPath: null,
+    wroteMcp: true,
+    wroteFilesMcp: true,
+  }),
 }));
 
 jest.mock('../../src/agents/detect', () => ({
@@ -66,6 +76,8 @@ import { runOAuthFlow } from '../../src/auth/oauth-server';
 import { installMasterSkill } from '../../src/skills/installer';
 import { getMasterSkillContent } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
+import { configureClaudeMcp, configureClaudeFilesMcp } from '../../src/agents/claude-mcp';
+import { configureCursor } from '../../src/agents/cursor';
 import * as loggerModule from '../../src/utils/logger';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
@@ -73,6 +85,9 @@ const mockRunOAuthFlow = runOAuthFlow as jest.MockedFunction<typeof runOAuthFlow
 const mockInstallMasterSkill = installMasterSkill as jest.MockedFunction<typeof installMasterSkill>;
 const mockGetMasterSkillContent = getMasterSkillContent as jest.MockedFunction<typeof getMasterSkillContent>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
+const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
+const mockConfigureClaudeFilesMcp = configureClaudeFilesMcp as jest.MockedFunction<typeof configureClaudeFilesMcp>;
+const mockConfigureCursor = configureCursor as jest.MockedFunction<typeof configureCursor>;
 
 const mockCreds = {
   api_key: 'cal_test123',
@@ -103,7 +118,8 @@ describe('install command', () => {
   });
 
   it('exits when no agent flag is provided', async () => {
-    const { installCommand } = await import('../../src/commands/install');
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
 
     await expect(
       installCommand.parseAsync(['node', 'test'])
@@ -117,7 +133,8 @@ describe('install command', () => {
   it('uses existing credentials when already logged in', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
-    const { installCommand } = await import('../../src/commands/install');
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
@@ -135,7 +152,8 @@ describe('install command', () => {
   it('configures Claude when --claude flag is used', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
-    const { installCommand } = await import('../../src/commands/install');
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
@@ -147,7 +165,8 @@ describe('install command', () => {
     const customCreds = { ...mockCreds, api_base: 'http://localhost:5999' };
     mockGetCredentials.mockReturnValue(customCreds);
 
-    const { installCommand } = await import('../../src/commands/install');
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
@@ -157,12 +176,88 @@ describe('install command', () => {
   it('shows done message with agent name', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
-    const { installCommand } = await import('../../src/commands/install');
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
     expect(loggerModule.done).toHaveBeenCalledWith(
       expect.stringContaining('Claude Code')
     );
+  });
+
+  it('--claude without MCP flags installs skill only, no MCP writes', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude']);
+
+    expect(mockConfigureClaude).toHaveBeenCalled();
+    expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
+    expect(mockConfigureClaudeFilesMcp).not.toHaveBeenCalled();
+  });
+
+  it('--claude --mcp writes main MCP entry', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--mcp']);
+
+    expect(mockConfigureClaudeMcp).toHaveBeenCalled();
+    expect(mockConfigureClaudeFilesMcp).not.toHaveBeenCalled();
+  });
+
+  it('--claude --files-mcp writes files MCP entry', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--files-mcp']);
+
+    expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
+    expect(mockConfigureClaudeFilesMcp).toHaveBeenCalled();
+  });
+
+  it('--claude --mcp --files-mcp writes both entries', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--mcp', '--files-mcp']);
+
+    expect(mockConfigureClaudeMcp).toHaveBeenCalled();
+    expect(mockConfigureClaudeFilesMcp).toHaveBeenCalled();
+  });
+
+  it('--cursor without MCP flags skips Cursor MCP config entirely', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--cursor']);
+
+    expect(mockConfigureCursor).not.toHaveBeenCalled();
+  });
+
+  it('--cursor --mcp calls configureCursor with mcp flag only', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--cursor', '--mcp']);
+
+    expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: true, filesMcp: false });
+  });
+
+  it('--cursor --files-mcp calls configureCursor with filesMcp flag only', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--cursor', '--files-mcp']);
+
+    expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: false, filesMcp: true });
   });
 });

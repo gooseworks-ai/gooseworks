@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getCredentials } from '../auth/credentials';
+import { getApiBase, getCredentials } from '../auth/credentials';
 
 /**
  * Claude Code keeps user-level MCP server entries in ~/.claude.json.
@@ -38,6 +38,36 @@ function writeConfig(config: ClaudeConfig): void {
   fs.writeFileSync(CLAUDE_CONFIG_PATH, pretty, { mode: 0o600 });
 }
 
+function normalizeMcpUrl(base: string): string {
+  const stripped = base.replace(/\/$/, '');
+  return stripped.endsWith('/mcp') ? stripped : `${stripped}/mcp`;
+}
+
+/**
+ * Add (or overwrite) the `gooseworks` main MCP entry in ~/.claude.json.
+ * Returns true if configured, false if skipped (no credentials).
+ */
+export function configureClaudeMcp(): boolean {
+  const creds = getCredentials();
+  if (!creds) return false;
+
+  const base = creds.mcp_server_url || getApiBase();
+
+  const config = readConfig();
+  if (!config.mcpServers) config.mcpServers = {};
+
+  config.mcpServers.gooseworks = {
+    type: 'http',
+    url: normalizeMcpUrl(base),
+    headers: {
+      Authorization: `Bearer ${creds.api_key}`,
+    },
+  };
+
+  writeConfig(config);
+  return true;
+}
+
 /**
  * Add (or overwrite) the `gooseworks-files` MCP entry in ~/.claude.json.
  * Requires an already-saved user-scoped token and files_mcp_url.
@@ -49,16 +79,12 @@ export function configureClaudeFilesMcp(): boolean {
   if (!creds) return false;
   if (!creds.files_mcp_url) return false;
 
-  const url = creds.files_mcp_url.endsWith('/mcp')
-    ? creds.files_mcp_url
-    : `${creds.files_mcp_url.replace(/\/$/, '')}/mcp`;
-
   const config = readConfig();
   if (!config.mcpServers) config.mcpServers = {};
 
   config.mcpServers['gooseworks-files'] = {
     type: 'http',
-    url,
+    url: normalizeMcpUrl(creds.files_mcp_url),
     headers: {
       Authorization: `Bearer ${creds.api_key}`,
     },
@@ -66,6 +92,25 @@ export function configureClaudeFilesMcp(): boolean {
 
   writeConfig(config);
   return true;
+}
+
+export function removeClaudeMcp(): void {
+  try {
+    if (!fs.existsSync(CLAUDE_CONFIG_PATH)) return;
+    const config = readConfig();
+    let changed = false;
+    if (config.mcpServers?.gooseworks) {
+      delete config.mcpServers.gooseworks;
+      changed = true;
+    }
+    if (config.mcpServers?.['gooseworks-files']) {
+      delete config.mcpServers['gooseworks-files'];
+      changed = true;
+    }
+    if (changed) writeConfig(config);
+  } catch {
+    // Best-effort
+  }
 }
 
 export function removeClaudeFilesMcp(): void {
@@ -77,6 +122,6 @@ export function removeClaudeFilesMcp(): void {
       writeConfig(config);
     }
   } catch {
-    // Best-effort; never fail install/uninstall on this path.
+    // Best-effort
   }
 }

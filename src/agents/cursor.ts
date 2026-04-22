@@ -17,11 +17,6 @@ function getGlobalCursorConfigPath(): string {
   return path.join(home, 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'config.json');
 }
 
-/**
- * Walk up from cwd to find the nearest directory containing `.cursor/`.
- * Returns the path to `.cursor/mcp.json` if a `.cursor/` dir exists,
- * or null if none found before hitting the filesystem root.
- */
 function findProjectMcpConfigPath(): string | null {
   let dir = process.cwd();
   const root = path.parse(dir).root;
@@ -49,6 +44,11 @@ interface CursorMcpConfig {
   mcpServers?: Record<string, McpServerEntry>;
 }
 
+export interface CursorMcpFlags {
+  mcp: boolean;
+  filesMcp: boolean;
+}
+
 function normalizeMcpUrl(base: string): string {
   const stripped = base.replace(/\/$/, '');
   return stripped.endsWith('/mcp') ? stripped : `${stripped}/mcp`;
@@ -66,23 +66,24 @@ function readMcpConfig(configPath: string): CursorMcpConfig {
   return {};
 }
 
-function buildGooseworksEntries(): Record<string, McpServerEntry> {
-  const apiBase = getApiBase();
+function buildGooseworksEntries(flags: CursorMcpFlags): Record<string, McpServerEntry> {
   const apiKey = getApiKey();
   const creds = getCredentials();
-  const mcpBase = creds?.mcp_server_url || apiBase;
+  const mcpBase = creds?.mcp_server_url || getApiBase();
 
-  const entries: Record<string, McpServerEntry> = {
-    gooseworks: {
+  const entries: Record<string, McpServerEntry> = {};
+
+  if (flags.mcp) {
+    entries.gooseworks = {
       type: 'http',
       url: normalizeMcpUrl(mcpBase),
       headers: {
         Authorization: `Bearer ${apiKey || ''}`,
       },
-    },
-  };
+    };
+  }
 
-  if (creds?.files_mcp_url) {
+  if (flags.filesMcp && creds?.files_mcp_url) {
     entries['gooseworks-files'] = {
       type: 'http',
       url: normalizeMcpUrl(creds.files_mcp_url),
@@ -132,20 +133,29 @@ function removeGooseworksFromConfig(configPath: string): void {
 export interface CursorConfigResult {
   globalPath: string;
   projectPath: string | null;
+  wroteMcp: boolean;
+  wroteFilesMcp: boolean;
 }
 
-export function configureCursor(): CursorConfigResult {
-  const entries = buildGooseworksEntries();
+export function configureCursor(flags: CursorMcpFlags): CursorConfigResult {
+  const entries = buildGooseworksEntries(flags);
 
   const globalPath = getGlobalCursorConfigPath();
-  writeMcpConfig(globalPath, entries);
-
   const projectPath = findProjectMcpConfigPath();
-  if (projectPath) {
-    writeMcpConfig(projectPath, entries);
+
+  if (Object.keys(entries).length > 0) {
+    writeMcpConfig(globalPath, entries);
+    if (projectPath) {
+      writeMcpConfig(projectPath, entries);
+    }
   }
 
-  return { globalPath, projectPath };
+  return {
+    globalPath,
+    projectPath,
+    wroteMcp: !!entries.gooseworks,
+    wroteFilesMcp: !!entries['gooseworks-files'],
+  };
 }
 
 export function removeCursor(): void {
