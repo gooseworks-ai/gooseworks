@@ -70,11 +70,12 @@ function buildGooseworksEntries(): Record<string, McpServerEntry> {
   const apiBase = getApiBase();
   const apiKey = getApiKey();
   const creds = getCredentials();
+  const mcpBase = creds?.mcp_server_url || apiBase;
 
   const entries: Record<string, McpServerEntry> = {
     gooseworks: {
       type: 'http',
-      url: normalizeMcpUrl(apiBase),
+      url: normalizeMcpUrl(mcpBase),
       headers: {
         Authorization: `Bearer ${apiKey || ''}`,
       },
