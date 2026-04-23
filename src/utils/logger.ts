@@ -1,9 +1,25 @@
 import chalk from 'chalk';
 import ora, { type Ora } from 'ora';
 
+const GOOSE_ASCII = [
+  ' ██████╗  ██████╗  ██████╗ ███████╗███████╗',
+  '██╔════╝ ██╔═══██╗██╔═══██╗██╔════╝██╔════╝',
+  '██║  ███╗██║   ██║██║   ██║███████╗█████╗  ',
+  '██║   ██║██║   ██║██║   ██║╚════██║██╔══╝  ',
+  '╚██████╔╝╚██████╔╝╚██████╔╝███████║███████╗',
+  ' ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝╚══════╝',
+];
+
 export function banner(version: string): void {
   console.log('');
-  console.log(chalk.bold(`  GooseWorks CLI v${version}`));
+  for (const line of GOOSE_ASCII) {
+    console.log('  ' + chalk.cyan.bold(line));
+  }
+  console.log('');
+  console.log(
+    '  ' + chalk.bold(`GooseWorks CLI v${version}`) +
+      chalk.dim('  ·  give your coding agent real data tools')
+  );
   console.log('');
 }
 
@@ -25,6 +41,10 @@ export function error(message: string): void {
 
 export function warn(message: string): void {
   console.log(chalk.yellow('    ⚠') + ` ${message}`);
+}
+
+export function example(message: string): void {
+  console.log(chalk.cyan('    ›') + ' ' + chalk.bold(message));
 }
 
 export function spinner(text: string): Ora {

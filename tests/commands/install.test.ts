@@ -39,7 +39,6 @@ jest.mock('../../src/agents/claude', () => ({
 
 jest.mock('../../src/agents/claude-mcp', () => ({
   configureClaudeMcp: jest.fn().mockReturnValue(true),
-  configureClaudeFilesMcp: jest.fn().mockReturnValue(true),
 }));
 
 jest.mock('../../src/agents/codex', () => ({
@@ -51,7 +50,6 @@ jest.mock('../../src/agents/cursor', () => ({
     globalPath: '/mock-home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/config.json',
     projectPath: null,
     wroteMcp: true,
-    wroteFilesMcp: true,
   }),
 }));
 
@@ -67,6 +65,7 @@ jest.mock('../../src/utils/logger', () => ({
   success: jest.fn(),
   error: jest.fn(),
   warn: jest.fn(),
+  example: jest.fn(),
   spinner: jest.fn().mockReturnValue({ stop: jest.fn(), succeed: jest.fn(), fail: jest.fn() }),
   done: jest.fn(),
 }));
@@ -76,7 +75,7 @@ import { runOAuthFlow } from '../../src/auth/oauth-server';
 import { installMasterSkill } from '../../src/skills/installer';
 import { getMasterSkillContent } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
-import { configureClaudeMcp, configureClaudeFilesMcp } from '../../src/agents/claude-mcp';
+import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCursor } from '../../src/agents/cursor';
 import * as loggerModule from '../../src/utils/logger';
 
@@ -86,7 +85,6 @@ const mockInstallMasterSkill = installMasterSkill as jest.MockedFunction<typeof 
 const mockGetMasterSkillContent = getMasterSkillContent as jest.MockedFunction<typeof getMasterSkillContent>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
-const mockConfigureClaudeFilesMcp = configureClaudeFilesMcp as jest.MockedFunction<typeof configureClaudeFilesMcp>;
 const mockConfigureCursor = configureCursor as jest.MockedFunction<typeof configureCursor>;
 
 const mockCreds = {
@@ -186,7 +184,23 @@ describe('install command', () => {
     );
   });
 
-  it('--claude without MCP flags installs skill only, no MCP writes', async () => {
+  it('prints multiple example prompts after install', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+
+    await installCommand.parseAsync(['node', 'test', '--claude']);
+
+    expect(loggerModule.example).toHaveBeenCalled();
+    const calls = (loggerModule.example as jest.Mock).mock.calls;
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    const joined = calls.map((c) => c[0]).join('\n');
+    expect(joined).toMatch(/linkedin/i);
+    expect(joined).not.toMatch(/find me leads/);
+  });
+
+  it('--claude without --mcp installs skill only, no MCP write', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
@@ -195,10 +209,9 @@ describe('install command', () => {
 
     expect(mockConfigureClaude).toHaveBeenCalled();
     expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
-    expect(mockConfigureClaudeFilesMcp).not.toHaveBeenCalled();
   });
 
-  it('--claude --mcp writes main MCP entry', async () => {
+  it('--claude --mcp writes MCP entry', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
@@ -206,32 +219,9 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--claude', '--mcp']);
 
     expect(mockConfigureClaudeMcp).toHaveBeenCalled();
-    expect(mockConfigureClaudeFilesMcp).not.toHaveBeenCalled();
   });
 
-  it('--claude --files-mcp writes files MCP entry', async () => {
-    mockGetCredentials.mockReturnValue(mockCreds);
-
-    const { createInstallCommand } = await import("../../src/commands/install");
-    const installCommand = createInstallCommand();
-    await installCommand.parseAsync(['node', 'test', '--claude', '--files-mcp']);
-
-    expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
-    expect(mockConfigureClaudeFilesMcp).toHaveBeenCalled();
-  });
-
-  it('--claude --mcp --files-mcp writes both entries', async () => {
-    mockGetCredentials.mockReturnValue(mockCreds);
-
-    const { createInstallCommand } = await import("../../src/commands/install");
-    const installCommand = createInstallCommand();
-    await installCommand.parseAsync(['node', 'test', '--claude', '--mcp', '--files-mcp']);
-
-    expect(mockConfigureClaudeMcp).toHaveBeenCalled();
-    expect(mockConfigureClaudeFilesMcp).toHaveBeenCalled();
-  });
-
-  it('--cursor without MCP flags skips Cursor MCP config entirely', async () => {
+  it('--cursor without --mcp skips Cursor MCP config entirely', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
@@ -241,23 +231,13 @@ describe('install command', () => {
     expect(mockConfigureCursor).not.toHaveBeenCalled();
   });
 
-  it('--cursor --mcp calls configureCursor with mcp flag only', async () => {
+  it('--cursor --mcp calls configureCursor with mcp flag', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
     const installCommand = createInstallCommand();
     await installCommand.parseAsync(['node', 'test', '--cursor', '--mcp']);
 
-    expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: true, filesMcp: false });
-  });
-
-  it('--cursor --files-mcp calls configureCursor with filesMcp flag only', async () => {
-    mockGetCredentials.mockReturnValue(mockCreds);
-
-    const { createInstallCommand } = await import("../../src/commands/install");
-    const installCommand = createInstallCommand();
-    await installCommand.parseAsync(['node', 'test', '--cursor', '--files-mcp']);
-
-    expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: false, filesMcp: true });
+    expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: true });
   });
 });

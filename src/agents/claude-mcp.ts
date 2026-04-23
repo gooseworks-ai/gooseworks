@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getApiBase, getCredentials } from '../auth/credentials';
+import { getCredentials } from '../auth/credentials';
 
 /**
  * Claude Code keeps user-level MCP server entries in ~/.claude.json.
@@ -44,47 +44,29 @@ function normalizeMcpUrl(base: string): string {
 }
 
 /**
- * Add (or overwrite) the `gooseworks` main MCP entry in ~/.claude.json.
- * Returns true if configured, false if skipped (no credentials).
+ * Add (or overwrite) the `gooseworks` MCP entry in ~/.claude.json.
+ * Requires an already-saved user-scoped token and mcp_server_url.
+ *
+ * Also removes any legacy `gooseworks-files` entry written by older CLI versions.
+ *
+ * Returns true if configured, false if skipped (missing mcp_server_url).
  */
 export function configureClaudeMcp(): boolean {
   const creds = getCredentials();
   if (!creds) return false;
-
-  const base = creds.mcp_server_url || getApiBase();
+  if (!creds.mcp_server_url) return false;
 
   const config = readConfig();
   if (!config.mcpServers) config.mcpServers = {};
+
+  // Clean up legacy files-MCP entry from older CLI versions
+  if (config.mcpServers['gooseworks-files']) {
+    delete config.mcpServers['gooseworks-files'];
+  }
 
   config.mcpServers.gooseworks = {
     type: 'http',
-    url: normalizeMcpUrl(base),
-    headers: {
-      Authorization: `Bearer ${creds.api_key}`,
-    },
-  };
-
-  writeConfig(config);
-  return true;
-}
-
-/**
- * Add (or overwrite) the `gooseworks-files` MCP entry in ~/.claude.json.
- * Requires an already-saved user-scoped token and files_mcp_url.
- *
- * Returns true if configured, false if skipped (missing files_mcp_url).
- */
-export function configureClaudeFilesMcp(): boolean {
-  const creds = getCredentials();
-  if (!creds) return false;
-  if (!creds.files_mcp_url) return false;
-
-  const config = readConfig();
-  if (!config.mcpServers) config.mcpServers = {};
-
-  config.mcpServers['gooseworks-files'] = {
-    type: 'http',
-    url: normalizeMcpUrl(creds.files_mcp_url),
+    url: normalizeMcpUrl(creds.mcp_server_url),
     headers: {
       Authorization: `Bearer ${creds.api_key}`,
     },
@@ -108,19 +90,6 @@ export function removeClaudeMcp(): void {
       changed = true;
     }
     if (changed) writeConfig(config);
-  } catch {
-    // Best-effort
-  }
-}
-
-export function removeClaudeFilesMcp(): void {
-  try {
-    if (!fs.existsSync(CLAUDE_CONFIG_PATH)) return;
-    const config = readConfig();
-    if (config.mcpServers?.['gooseworks-files']) {
-      delete config.mcpServers['gooseworks-files'];
-      writeConfig(config);
-    }
   } catch {
     // Best-effort
   }

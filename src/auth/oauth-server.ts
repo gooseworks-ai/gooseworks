@@ -15,7 +15,6 @@ interface OAuthResult {
   scope_type?: 'agent' | 'user';
   default_agent_id?: string;
   mcp_server_url?: string;
-  files_mcp_url?: string;
 }
 
 export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
@@ -36,7 +35,6 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
         const scopeType = url.searchParams.get('scope_type') as 'agent' | 'user' | null;
         const defaultAgentId = url.searchParams.get('default_agent_id');
         const mcpServerUrl = url.searchParams.get('mcp_server_url');
-        const filesMcpUrl = url.searchParams.get('files_mcp_url');
         const returnedState = url.searchParams.get('state');
 
         if (returnedState !== state) {
@@ -66,7 +64,6 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
           ...(scopeType ? { scope_type: scopeType } : {}),
           ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
           ...(mcpServerUrl ? { mcp_server_url: mcpServerUrl } : {}),
-          ...(filesMcpUrl ? { files_mcp_url: filesMcpUrl } : {}),
         };
         saveCredentials(creds);
 
@@ -83,7 +80,6 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
             ...(scopeType ? { scope_type: scopeType } : {}),
             ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
             ...(mcpServerUrl ? { mcp_server_url: mcpServerUrl } : {}),
-            ...(filesMcpUrl ? { files_mcp_url: filesMcpUrl } : {}),
           });
         });
         for (const socket of sockets) {

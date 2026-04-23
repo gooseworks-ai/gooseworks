@@ -13,10 +13,8 @@ export interface Credentials {
   scope_type?: 'agent' | 'user';
   /** Mirror of agent_id for clarity when the token is user-scoped. */
   default_agent_id?: string;
-  /** Base URL for the main MCP server (e.g. https://mcp.gooseworks.ai). Separate from api_base. */
+  /** Base URL for the GooseWorks MCP server (e.g. http://localhost:6200 in dev). */
   mcp_server_url?: string;
-  /** Base URL for the filesystem MCP server (e.g. http://localhost:6200 in dev). */
-  files_mcp_url?: string;
 }
 
 const CREDENTIALS_DIR = path.join(os.homedir(), '.gooseworks');

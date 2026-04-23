@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getApiBase, getApiKey, getCredentials } from '../auth/credentials';
+import { getApiKey, getCredentials } from '../auth/credentials';
 
 function getGlobalCursorConfigPath(): string {
   const platform = process.platform;
@@ -46,7 +46,6 @@ interface CursorMcpConfig {
 
 export interface CursorMcpFlags {
   mcp: boolean;
-  filesMcp: boolean;
 }
 
 function normalizeMcpUrl(base: string): string {
@@ -69,24 +68,13 @@ function readMcpConfig(configPath: string): CursorMcpConfig {
 function buildGooseworksEntries(flags: CursorMcpFlags): Record<string, McpServerEntry> {
   const apiKey = getApiKey();
   const creds = getCredentials();
-  const mcpBase = creds?.mcp_server_url || getApiBase();
 
   const entries: Record<string, McpServerEntry> = {};
 
-  if (flags.mcp) {
+  if (flags.mcp && creds?.mcp_server_url) {
     entries.gooseworks = {
       type: 'http',
-      url: normalizeMcpUrl(mcpBase),
-      headers: {
-        Authorization: `Bearer ${apiKey || ''}`,
-      },
-    };
-  }
-
-  if (flags.filesMcp && creds?.files_mcp_url) {
-    entries['gooseworks-files'] = {
-      type: 'http',
-      url: normalizeMcpUrl(creds.files_mcp_url),
+      url: normalizeMcpUrl(creds.mcp_server_url),
       headers: {
         Authorization: `Bearer ${apiKey || ''}`,
       },
@@ -103,6 +91,11 @@ function writeMcpConfig(configPath: string, entries: Record<string, McpServerEnt
   const config = readMcpConfig(configPath);
   if (!config.mcpServers) {
     config.mcpServers = {};
+  }
+
+  // Clean up legacy files-MCP entry from older CLI versions
+  if (config.mcpServers['gooseworks-files']) {
+    delete config.mcpServers['gooseworks-files'];
   }
 
   Object.assign(config.mcpServers, entries);
@@ -134,7 +127,6 @@ export interface CursorConfigResult {
   globalPath: string;
   projectPath: string | null;
   wroteMcp: boolean;
-  wroteFilesMcp: boolean;
 }
 
 export function configureCursor(flags: CursorMcpFlags): CursorConfigResult {
@@ -154,7 +146,6 @@ export function configureCursor(flags: CursorMcpFlags): CursorConfigResult {
     globalPath,
     projectPath,
     wroteMcp: !!entries.gooseworks,
-    wroteFilesMcp: !!entries['gooseworks-files'],
   };
 }
 

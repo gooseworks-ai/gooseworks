@@ -6,12 +6,13 @@ import { logoutCommand } from './commands/logout';
 import { updateCommand } from './commands/update';
 import { creditsCommand } from './commands/credits';
 import { searchCommand } from './commands/search';
+import { getVersion } from './version';
 
 const program = new Command();
 program
   .name('gooseworks')
   .description('GooseWorks CLI — give your coding agent real data tools')
-  .version('0.1.0');
+  .version(getVersion());
 
 program.addCommand(installCommand);
 program.addCommand(loginCommand);
