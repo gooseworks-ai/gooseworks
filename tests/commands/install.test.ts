@@ -139,7 +139,7 @@ describe('install command', () => {
     // Should NOT call OAuth
     expect(mockRunOAuthFlow).not.toHaveBeenCalled();
     // Should install master skill
-    expect(mockGetMasterSkillContent).toHaveBeenCalledWith('https://app.gooseworks.ai');
+    expect(mockGetMasterSkillContent).toHaveBeenCalledWith();
     expect(mockInstallMasterSkill).toHaveBeenCalledWith('# GooseWorks Master Skill');
     // Should report success
     expect(loggerModule.success).toHaveBeenCalledWith(
@@ -159,7 +159,7 @@ describe('install command', () => {
     expect(loggerModule.success).toHaveBeenCalledWith('Claude Code configured');
   });
 
-  it('installs master skill with correct api_base', async () => {
+  it('installs master skill without passing api_base (content is self-contained)', async () => {
     const customCreds = { ...mockCreds, api_base: 'http://localhost:5999' };
     mockGetCredentials.mockReturnValue(customCreds);
 
@@ -168,7 +168,7 @@ describe('install command', () => {
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
-    expect(mockGetMasterSkillContent).toHaveBeenCalledWith('http://localhost:5999');
+    expect(mockGetMasterSkillContent).toHaveBeenCalledWith();
   });
 
   it('shows done message with agent name', async () => {

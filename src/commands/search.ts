@@ -17,6 +17,22 @@ interface SearchResponse {
   data: CatalogSkill[];
 }
 
+function statusToMessage(status: number): string {
+  if (status === 401) {
+    return 'Unauthorized — your API key may be invalid. Run "gooseworks login" to re-authenticate.';
+  }
+  if (status === 403) {
+    return 'Forbidden — your account may lack access to this endpoint.';
+  }
+  if (status === 404) {
+    return 'Search endpoint not found (server may be out of date).';
+  }
+  if (status >= 500) {
+    return `Server error (${status}). Please try again later.`;
+  }
+  return `Request failed with status ${status}.`;
+}
+
 function searchSkills(apiBase: string, apiKey: string, query: string): Promise<SearchResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(`${apiBase}/api/skills/search`);
@@ -32,12 +48,17 @@ function searchSkills(apiBase: string, apiKey: string, query: string): Promise<S
         'Content-Length': Buffer.byteLength(body),
       },
     }, (res) => {
+      const status = res.statusCode ?? 0;
       const chunks: Buffer[] = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        if (status < 200 || status >= 300) {
+          reject(new Error(statusToMessage(status)));
+          return;
+        }
         try {
-          const parsed = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-          resolve(parsed);
+          resolve(JSON.parse(raw));
         } catch {
           reject(new Error('Invalid response from server'));
         }

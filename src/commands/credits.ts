@@ -13,6 +13,22 @@ interface CreditsResponse {
   };
 }
 
+function statusToMessage(status: number): string {
+  if (status === 401) {
+    return 'Unauthorized — your API key may be invalid. Run "gooseworks login" to re-authenticate.';
+  }
+  if (status === 403) {
+    return 'Forbidden — your account may lack access to this endpoint.';
+  }
+  if (status === 404) {
+    return 'Credits endpoint not found (server may be out of date).';
+  }
+  if (status >= 500) {
+    return `Server error (${status}). Please try again later.`;
+  }
+  return `Request failed with status ${status}.`;
+}
+
 function fetchCredits(apiBase: string, apiKey: string): Promise<CreditsResponse> {
   return new Promise((resolve, reject) => {
     const url = new URL(`${apiBase}/v1/credits`);
@@ -24,12 +40,17 @@ function fetchCredits(apiBase: string, apiKey: string): Promise<CreditsResponse>
         'Accept': 'application/json',
       },
     }, (res) => {
+      const status = res.statusCode ?? 0;
       const chunks: Buffer[] = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        if (status < 200 || status >= 300) {
+          reject(new Error(statusToMessage(status)));
+          return;
+        }
         try {
-          const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
-          resolve(body);
+          resolve(JSON.parse(raw));
         } catch {
           reject(new Error('Invalid response from server'));
         }

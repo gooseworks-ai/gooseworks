@@ -157,3 +157,27 @@ export function removeCursor(): void {
     removeGooseworksFromConfig(projectPath);
   }
 }
+
+function configHasGooseworksEntry(configPath: string): boolean {
+  try {
+    if (!fs.existsSync(configPath)) return false;
+    const config = readMcpConfig(configPath);
+    return !!(config.mcpServers?.gooseworks || config.mcpServers?.['gooseworks-files']);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns true if the user's Cursor config (global or project) currently has
+ * a `gooseworks` (or legacy `gooseworks-files`) MCP server entry. Used by
+ * `update` to decide whether to refresh Cursor's MCP config in place.
+ */
+export function hasExistingCursorMcpEntry(): boolean {
+  if (configHasGooseworksEntry(getGlobalCursorConfigPath())) return true;
+
+  const projectPath = findProjectMcpConfigPath();
+  if (projectPath && configHasGooseworksEntry(projectPath)) return true;
+
+  return false;
+}

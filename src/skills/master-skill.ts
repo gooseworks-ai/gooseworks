@@ -2,8 +2,12 @@
  * Returns the master SKILL.md content.
  * This is the ONLY skill the CLI installs. It teaches the coding agent
  * how to discover and use GooseWorks skills on demand.
+ *
+ * The returned content is self-contained: it instructs the agent to read
+ * credentials (including api_base) from ~/.gooseworks/credentials.json at
+ * runtime, so nothing needs to be embedded here.
  */
-export function getMasterSkillContent(_apiBase?: string): string {
+export function getMasterSkillContent(): string {
   return `---
 name: gooseworks
 slug: gooseworks
