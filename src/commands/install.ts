@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
-import { installMasterSkill, removeAllSkills } from '../skills/installer';
+import { installMasterSkill, installStandaloneSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
@@ -18,16 +18,22 @@ interface InstallOptions {
   all?: boolean;
   mcp?: boolean;
   apiBase?: string;
+  with?: string[];
 }
 
 export function createInstallCommand(): Command {
   return new Command('install')
-  .description('Install GooseWorks data tools into your coding agent')
+  .description(`Install GooseWorks data tools into your coding agent
+
+Examples:
+  $ gooseworks install --claude --with goose-graphics
+  $ gooseworks install --claude --with goose-graphics --with goose-aeo`)
   .option('--claude', 'Configure for Claude Code')
   .option('--codex', 'Configure for Codex')
   .option('--cursor', 'Configure for Cursor')
   .option('--all', 'Configure for all detected agents (implies --mcp)')
   .option('--mcp', 'Also register the GooseWorks MCP server')
+  .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
   .option('--api-base <url>', 'API base URL', API_BASE)
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
@@ -52,6 +58,24 @@ export function createInstallCommand(): Command {
     const masterContent = getMasterSkillContent();
     installMasterSkill(masterContent);
     logger.success('Installed GooseWorks skill to ~/.agents/skills/gooseworks/');
+    for (const slug of opts.with || []) {
+      try {
+        logger.info(`Installing standalone skill ${slug}...`);
+        let lastReported = 0;
+        await installStandaloneSkill(slug, {
+          onProgress: ({ downloaded, total }) => {
+            if (downloaded === total || downloaded - lastReported >= 25) {
+              logger.info(`  Downloaded ${downloaded}/${total} files for ${slug}`);
+              lastReported = downloaded;
+            }
+          },
+        });
+        logger.success(`Installed standalone skill ${slug} to ~/.agents/skills/${slug}/`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Could not install standalone skill ${slug}: ${message}`);
+      }
+    }
 
     // Step 3: Configure agents
     logger.step(3, 3, 'Configuring agents...');
@@ -122,4 +146,8 @@ function resolveTargetAgents(opts: InstallOptions): AgentType[] {
   if (opts.codex) targets.push('codex');
   if (opts.cursor) targets.push('cursor');
   return targets;
+}
+
+function collectSkillSlug(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }

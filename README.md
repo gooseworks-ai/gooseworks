@@ -9,6 +9,7 @@ Pick your agent:
 ```bash
 # Claude Code
 npx gooseworks install --claude
+npx gooseworks install --claude --with goose-graphics
 
 # Cursor
 npx gooseworks install --cursor
@@ -24,6 +25,8 @@ This does three things:
 1. Opens browser for Google sign-in
 2. Installs the GooseWorks skill into your coding agent
 3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors"
+
+Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the main GooseWorks skill. For example, `--with goose-graphics` installs `/goose-graphics` locally so your agent can run it directly without doing a catalog lookup through `/gooseworks`.
 
 ### Other install methods
 
@@ -46,12 +49,17 @@ npx gooseworks install --claude    # Configure for Claude Code
 npx gooseworks install --cursor    # Configure for Cursor
 npx gooseworks install --codex     # Configure for Codex
 npx gooseworks install --all       # Configure all detected agents
+npx gooseworks install --claude --with goose-graphics
+npx gooseworks install --claude --with goose-graphics --with aeo
 ```
 
 **What it does:**
 - Runs `login` if you don't have credentials yet
 - Writes the GooseWorks skill to `~/.agents/skills/gooseworks/SKILL.md`
-- Creates symlinks in `~/.claude/skills/` (Claude) or writes MCP config (Cursor)
+- Downloads any `--with` standalone skills from `gooseworks-ai/goose-skills` into `~/.agents/skills/<slug>/`
+- Creates symlinks in `~/.claude/skills/` (Claude) and `~/.codex/skills/` (Codex), or writes MCP config (Cursor)
+
+`--with` is repeatable. Unknown slugs are reported clearly and do not block the main GooseWorks skill install.
 
 ### `login`
 
@@ -118,6 +126,8 @@ npx gooseworks update
 4. **Runs it** — downloads and executes the skill's Python scripts, which call GooseWorks APIs
 5. **You get results** — structured data returned directly in your coding agent
 
+Standalone skills installed with `--with` skip the catalog search step. After `npx gooseworks install --claude --with goose-graphics`, you can invoke `/goose-graphics ...` directly from Claude Code.
+
 ## What's Included
 
 100+ skills across these categories:
@@ -146,15 +156,26 @@ npx gooseworks update
 
 ```
 ~/.agents/skills/
-└── gooseworks/
-    └── SKILL.md          # GooseWorks skill — teaches your agent to use 100+ data tools
+├── gooseworks/
+│   └── SKILL.md          # GooseWorks skill — teaches your agent to use 100+ data tools
+└── goose-graphics/
+    └── SKILL.md          # Optional standalone skill installed with --with
 ```
 
 ### Claude Code Symlinks
 
 ```
 ~/.claude/skills/
-└── gooseworks → ~/.agents/skills/gooseworks
+├── gooseworks → ~/.agents/skills/gooseworks
+└── goose-graphics → ~/.agents/skills/goose-graphics
+```
+
+### Codex Symlinks
+
+```
+~/.codex/skills/
+├── gooseworks → ~/.agents/skills/gooseworks
+└── goose-graphics → ~/.agents/skills/goose-graphics
 ```
 
 ## Pricing

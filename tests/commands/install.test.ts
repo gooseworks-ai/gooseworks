@@ -25,6 +25,7 @@ jest.mock('../../src/auth/oauth-server', () => ({
 
 jest.mock('../../src/skills/installer', () => ({
   installMasterSkill: jest.fn(),
+  installStandaloneSkill: jest.fn(),
   removeAllSkills: jest.fn(),
   getInstalledSkills: jest.fn().mockReturnValue([]),
 }));
@@ -72,7 +73,7 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
-import { installMasterSkill } from '../../src/skills/installer';
+import { installMasterSkill, installStandaloneSkill } from '../../src/skills/installer';
 import { getMasterSkillContent } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
@@ -82,6 +83,7 @@ import * as loggerModule from '../../src/utils/logger';
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 const mockRunOAuthFlow = runOAuthFlow as jest.MockedFunction<typeof runOAuthFlow>;
 const mockInstallMasterSkill = installMasterSkill as jest.MockedFunction<typeof installMasterSkill>;
+const mockInstallStandaloneSkill = installStandaloneSkill as jest.MockedFunction<typeof installStandaloneSkill>;
 const mockGetMasterSkillContent = getMasterSkillContent as jest.MockedFunction<typeof getMasterSkillContent>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
@@ -239,5 +241,53 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--cursor', '--mcp']);
 
     expect(mockConfigureCursor).toHaveBeenCalledWith({ mcp: true });
+  });
+
+  it('installs repeatable standalone skills after the master skill', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    mockInstallStandaloneSkill.mockResolvedValue(undefined);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync([
+      'node',
+      'test',
+      '--claude',
+      '--with',
+      'goose-graphics',
+      '--with',
+      'goose-aeo',
+    ]);
+
+    expect(mockInstallMasterSkill).toHaveBeenCalledWith('# GooseWorks Master Skill');
+    expect(mockInstallStandaloneSkill).toHaveBeenCalledWith('goose-graphics', expect.any(Object));
+    expect(mockInstallStandaloneSkill).toHaveBeenCalledWith('goose-aeo', expect.any(Object));
+    expect(mockInstallStandaloneSkill).toHaveBeenCalledTimes(2);
+    expect(mockConfigureClaude).toHaveBeenCalled();
+  });
+
+  it('logs per-skill install errors and still configures the selected agent', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    mockInstallStandaloneSkill.mockRejectedValue(new Error("skill 'goose-grphics' not found. Available: goose-graphics"));
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--with', 'goose-grphics']);
+
+    expect(loggerModule.info).toHaveBeenCalledWith('Installing standalone skill goose-grphics...');
+    expect(loggerModule.error).toHaveBeenCalledWith(
+      "Could not install standalone skill goose-grphics: skill 'goose-grphics' not found. Available: goose-graphics"
+    );
+    expect(mockConfigureClaude).toHaveBeenCalled();
+  });
+
+  it('documents --with in command help', async () => {
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+
+    const help = installCommand.helpInformation();
+
+    expect(help).toContain('--with <skill-slug>');
+    expect(help).toContain('gooseworks install --claude --with goose-graphics');
   });
 });
