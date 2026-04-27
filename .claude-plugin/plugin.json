@@ -4,5 +4,7 @@
   "author": {
     "name": "GooseWorks",
     "email": "hello@gooseworks.ai"
-  }
+  },
+  "homepage": "https://gooseworks.ai",
+  "keywords": ["data", "scraping", "leads", "research", "gtm", "enrichment", "linkedin", "twitter", "reddit", "email"]
 }

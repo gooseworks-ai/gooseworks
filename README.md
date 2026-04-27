@@ -33,6 +33,12 @@ npx skills add gooseworks-ai/gooseworks
 
 # Via Claude Code plugins
 /plugin install gooseworks
+
+# Via OpenClaw ClawHub
+clawhub skill install gooseworks
+
+# Via Codex (OpenAI) — available once merged into openai/skills
+codex skills install gooseworks
 ```
 
 ## Commands
@@ -51,7 +57,7 @@ npx gooseworks install --all       # Configure all detected agents
 **What it does:**
 - Runs `login` if you don't have credentials yet
 - Writes the GooseWorks skill to `~/.agents/skills/gooseworks/SKILL.md`
-- Creates symlinks in `~/.claude/skills/` (Claude) or writes MCP config (Cursor)
+- Creates symlinks in `~/.claude/skills/` (Claude) or `~/.codex/skills/` (Codex), or writes MCP config (Cursor)
 
 ### `login`
 
