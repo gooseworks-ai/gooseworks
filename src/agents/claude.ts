@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { getSkillsBasePath } from '../skills/installer';
+import { isManagedGooseworksSkill } from '../skills/names';
 
 const CLAUDE_SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');
 
@@ -21,7 +22,7 @@ export function configureClaude(): number {
   try {
     const existing = fs.readdirSync(CLAUDE_SKILLS_DIR);
     for (const entry of existing) {
-      if (entry !== 'gooseworks' && !entry.startsWith('gooseworks-')) continue;
+      if (!isManagedGooseworksSkill(entry)) continue;
       const target = path.join(CLAUDE_SKILLS_DIR, entry);
       try {
         const stat = fs.lstatSync(target);
@@ -38,7 +39,7 @@ export function configureClaude(): number {
 
   // Symlink only what's currently in ~/.agents/skills/
   const skillDirs = fs.readdirSync(skillsBase)
-    .filter((entry) => entry === 'gooseworks' || entry.startsWith('gooseworks-'));
+    .filter(isManagedGooseworksSkill);
 
   let linked = 0;
   for (const skillDir of skillDirs) {
@@ -63,7 +64,7 @@ export function removeClaude(): void {
 
   const entries = fs.readdirSync(CLAUDE_SKILLS_DIR);
   for (const entry of entries) {
-    if (entry !== 'gooseworks' && !entry.startsWith('gooseworks-')) continue;
+    if (!isManagedGooseworksSkill(entry)) continue;
     const target = path.join(CLAUDE_SKILLS_DIR, entry);
     try {
       const stat = fs.lstatSync(target);
