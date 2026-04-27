@@ -15,6 +15,7 @@ import {
   getInstalledSkills,
   removeAllSkills,
   getSkillsBasePath,
+  SkillNotFoundError,
 } from '../../src/skills/installer';
 
 const SKILLS_BASE = '/mock-home/.agents/skills';
@@ -188,7 +189,7 @@ describe('skills/installer', () => {
       await expect(installStandaloneSkill('goose-graphics')).rejects.toThrow(/Try again in about/);
     });
 
-    it('throws a clear not-found error listing available skills', async () => {
+    it('throws SkillNotFoundError carrying the available skill list', async () => {
       global.fetch = jest.fn(async () => ({
         ok: true,
         json: async () => ({
@@ -199,9 +200,12 @@ describe('skills/installer', () => {
         }),
       })) as any;
 
-      await expect(installStandaloneSkill('goose-grphics')).rejects.toThrow(
-        "skill 'goose-grphics' not found. Available: goose-aeo, goose-graphics"
-      );
+      await expect(installStandaloneSkill('goose-grphics')).rejects.toBeInstanceOf(SkillNotFoundError);
+      await expect(installStandaloneSkill('goose-grphics')).rejects.toMatchObject({
+        name: 'SkillNotFoundError',
+        slug: 'goose-grphics',
+        available: ['goose-aeo', 'goose-graphics'],
+      });
     });
 
     it('reports progress while downloading standalone skill files', async () => {
