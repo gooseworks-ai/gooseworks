@@ -64,7 +64,8 @@ Examples:
         let lastReported = 0;
         await installStandaloneSkill(slug, {
           onProgress: ({ downloaded, total }) => {
-            if (downloaded === total || downloaded - lastReported >= 25) {
+            const step = Math.max(1, Math.min(5, Math.ceil(total / 10)));
+            if (downloaded === total || downloaded - lastReported >= step) {
               logger.info(`  Downloaded ${downloaded}/${total} files for ${slug}`);
               lastReported = downloaded;
             }

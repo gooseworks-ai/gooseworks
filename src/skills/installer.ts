@@ -6,6 +6,7 @@ import { isManagedGooseworksSkill } from './names';
 const SKILLS_BASE = path.join(os.homedir(), '.agents', 'skills');
 const GOOSE_SKILLS_TREE_URL = 'https://api.github.com/repos/gooseworks-ai/goose-skills/git/trees/main?recursive=1';
 const GOOSE_SKILLS_RAW_BASE = 'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main';
+const DOWNLOAD_CONCURRENCY = 6;
 
 interface GitHubTreeEntry {
   path: string;
@@ -52,17 +53,48 @@ export async function installStandaloneSkill(
   }
 
   const targetDir = path.join(SKILLS_BASE, slug);
-  fs.rmSync(targetDir, { recursive: true, force: true });
+  const stagingDir = path.join(SKILLS_BASE, `.${slug}.installing`);
+  fs.rmSync(stagingDir, { recursive: true, force: true });
 
-  let downloaded = 0;
-  for (const filePath of files) {
-    const relativePath = filePath.slice(prefix.length);
-    const targetPath = path.join(targetDir, relativePath);
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, await fetchRawSkillFile(filePath));
-    downloaded++;
-    options.onProgress?.({ downloaded, total: files.length });
+  let completed = 0;
+  try {
+    await withConcurrency(files, DOWNLOAD_CONCURRENCY, async (filePath) => {
+      const relativePath = filePath.slice(prefix.length);
+      const targetPath = path.join(stagingDir, relativePath);
+      const buffer = await fetchRawSkillFile(filePath);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, buffer);
+      completed++;
+      options.onProgress?.({ downloaded: completed, total: files.length });
+    });
+
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.renameSync(stagingDir, targetDir);
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
   }
+}
+
+async function withConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let cursor = 0;
+  let failure: unknown;
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
+    while (cursor < items.length && failure === undefined) {
+      const idx = cursor++;
+      try {
+        await worker(items[idx]);
+      } catch (err) {
+        if (failure === undefined) failure = err;
+      }
+    }
+  });
+  await Promise.all(runners);
+  if (failure !== undefined) throw failure;
 }
 
 function findSkillFiles(tree: GitHubTreeEntry[], slug: string): { prefix: string; files: string[] } {
@@ -108,11 +140,24 @@ export function removeAllSkills(): void {
 async function fetchGooseSkillsTree(): Promise<GitHubTreeEntry[]> {
   const response = await fetch(GOOSE_SKILLS_TREE_URL);
   if (!response.ok) {
+    if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
+      throw new Error(
+        `GitHub API rate-limited this IP.${formatRateLimitWait(response.headers.get('x-ratelimit-reset'))} Set GITHUB_TOKEN to raise the limit.`
+      );
+    }
     throw new Error(`could not list standalone skills from goose-skills (${response.status})`);
   }
 
   const data = await response.json() as GitHubTreeResponse;
   return data.tree || [];
+}
+
+function formatRateLimitWait(resetHeader: string | null): string {
+  if (!resetHeader) return '';
+  const resetMs = Number(resetHeader) * 1000;
+  if (!Number.isFinite(resetMs)) return '';
+  const minutes = Math.max(1, Math.ceil((resetMs - Date.now()) / 60_000));
+  return ` Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
 }
 
 async function fetchRawSkillFile(filePath: string): Promise<Buffer> {

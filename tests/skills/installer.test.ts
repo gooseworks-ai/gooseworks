@@ -85,7 +85,7 @@ describe('skills/installer', () => {
   });
 
   describe('installStandaloneSkill', () => {
-    it('downloads every file for a standalone skill from goose-skills', async () => {
+    it('downloads every file into a staging dir then atomically renames it into place', async () => {
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
         if (value.includes('/git/trees/main?recursive=1')) {
@@ -109,22 +109,83 @@ describe('skills/installer', () => {
 
       await installStandaloneSkill('goose-graphics');
 
+      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+        `${SKILLS_BASE}/.goose-graphics.installing/SKILL.md`,
+        expect.any(Buffer)
+      );
+      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+        `${SKILLS_BASE}/.goose-graphics.installing/scripts/render.py`,
+        expect.any(Buffer)
+      );
+      expect(mockFs.mkdirSync).toHaveBeenCalledWith(
+        `${SKILLS_BASE}/.goose-graphics.installing/scripts`,
+        { recursive: true }
+      );
       expect(mockFs.rmSync).toHaveBeenCalledWith(
         `${SKILLS_BASE}/goose-graphics`,
         { recursive: true, force: true }
       );
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/goose-graphics/scripts`,
-        { recursive: true }
+      expect(mockFs.renameSync).toHaveBeenCalledWith(
+        `${SKILLS_BASE}/.goose-graphics.installing`,
+        `${SKILLS_BASE}/goose-graphics`
       );
-      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/goose-graphics/SKILL.md`,
-        expect.any(Buffer)
+    });
+
+    it('cleans up the staging dir and leaves the existing target untouched on download failure', async () => {
+      let rawCalls = 0;
+      global.fetch = jest.fn(async (url: string | URL | Request) => {
+        const value = String(url);
+        if (value.includes('/git/trees/main?recursive=1')) {
+          return {
+            ok: true,
+            json: async () => ({
+              tree: [
+                { path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' },
+                { path: 'skills/composites/goose-graphics/scripts/render.py', type: 'blob' },
+              ],
+            }),
+          } as any;
+        }
+        rawCalls++;
+        if (rawCalls === 2) {
+          return { ok: false, status: 500 } as any;
+        }
+        return {
+          ok: true,
+          arrayBuffer: async () => Buffer.from('x', 'utf-8').buffer,
+        } as any;
+      }) as any;
+
+      await expect(installStandaloneSkill('goose-graphics')).rejects.toThrow(/could not download/);
+
+      expect(mockFs.rmSync).toHaveBeenCalledWith(
+        `${SKILLS_BASE}/.goose-graphics.installing`,
+        { recursive: true, force: true }
       );
-      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/goose-graphics/scripts/render.py`,
-        expect.any(Buffer)
+      expect(mockFs.renameSync).not.toHaveBeenCalled();
+      expect(mockFs.rmSync).not.toHaveBeenCalledWith(
+        `${SKILLS_BASE}/goose-graphics`,
+        expect.anything()
       );
+    });
+
+    it('surfaces a friendly error when GitHub rate-limits the tree request', async () => {
+      const resetEpoch = Math.floor(Date.now() / 1000) + 5 * 60;
+      global.fetch = jest.fn(async () => ({
+        ok: false,
+        status: 403,
+        headers: {
+          get: (name: string) => {
+            const lower = name.toLowerCase();
+            if (lower === 'x-ratelimit-remaining') return '0';
+            if (lower === 'x-ratelimit-reset') return String(resetEpoch);
+            return null;
+          },
+        },
+      })) as any;
+
+      await expect(installStandaloneSkill('goose-graphics')).rejects.toThrow(/rate-limited/);
+      await expect(installStandaloneSkill('goose-graphics')).rejects.toThrow(/Try again in about/);
     });
 
     it('throws a clear not-found error listing available skills', async () => {
