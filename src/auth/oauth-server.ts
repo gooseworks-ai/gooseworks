@@ -49,13 +49,6 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
           return;
         }
 
-        // Send response with Connection: close so browser doesn't keep-alive
-        res.writeHead(200, {
-          'Content-Type': 'text/html',
-          'Connection': 'close',
-        });
-        res.end('<html><body><h2>GooseWorks CLI authenticated!</h2><p>You can close this window and return to your terminal.</p></body></html>');
-
         const creds: Credentials = {
           api_key: token,
           email,
@@ -71,20 +64,38 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
         process.removeListener('SIGINT', cleanup);
         process.removeListener('SIGTERM', cleanup);
 
-        // Force-close all open sockets so the server actually shuts down
-        server.close(() => {
-          resolve({
-            api_key: token,
-            email,
-            agent_id: agentId,
-            ...(scopeType ? { scope_type: scopeType } : {}),
-            ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
-            ...(mcpServerUrl ? { mcp_server_url: mcpServerUrl } : {}),
-          });
+        // Plain 200 + HTML — no Connection: close, no synchronous socket
+        // teardown. The previous code closed the server and destroyed
+        // sockets in the same tick as `res.end()`, racing the response
+        // flush; the browser ended up rendering ERR_CONNECTION_REFUSED
+        // instead of the success page.
+        //
+        // Now we resolve the OAuth promise immediately so the CLI can
+        // continue with the rest of `install`, and schedule a delayed
+        // teardown that gives the browser a few seconds to render and
+        // ignore favicon failures. The CLI process exits naturally once
+        // its remaining steps complete (server.close + socket.destroy
+        // make sure the listening port is released before that).
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(
+          '<html><body><h2>GooseWorks CLI authenticated!</h2><p>You can close this window and return to your terminal.</p></body></html>',
+        );
+
+        resolve({
+          api_key: token,
+          email,
+          agent_id: agentId,
+          ...(scopeType ? { scope_type: scopeType } : {}),
+          ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
+          ...(mcpServerUrl ? { mcp_server_url: mcpServerUrl } : {}),
         });
-        for (const socket of sockets) {
-          socket.destroy();
-        }
+
+        setTimeout(() => {
+          server.close();
+          for (const socket of sockets) {
+            socket.destroy();
+          }
+        }, 5000);
       } else {
         res.writeHead(404);
         res.end('Not found');
