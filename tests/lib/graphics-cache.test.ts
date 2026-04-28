@@ -55,4 +55,33 @@ describe('graphics-cache', () => {
     expect(getCacheRoot()).toBe(tmpDir);
     expect(fs.existsSync(path.join(tmpDir, 'styles', 'x.md'))).toBe(true);
   });
+
+  it('refuses to write outside the cache root for slugs with path separators', () => {
+    const { readCache, writeCache } = load();
+    // Path-traversal attempt — must not write to ../escape or anywhere
+    // outside `tmpDir`. writeCache silently no-ops on invalid slugs.
+    writeCache('styles', '../escape', 'md', 'pwn', null);
+    writeCache('styles', '..', 'md', 'pwn', null);
+    writeCache('styles', 'a/b', 'md', 'pwn', null);
+
+    // Nothing should appear anywhere outside tmpDir.
+    expect(fs.existsSync(path.join(path.dirname(tmpDir), 'escape'))).toBe(false);
+    expect(fs.existsSync(path.join(path.dirname(tmpDir), 'escape.md'))).toBe(false);
+
+    // And reads return null instead of leaking.
+    expect(readCache('styles', '../escape', 'md')).toBeNull();
+    expect(readCache('styles', 'a/b', 'md')).toBeNull();
+  });
+
+  it('survives a torn write by writing via temp+rename', () => {
+    const { readCache, writeCache } = load();
+    writeCache('styles', 'a', 'md', 'first', 'etag-1');
+    writeCache('styles', 'a', 'md', 'second', 'etag-2');
+    expect(readCache('styles', 'a', 'md')).toEqual({ body: 'second', etag: 'etag-2' });
+
+    // No leftover .tmp.* siblings.
+    const dir = path.join(tmpDir, 'styles');
+    const stragglers = fs.readdirSync(dir).filter((f) => f.includes('.tmp.'));
+    expect(stragglers).toEqual([]);
+  });
 });

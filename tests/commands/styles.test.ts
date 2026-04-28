@@ -183,6 +183,43 @@ describe('styles command', () => {
     });
   });
 
+  describe('get (json)', () => {
+    it('--json sends If-None-Match on the JSON record and falls back to cache on 304', async () => {
+      let calls = 0;
+      let lastIfNoneMatch: string | undefined;
+      server = await startServer((req, res) => {
+        calls++;
+        lastIfNoneMatch = req.headers['if-none-match'] as string | undefined;
+        if (calls === 1) {
+          res.writeHead(200, { 'Content-Type': 'application/json', ETag: 'W/"j1"' });
+          res.end(
+            JSON.stringify({
+              status: 'success',
+              data: { id: 's1', slug: 'desert-sunset', name: 'Desert Sunset' },
+            })
+          );
+          return;
+        }
+        if (lastIfNoneMatch === 'W/"j1"') {
+          res.writeHead(304);
+          res.end();
+        } else {
+          res.writeHead(500);
+          res.end();
+        }
+      });
+      mockGetCredentials.mockReturnValue(baseCreds(server.url));
+
+      await stylesCommand.parseAsync(['node', 'gw', 'get', 'desert-sunset', '--json']);
+      expect(JSON.parse(stdoutText().trim())).toMatchObject({ slug: 'desert-sunset' });
+
+      stdoutSpy.mockClear();
+      await stylesCommand.parseAsync(['node', 'gw', 'get', 'desert-sunset', '--json']);
+      expect(lastIfNoneMatch).toBe('W/"j1"');
+      expect(JSON.parse(stdoutText().trim())).toMatchObject({ slug: 'desert-sunset' });
+    });
+  });
+
   describe('publish', () => {
     let dir: string;
     beforeEach(() => {
@@ -260,6 +297,33 @@ describe('styles command', () => {
       expect(firstSlug).toBe('desert-sunset');
       expect(secondSlug).toBe('desert-sunset-2');
       expect(stdoutText()).toContain('Published style: desert-sunset-2');
+    });
+
+    it('rejects an invalid server-suggested slug locally without retrying', async () => {
+      let calls = 0;
+      server = await startServer(async (req, res) => {
+        calls++;
+        await readBody(req);
+        // Always return a 409 with a slug suggestion that fails the
+        // client-side slug grammar — the retry must catch it locally.
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'error',
+            error: 'slug_taken',
+            suggested_slug: 'Bad Slug',
+          })
+        );
+      });
+      mockGetCredentials.mockReturnValue(baseCreds(server.url));
+
+      await expect(
+        stylesCommand.parseAsync(['node', 'gw', 'publish', dir, '--yes'])
+      ).rejects.toThrow(/process\.exit called: 2/);
+      // Exactly one HTTP call: the second upload should have been blocked
+      // locally by the re-validation step.
+      expect(calls).toBe(1);
+      expect(stderrText()).toContain('Manifest validation failed');
     });
 
     it('exits with 2 on client-side validation failure (bad manifest)', async () => {

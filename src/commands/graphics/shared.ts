@@ -9,6 +9,7 @@
 
 import * as readline from 'readline';
 import { getCredentials, type Credentials } from '../../auth/credentials';
+import { API_BASE } from '../../config';
 import { ApiError, NetworkError } from '../../lib/graphics-api';
 import * as logger from '../../utils/logger';
 
@@ -27,6 +28,39 @@ export function requireCredentials(): Credentials {
 
 export function getOptionalCredentials(): Credentials | null {
   return getCredentials();
+}
+
+/**
+ * Build the api-client options for read-only commands. Falls back to the
+ * compiled-in API_BASE when the user is not logged in, so anonymous reads
+ * still work.
+ */
+export function clientOpts(): { apiBase: string; apiKey: string | null } {
+  const creds = getOptionalCredentials();
+  return {
+    apiBase: creds?.api_base ?? API_BASE,
+    apiKey: creds?.api_key ?? null,
+  };
+}
+
+/** Build api-client options for commands that require auth (publish/update/delete). */
+export function authedClientOpts(): { apiBase: string; apiKey: string } {
+  const creds = requireCredentials();
+  return { apiBase: creds.api_base, apiKey: creds.api_key };
+}
+
+/**
+ * Parse a non-negative integer command-line option. Exits with the user-error
+ * code if the value is malformed.
+ */
+export function parseIntOpt(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number.parseInt(value, 10);
+  if (!Number.isInteger(n) || n < 0) {
+    process.stderr.write(`--${name} must be a non-negative integer\n`);
+    process.exit(EXIT_USER_ERROR);
+  }
+  return n;
 }
 
 /**

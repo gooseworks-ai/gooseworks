@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { API_BASE, FRONTEND_URL } from '../config';
+import { FRONTEND_URL } from '../config';
 import {
   FORMAT_MANIFEST_FILENAME,
   validateFormatManifest,
@@ -16,12 +16,13 @@ import {
 } from '../lib/graphics-api';
 import {
   EXIT_USER_ERROR,
+  authedClientOpts,
+  clientOpts,
+  parseIntOpt,
   promptYesNo,
   renderTable,
   reportApiErrorAndExit,
-  requireCredentials,
   truncate,
-  getOptionalCredentials,
 } from './graphics/shared';
 import { runPublishFlow, runUpdateFlow } from './graphics/publish-flow';
 import { runGetFlow } from './graphics/get-flow';
@@ -32,29 +33,6 @@ interface ListOptions {
   json?: boolean;
   limit?: string;
   offset?: string;
-}
-
-function parseIntOpt(value: string | undefined, name: string): number | undefined {
-  if (value === undefined) return undefined;
-  const n = Number.parseInt(value, 10);
-  if (!Number.isInteger(n) || n < 0) {
-    process.stderr.write(`--${name} must be a non-negative integer\n`);
-    process.exit(EXIT_USER_ERROR);
-  }
-  return n;
-}
-
-function clientOpts() {
-  const creds = getOptionalCredentials();
-  return {
-    apiBase: creds?.api_base ?? API_BASE,
-    apiKey: creds?.api_key ?? null,
-  };
-}
-
-function authedClientOpts() {
-  const creds = requireCredentials();
-  return { apiBase: creds.api_base, apiKey: creds.api_key };
 }
 
 function renderListTable(rows: ListEnvelope<GraphicFormatSummary>['data']): string {
@@ -142,7 +120,7 @@ const getCmd = new Command('get')
       {
         resource: 'formats',
         fetchMarkdown: (s, etag) => getFormatSpecMd(opt, s, etag),
-        fetchRecord: (s) => getFormatRecord(opt, s),
+        fetchRecord: (s, etag) => getFormatRecord(opt, s, etag),
       },
       slug,
       {

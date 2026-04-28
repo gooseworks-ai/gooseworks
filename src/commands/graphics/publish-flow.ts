@@ -6,8 +6,9 @@
 
 import * as path from 'path';
 import {
-  ManifestParseError,
+  ManifestEscapingPathError,
   ManifestMissingFileError,
+  ManifestParseError,
   readManifestFile,
   resolveExampleFiles,
   type ValidationResult,
@@ -106,11 +107,7 @@ async function runWriteFlow(
     manifest.slug = opts.slug;
   }
 
-  const validation = cfg.validate(manifest);
-  if (!validation.ok) {
-    process.stderr.write(`Manifest validation failed:\n${formatValidationErrors(validation.errors)}\n`);
-    process.exit(EXIT_USER_ERROR);
-  }
+  validateOrExit(cfg, manifest);
 
   const examples = (manifest.examples as ReadonlyArray<{ file: string }> | undefined) ?? [];
   let files: ResolvedExampleFile[];
@@ -123,77 +120,111 @@ async function runWriteFlow(
       );
       process.exit(EXIT_USER_ERROR);
     }
+    if (err instanceof ManifestEscapingPathError) {
+      process.stderr.write(
+        `Manifest references file '${err.ref}' which escapes the manifest directory ${dir}.\n`
+      );
+      process.exit(EXIT_USER_ERROR);
+    }
     throw err;
   }
 
-  let result: WriteResult;
-  try {
-    result = await cfg.upload(manifest, files);
-  } catch (err) {
-    if (err instanceof ApiError) {
-      const body = (err.body || {}) as ErrorBody;
-      if (err.status === 400 && body.error === 'validation_failed') {
-        const lines = formatServerValidationErrors(body);
-        process.stderr.write(
-          `Server validation failed${lines ? `:\n${lines}` : ''}\n`
-        );
-        process.exit(EXIT_USER_ERROR);
-      }
-      if (err.status === 400 && body.error === 'missing_file') {
-        process.stderr.write(
-          `Server says file '${body.file ?? '?'}' is missing from the upload.\n`
-        );
-        process.exit(EXIT_USER_ERROR);
-      }
-      if (err.status === 400 && body.error === 'manifest_parse') {
-        process.stderr.write(
-          `Server could not parse manifest: ${body.message ?? 'unknown'}\n`
-        );
-        process.exit(EXIT_USER_ERROR);
-      }
-      if (err.status === 413) {
-        process.stderr.write(
-          `File too large: ${body.file ?? 'one of the uploaded files'} (max 10 MB).\n`
-        );
-        process.exit(EXIT_USER_ERROR);
-      }
-      if (err.status === 409 && body.error === 'slug_taken' && allowSlugRetry) {
-        const suggested = body.suggested_slug;
-        if (!suggested) {
-          process.stderr.write(`Slug taken and the server didn't suggest an alternative.\n`);
-          process.exit(EXIT_USER_ERROR);
-        }
-        const accept =
-          opts.yes ||
-          (await promptYesNo(
-            `Slug '${manifest.slug ?? '?'}' is taken. Use '${suggested}' instead?`,
-            true
-          ));
-        if (!accept) {
-          process.stderr.write(`Aborted: slug collision unresolved.\n`);
-          process.exit(EXIT_USER_ERROR);
-        }
-        manifest.slug = suggested;
-        try {
-          result = await cfg.upload(manifest, files);
-        } catch (retryErr) {
-          reportApiErrorAndExit(retryErr);
-        }
-      } else if (err.status === 403) {
-        process.stderr.write(
-          `You don't own this ${cfg.label}. Only its author can update or delete it.\n`
-        );
-        process.exit(EXIT_USER_ERROR);
-      } else {
-        reportApiErrorAndExit(err);
-      }
-    } else {
-      reportApiErrorAndExit(err);
-    }
-  }
-
+  const result = await uploadOrExit(cfg, opts, manifest, files, allowSlugRetry);
   process.stdout.write(
-    `${cfg.label === 'style' ? 'Published style' : 'Published format'}: ${result!.slug}\n` +
-      `${cfg.hubUrl(result!.slug)}\n`
+    `${cfg.label === 'style' ? 'Published style' : 'Published format'}: ${result.slug}\n` +
+      `${cfg.hubUrl(result.slug)}\n`
   );
+}
+
+function validateOrExit(cfg: PublishConfig, manifest: unknown): void {
+  const validation = cfg.validate(manifest);
+  if (!validation.ok) {
+    process.stderr.write(
+      `Manifest validation failed:\n${formatValidationErrors(validation.errors)}\n`
+    );
+    process.exit(EXIT_USER_ERROR);
+  }
+}
+
+async function uploadOrExit(
+  cfg: PublishConfig,
+  opts: PublishOptions,
+  manifest: Record<string, unknown>,
+  files: ResolvedExampleFile[],
+  allowSlugRetry: boolean
+): Promise<WriteResult> {
+  try {
+    return await cfg.upload(manifest, files);
+  } catch (err) {
+    if (!(err instanceof ApiError)) reportApiErrorAndExit(err);
+
+    const body = (err.body || {}) as ErrorBody;
+    if (err.status === 400 && body.error === 'validation_failed') {
+      const lines = formatServerValidationErrors(body);
+      process.stderr.write(`Server validation failed${lines ? `:\n${lines}` : ''}\n`);
+      process.exit(EXIT_USER_ERROR);
+    }
+    if (err.status === 400 && body.error === 'missing_file') {
+      process.stderr.write(
+        `Server says file '${body.file ?? '?'}' is missing from the upload.\n`
+      );
+      process.exit(EXIT_USER_ERROR);
+    }
+    if (err.status === 400 && body.error === 'manifest_parse') {
+      process.stderr.write(
+        `Server could not parse manifest: ${body.message ?? 'unknown'}\n`
+      );
+      process.exit(EXIT_USER_ERROR);
+    }
+    if (err.status === 413) {
+      process.stderr.write(
+        `File too large: ${body.file ?? 'one of the uploaded files'} (max 10 MB).\n`
+      );
+      process.exit(EXIT_USER_ERROR);
+    }
+    if (err.status === 403) {
+      process.stderr.write(
+        `You don't own this ${cfg.label}. Only its author can update or delete it.\n`
+      );
+      process.exit(EXIT_USER_ERROR);
+    }
+    if (err.status === 409 && body.error === 'slug_taken' && allowSlugRetry) {
+      return await retryWithSuggestedSlug(cfg, opts, manifest, files, body);
+    }
+    reportApiErrorAndExit(err);
+  }
+}
+
+async function retryWithSuggestedSlug(
+  cfg: PublishConfig,
+  opts: PublishOptions,
+  manifest: Record<string, unknown>,
+  files: ResolvedExampleFile[],
+  body: ErrorBody
+): Promise<WriteResult> {
+  const suggested = body.suggested_slug;
+  if (!suggested) {
+    process.stderr.write(`Slug taken and the server didn't suggest an alternative.\n`);
+    process.exit(EXIT_USER_ERROR);
+  }
+  const accept =
+    opts.yes ||
+    (await promptYesNo(
+      `Slug '${manifest.slug ?? '?'}' is taken. Use '${suggested}' instead?`,
+      true
+    ));
+  if (!accept) {
+    process.stderr.write(`Aborted: slug collision unresolved.\n`);
+    process.exit(EXIT_USER_ERROR);
+  }
+  manifest.slug = suggested;
+  // Re-run client validation: the server's suggestion could in principle
+  // fail our slug grammar, and shipping a broken value to the server
+  // produces an opaque second error rather than a clean local message.
+  validateOrExit(cfg, manifest);
+  try {
+    return await cfg.upload(manifest, files);
+  } catch (retryErr) {
+    reportApiErrorAndExit(retryErr);
+  }
 }

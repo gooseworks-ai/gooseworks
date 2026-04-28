@@ -68,8 +68,19 @@ export interface ValidationResult {
   errors: string[];
 }
 
-const SLUG_RE = /^[a-z0-9-]+$/;
+export const SLUG_RE = /^[a-z0-9-]+$/;
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * Throws if the string does not match the public slug grammar. Use before
+ * interpolating any externally-sourced slug (CLI arg, server response) into
+ * a filesystem path.
+ */
+export function assertSafeSlug(slug: string, source = 'slug'): void {
+  if (typeof slug !== 'string' || !SLUG_RE.test(slug)) {
+    throw new Error(`${source} '${slug}' is not a valid slug (must match /^[a-z0-9-]+$/)`);
+  }
+}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -263,6 +274,13 @@ export class ManifestMissingFileError extends Error {
   }
 }
 
+export class ManifestEscapingPathError extends Error {
+  constructor(public readonly ref: string) {
+    super(`manifest references file '${ref}' which resolves outside the manifest directory`);
+    this.name = 'ManifestEscapingPathError';
+  }
+}
+
 export function readManifestFile(filePath: string): unknown {
   let raw: string;
   try {
@@ -287,7 +305,11 @@ export function readManifestFile(filePath: string): unknown {
 export interface ResolvedExampleFile {
   /** The relative path as referenced in the manifest, e.g. "./poster.png". */
   manifestRef: string;
-  /** Field name to use in multipart upload (manifestRef with leading "./" stripped). */
+  /**
+   * Field name to use in multipart upload. Always a forward-slash relative
+   * path within the manifest directory — no `..`, no leading slash, no
+   * absolute paths. Safe to send to the server as a multipart field name.
+   */
   fieldName: string;
   /** Absolute path on disk. */
   absolutePath: string;
@@ -295,19 +317,28 @@ export interface ResolvedExampleFile {
 
 /**
  * Resolve example file references against the publish directory. Throws
- * ManifestMissingFileError on the first missing file.
+ * ManifestMissingFileError if a referenced file doesn't exist, and
+ * ManifestEscapingPathError if it resolves outside `manifestDir`.
  */
 export function resolveExampleFiles(
   manifestDir: string,
   examples: ReadonlyArray<{ file: string }>
 ): ResolvedExampleFile[] {
+  const root = path.resolve(manifestDir);
   return examples.map((ex) => {
     const ref = ex.file;
-    const fieldName = ref.replace(/^\.\//, '');
-    const absolutePath = path.resolve(manifestDir, ref);
+    const absolutePath = path.resolve(root, ref);
+    const rel = path.relative(root, absolutePath);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new ManifestEscapingPathError(ref);
+    }
     if (!fs.existsSync(absolutePath)) {
       throw new ManifestMissingFileError(ref);
     }
+    // Normalize to forward slashes for the multipart field name so the
+    // wire format is stable across platforms. `rel` is already constrained
+    // to live under `manifestDir`, so it cannot contain `..`.
+    const fieldName = rel.split(path.sep).join('/');
     return { manifestRef: ref, fieldName, absolutePath };
   });
 }

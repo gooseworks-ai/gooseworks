@@ -180,20 +180,59 @@ export interface ItemEnvelope<T> {
   data: T;
 }
 
+/**
+ * ETag-aware response for JSON record fetches. On 304, `envelope` is null
+ * and the caller should fall back to its cached body.
+ */
+export interface RecordResponse<T> {
+  status: 200 | 304;
+  envelope: ItemEnvelope<T> | null;
+  etag: string | null;
+}
+
+async function fetchRecord<T>(
+  url: string,
+  apiKey: string | null | undefined,
+  etag: string | null
+): Promise<RecordResponse<T>> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...authHeaders(apiKey),
+  };
+  if (etag) headers['If-None-Match'] = etag;
+
+  const res = await safeFetch(url, { method: 'GET', headers });
+  if (res.status === 304) {
+    return { status: 304, envelope: null, etag };
+  }
+  if (!res.ok) throw await asApiError(res, `request failed (${res.status})`);
+  const body = (await readJsonSafe(res)) as { status?: string; data?: unknown };
+  if (!body || body.status !== 'success') {
+    throw new ApiError(res.status, null, 'unexpected response shape', body);
+  }
+  return {
+    status: 200,
+    envelope: body as ItemEnvelope<T>,
+    etag: res.headers.get('etag'),
+  };
+}
+
 export async function getStyleRecord(
   opts: ApiClientOptions,
-  slug: string
-): Promise<ItemEnvelope<GraphicStyleSummary & { examples?: unknown[] }>> {
+  slug: string,
+  etag: string | null = null
+): Promise<RecordResponse<GraphicStyleSummary & { examples?: unknown[] }>> {
   const url = `${opts.apiBase}/api/graphics/styles/${encodeURIComponent(slug)}`;
-  return getJsonEnvelope(url, opts.apiKey);
+  return fetchRecord(url, opts.apiKey, etag);
 }
 
 export async function getFormatRecord(
   opts: ApiClientOptions,
-  slug: string
-): Promise<ItemEnvelope<GraphicFormatSummary & { examples?: unknown[] }>> {
+  slug: string,
+  etag: string | null = null
+): Promise<RecordResponse<GraphicFormatSummary & { examples?: unknown[] }>> {
   const url = `${opts.apiBase}/api/graphics/formats/${encodeURIComponent(slug)}`;
-  return getJsonEnvelope(url, opts.apiKey);
+  return fetchRecord(url, opts.apiKey, etag);
 }
 
 export interface MarkdownResponse {

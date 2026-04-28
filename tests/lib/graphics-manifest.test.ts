@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  ManifestEscapingPathError,
   ManifestMissingFileError,
   ManifestParseError,
   readManifestFile,
@@ -213,5 +214,34 @@ describe('resolveExampleFiles', () => {
     expect(() =>
       resolveExampleFiles(tmpDir, [{ file: './nope.png' }])
     ).toThrow(ManifestMissingFileError);
+  });
+
+  it('throws ManifestEscapingPathError when ref escapes via ..', () => {
+    // Place a real file outside tmpDir so we know the only thing stopping
+    // the escape is our path check, not a missing file.
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-outside-'));
+    try {
+      fs.writeFileSync(path.join(outside, 'secret.txt'), 'shh');
+      expect(() =>
+        resolveExampleFiles(tmpDir, [
+          { file: path.join('..', path.basename(outside), 'secret.txt') },
+        ])
+      ).toThrow(ManifestEscapingPathError);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('throws ManifestEscapingPathError on absolute paths', () => {
+    expect(() =>
+      resolveExampleFiles(tmpDir, [{ file: '/etc/passwd' }])
+    ).toThrow(ManifestEscapingPathError);
+  });
+
+  it('returns a forward-slash relative fieldName for nested files', () => {
+    fs.mkdirSync(path.join(tmpDir, 'sub'));
+    fs.writeFileSync(path.join(tmpDir, 'sub', 'poster.png'), 'fake');
+    const resolved = resolveExampleFiles(tmpDir, [{ file: './sub/poster.png' }]);
+    expect(resolved[0].fieldName).toBe('sub/poster.png');
   });
 });

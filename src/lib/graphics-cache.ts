@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { SLUG_RE } from './graphics-manifest';
 
 export type Resource = 'styles' | 'formats';
 export type Variant = 'md' | 'json';
@@ -26,7 +27,15 @@ function getCacheRootInternal(): string {
   );
 }
 
-function pathFor(resource: Resource, slug: string, variant: Variant): string {
+/**
+ * Returns the cache file path for a slug, or null if the slug fails the
+ * public grammar. Returning null instead of throwing means a malformed user
+ * arg falls through to the network layer (which will reject it with a
+ * normal 404), rather than crashing the CLI before any request is made.
+ * The check also blocks path traversal via slugs sourced from server JSON.
+ */
+function pathFor(resource: Resource, slug: string, variant: Variant): string | null {
+  if (!SLUG_RE.test(slug)) return null;
   const ext = variant === 'md' ? '.md' : '.json';
   return path.join(getCacheRootInternal(), resource, `${slug}${ext}`);
 }
@@ -42,6 +51,7 @@ export function readCache(
   variant: Variant
 ): CacheEntry | null {
   const bodyPath = pathFor(resource, slug, variant);
+  if (!bodyPath) return null;
   if (!fs.existsSync(bodyPath)) return null;
   try {
     const body = fs.readFileSync(bodyPath, 'utf-8');
@@ -55,6 +65,13 @@ export function readCache(
   }
 }
 
+/**
+ * Atomically writes the cache body and (optionally) etag. Each file is
+ * written via a PID-suffixed temp file then renamed, so a crash mid-write
+ * never leaves a torn body file readable. Concurrent writers can still
+ * race on body-vs-etag consistency, but that race is self-healing on the
+ * next fetch (mismatched etag → 200 with fresh body → both rewritten).
+ */
 export function writeCache(
   resource: Resource,
   slug: string,
@@ -63,11 +80,12 @@ export function writeCache(
   etag: string | null
 ): void {
   const bodyPath = pathFor(resource, slug, variant);
+  if (!bodyPath) return;
   fs.mkdirSync(path.dirname(bodyPath), { recursive: true });
-  fs.writeFileSync(bodyPath, body, 'utf-8');
+  atomicWrite(bodyPath, body);
   const etagPath = `${bodyPath}.etag`;
   if (etag) {
-    fs.writeFileSync(etagPath, etag, 'utf-8');
+    atomicWrite(etagPath, etag);
   } else if (fs.existsSync(etagPath)) {
     try {
       fs.unlinkSync(etagPath);
@@ -75,6 +93,12 @@ export function writeCache(
       // best effort
     }
   }
+}
+
+function atomicWrite(target: string, contents: string): void {
+  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, contents, 'utf-8');
+  fs.renameSync(tmp, target);
 }
 
 /** Test seam — exposes the resolved cache root for unit tests. */
