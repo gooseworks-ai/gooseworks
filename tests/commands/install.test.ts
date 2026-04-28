@@ -23,12 +23,16 @@ jest.mock('../../src/auth/oauth-server', () => ({
   runOAuthFlow: jest.fn(),
 }));
 
-jest.mock('../../src/skills/installer', () => ({
-  installMasterSkill: jest.fn(),
-  installStandaloneSkill: jest.fn(),
-  removeAllSkills: jest.fn(),
-  getInstalledSkills: jest.fn().mockReturnValue([]),
-}));
+jest.mock('../../src/skills/installer', () => {
+  const actual = jest.requireActual('../../src/skills/installer');
+  return {
+    installMasterSkill: jest.fn(),
+    installStandaloneSkill: jest.fn(),
+    removeAllSkills: jest.fn(),
+    getInstalledSkills: jest.fn().mockReturnValue([]),
+    SkillNotFoundError: actual.SkillNotFoundError,
+  };
+});
 
 jest.mock('../../src/skills/master-skill', () => ({
   getMasterSkillContent: jest.fn().mockReturnValue('# GooseWorks Master Skill'),
@@ -67,13 +71,14 @@ jest.mock('../../src/utils/logger', () => ({
   error: jest.fn(),
   warn: jest.fn(),
   example: jest.fn(),
+  bullet: jest.fn(),
   spinner: jest.fn().mockReturnValue({ stop: jest.fn(), succeed: jest.fn(), fail: jest.fn() }),
   done: jest.fn(),
 }));
 
 import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
-import { installMasterSkill, installStandaloneSkill } from '../../src/skills/installer';
+import { installMasterSkill, installStandaloneSkill, SkillNotFoundError } from '../../src/skills/installer';
 import { getMasterSkillContent } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
@@ -266,9 +271,11 @@ describe('install command', () => {
     expect(mockConfigureClaude).toHaveBeenCalled();
   });
 
-  it('logs per-skill install errors and still configures the selected agent', async () => {
+  it('renders SkillNotFoundError as a bulleted list and still configures the selected agent', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
-    mockInstallStandaloneSkill.mockRejectedValue(new Error("skill 'goose-grphics' not found. Available: goose-graphics"));
+    mockInstallStandaloneSkill.mockRejectedValue(
+      new SkillNotFoundError('goose-grphics', ['goose-aeo', 'goose-graphics'])
+    );
 
     const { createInstallCommand } = await import("../../src/commands/install");
     const installCommand = createInstallCommand();
@@ -276,8 +283,26 @@ describe('install command', () => {
 
     expect(loggerModule.info).toHaveBeenCalledWith('Installing standalone skill goose-grphics...');
     expect(loggerModule.error).toHaveBeenCalledWith(
-      "Could not install standalone skill goose-grphics: skill 'goose-grphics' not found. Available: goose-graphics"
+      'Could not install standalone skill goose-grphics: skill not found.'
     );
+    expect(loggerModule.info).toHaveBeenCalledWith('Available skills (2):');
+    expect(loggerModule.bullet).toHaveBeenCalledWith('goose-aeo');
+    expect(loggerModule.bullet).toHaveBeenCalledWith('goose-graphics');
+    expect(mockConfigureClaude).toHaveBeenCalled();
+  });
+
+  it('logs non-not-found install errors as a single line', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    mockInstallStandaloneSkill.mockRejectedValue(new Error('network blew up'));
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--with', 'goose-graphics']);
+
+    expect(loggerModule.error).toHaveBeenCalledWith(
+      'Could not install standalone skill goose-graphics: network blew up'
+    );
+    expect(loggerModule.bullet).not.toHaveBeenCalled();
     expect(mockConfigureClaude).toHaveBeenCalled();
   });
 
