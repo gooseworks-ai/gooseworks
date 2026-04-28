@@ -6,6 +6,8 @@ import { logoutCommand } from './commands/logout';
 import { updateCommand } from './commands/update';
 import { creditsCommand } from './commands/credits';
 import { searchCommand } from './commands/search';
+import { stylesCommand } from './commands/styles';
+import { formatsCommand } from './commands/formats';
 import { getVersion } from './version';
 
 const program = new Command();
@@ -20,5 +22,7 @@ program.addCommand(logoutCommand);
 program.addCommand(updateCommand);
 program.addCommand(creditsCommand);
 program.addCommand(searchCommand);
+program.addCommand(stylesCommand);
+program.addCommand(formatsCommand);
 
 program.parse();
