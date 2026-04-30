@@ -78,19 +78,15 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
  * publishing custom dimensions would render fine locally but break for
  * any other agent that pulls the format later, so we reject them at
  * publish time.
+ *
+ * The four 1080-wide canvases (carousel, poster, story, infographic)
+ * collapse into a single rule. Slides is the only canvas that doesn't
+ * fit that pattern.
  */
-const FIXED_CANVAS_DIMENSIONS: ReadonlyArray<readonly [number, number]> = [
-  [1080, 1080], // carousel / chart / tweet
-  [1080, 1350], // poster
-  [1920, 1080], // slides
-  [1080, 1920], // story
-];
-
 function isAllowedCanvas(width: number, height: number): boolean {
-  if (width === 1080 && height >= 1080) {
-    return true; // infographic — any tall height
-  }
-  return FIXED_CANVAS_DIMENSIONS.some(([w, h]) => w === width && h === height);
+  if (width === 1080 && height >= 1080) return true; // carousel / poster / story / infographic
+  if (width === 1920 && height === 1080) return true; // slides
+  return false;
 }
 
 const ALLOWED_CANVAS_LIST = [
