@@ -24,8 +24,13 @@ import {
 export interface PublishConfig {
   manifestFilename: string;
   validate: (manifest: unknown) => ValidationResult;
-  /** Hub URL to print on success, e.g. `https://app.gooseworks.ai/styles/<slug>`. */
+  /** Hub URL to print on success, e.g. `https://skills.gooseworks.ai/styles/<slug>`. */
   hubUrl: (slug: string) => string;
+  /**
+   * Optional CLI command to print after the hub URL so a publisher can verify
+   * their entry is live (e.g. `gooseworks formats search <slug>`).
+   */
+  searchHint?: (slug: string) => string;
   /** Resource label used in user-facing messages: 'style' or 'format'. */
   label: 'style' | 'format';
   /** Performs the create/update upload. Returns the new slug + id. */
@@ -130,9 +135,11 @@ async function runWriteFlow(
   }
 
   const result = await uploadOrExit(cfg, opts, manifest, files, allowSlugRetry);
+  const hint = cfg.searchHint ? `Find it: ${cfg.searchHint(result.slug)}\n` : '';
   process.stdout.write(
     `${cfg.label === 'style' ? 'Published style' : 'Published format'}: ${result.slug}\n` +
-      `${cfg.hubUrl(result.slug)}\n`
+      `${cfg.hubUrl(result.slug)}\n` +
+      hint
   );
 }
 

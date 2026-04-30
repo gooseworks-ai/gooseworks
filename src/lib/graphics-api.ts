@@ -288,6 +288,25 @@ export interface WriteResult {
   id: string;
 }
 
+function inferContentType(absolutePath: string): string {
+  const ext = path.extname(absolutePath).toLowerCase();
+  switch (ext) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.svg':
+      return 'image/svg+xml';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 function buildMultipart(
   manifest: unknown,
   files: ResolvedExampleFile[]
@@ -303,7 +322,10 @@ function buildMultipart(
       buf.byteOffset,
       buf.byteOffset + buf.byteLength
     ) as ArrayBuffer;
-    const blob = new Blob([ab]);
+    // Without a `type`, Node's FormData serialises the part as
+    // `Content-Type: application/octet-stream`, which the server's image
+    // allowlist rejects with a 400.
+    const blob = new Blob([ab], { type: inferContentType(f.absolutePath) });
     fd.append(f.fieldName, blob, path.basename(f.absolutePath));
   }
   return fd;

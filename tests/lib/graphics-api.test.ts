@@ -180,6 +180,36 @@ describe('graphics-api', () => {
       expect(bodyStr).toContain('"name":"Desert Sunset"');
       expect(bodyStr).toContain('PNGDATA');
       expect(bodyStr).toContain('name="poster.png"');
+      // Server's image allowlist rejects application/octet-stream — assert
+      // we infer the right Content-Type from the file extension.
+      expect(bodyStr).toContain('Content-Type: image/png');
+      expect(bodyStr).not.toContain('Content-Type: application/octet-stream');
+    });
+
+    it('infers image/jpeg Content-Type for .jpg example files', async () => {
+      let receivedBody: Buffer = Buffer.alloc(0);
+      server = await startServer(async (req, res) => {
+        receivedBody = await readBody(req);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'success',
+            data: { slug: 'desert-sunset', id: 'sty_123' },
+          })
+        );
+      });
+
+      fs.writeFileSync(path.join(tmpDir, 'hero.jpg'), Buffer.from('JPEGDATA'));
+      const m = {
+        ...manifest(),
+        examples: [{ format: 'poster', isHero: true, file: './hero.jpg' }],
+      };
+      const files = resolveExampleFiles(tmpDir, m.examples);
+      await publishStyle({ apiBase: server.url, apiKey: 'cal_test' }, m, files);
+
+      const bodyStr = receivedBody.toString('utf-8');
+      expect(bodyStr).toContain('name="hero.jpg"');
+      expect(bodyStr).toContain('Content-Type: image/jpeg');
     });
 
     it('throws ApiError with body on 400 validation_failed', async () => {

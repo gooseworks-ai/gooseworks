@@ -80,7 +80,18 @@ export function reportApiErrorAndExit(err: unknown): never {
       process.exit(EXIT_TRANSIENT);
     }
     if (err.status >= 500) {
-      process.stderr.write(`Server error (${err.status}). Please try again later.\n`);
+      // Surface the response body when the server gives us one — for publish
+      // flows a generic "try again later" hides the real cause (e.g. an S3
+      // misconfig or schema-validation 500). Fall back to the generic line
+      // when the server didn't return a parseable message.
+      const detail = err.message && err.message !== `request failed (${err.status})`
+        ? err.message
+        : null;
+      process.stderr.write(
+        detail
+          ? `Server error (${err.status}): ${detail}\n`
+          : `Server error (${err.status}). Please try again later.\n`,
+      );
       process.exit(EXIT_TRANSIENT);
     }
     if (err.status === 403) {

@@ -258,6 +258,9 @@ describe('styles command', () => {
       const out = stdoutText();
       expect(out).toContain('Published style: desert-sunset');
       expect(out).toContain('/styles/desert-sunset');
+      // Hub URL must point at skills.gooseworks.ai (the public hub), not app.gooseworks.ai (the OAuth/app shell).
+      expect(out).toContain('skills.gooseworks.ai/styles/desert-sunset');
+      expect(out).toContain('Find it: gooseworks styles search desert-sunset');
     });
 
     it('retries on 409 with --yes and accepts the suggested slug', async () => {

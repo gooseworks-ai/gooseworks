@@ -161,7 +161,8 @@ describe('formats command', () => {
 
       await formatsCommand.parseAsync(['node', 'gw', 'publish', dir]);
       expect(stdoutText()).toContain('Published format: linkedin-banner');
-      expect(stdoutText()).toContain('/formats/linkedin-banner');
+      expect(stdoutText()).toContain('skills.gooseworks.ai/formats/linkedin-banner');
+      expect(stdoutText()).toContain('Find it: gooseworks formats search linkedin-banner');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

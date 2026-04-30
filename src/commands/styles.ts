@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { FRONTEND_URL } from '../config';
+import { HUB_URL } from '../config';
 import {
   STYLE_MANIFEST_FILENAME,
   validateStyleManifest,
@@ -145,7 +145,8 @@ const publishCmd = new Command('publish')
       {
         manifestFilename: STYLE_MANIFEST_FILENAME,
         validate: validateStyleManifest,
-        hubUrl: (slug) => `${FRONTEND_URL}/styles/${slug}`,
+        hubUrl: (slug) => `${HUB_URL}/styles/${slug}`,
+        searchHint: (slug) => `gooseworks styles search ${slug}`,
         label: 'style',
         upload: (manifest, files) => publishStyle(auth, manifest, files),
       },
@@ -163,7 +164,8 @@ const updateCmd = new Command('update')
       {
         manifestFilename: STYLE_MANIFEST_FILENAME,
         validate: validateStyleManifest,
-        hubUrl: (s) => `${FRONTEND_URL}/styles/${s}`,
+        hubUrl: (s) => `${HUB_URL}/styles/${s}`,
+        searchHint: (s) => `gooseworks styles search ${s}`,
         label: 'style',
         upload: (manifest, files) => updateStyle(auth, slug, manifest, files),
       },
