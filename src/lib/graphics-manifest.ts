@@ -72,6 +72,36 @@ export const SLUG_RE = /^[a-z0-9-]+$/;
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 /**
+ * Allow-listed canvas dimensions. Mirrors the server-side check in
+ * backend/src/schemas/graphics-manifest.ts. The screenshot tool ships a
+ * strict allow-list (carousel/infographic/slides/poster/story/chart/tweet);
+ * publishing custom dimensions would render fine locally but break for
+ * any other agent that pulls the format later, so we reject them at
+ * publish time.
+ */
+const FIXED_CANVAS_DIMENSIONS: ReadonlyArray<readonly [number, number]> = [
+  [1080, 1080], // carousel / chart / tweet
+  [1080, 1350], // poster
+  [1920, 1080], // slides
+  [1080, 1920], // story
+];
+
+function isAllowedCanvas(width: number, height: number): boolean {
+  if (width === 1080 && height >= 1080) {
+    return true; // infographic — any tall height
+  }
+  return FIXED_CANVAS_DIMENSIONS.some(([w, h]) => w === width && h === height);
+}
+
+const ALLOWED_CANVAS_LIST = [
+  '1080×1080 (carousel/chart/tweet)',
+  '1080×1350 (poster)',
+  '1920×1080 (slides)',
+  '1080×1920 (story)',
+  '1080×≥1080 (infographic)',
+].join(', ');
+
+/**
  * Throws if the string does not match the public slug grammar. Use before
  * interpolating any externally-sourced slug (CLI arg, server response) into
  * a filesystem path.
@@ -212,20 +242,29 @@ export function validateFormatManifest(m: unknown): ValidationResult {
     errors.push('description: required, 20-1000 characters');
   }
 
-  if (
-    !Number.isInteger(m.width) ||
-    (m.width as number) < 64 ||
-    (m.width as number) > 8192
-  ) {
+  const widthValid =
+    Number.isInteger(m.width) &&
+    (m.width as number) >= 64 &&
+    (m.width as number) <= 8192;
+  const heightValid =
+    Number.isInteger(m.height) &&
+    (m.height as number) >= 64 &&
+    (m.height as number) <= 8192;
+
+  if (!widthValid) {
     errors.push('width: integer between 64 and 8192');
   }
-
-  if (
-    !Number.isInteger(m.height) ||
-    (m.height as number) < 64 ||
-    (m.height as number) > 8192
-  ) {
+  if (!heightValid) {
     errors.push('height: integer between 64 and 8192');
+  }
+  if (
+    widthValid &&
+    heightValid &&
+    !isAllowedCanvas(m.width as number, m.height as number)
+  ) {
+    errors.push(
+      `width × height must match one of the allowed canvases: ${ALLOWED_CANVAS_LIST}. Custom dimensions are not supported because the renderer is locked to these seven canvases.`,
+    );
   }
 
   if (typeof m.contentRulesMd !== 'string' || m.contentRulesMd.length < 50) {

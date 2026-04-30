@@ -29,14 +29,14 @@ function validStyle(overrides: Record<string, unknown> = {}): Record<string, unk
 
 function validFormat(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    name: 'LinkedIn Banner',
-    slug: 'linkedin-banner',
-    description: '1584×396 LinkedIn profile background. Single horizontal banner with minimal text.',
-    width: 1584,
-    height: 396,
+    name: 'Story Cover',
+    slug: 'story-cover',
+    description: '1080×1920 vertical cover slide for Instagram and TikTok stories.',
+    width: 1080,
+    height: 1920,
     contentRulesMd:
-      '## Rules\n\n- Title: 4 words max\n- Optional logo lower-right\n- Background must be abstract',
-    tags: ['linkedin'],
+      '## Rules\n\n- Title: 5 words max\n- Optional logo lower 10%\n- Hero element in upper 70% of canvas',
+    tags: ['story', 'vertical', 'social'],
     examples: [{ file: './example-1.png', styleSlug: 'matt-gray' }],
     ...overrides,
   };

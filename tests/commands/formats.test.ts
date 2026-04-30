@@ -136,11 +136,11 @@ describe('formats command', () => {
       fs.writeFileSync(
         path.join(dir, 'gooseworks-format.json'),
         JSON.stringify({
-          name: 'LinkedIn Banner',
-          slug: 'linkedin-banner',
-          description: '1584×396 LinkedIn profile background image specification.',
-          width: 1584,
-          height: 396,
+          name: 'Story Cover',
+          slug: 'story-cover',
+          description: '1080×1920 vertical cover slide for Instagram and TikTok stories.',
+          width: 1080,
+          height: 1920,
           contentRulesMd:
             '## Rules\n\nMinimum fifty characters of content rules markdown right here folks.',
           examples: [{ file: './example-1.png' }],
@@ -153,16 +153,16 @@ describe('formats command', () => {
         res.end(
           JSON.stringify({
             status: 'success',
-            data: { slug: 'linkedin-banner', id: 'fmt_1' },
+            data: { slug: 'story-cover', id: 'fmt_1' },
           })
         );
       });
       mockGetCredentials.mockReturnValue(baseCreds(server.url));
 
       await formatsCommand.parseAsync(['node', 'gw', 'publish', dir]);
-      expect(stdoutText()).toContain('Published format: linkedin-banner');
-      expect(stdoutText()).toContain('skills.gooseworks.ai/formats/linkedin-banner');
-      expect(stdoutText()).toContain('Find it: gooseworks formats search linkedin-banner');
+      expect(stdoutText()).toContain('Published format: story-cover');
+      expect(stdoutText()).toContain('skills.gooseworks.ai/formats/story-cover');
+      expect(stdoutText()).toContain('Find it: gooseworks formats search story-cover');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
