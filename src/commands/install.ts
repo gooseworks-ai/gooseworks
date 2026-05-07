@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
-import { installMasterSkill, installStandaloneSkill, removeAllSkills } from '../skills/installer';
+import { installMasterSkill, installStandaloneSkill, removeAllSkills, SkillNotFoundError } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
@@ -73,8 +73,16 @@ Examples:
         });
         logger.success(`Installed standalone skill ${slug} to ~/.agents/skills/${slug}/`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error(`Could not install standalone skill ${slug}: ${message}`);
+        if (error instanceof SkillNotFoundError) {
+          logger.error(`Could not install standalone skill ${slug}: skill not found.`);
+          if (error.available.length > 0) {
+            logger.info(`Available skills (${error.available.length}):`);
+            for (const s of error.available) logger.bullet(s);
+          }
+        } else {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(`Could not install standalone skill ${slug}: ${message}`);
+        }
       }
     }
 

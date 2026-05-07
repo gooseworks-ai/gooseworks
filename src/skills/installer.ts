@@ -21,6 +21,13 @@ export interface InstallStandaloneSkillOptions {
   onProgress?: (progress: { downloaded: number; total: number }) => void;
 }
 
+export class SkillNotFoundError extends Error {
+  constructor(public readonly slug: string, public readonly available: string[]) {
+    super(`skill '${slug}' not found`);
+    this.name = 'SkillNotFoundError';
+  }
+}
+
 export function getSkillsBasePath(): string {
   return SKILLS_BASE;
 }
@@ -47,9 +54,7 @@ export async function installStandaloneSkill(
   const { prefix, files } = findSkillFiles(tree, slug);
 
   if (files.length === 0) {
-    const available = getAvailableSkillSlugs(tree);
-    const suffix = available.length > 0 ? ` Available: ${available.join(', ')}` : '';
-    throw new Error(`skill '${slug}' not found.${suffix}`);
+    throw new SkillNotFoundError(slug, getAvailableSkillSlugs(tree));
   }
 
   const targetDir = path.join(SKILLS_BASE, slug);

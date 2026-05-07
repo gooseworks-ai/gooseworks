@@ -47,6 +47,10 @@ export function example(message: string): void {
   console.log(chalk.cyan('    ›') + ' ' + chalk.bold(message));
 }
 
+export function bullet(message: string): void {
+  console.log(chalk.dim('      •') + ` ${message}`);
+}
+
 export function spinner(text: string): Ora {
   return ora({ text: `  ${text}`, indent: 2 }).start();
 }
