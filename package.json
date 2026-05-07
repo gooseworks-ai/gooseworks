@@ -1,6 +1,6 @@
 {
   "name": "gooseworks",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "GooseWorks CLI — give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
@@ -50,5 +50,5 @@
     "url": "https://github.com/gooseworks-ai/gooseworks-app"
   },
   "homepage": "https://gooseworks.ai",
-  "author": "GooseWorks <hello@gooseworks.ai>"
+  "author": "GooseWorks <help@gooseworks.ai>"
 }

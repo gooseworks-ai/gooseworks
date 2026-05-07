@@ -13,16 +13,25 @@ describe('skills/master-skill', () => {
     expect(content).toContain('slug: gooseworks');
   });
 
-  it('contains skill search instructions', () => {
-    expect(content).toContain('/api/skills/search');
+  it('uses gooseworks search wrapper for skill catalog search', () => {
+    expect(content).toContain('gooseworks search');
   });
 
-  it('contains skill catalog fetch instructions', () => {
-    expect(content).toContain('/api/skills/catalog/');
+  it('uses gooseworks fetch wrapper for skill catalog fetch', () => {
+    expect(content).toContain('gooseworks fetch');
   });
 
-  it('contains credit balance check', () => {
-    expect(content).toContain('/v1/credits');
+  it('uses gooseworks credits wrapper for credit balance', () => {
+    expect(content).toContain('gooseworks credits');
+  });
+
+  it('does NOT instruct the agent to run raw curl or python json env-setup', () => {
+    // The skill may mention "curl" in translation rule descriptions (replace X with Y),
+    // but must never have a line where curl is the actual command being executed.
+    const lines = content.split('\n');
+    const executableCurlLine = lines.find(l => /^\s*curl\s/.test(l));
+    expect(executableCurlLine).toBeUndefined();
+    expect(content).not.toMatch(/python3 -c/);
   });
 
   describe('Raw API Discovery fallback', () => {
@@ -30,26 +39,26 @@ describe('skills/master-skill', () => {
       expect(content).toContain('## Raw API Discovery (fallback)');
     });
 
-    it('contains orthogonal search endpoint', () => {
-      expect(content).toContain('/v1/proxy/orthogonal/search');
+    it('uses gooseworks orthogonal find wrapper', () => {
+      expect(content).toContain('gooseworks orthogonal find');
     });
 
-    it('contains orthogonal details endpoint', () => {
-      expect(content).toContain('/v1/proxy/orthogonal/details');
+    it('uses gooseworks orthogonal describe wrapper', () => {
+      expect(content).toContain('gooseworks orthogonal describe');
     });
 
-    it('contains orthogonal run endpoint', () => {
-      expect(content).toContain('/v1/proxy/orthogonal/run');
+    it('uses gooseworks call wrapper', () => {
+      expect(content).toContain('gooseworks call');
     });
 
     it('instructs agent to tell user the cost', () => {
       expect(content).toContain('Always tell the user the cost');
     });
 
-    it('describes the search-details-run workflow', () => {
+    it('describes the find-describe-call workflow', () => {
       expect(content).toMatch(/Search first/);
       expect(content).toMatch(/Get details/);
-      expect(content).toMatch(/Run/);
+      expect(content).toMatch(/Call/);
     });
   });
 
@@ -57,8 +66,7 @@ describe('skills/master-skill', () => {
     expect(content).toContain('## Working Directory & Output Files');
   });
 
-  it('contains GooseWorks credential setup', () => {
-    expect(content).toContain('GOOSEWORKS_API_KEY');
-    expect(content).toContain('GOOSEWORKS_API_BASE');
+  it('tells the user to run npx gooseworks login if not logged in', () => {
+    expect(content).toContain('npx gooseworks login');
   });
 });
