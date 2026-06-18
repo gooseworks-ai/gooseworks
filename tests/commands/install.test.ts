@@ -24,14 +24,20 @@ jest.mock('../../src/auth/oauth-server', () => ({
 }));
 
 jest.mock('../../src/skills/installer', () => ({
-  installMasterSkill: jest.fn(),
+  installManagedEntrySkills: jest.fn().mockReturnValue([
+    { name: 'gooseworks', action: 'installed' },
+    { name: 'ads-remix', action: 'installed' },
+  ]),
   installStandaloneSkill: jest.fn(),
   removeAllSkills: jest.fn(),
   getInstalledSkills: jest.fn().mockReturnValue([]),
 }));
 
 jest.mock('../../src/skills/master-skill', () => ({
-  getMasterSkillContent: jest.fn().mockReturnValue('# GooseWorks Master Skill'),
+  getEntrySkills: jest.fn().mockReturnValue([
+    { name: 'gooseworks', content: '# gooseworks' },
+    { name: 'ads-remix', content: '# ads-remix' },
+  ]),
 }));
 
 jest.mock('../../src/agents/claude', () => ({
@@ -40,6 +46,7 @@ jest.mock('../../src/agents/claude', () => ({
 
 jest.mock('../../src/agents/claude-mcp', () => ({
   configureClaudeMcp: jest.fn().mockReturnValue(true),
+  verifyMcpReachable: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
 jest.mock('../../src/agents/codex', () => ({
@@ -73,8 +80,8 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
-import { installMasterSkill, installStandaloneSkill } from '../../src/skills/installer';
-import { getMasterSkillContent } from '../../src/skills/master-skill';
+import { installManagedEntrySkills, installStandaloneSkill } from '../../src/skills/installer';
+import { getEntrySkills } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCursor } from '../../src/agents/cursor';
@@ -82,9 +89,9 @@ import * as loggerModule from '../../src/utils/logger';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 const mockRunOAuthFlow = runOAuthFlow as jest.MockedFunction<typeof runOAuthFlow>;
-const mockInstallMasterSkill = installMasterSkill as jest.MockedFunction<typeof installMasterSkill>;
+const mockInstallManagedEntrySkills = installManagedEntrySkills as jest.MockedFunction<typeof installManagedEntrySkills>;
 const mockInstallStandaloneSkill = installStandaloneSkill as jest.MockedFunction<typeof installStandaloneSkill>;
-const mockGetMasterSkillContent = getMasterSkillContent as jest.MockedFunction<typeof getMasterSkillContent>;
+const mockGetEntrySkills = getEntrySkills as jest.MockedFunction<typeof getEntrySkills>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
 const mockConfigureCursor = configureCursor as jest.MockedFunction<typeof configureCursor>;
@@ -141,8 +148,8 @@ describe('install command', () => {
     // Should NOT call OAuth
     expect(mockRunOAuthFlow).not.toHaveBeenCalled();
     // Should install master skill
-    expect(mockGetMasterSkillContent).toHaveBeenCalledWith();
-    expect(mockInstallMasterSkill).toHaveBeenCalledWith('# GooseWorks Master Skill');
+    expect(mockGetEntrySkills).toHaveBeenCalledWith();
+    expect(mockInstallManagedEntrySkills).toHaveBeenCalled();
     // Should report success
     expect(loggerModule.success).toHaveBeenCalledWith(
       expect.stringContaining('Logged in as test@example.com')
@@ -170,7 +177,7 @@ describe('install command', () => {
 
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
-    expect(mockGetMasterSkillContent).toHaveBeenCalledWith();
+    expect(mockGetEntrySkills).toHaveBeenCalledWith();
   });
 
   it('shows done message with agent name', async () => {
@@ -259,7 +266,7 @@ describe('install command', () => {
       'goose-aeo',
     ]);
 
-    expect(mockInstallMasterSkill).toHaveBeenCalledWith('# GooseWorks Master Skill');
+    expect(mockInstallManagedEntrySkills).toHaveBeenCalled();
     expect(mockInstallStandaloneSkill).toHaveBeenCalledWith('goose-graphics', expect.any(Object));
     expect(mockInstallStandaloneSkill).toHaveBeenCalledWith('goose-aeo', expect.any(Object));
     expect(mockInstallStandaloneSkill).toHaveBeenCalledTimes(2);

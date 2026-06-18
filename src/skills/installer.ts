@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as crypto from 'crypto';
 import { isManagedGooseworksSkill } from './names';
+import type { EntrySkill } from './master-skill';
 
 const SKILLS_BASE = path.join(os.homedir(), '.agents', 'skills');
 const GOOSE_SKILLS_TREE_URL = 'https://api.github.com/repos/gooseworks-ai/goose-skills/git/trees/main?recursive=1';
@@ -33,6 +35,61 @@ export function installMasterSkill(masterSkillMd: string): void {
     masterSkillMd,
     'utf-8'
   );
+}
+
+// ── Vendored entry-skill freshness ──────────────────────────────────────────
+// Entry skills (gooseworks, ads-remix) are vendored in the CLI and written to
+// ~/.agents/skills/<name>/. We stamp each install with a content hash so we can
+// skip rewriting an unchanged skill ("already local → don't call") and rewrite
+// only when the vendored content changed ("updated → call again"). Recipe skills
+// are fetched live via `gooseworks fetch`, so they need no stamping.
+
+const STAMP_FILE = '.gooseworks-version';
+
+function entryContentHash(content: string): string {
+  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex').slice(0, 16);
+}
+
+/** True when the entry skill is installed AND its stamp matches `content`. */
+export function isEntrySkillFresh(name: string, content: string): boolean {
+  const dir = path.join(SKILLS_BASE, name);
+  if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return false;
+  try {
+    return fs.readFileSync(path.join(dir, STAMP_FILE), 'utf-8').trim() === entryContentHash(content);
+  } catch {
+    return false;
+  }
+}
+
+/** Write one entry skill + its freshness stamp. */
+export function installEntrySkill(skill: EntrySkill): void {
+  const dir = path.join(SKILLS_BASE, skill.name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), skill.content, 'utf-8');
+  fs.writeFileSync(path.join(dir, STAMP_FILE), entryContentHash(skill.content), 'utf-8');
+}
+
+export interface EntrySkillInstallResult {
+  name: string;
+  action: 'installed' | 'skipped';
+}
+
+/**
+ * Install all vendored entry skills. With `force` (explicit install/update) each
+ * is rewritten unconditionally; without it (e.g. refresh-on-login) only missing
+ * or content-changed skills are rewritten — unchanged ones are skipped.
+ */
+export function installManagedEntrySkills(
+  skills: EntrySkill[],
+  { force = false }: { force?: boolean } = {}
+): EntrySkillInstallResult[] {
+  return skills.map((skill) => {
+    if (!force && isEntrySkillFresh(skill.name, skill.content)) {
+      return { name: skill.name, action: 'skipped' };
+    }
+    installEntrySkill(skill);
+    return { name: skill.name, action: 'installed' };
+  });
 }
 
 export async function installStandaloneSkill(

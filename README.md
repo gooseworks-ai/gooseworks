@@ -149,6 +149,37 @@ Standalone skills installed with `--with` skip the catalog search step. After `n
 | Enrichment | Contact enrichment, company research, tech stack |
 | Monitoring | Newsletter scanning, review site tracking |
 
+## Ads creation (`ads-remix`)
+
+Alongside the GTM `gooseworks` skill, the CLI installs a **separate** `ads-remix` entry
+skill for creating ad creative — remix a static ad template into a branded ad, or read a
+brand for ads. Claude auto-loads whichever skill matches the task; the two are
+domain-scoped and never merged.
+
+```bash
+gooseworks install --claude --mcp
+```
+
+Then in Claude Code: *"remix template `<id>` for `<your-site>`"*.
+
+**The GooseWorks MCP server is REQUIRED for ads.** All brand/project/render reads and
+writes go through the `gooseworks` MCP server (e.g. `get_brand_kit`, `submit_render`).
+`install` registers it with `--mcp` (or `--all`) and verifies it's reachable; if it isn't,
+you'll see a warning — the ads flow will fail without MCP. Re-run
+`gooseworks install --claude --mcp` if needed.
+
+Media generation (image edits) is billed to your GooseWorks credits via the media proxy —
+no separate ad-credit balance.
+
+### Keeping skills up to date
+
+- **Entry skills** (`gooseworks`, `ads-remix`) are vendored in the CLI. They're (re)installed
+  on `install`/`update`, and **refreshed on `login`** — but only when their content actually
+  changed (a content-hash stamp skips unchanged ones, so re-running is cheap). Bump the CLI
+  (`npx gooseworks@latest …`) to get new entry-skill content.
+- **Recipe skills** (e.g. `remix-graphic-ad-from-reference`) are **fetched live** from
+  goose-skills each time they're used, so they're always current — nothing to update.
+
 ## File Layout
 
 ### Credentials
@@ -163,7 +194,11 @@ Standalone skills installed with `--with` skip the catalog search step. After `n
 ```
 ~/.agents/skills/
 ├── gooseworks/
-│   └── SKILL.md          # GooseWorks skill — teaches your agent to use 100+ data tools
+│   ├── SKILL.md          # GTM skill — teaches your agent to use 100+ data tools
+│   └── .gooseworks-version  # content-hash stamp (freshness check; skip rewrite if unchanged)
+├── ads-remix/
+│   ├── SKILL.md          # Ads-creation entry skill (remix + brand context; requires MCP)
+│   └── .gooseworks-version
 └── goose-graphics/
     └── SKILL.md          # Optional standalone skill installed with --with
 ```
@@ -173,6 +208,7 @@ Standalone skills installed with `--with` skip the catalog search step. After `n
 ```
 ~/.claude/skills/
 ├── gooseworks → ~/.agents/skills/gooseworks
+├── ads-remix → ~/.agents/skills/ads-remix
 └── goose-graphics → ~/.agents/skills/goose-graphics
 ```
 

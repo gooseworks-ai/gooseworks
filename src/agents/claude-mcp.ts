@@ -76,6 +76,33 @@ export function configureClaudeMcp(): boolean {
   return true;
 }
 
+/**
+ * Verify the GooseWorks MCP server is reachable (its unauthenticated /health
+ * endpoint). Ads creation REQUIRES MCP, so install surfaces this loudly. Returns
+ * { ok } — never throws. Confirms reachability, not token validity (that surfaces
+ * on the first tool call).
+ */
+export async function verifyMcpReachable(timeoutMs = 5000): Promise<{ ok: boolean; error?: string }> {
+  const creds = getCredentials();
+  if (!creds?.mcp_server_url) return { ok: false, error: 'no mcp_server_url in credentials' };
+  let healthUrl: string;
+  try {
+    healthUrl = new URL('/health', creds.mcp_server_url).toString();
+  } catch {
+    return { ok: false, error: `invalid mcp_server_url: ${creds.mcp_server_url}` };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(healthUrl, { signal: controller.signal });
+    return res.ok ? { ok: true } : { ok: false, error: `health check returned ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message || 'unreachable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function removeClaudeMcp(): void {
   try {
     if (!fs.existsSync(CLAUDE_CONFIG_PATH)) return;

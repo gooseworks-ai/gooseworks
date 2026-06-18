@@ -3,12 +3,18 @@ jest.mock('../../src/auth/credentials', () => ({
 }));
 
 jest.mock('../../src/skills/installer', () => ({
-  installMasterSkill: jest.fn(),
+  installManagedEntrySkills: jest.fn().mockReturnValue([
+    { name: 'gooseworks', action: 'installed' },
+    { name: 'ads-remix', action: 'installed' },
+  ]),
   removeAllSkills: jest.fn(),
 }));
 
 jest.mock('../../src/skills/master-skill', () => ({
-  getMasterSkillContent: jest.fn().mockReturnValue('# master skill content'),
+  getEntrySkills: jest.fn().mockReturnValue([
+    { name: 'gooseworks', content: '# gooseworks' },
+    { name: 'ads-remix', content: '# ads-remix' },
+  ]),
 }));
 
 jest.mock('../../src/agents/claude', () => ({
@@ -45,7 +51,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 import { getCredentials } from '../../src/auth/credentials';
-import { getMasterSkillContent } from '../../src/skills/master-skill';
+import { getEntrySkills } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCodex } from '../../src/agents/codex';
@@ -55,7 +61,7 @@ import * as loggerModule from '../../src/utils/logger';
 import { updateCommand } from '../../src/commands/update';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
-const mockGetMasterSkillContent = getMasterSkillContent as jest.MockedFunction<typeof getMasterSkillContent>;
+const mockGetEntrySkills = getEntrySkills as jest.MockedFunction<typeof getEntrySkills>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
 const mockConfigureCodex = configureCodex as jest.MockedFunction<typeof configureCodex>;
@@ -98,13 +104,13 @@ describe('update command', () => {
     expect(mockConfigureClaude).not.toHaveBeenCalled();
   });
 
-  it('calls getMasterSkillContent with no arguments', async () => {
+  it('installs the vendored entry skills (gooseworks + ads-remix)', async () => {
     mockGetCredentials.mockReturnValue(baseCreds);
     mockIsAgentInstalled.mockReturnValue(false);
 
     await updateCommand.parseAsync(['node', 'test']);
 
-    expect(mockGetMasterSkillContent).toHaveBeenCalledWith();
+    expect(mockGetEntrySkills).toHaveBeenCalledWith();
   });
 
   it('reconfigures only Claude when only Claude is installed', async () => {

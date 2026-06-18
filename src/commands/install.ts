@@ -1,13 +1,13 @@
 import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
-import { installMasterSkill, installStandaloneSkill, removeAllSkills } from '../skills/installer';
+import { installManagedEntrySkills, installStandaloneSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
-import { configureClaudeMcp } from '../agents/claude-mcp';
+import { configureClaudeMcp, verifyMcpReachable } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
 import * as logger from '../utils/logger';
-import { getMasterSkillContent } from '../skills/master-skill';
+import { getEntrySkills } from '../skills/master-skill';
 import { API_BASE } from '../config';
 import { getVersion } from '../version';
 
@@ -52,12 +52,12 @@ Examples:
     const creds = await ensureLoggedIn(opts.apiBase);
     logger.success(`Logged in as ${creds.email}`);
 
-    // Step 2: Install master skill (clean old skills first)
-    logger.step(2, 3, 'Installing GooseWorks skill...');
+    // Step 2: Install entry skills (clean old skills first)
+    logger.step(2, 3, 'Installing GooseWorks skills...');
     removeAllSkills();
-    const masterContent = getMasterSkillContent();
-    installMasterSkill(masterContent);
-    logger.success('Installed GooseWorks skill to ~/.agents/skills/gooseworks/');
+    for (const r of installManagedEntrySkills(getEntrySkills(), { force: true })) {
+      logger.success(`Installed ${r.name} skill to ~/.agents/skills/${r.name}/`);
+    }
     for (const slug of opts.with || []) {
       try {
         logger.info(`Installing standalone skill ${slug}...`);
@@ -87,6 +87,16 @@ Examples:
         if (wantMcp) {
           if (configureClaudeMcp()) {
             logger.success("Registered 'gooseworks' MCP server in ~/.claude.json");
+            // Ads creation REQUIRES a reachable MCP server — verify and fail loud.
+            const mcp = await verifyMcpReachable();
+            if (mcp.ok) {
+              logger.success('GooseWorks MCP server reachable');
+            } else {
+              logger.warn(
+                `GooseWorks MCP server NOT reachable (${mcp.error}). Ads creation requires it — ` +
+                  'restart Claude Code and check your connection; the ads-remix skill will fail without MCP.'
+              );
+            }
           } else {
             logger.info("Skipped MCP (no mcp_server_url in credentials — older backend?)");
           }

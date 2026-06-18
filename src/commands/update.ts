@@ -1,12 +1,12 @@
 import { Command } from 'commander';
 import { getCredentials } from '../auth/credentials';
-import { installMasterSkill, removeAllSkills } from '../skills/installer';
+import { installManagedEntrySkills, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { configureCodex } from '../agents/codex';
 import { configureCursor, hasExistingCursorMcpEntry } from '../agents/cursor';
 import { isAgentInstalled } from '../agents/detect';
-import { getMasterSkillContent } from '../skills/master-skill';
+import { getEntrySkills } from '../skills/master-skill';
 import * as logger from '../utils/logger';
 
 export const updateCommand = new Command('update')
@@ -18,11 +18,11 @@ export const updateCommand = new Command('update')
       process.exit(1);
     }
 
-    logger.step(1, 2, 'Updating skill...');
+    logger.step(1, 2, 'Updating skills...');
     removeAllSkills();
-    const masterContent = getMasterSkillContent();
-    installMasterSkill(masterContent);
-    logger.success('Updated GooseWorks skill');
+    for (const r of installManagedEntrySkills(getEntrySkills(), { force: true })) {
+      logger.success(`Updated ${r.name} skill`);
+    }
 
     logger.step(2, 2, 'Reconfiguring agents...');
 
