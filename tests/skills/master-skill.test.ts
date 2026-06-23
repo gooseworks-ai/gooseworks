@@ -1,4 +1,8 @@
-import { getMasterSkillContent } from '../../src/skills/master-skill';
+import {
+  getMasterSkillContent,
+  getGooseAdsSkillContent,
+  getEntrySkills,
+} from '../../src/skills/master-skill';
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -68,5 +72,61 @@ describe('skills/master-skill', () => {
 
   it('tells the user to run npx gooseworks login if not logged in', () => {
     expect(content).toContain('npx gooseworks login');
+  });
+
+  describe('domain router (parent skill)', () => {
+    it('routes ads work to the goose-ads skill', () => {
+      expect(content).toContain('goose-ads');
+      expect(content).toMatch(/remix this ad with project id 123/);
+    });
+
+    it('routes graphics work to the goose-graphics skill', () => {
+      expect(content).toContain('goose-graphics');
+    });
+
+    it('mentions goose-video as coming soon', () => {
+      expect(content).toContain('goose-video');
+    });
+  });
+});
+
+describe('skills/goose-ads entry skill', () => {
+  const ads = getGooseAdsSkillContent();
+
+  it('is named/slugged goose-ads (renamed from ads-remix)', () => {
+    expect(ads).toContain('name: goose-ads');
+    expect(ads).toContain('slug: goose-ads');
+    expect(ads).not.toContain('slug: ads-remix');
+  });
+
+  it('generates via the single backend workflow (MCP batch tools), not a local pipeline', () => {
+    expect(ads).toContain('submit_remix_batch');
+    expect(ads).toContain('regenerate_creative');
+    expect(ads).toContain('get_remix_batch');
+    // The old local-generation path must be gone (the skill no longer fetches a
+    // local remix recipe or drives FAL itself). update_render_status / submit_render
+    // are still NAMED — but only in a "do NOT call these" prohibition.
+    expect(ads).not.toContain('remix-graphic-ad-from-reference');
+    expect(ads).not.toContain('fal-proxy');
+    expect(ads).toMatch(/Do NOT call FAL[\s\S]*update_render_status/);
+  });
+
+  it('still routes ad analytics to goose-skills recipes', () => {
+    expect(ads).toContain('meta-ads-analyzer');
+    expect(ads).toContain('ad-lead-quality-analyzer');
+    expect(ads).toContain('competitor-ad-intelligence');
+  });
+
+  it('documents the app-matching defaults', () => {
+    expect(ads).toContain('gpt_image_2');
+    expect(ads).toContain('"4:5"');
+    expect(ads).toContain('preserve_source_styling');
+  });
+});
+
+describe('skills/getEntrySkills', () => {
+  it('vendors gooseworks + goose-ads (not ads-remix)', () => {
+    const names = getEntrySkills().map((s) => s.name);
+    expect(names).toEqual(['gooseworks', 'goose-ads']);
   });
 });

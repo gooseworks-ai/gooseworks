@@ -149,12 +149,17 @@ Standalone skills installed with `--with` skip the catalog search step. After `n
 | Enrichment | Contact enrichment, company research, tech stack |
 | Monitoring | Newsletter scanning, review site tracking |
 
-## Ads creation (`ads-remix`)
+## Ads (`goose-ads`)
 
-Alongside the GTM `gooseworks` skill, the CLI installs a **separate** `ads-remix` entry
-skill for creating ad creative — remix a static ad template into a branded ad, or read a
-brand for ads. Claude auto-loads whichever skill matches the task; the two are
-domain-scoped and never merged.
+Alongside the GTM `gooseworks` skill, the CLI installs a **separate** `goose-ads` entry
+skill for ads — **create** ad creative (remix a static ad template into a branded ad, or
+read a brand for ads) and **analyze** ad performance (Meta/Google campaign diagnostics,
+creative fatigue, CAC & lead quality, competitor ad intelligence, ad angles & hooks). The
+`gooseworks` parent router also hands ad requests to it. Claude auto-loads whichever skill
+matches the task; the two are domain-scoped and never merged.
+
+> Renamed from `ads-remix`. Older installs get the stale `ads-remix` skill cleaned up
+> automatically on the next `install`.
 
 ```bash
 gooseworks install --claude --mcp
@@ -162,22 +167,25 @@ gooseworks install --claude --mcp
 
 Then in Claude Code: *"remix template `<id>` for `<your-site>`"*.
 
-**The GooseWorks MCP server is REQUIRED for ads.** All brand/project/render reads and
-writes go through the `gooseworks` MCP server (e.g. `get_brand_kit`, `submit_render`).
-`install` registers it with `--mcp` (or `--all`) and verifies it's reachable; if it isn't,
-you'll see a warning — the ads flow will fail without MCP. Re-run
-`gooseworks install --claude --mcp` if needed.
+**The GooseWorks MCP server is REQUIRED for ads.** The skill is a thin wrapper over the
+backend's single ad-generation workflow — the same one the GooseWorks ads app uses — reached
+through the `gooseworks` MCP tools (`get_brand_kit`, `submit_remix_batch`, `get_remix_batch`,
+`regenerate_creative`, …). The skill does NOT generate images, drive FAL, or manage renders
+itself; the backend runs the pipeline and stores results. `install` registers the MCP server
+with `--mcp` (or `--all`) and verifies it's reachable; if it isn't, you'll see a warning — the
+ads flow will fail without MCP. Re-run `gooseworks install --claude --mcp` if needed.
 
-Media generation (image edits) is billed to your GooseWorks credits via the media proxy —
-no separate ad-credit balance.
+Generation is billed to your GooseWorks credits **server-side**: `submit_remix_batch` reserves
+the estimated cost up front and bills only the images that complete. There's no separate
+ad-credit balance. Use `estimate_remix_batch` (cost preview) and `gooseworks credits` (balance).
 
 ### Keeping skills up to date
 
-- **Entry skills** (`gooseworks`, `ads-remix`) are vendored in the CLI. They're (re)installed
+- **Entry skills** (`gooseworks`, `goose-ads`) are vendored in the CLI. They're (re)installed
   on `install`/`update`, and **refreshed on `login`** — but only when their content actually
   changed (a content-hash stamp skips unchanged ones, so re-running is cheap). Bump the CLI
   (`npx gooseworks@latest …`) to get new entry-skill content.
-- **Recipe skills** (e.g. `remix-graphic-ad-from-reference`) are **fetched live** from
+- **Recipe skills** (e.g. ad-analytics like `meta-ads-analyzer`) are **fetched live** from
   goose-skills each time they're used, so they're always current — nothing to update.
 
 ## File Layout
@@ -196,8 +204,8 @@ no separate ad-credit balance.
 ├── gooseworks/
 │   ├── SKILL.md          # GTM skill — teaches your agent to use 100+ data tools
 │   └── .gooseworks-version  # content-hash stamp (freshness check; skip rewrite if unchanged)
-├── ads-remix/
-│   ├── SKILL.md          # Ads-creation entry skill (remix + brand context; requires MCP)
+├── goose-ads/
+│   ├── SKILL.md          # Ads entry skill (create + analyze; creation requires MCP)
 │   └── .gooseworks-version
 └── goose-graphics/
     └── SKILL.md          # Optional standalone skill installed with --with
@@ -208,7 +216,7 @@ no separate ad-credit balance.
 ```
 ~/.claude/skills/
 ├── gooseworks → ~/.agents/skills/gooseworks
-├── ads-remix → ~/.agents/skills/ads-remix
+├── goose-ads → ~/.agents/skills/goose-ads
 └── goose-graphics → ~/.agents/skills/goose-graphics
 ```
 

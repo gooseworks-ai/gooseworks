@@ -38,7 +38,7 @@ export function installMasterSkill(masterSkillMd: string): void {
 }
 
 // ── Vendored entry-skill freshness ──────────────────────────────────────────
-// Entry skills (gooseworks, ads-remix) are vendored in the CLI and written to
+// Entry skills (gooseworks, goose-ads) are vendored in the CLI and written to
 // ~/.agents/skills/<name>/. We stamp each install with a content hash so we can
 // skip rewriting an unchanged skill ("already local → don't call") and rewrite
 // only when the vendored content changed ("updated → call again"). Recipe skills

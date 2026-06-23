@@ -11,7 +11,7 @@ import { API_BASE } from '../config';
 /**
  * Refresh vendored entry skills on login for users who have already set up
  * (`gooseworks` skill present). This is the "update skills on login": it picks up
- * new or content-changed entry skills (e.g. the ads-remix skill) without
+ * new or content-changed entry skills (e.g. the goose-ads skill) without
  * rewriting unchanged ones, then re-symlinks Claude so the new skill is visible.
  * Bootstrapping a first-time install stays the job of `gooseworks install`.
  */

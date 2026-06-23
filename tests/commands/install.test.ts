@@ -26,7 +26,7 @@ jest.mock('../../src/auth/oauth-server', () => ({
 jest.mock('../../src/skills/installer', () => ({
   installManagedEntrySkills: jest.fn().mockReturnValue([
     { name: 'gooseworks', action: 'installed' },
-    { name: 'ads-remix', action: 'installed' },
+    { name: 'goose-ads', action: 'installed' },
   ]),
   installStandaloneSkill: jest.fn(),
   removeAllSkills: jest.fn(),
@@ -36,7 +36,7 @@ jest.mock('../../src/skills/installer', () => ({
 jest.mock('../../src/skills/master-skill', () => ({
   getEntrySkills: jest.fn().mockReturnValue([
     { name: 'gooseworks', content: '# gooseworks' },
-    { name: 'ads-remix', content: '# ads-remix' },
+    { name: 'goose-ads', content: '# goose-ads' },
   ]),
 }));
 
@@ -51,6 +51,7 @@ jest.mock('../../src/agents/claude-mcp', () => ({
 
 jest.mock('../../src/agents/codex', () => ({
   configureCodex: jest.fn(),
+  configureCodexMcp: jest.fn().mockReturnValue(true),
 }));
 
 jest.mock('../../src/agents/cursor', () => ({
@@ -84,6 +85,7 @@ import { installManagedEntrySkills, installStandaloneSkill } from '../../src/ski
 import { getEntrySkills } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
+import { configureCodex, configureCodexMcp } from '../../src/agents/codex';
 import { configureCursor } from '../../src/agents/cursor';
 import * as loggerModule from '../../src/utils/logger';
 
@@ -94,6 +96,8 @@ const mockInstallStandaloneSkill = installStandaloneSkill as jest.MockedFunction
 const mockGetEntrySkills = getEntrySkills as jest.MockedFunction<typeof getEntrySkills>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
+const mockConfigureCodex = configureCodex as jest.MockedFunction<typeof configureCodex>;
+const mockConfigureCodexMcp = configureCodexMcp as jest.MockedFunction<typeof configureCodexMcp>;
 const mockConfigureCursor = configureCursor as jest.MockedFunction<typeof configureCursor>;
 
 const mockCreds = {
@@ -207,6 +211,27 @@ describe('install command', () => {
     const joined = calls.map((c) => c[0]).join('\n');
     expect(joined).toMatch(/linkedin/i);
     expect(joined).not.toMatch(/find me leads/);
+    // goose-ads is always installed, so the success message must surface it.
+    expect(joined).toMatch(/\/goose-ads/);
+  });
+
+  it('suggests /goose-graphics only when installed with --with', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    const { createInstallCommand } = await import("../../src/commands/install");
+
+    // Without --with goose-graphics: no graphics example.
+    await createInstallCommand().parseAsync(['node', 'test', '--claude']);
+    let joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    expect(joined).not.toMatch(/\/goose-graphics/);
+
+    (loggerModule.example as jest.Mock).mockClear();
+
+    // With --with goose-graphics: graphics example shown.
+    await createInstallCommand().parseAsync([
+      'node', 'test', '--claude', '--with', 'goose-graphics',
+    ]);
+    joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    expect(joined).toMatch(/\/goose-graphics/);
   });
 
   it('--claude without --mcp installs skill only, no MCP write', async () => {
@@ -228,6 +253,31 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--claude', '--mcp']);
 
     expect(mockConfigureClaudeMcp).toHaveBeenCalled();
+  });
+
+  it('--codex without --mcp installs skill only, no MCP write', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--codex']);
+
+    expect(mockConfigureCodex).toHaveBeenCalled();
+    expect(mockConfigureCodexMcp).not.toHaveBeenCalled();
+  });
+
+  it('--codex --mcp writes Codex MCP entry', async () => {
+    mockGetCredentials.mockReturnValue({ ...mockCreds, mcp_server_url: 'http://localhost:6200' });
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--codex', '--mcp']);
+
+    expect(mockConfigureCodex).toHaveBeenCalled();
+    expect(mockConfigureCodexMcp).toHaveBeenCalled();
+    expect(loggerModule.success).toHaveBeenCalledWith(
+      "Registered 'gooseworks' MCP server in ~/.codex/config.toml"
+    );
   });
 
   it('--cursor without --mcp skips Cursor MCP config entirely', async () => {

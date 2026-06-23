@@ -3,7 +3,7 @@ import { getCredentials } from '../auth/credentials';
 import { installManagedEntrySkills, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
-import { configureCodex } from '../agents/codex';
+import { configureCodex, configureCodexMcp } from '../agents/codex';
 import { configureCursor, hasExistingCursorMcpEntry } from '../agents/cursor';
 import { isAgentInstalled } from '../agents/detect';
 import { getEntrySkills } from '../skills/master-skill';
@@ -40,6 +40,12 @@ export const updateCommand = new Command('update')
     if (isAgentInstalled('codex')) {
       configureCodex();
       logger.success('Codex symlinks updated');
+
+      if (creds.mcp_server_url) {
+        if (configureCodexMcp()) {
+          logger.success('Codex MCP config refreshed');
+        }
+      }
     }
 
     if (isAgentInstalled('cursor')) {

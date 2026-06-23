@@ -3,21 +3,29 @@ import * as os from 'os';
 
 jest.mock('fs');
 jest.mock('os');
+jest.mock('../../src/auth/credentials', () => ({
+  getCredentials: jest.fn(),
+}));
 
 const mockFs = fs as jest.Mocked<typeof fs>;
 const mockOs = os as jest.Mocked<typeof os>;
 
 mockOs.homedir.mockReturnValue('/mock-home');
 
-import { configureCodex, removeCodex, getCodexSkillsDir } from '../../src/agents/codex';
+import { getCredentials } from '../../src/auth/credentials';
+import { configureCodex, configureCodexMcp, removeCodex, getCodexSkillsDir } from '../../src/agents/codex';
 
 const SKILLS_BASE = '/mock-home/.agents/skills';
 const CODEX_SKILLS = '/mock-home/.codex/skills';
+const CODEX_CONFIG = '/mock-home/.codex/config.toml';
+const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 
 describe('agents/codex', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOs.homedir.mockReturnValue('/mock-home');
+    mockFs.writeFileSync.mockReturnValue(undefined);
+    mockFs.mkdirSync.mockReturnValue(undefined);
   });
 
   it('returns 0 when skills base does not exist', () => {
@@ -82,5 +90,79 @@ describe('agents/codex', () => {
 
   it('getCodexSkillsDir returns the codex path', () => {
     expect(getCodexSkillsDir()).toBe(CODEX_SKILLS);
+  });
+
+  it('configureCodexMcp writes the GooseWorks MCP entry to config.toml', () => {
+    mockGetCredentials.mockReturnValue({
+      api_key: 'cal_test',
+      email: 'test@example.com',
+      agent_id: 'agent-123',
+      api_base: 'https://app.gooseworks.ai',
+      mcp_server_url: 'http://localhost:6200',
+    });
+    mockFs.existsSync.mockImplementation((p) => p === CODEX_CONFIG);
+    mockFs.readFileSync.mockReturnValue([
+      'model = "gpt-5.5"',
+      '',
+      '[mcp_servers.node_repl]',
+      'command = "node_repl"',
+      '',
+    ].join('\n') as any);
+
+    expect(configureCodexMcp()).toBe(true);
+
+    expect(mockFs.mkdirSync).toHaveBeenCalledWith('/mock-home/.codex', { recursive: true });
+    const [, content, options] = mockFs.writeFileSync.mock.calls[0];
+    expect(content).toContain('[mcp_servers.node_repl]');
+    expect(content).toContain('[mcp_servers.gooseworks]');
+    expect(content).toContain('url = "http://localhost:6200/mcp"');
+    expect(content).toContain('http_headers = { Authorization = "Bearer cal_test" }');
+    expect(options).toEqual({ mode: 0o600 });
+  });
+
+  it('configureCodexMcp replaces an existing GooseWorks MCP entry', () => {
+    mockGetCredentials.mockReturnValue({
+      api_key: 'cal_new',
+      email: 'test@example.com',
+      agent_id: 'agent-123',
+      api_base: 'https://app.gooseworks.ai',
+      mcp_server_url: 'http://localhost:6200/mcp',
+    });
+    mockFs.existsSync.mockImplementation((p) => p === CODEX_CONFIG);
+    mockFs.readFileSync.mockReturnValue([
+      'model = "gpt-5.5"',
+      '',
+      '[mcp_servers.gooseworks]',
+      'url = "http://old.example/mcp"',
+      'http_headers = { Authorization = "Bearer old" }',
+      '',
+      '[mcp_servers.gooseworks.tools.old_tool]',
+      'approval_mode = "prompt"',
+      '',
+      '[projects."/repo"]',
+      'trust_level = "trusted"',
+      '',
+    ].join('\n') as any);
+
+    configureCodexMcp();
+
+    const content = mockFs.writeFileSync.mock.calls[0][1] as string;
+    expect(content).not.toContain('old.example');
+    expect(content).not.toContain('old_tool');
+    expect(content).toContain('[projects."/repo"]');
+    expect(content).toContain('url = "http://localhost:6200/mcp"');
+    expect(content).toContain('http_headers = { Authorization = "Bearer cal_new" }');
+  });
+
+  it('configureCodexMcp returns false when MCP credentials are missing', () => {
+    mockGetCredentials.mockReturnValue({
+      api_key: 'cal_test',
+      email: 'test@example.com',
+      agent_id: 'agent-123',
+      api_base: 'https://app.gooseworks.ai',
+    });
+
+    expect(configureCodexMcp()).toBe(false);
+    expect(mockFs.writeFileSync).not.toHaveBeenCalled();
   });
 });

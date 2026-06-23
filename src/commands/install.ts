@@ -3,7 +3,7 @@ import { ensureLoggedIn } from './login';
 import { installManagedEntrySkills, installStandaloneSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp, verifyMcpReachable } from '../agents/claude-mcp';
-import { configureCodex } from '../agents/codex';
+import { configureCodex, configureCodexMcp } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
 import * as logger from '../utils/logger';
@@ -94,7 +94,7 @@ Examples:
             } else {
               logger.warn(
                 `GooseWorks MCP server NOT reachable (${mcp.error}). Ads creation requires it — ` +
-                  'restart Claude Code and check your connection; the ads-remix skill will fail without MCP.'
+                  'restart Claude Code and check your connection; the goose-ads skill will fail without MCP.'
               );
             }
           } else {
@@ -106,6 +106,22 @@ Examples:
       if (agent === 'codex') {
         logger.info('Creating symlinks in ~/.codex/skills/');
         configureCodex();
+        if (wantMcp) {
+          if (configureCodexMcp()) {
+            logger.success("Registered 'gooseworks' MCP server in ~/.codex/config.toml");
+            const mcp = await verifyMcpReachable();
+            if (mcp.ok) {
+              logger.success('GooseWorks MCP server reachable');
+            } else {
+              logger.warn(
+                `GooseWorks MCP server NOT reachable (${mcp.error}). Ads creation requires it — ` +
+                  'restart Codex and check your connection; the goose-ads skill will fail without MCP.'
+              );
+            }
+          } else {
+            logger.info("Skipped MCP (no mcp_server_url in credentials — older backend?)");
+          }
+        }
         logger.success('Codex configured');
       }
       if (agent === 'cursor') {
@@ -132,10 +148,25 @@ Examples:
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
     logger.done(`Setup complete! Open ${agentNames} and try one of these:`);
+
+    logger.info('Data & GTM:');
     logger.example('/gooseworks find people who know <linkedin-profile-url>');
-    logger.example('/gooseworks find what <linkedin-profile-url> has been posting about');
     logger.example('/gooseworks find leads similar to <linkedin-company-url>');
     logger.example('/gooseworks research <company name>');
+
+    // goose-ads is a vendored entry skill — always installed, so always shown.
+    console.log('');
+    logger.info('Ads (create, edit & analyze):');
+    logger.example('/goose-ads remix template <id-or-url> for <your-product>');
+    logger.example('/goose-ads make an ad for <your-product>');
+    logger.example('/goose-ads why is my Meta campaign underperforming?');
+
+    // Graphics is a standalone skill — only suggest it if it was installed.
+    if ((opts.with || []).includes('goose-graphics')) {
+      console.log('');
+      logger.info('Graphics:');
+      logger.example('/goose-graphics make a chart from <data>');
+    }
     console.log('');
   });
 }
