@@ -283,10 +283,15 @@ decide — fine, but prefer sending the app defaults for predictable parity.
   research isn't finished yet the batch comes back \`status: "queued"\` — it auto-runs the moment
   research completes; tell the user it'll appear shortly, don't error.
 - \`estimate_remix_batch { items, engine?, quality? }\` — cost preview (images, credits_per_image,
-  total_credits, available_credits). Reserves nothing. Use to quote the cost first.
+  total_credits, available_credits). \`template_id\` accepts a uuid OR a slug. Reserves nothing. Use
+  to quote the cost first. Check \`unknown_template_ids\` in the response — any token there didn't
+  resolve (submit would 404 on it); don't quote a cost that silently dropped a bad id.
 - \`get_remix_batch { batch_id }\` — poll status. Returns each creative with its renders and
-  \`completed\`/\`failed\`/\`pending\` counts, plus \`links\`. A creative is done when its
-  \`current_render_url\` is set and \`pending\` is 0.
+  \`completed\`/\`failed\`/\`pending\` counts, plus \`links\`. A creative is done when its \`pending\` is 0
+  — NOT when \`current_render_url\` is set (during a regenerate that field still points at the prior
+  image). Each render carries \`age_seconds\` (since queued) and \`elapsed_seconds\` (time generating):
+  use them to tell a slow-but-healthy render from a stuck one. A render only failed when its
+  \`status\` is \`"failed"\` — never assume a stall and re-submit, that double-bills.
 - \`list_brand_creatives { brand_id, limit?, offset? }\` — the brand's gallery feed (newest
   first) + \`brand_url\`. Alternative poll target; also use to show everything made for a brand.
 - \`regenerate_creative { project_id, mode?, prompt?, source_render_id?, ... }\` — **edit / re-roll
@@ -300,7 +305,9 @@ decide — fine, but prefer sending the app defaults for predictable parity.
 - \`get_brand_kit { brand_id }\` — the CANONICAL brand context (name, description, audience,
   voice, brandType, valueProps, colors, typography, logoUrl, \`products[]\`, presigned
   \`referenceImages[]\`). Read this to choose \`product_name\` and any \`reference_image_urls\`.
-- \`list_ad_brands\` / \`get_ad_brand { brand_id }\` — find/fetch a brand by name or id.
+- \`list_ad_brands { query? }\` / \`get_ad_brand { brand_id }\` — find/fetch a brand. Pass \`query\` to
+  filter by name (case-insensitive) instead of listing every brand; rows are lean (no \`brand_kit\` —
+  read \`get_brand_kit\` for the full kit).
 - \`get_static_ad_template { template_id }\` — resolve a template (slug OR uuid; public catalog
   AND your org's private templates). Confirms it exists before you submit.
 - \`remix_community_ad { community_id }\` — a **Community** ad id is an \`ad_project\` id, not a
@@ -326,7 +333,9 @@ decide — fine, but prefer sending the app defaults for predictable parity.
    quality, preserve_source_styling }\` using the app defaults above. Keep the returned \`batch_id\`
    and \`links\`.
 6. **Poll until done.** \`get_remix_batch { batch_id }\` (or \`list_brand_creatives\`) every ~20-30s
-   until every creative's \`pending\` is 0. Generations normally finish in 1-3 min per image.
+   until every creative's \`pending\` is 0. Most images finish in a few minutes; text-heavy templates
+   and \`quality: high\` take longer. Read each render's \`elapsed_seconds\` rather than guessing — a
+   render that's still \`running\` is healthy; do NOT re-submit thinking it stalled (that double-bills).
 7. **Hand back the links** from the batch's \`links\` block — \`brand_url\` (gallery) and each
    creative's \`app_url\` — copied verbatim. Never end on just "done" or a file path.
 
