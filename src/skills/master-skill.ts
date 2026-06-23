@@ -238,7 +238,12 @@ fallback. Media generation uses the proxy (below); everything else uses MCP.
 - \`get_static_ad_template { template_id }\` — the source image to remix: \`source_image_url\`
   (a public CDN URL — pass straight to the generator), \`ratio\`, \`slug\`, and replicability
   hints (\`is_replicable\`, \`remix_engine\`, \`replicability_notes\`). \`template_id\` accepts the
-  readable slug OR the uuid.
+  readable slug OR the uuid. Resolves the public catalog AND your org's own private templates.
+- \`remix_community_ad { community_id }\` — for a **Community** ad (one someone else made,
+  browsed in the Community feed). A community id is an \`ad_project\` id, NOT a template id, so
+  \`get_static_ad_template\` can't resolve it directly. Call this FIRST: it snapshots the community
+  ad into a private template in your org and returns it (\`id\`, \`source_image_url\`, \`ratio\`,
+  \`slug\`); then use the returned \`id\` with \`create_ad_project\` / the recipe.
 - \`create_ad_project { brand_id, name, source_static_template_id }\` — create the remix
   project. **Returns \`app_url\` (the project page) AND \`brand_url\` (the brand gallery) — keep
   BOTH; hand them to the user at the end.**
@@ -279,7 +284,10 @@ WRONG agent and the app shows "Image not available". This is the #1 way this flo
    research first (the app does it on onboarding); only research locally if they ask. **Read the
    whole kit, not a preview** — you need \`colors\` (palette), \`typography\`, \`products[]\`, and
    \`referenceImages[]\` (each tagged \`productName\` + \`kind\`).
-2. \`get_static_ad_template { template_id }\` → keep \`source_image_url\` + replicability hints.
+2. **Resolve the source ad.** \`get_static_ad_template { template_id }\` → keep \`source_image_url\`
+   + replicability hints. **If it's a Community ad** (the user picked it from the Community feed, or
+   \`get_static_ad_template\` returns not-found for the id), call \`remix_community_ad { community_id }\`
+   FIRST to snapshot it into a template, then use the returned template's \`id\`.
 3. \`create_ad_project { brand_id, name, source_static_template_id }\` → keep \`project_id\` +
    both links.
 4. **Pick the brand inputs to feed the recipe (don't improvise):**
