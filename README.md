@@ -134,6 +134,18 @@ npx gooseworks update
 
 Standalone skills installed with `--with` skip the catalog search step. After `npx gooseworks install --claude --with goose-graphics`, you can invoke `/goose-graphics ...` directly from Claude Code.
 
+## Security & data handling
+
+We'd rather you know exactly what this CLI does before you run it:
+
+- **Skill scripts are open source and fetched at runtime.** `gooseworks fetch <slug>` (and the skills that call it) download skill content and Python scripts from the GooseWorks catalog on demand, save them under `/tmp/gooseworks-scripts/`, and run them on your machine. Every skill and its scripts live in the public, open-source [goose-skills repo](https://github.com/gooseworks-ai/goose-skills/tree/main/skills) — the catalog is synced from there — so the code is the same maintained, auditable source you can read on GitHub. They're served from the catalog (kept current) rather than pinned to the installed CLI version, so you always get the latest version of a skill.
+- **The MCP server is opt-in.** It's only registered when you pass `--mcp` (or `--all`). When you do, the CLI adds a `gooseworks` entry to `~/.claude.json` (Claude Code) or `~/.codex/config.toml` (Codex) that includes your bearer token in an `Authorization` header — this is how every HTTP MCP server authenticates. Skip `--mcp` if you don't want the server registered as a live tool provider; ads creation is the only feature that requires it.
+- **Credentials are stored locally.** Your API key lives in `~/.gooseworks/credentials.json`, written with `0600` permissions in a `0700` directory. `gooseworks logout` deletes it.
+- **`gooseworks env` exposes your key.** `eval $(gooseworks env)` exports `GOOSEWORKS_API_KEY` into your shell environment, where any process you run can read it. Most commands (e.g. `gooseworks call`) load credentials on their own — only use `env` when a script genuinely needs the environment variable.
+- **No install hooks.** `npm install` only downloads files; nothing executes on install. The CLI has four dependencies (chalk, commander, open, ora), uses standard OAuth with CSRF protection, and makes all network calls over HTTPS.
+
+Source for the CLI and skills lives at [github.com/gooseworks-ai/gooseworks](https://github.com/gooseworks-ai/gooseworks).
+
 ## What's Included
 
 100+ skills across these categories:
