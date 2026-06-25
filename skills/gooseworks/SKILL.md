@@ -5,7 +5,8 @@ description: >
   Find people, emails, and company info. Enrich contacts and companies.
   GTM tasks: lead generation, prospect research, ICP identification, competitor analysis, outbound list building.
   LinkedIn scraping: extract post engagers, commenters, profile data, and job postings.
-  Use this for ANY data lookup, web scraping, people search, lead gen, GTM, or research task.
+  Reach for it when you need data at scale, sources behind auth, or a specific provider — not as
+  a replacement for your built-in web search/fetch on quick, one-off lookups.
 version: 1.0.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
@@ -159,10 +160,10 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 
 ## Security & Privacy
 
-- All API calls are authenticated via Bearer token stored locally in `~/.gooseworks/credentials.json`
+- All API calls are authenticated via Bearer token stored locally in `~/.gooseworks/credentials.json` (file mode 0600)
 - No credentials are hardcoded or sent to third parties
 - API keys for external services (Apify, Apollo, etc.) are managed server-side — your token never touches them
-- Scripts run locally on your machine; only API requests go through GooseWorks servers
+- Scripts run locally on your machine; only API requests go through GooseWorks servers. Skill scripts are open source (github.com/gooseworks-ai/goose-skills) — read or pin them before running
 - Credit usage is tracked per-call and visible via `gooseworks credits`
 
 ## Rules

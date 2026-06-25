@@ -49,7 +49,8 @@ description: >
   Find people, emails, and company info. Enrich contacts and companies.
   GTM tasks: lead generation, prospect research, ICP identification, competitor analysis, outbound list building.
   LinkedIn scraping: extract post engagers, commenters, profile data, and job postings.
-  Use this for ANY data lookup, web scraping, people search, lead gen, GTM, or research task.
+  Reach for it when you need data at scale, sources behind auth, or a specific provider — not as
+  a replacement for your built-in web search/fetch on quick, one-off lookups.
 category: general
 version: 1.0.0
 author: GooseWorks
@@ -180,6 +181,28 @@ gooseworks call apify acts/parseforge~reddit-posts-scraper/runs --body='{"subred
   3. **Before saving output**, confirm with the user: *"I'll save the results to ~/Gooseworks/<filename>. Would you like a different location?"*
   4. Organize outputs in subfolders by task type when it makes sense (e.g. \`~/Gooseworks/reddit-scrapes/\`, \`~/Gooseworks/research/\`)
 - **Never overwrite existing files** without asking. If a file already exists, append a timestamp or ask the user
+
+## External Endpoints
+
+The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY\`) to:
+
+| Endpoint | Method | Wrapped by |
+|----------|--------|------------|
+| \`$GOOSEWORKS_API_BASE/api/skills/search\` | POST | \`gooseworks search\` |
+| \`$GOOSEWORKS_API_BASE/api/skills/catalog/:slug\` | GET | \`gooseworks fetch\` |
+| \`$GOOSEWORKS_API_BASE/v1/credits\` | GET | \`gooseworks credits\` |
+| \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/search\` | POST | \`gooseworks orthogonal find\` |
+| \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/details\` | POST | \`gooseworks orthogonal describe\` |
+| \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/run\` | POST | \`gooseworks call\` (orthogonal-routed providers) |
+| \`$GOOSEWORKS_API_BASE/v1/proxy/{apify,apollo,crustdata}/*\` | Various | \`gooseworks call\` (direct-proxy providers) |
+
+## Security & Privacy
+
+- All API calls are authenticated via Bearer token stored locally in \`~/.gooseworks/credentials.json\` (file mode 0600)
+- No credentials are hardcoded or sent to third parties
+- API keys for external services (Apify, Apollo, etc.) are managed server-side — your token never touches them
+- Scripts run locally on your machine; only API requests go through GooseWorks servers. Skill scripts are open source (github.com/gooseworks-ai/goose-skills) — read or pin them before running
+- Credit usage is tracked per-call and visible via \`gooseworks credits\`
 
 ## Rules
 
