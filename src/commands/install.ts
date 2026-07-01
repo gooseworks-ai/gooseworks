@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import open from 'open';
 import { ensureLoggedIn } from './login';
 import { installManagedEntrySkills, installStandaloneSkill, removeAllSkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
@@ -8,7 +9,7 @@ import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
 import * as logger from '../utils/logger';
 import { getEntrySkills } from '../skills/master-skill';
-import { API_BASE } from '../config';
+import { API_BASE, WELCOME_URL } from '../config';
 import { getVersion } from '../version';
 
 interface InstallOptions {
@@ -19,6 +20,7 @@ interface InstallOptions {
   mcp?: boolean;
   apiBase?: string;
   with?: string[];
+  welcome?: boolean;
 }
 
 export function createInstallCommand(): Command {
@@ -34,6 +36,7 @@ Examples:
   .option('--all', 'Configure for all detected agents (implies --mcp)')
   .option('--mcp', 'Also register the GooseWorks MCP server')
   .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
+  .option('--no-welcome', 'Skip opening the welcome guide in your browser after install')
   .option('--api-base <url>', 'API base URL', API_BASE)
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
@@ -166,6 +169,17 @@ Examples:
       console.log('');
       logger.info('Graphics:');
       logger.example('/goose-graphics make a chart from <data>');
+    }
+    console.log('');
+
+    // Open the welcome guide (how to use skills + browse the library). Skipped
+    // with --no-welcome; falls back to just printing the URL if the browser
+    // can't be opened (headless / SSH sessions).
+    if (opts.welcome !== false) {
+      logger.info(`New here? Open your welcome guide: ${WELCOME_URL}`);
+      open(WELCOME_URL).catch(() => {
+        /* headless env — the URL is already printed above */
+      });
     }
     console.log('');
   });

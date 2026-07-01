@@ -79,6 +79,7 @@ jest.mock('../../src/utils/logger', () => ({
   done: jest.fn(),
 }));
 
+import open from 'open';
 import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
 import { installManagedEntrySkills, installStandaloneSkill } from '../../src/skills/installer';
@@ -99,6 +100,7 @@ const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof 
 const mockConfigureCodex = configureCodex as jest.MockedFunction<typeof configureCodex>;
 const mockConfigureCodexMcp = configureCodexMcp as jest.MockedFunction<typeof configureCodexMcp>;
 const mockConfigureCursor = configureCursor as jest.MockedFunction<typeof configureCursor>;
+const mockOpen = open as unknown as jest.Mock;
 
 const mockCreds = {
   api_key: 'cal_test123',
@@ -336,6 +338,26 @@ describe('install command', () => {
       "Could not install standalone skill goose-grphics: skill 'goose-grphics' not found. Available: goose-graphics"
     );
     expect(mockConfigureClaude).toHaveBeenCalled();
+  });
+
+  it('opens the welcome guide in the browser by default', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    await createInstallCommand().parseAsync(['node', 'test', '--claude']);
+
+    expect(mockOpen).toHaveBeenCalledWith(
+      expect.stringContaining('/welcome')
+    );
+  });
+
+  it('does not open the welcome guide with --no-welcome', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    await createInstallCommand().parseAsync(['node', 'test', '--claude', '--no-welcome']);
+
+    expect(mockOpen).not.toHaveBeenCalled();
   });
 
   it('documents --with in command help', async () => {

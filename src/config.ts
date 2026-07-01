@@ -12,3 +12,7 @@ export const FRONTEND_URL = process.env.GOOSEWORKS_FRONTEND_URL || 'https://app.
 // Public graphics hub (skills + formats catalog). Distinct host from FRONTEND_URL:
 // `app.gooseworks.ai` has no /styles or /formats routes — those live on skills.gooseworks.ai.
 export const HUB_URL = process.env.GOOSEWORKS_HUB_URL || 'https://skills.gooseworks.ai';
+// Post-install welcome guide. Lives on the marketing site (gooseworks.ai), which
+// is a separate host from the app (app.gooseworks.ai) — it explains how to use
+// skills and links to the browsable library. Opened in the browser after install.
+export const WELCOME_URL = process.env.GOOSEWORKS_WELCOME_URL || 'https://gooseworks.ai/welcome';
