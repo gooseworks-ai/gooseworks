@@ -1,6 +1,7 @@
 import {
   getMasterSkillContent,
   getGooseAdsSkillContent,
+  getGooseVideoSkillContent,
   getEntrySkills,
 } from '../../src/skills/master-skill';
 
@@ -125,8 +126,37 @@ describe('skills/goose-ads entry skill', () => {
 });
 
 describe('skills/getEntrySkills', () => {
-  it('vendors gooseworks + goose-ads (not ads-remix)', () => {
+  it('vendors gooseworks + goose-ads + goose-video (not ads-remix)', () => {
     const names = getEntrySkills().map((s) => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video']);
+  });
+});
+
+describe('skills/getGooseVideoSkillContent', () => {
+  const video = getGooseVideoSkillContent();
+
+  it('is named/slugged goose-video', () => {
+    expect(video).toContain('name: goose-video');
+    expect(video).toContain('slug: goose-video');
+  });
+
+  it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
+    // Local render lifecycle + the free in-app review tool.
+    expect(video).toContain('submit_render');
+    expect(video).toContain('update_render_status');
+    expect(video).toContain('update_ad_project_script');
+    expect(video).toContain('set_final_render');
+    // Fetches the per-format recipe by slug.
+    expect(video).toContain('remix-imessage-ad-from-sample');
+    // Single review-once gate over the full ingredient set (script + visuals),
+    // mirrored as container-tagged ingredients.
+    expect(video).toMatch(/review/i);
+    expect(video).toContain('ingredients');
+    expect(video).toContain('container');
+    expect(video).toMatch(/end card/i);
+    // Durable render-file URL, never a CDN URL.
+    expect(video).toContain('render-file?path=');
+    // It is NOT the static backend-batch wrapper.
+    expect(video).not.toContain('submit_remix_batch');
   });
 });

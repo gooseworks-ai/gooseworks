@@ -12,6 +12,7 @@ import { callCommand } from './commands/call';
 import { orthogonalCommand } from './commands/orthogonal';
 import { stylesCommand } from './commands/styles';
 import { formatsCommand } from './commands/formats';
+import { doctorCommand } from './commands/doctor';
 import { getVersion } from './version';
 
 const program = new Command();
@@ -32,5 +33,6 @@ program.addCommand(callCommand);
 program.addCommand(orthogonalCommand);
 program.addCommand(stylesCommand);
 program.addCommand(formatsCommand);
+program.addCommand(doctorCommand);
 
 program.parse();

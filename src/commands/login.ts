@@ -4,6 +4,7 @@ import { runOAuthFlow } from '../auth/oauth-server';
 import { getInstalledSkills, installManagedEntrySkills } from '../skills/installer';
 import { getEntrySkills } from '../skills/master-skill';
 import { configureClaude } from '../agents/claude';
+import { configureClaudeMcp } from '../agents/claude-mcp';
 import { isAgentInstalled } from '../agents/detect';
 import * as logger from '../utils/logger';
 import { API_BASE } from '../config';
@@ -25,6 +26,21 @@ function refreshEntrySkillsOnLogin(): void {
   if (isAgentInstalled('claude')) configureClaude();
 }
 
+/**
+ * Re-point the `gooseworks` MCP registration at the backend we just logged into
+ * (from `creds.mcp_server_url`). `install`/`update` already do this, but plain
+ * `login` didn't — so switching backends (e.g. prod → local dev) left the MCP
+ * tools pointed at the OLD backend even though the CLI creds were correct. That
+ * mismatch reads as "project not found" / wrong org on every `mcp__gooseworks__*`
+ * call, while `doctor` (creds-only) still passes — a confusing trap.
+ */
+function syncMcpRegistration(): void {
+  if (configureClaudeMcp()) {
+    const creds = getCredentials();
+    logger.info(`Synced the gooseworks MCP → ${creds?.mcp_server_url ?? 'the configured server'}`);
+  }
+}
+
 export const loginCommand = new Command('login')
   .description('Sign in to GooseWorks with Google')
   .option('--api-base <url>', 'API base URL', API_BASE)
@@ -33,6 +49,7 @@ export const loginCommand = new Command('login')
     if (existing) {
       logger.success(`Already logged in as ${existing.email}`);
       refreshEntrySkillsOnLogin();
+      syncMcpRegistration();
       logger.info('Run "gooseworks logout" first to switch accounts.');
       return;
     }
@@ -41,6 +58,7 @@ export const loginCommand = new Command('login')
       const result = await runOAuthFlow(opts.apiBase);
       logger.success(`Logged in as ${result.email}`);
       refreshEntrySkillsOnLogin();
+      syncMcpRegistration();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed';
       logger.error(message);

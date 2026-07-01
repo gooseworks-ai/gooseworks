@@ -11,7 +11,9 @@
  * Sibling domain skills NOT vendored here (fetched live from goose-skills):
  *   - `goose-graphics` — charts/slides/infographics/branded visuals. Installed via
  *     `gooseworks install --with goose-graphics` or fetched on demand.
- *   - `goose-video`    — ad/UGC/talking-head video. Coming soon.
+ *   - `goose-video`    — video ad remix: fetches the per-format recipe by slug,
+ *     renders LOCALLY (Playwright + ffmpeg + media proxies), mirrors a script for
+ *     in-app review, saves the MP4 back over MCP (getGooseVideoSkillContent).
  *
  * Recipe skills (remix-graphic-ad-from-reference, brand-research, meta-ads-analyzer,
  * …) are NOT vendored here — they live in goose-skills and are fetched live on
@@ -28,6 +30,7 @@ export function getEntrySkills(): EntrySkill[] {
   return [
     { name: 'gooseworks', content: getMasterSkillContent() },
     { name: 'goose-ads', content: getGooseAdsSkillContent() },
+    { name: 'goose-video', content: getGooseVideoSkillContent() },
   ];
 }
 
@@ -71,7 +74,7 @@ Before anything else, check whether the request belongs to a specialized domain.
 | --- | --- | --- |
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **\`goose-ads\`** | Installed locally as an entry skill. Just use it. If unavailable, run \`gooseworks install --claude\`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **\`goose-graphics\`** | If installed locally, use it. Otherwise \`gooseworks fetch goose-graphics\` (or \`gooseworks install --claude --with goose-graphics\`). |
-| Ad/UGC/talking-head **video** | **\`goose-video\`** | Coming soon. Until it ships, search the catalog (\`gooseworks search "ugc video"\`) and \`gooseworks fetch\` the matching recipe. |
+| Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>" | **\`goose-video\`** | Installed locally as an entry skill. Just use it. If unavailable, run \`gooseworks install --claude\`. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to \`goose-ads\`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -412,5 +415,226 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
   relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
 - **Don't busy-loop** — poll \`get_remix_batch\` on a sensible interval (~20-30s); a \`queued\`
   batch is waiting on research and will start on its own.
+`;
+}
+
+/**
+ * Returns the goose-video entry SKILL.md content (the `goose-video` entry skill).
+ *
+ * Unlike `goose-ads` (static images, generated 100% server-side via the remix
+ * batch tools), VIDEO ads render LOCALLY in the user's own Claude Code: the app
+ * pre-creates the project and hands the user a paste prompt; this skill fetches
+ * the per-format recipe by slug from goose-skills, renders on the user's machine
+ * (Playwright + ffmpeg + the GooseWorks media proxies), mirrors the script for a
+ * free in-app review, then saves the finished MP4 back over MCP. The app is the
+ * viewer + review surface. The `gooseworks` parent router hands video here; Claude
+ * also loads it by description.
+ */
+export function getGooseVideoSkillContent(): string {
+  return `---
+name: goose-video
+slug: goose-video
+description: >
+  GooseWorks video ads — remix a video ad template (iMessage chat-reveal, more coming) into a
+  branded video ad for the user's product. Renders LOCALLY on the user's machine (Playwright +
+  ffmpeg + GooseWorks media proxies) and saves the finished MP4 back to the project over MCP.
+  Use when the user says "make the video for project <id>", references a video ad project or
+  template, or asks to remix a video ad. Unlike goose-ads (static images, generated server-side),
+  video renders locally and reports progress + the result back through the gooseworks MCP tools.
+category: ads
+version: 0.1.0
+author: GooseWorks
+tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
+---
+
+# GooseWorks Video Ads — local remix runtime
+
+You produce **video** ad creative on the user's OWN machine and sync the result back to the
+GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
+proxies, data I/O, the review gate). A separate **recipe skill** — fetched per format — tells
+you *what to make*; read both, and this doc wins on any conflict about the environment.
+
+You run inside the user's own Claude Code session (they pasted an instruction with a project
+id). The app NEVER runs you — it is the viewer + review surface; you are the renderer.
+
+## Prerequisite — MCP + a local toolchain (Phase 0 preflight)
+
+- The \`mcp__gooseworks__*\` tools are REQUIRED. If they're unavailable, stop and tell the user
+  to run \`gooseworks install --claude --mcp\` and restart Claude Code. There is no REST fallback.
+- This is a LOCAL render. Run \`gooseworks doctor\` FIRST — it checks login, the MCP server,
+  **ffmpeg** + **ffprobe**, and **Playwright Chromium** in one shot. If it reports any ✗, relay
+  the exact fix it prints (e.g. \`brew install ffmpeg\`, \`npx playwright install chromium\`) and
+  stop — don't half-render.
+
+## Identity, token, credits
+
+- Read \`~/.gooseworks/credentials.json\` → \`api_key\` (your agent token), \`api_base\`, \`agent_id\`.
+  Never print the token.
+- **CRITICAL — target the org-default Ads agent on EVERY file op.** The app serves project files
+  (the render-file route) from the org's DEFAULT agent, but MCP file writes default to your
+  token's pinned agent — which can be a DIFFERENT agent, so a render written with the default
+  scope is **invisible in the app**. First resolve the Ads agent: \`list_accessible_scopes\` → the
+  scope with \`is_org_default: true\` → its \`agent_id\` is \`ADS_AGENT\`. Then pass
+  \`target: { type: "agent", agent_id: ADS_AGENT }\` on EVERY \`get_upload_url\` / \`get_download_url\`
+  / \`write_file\` / \`list_directory\` / \`read_file\` — NEVER omit \`target\`.
+- Media generation (FAL / ElevenLabs) is billed to the agent through the GooseWorks proxies.
+  \`submit_render { kind: "full" }\` debits **1 ad credit at row creation** — so sequence it LAST
+  (render + verify a good MP4 first), and never re-submit on a guess (that double-bills). Call
+  \`get_ad_credits\` first; the user can check \`gooseworks credits\`.
+
+## Step 1 — resolve the project, source, brand
+
+1. \`get_ad_project { project_id }\` → keep \`brand_id\`, \`source_sample_id\`, \`name\`, \`status\`.
+2. \`get_ad_template { template_id: source_sample_id }\` → the source video: \`media_url\`,
+   \`recipe\`, \`format\` (e.g. "imessage"), \`extracted_script\`, \`how_to\`, \`remix_spec\`.
+3. Brand gate: \`get_brand_kit { brand_id }\`. If \`researchStatus\` is \`complete\`, REUSE it —
+   never re-research. If not, run brand research first (\`gooseworks fetch brand-research\`,
+   follow it, then \`finalize_brand_research { brand_id }\`) before continuing.
+
+## Step 2 — fetch the recipe + its pack skills for the format
+
+The video-ad format skills live in the goose-skills **\`video-ad-formats\`** pack. Map the project's
+\`format\` to its recipe slug:
+
+| format | recipe slug | renderer + atoms it drives |
+| --- | --- | --- |
+| \`imessage\` | \`remix-imessage-ad-from-sample\` | create-imessage-video-ad, create-imessage-mockup, stitch-videos-ffmpeg, mix-master, watch |
+| \`chatgpt\` | \`remix-chatgpt-ad-from-sample\` | create-chatgpt-video-ad, create-chatgpt-mockup, render-ios-keyboard, stitch-videos-ffmpeg, watch |
+| \`apple-notes\` | \`remix-apple-notes-ad-from-sample\` | create-apple-notes-video-ad, create-apple-notes-mockup, stitch-videos-ffmpeg, watch |
+
+(photo-grid + music-video coming.) Pack skills are fetchable individually by slug but do NOT
+auto-resolve dependencies (no \`dependencySkills\`), so \`gooseworks fetch\` the recipe **and** each
+skill in its row — e.g. for iMessage:
+
+\`\`\`bash
+for s in remix-imessage-ad-from-sample create-imessage-video-ad create-imessage-mockup \\
+         stitch-videos-ffmpeg mix-master watch; do gooseworks fetch "$s"; done
+\`\`\`
+
+Each prints \`{ content, scripts, files }\`. Save each skill's scripts + files under
+\`/tmp/gooseworks-scripts/<slug>/\` and FOLLOW the recipe's SKILL.md — it orchestrates the others.
+The renderer (the \`create-*-mockup\` atom for the format) is a Node package —
+\`npm install\` in its folder so its \`generate.js\` + Playwright resolve, and point the recorder's
+\`NODE_PATH\` at it.
+
+## Step 3 — prepare ALL the ingredients, then review ONCE (always, before any paid render)
+
+This is a **review-once** flow: prepare every ingredient the video needs, show the whole set to
+the user in the app, get ONE approval, then render. Never render before approval, and don't drip
+ingredients out one at a time.
+
+1. **Generate every ingredient the format needs — not just the script.** For an iMessage video
+   that's typically: the **script** (the bubble thread), the **image(s)** shown in the conversation
+   (one or more), and the **end card**. Richer templates add more (hook frame, background, product
+   shots, music bed…). Read the recipe for the exact ingredient list. Generate the visuals NOW
+   (media proxies / recipe), and \`get_upload_url\` each preview asset to \`working/review/<name>\`.
+   You may ask the user a couple of clarifying questions about the generation first if the recipe
+   calls for it (angle, which product, offer/code) — batch them, then prepare everything.
+2. **Mirror the whole ingredient set for review** — \`update_ad_project_script { project_id,
+   script_drafts, script }\`. \`script_drafts\` is a structured payload of **container-tagged
+   ingredients** so the app renders each piece the right way:
+   \`{ format, scenes?, ingredients: [{ container, label, subtitle?, path?, text? }] }\`. Each
+   ingredient's \`container\` tells the app HOW to show it:
+   - \`image\` (a frame shown in the video), \`endcard\` (the end card), \`avatar\` (a character
+     headshot), \`background\` → rendered as an image tile.
+   - \`voice\` (a voiceover clip — put the voice NAME in \`subtitle\`), \`music\` (the bed),
+     \`audio\` → rendered as an audio player.
+   - \`video\` (a clip) → a video player. \`text\` (a copy line like the CTA) → a text tile.
+   - \`script\` / \`thread\` / \`note\` / \`conversation\` → the written script (or set \`scenes[]\`
+     for the podcast shape, or pass the readable \`script\` string).
+   \`path\` = \`working/review/<name>\` (upload the preview asset first via \`get_upload_url\`); \`url\`
+   works too. **Label every ingredient** ("Hook image", "End card", "Voiceover", "Background
+   music", "HER"). This writes NO render and costs NO credits — it populates the review panel.
+3. **STOP and ask the user to approve the ingredients in THIS Claude Code session.** Do not render
+   until they say go. If they want changes, regenerate the affected ingredient, call
+   \`update_ad_project_script\` again, and re-ask. Only AFTER approval do Step 4.
+
+## Step 4 — render locally, report stages, publish
+
+1. Render per the recipe (Playwright record → ffmpeg stitch → \`mix-master\` audio). Generate any
+   hook / background / end-card assets through the media proxies (below).
+2. Open the row LAST: \`submit_render { project_id, kind: "full" }\` → keep \`render_id\`, then
+   \`update_render_status { render_id, status: "running" }\`. The render row tracks status only
+   (queued / running / complete / failed) — narrate fine-grained progress with
+   \`append_project_message\` instead.
+3. QC by watching: run the \`watch\` skill on the master — verify bubble/beat order + SFX, that
+   the brand's product (not the source's) is shown, the end card has the real wordmark + code,
+   and the duration is within ~20% of the source.
+4. Publish: \`get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }\` → PUT the master
+   to \`working/final.mp4\` and a poster to \`working/final-thumb.jpg\`. **Always target ADS_AGENT**
+   (see Identity — a file on your token's own agent is invisible to the app). Verify servable:
+   \`get_download_url { target: ADS_AGENT, path: "working/final.mp4" }\` must return a non-empty URL.
+   Then \`update_render_status { render_id, status: "complete", output_url, thumbnail_url }\` where
+   **output_url MUST be the durable render-file URL**
+   \`/api/ads/projects/<project_id>/render-file?path=working/final.mp4\` (the app re-presigns it on
+   every view) — NEVER a raw proxy/CDN URL (those expire). Same for \`thumbnail_url\`.
+5. \`set_final_render { project_id, render_id }\` to pin it, then return the \`app_url\` +
+   \`brand_url\` (from the project/links) verbatim. Never end on just "done" or a file path.
+
+Narrate each long step in one line via \`append_project_message { project_id, role: "agent",
+content }\` — never sit silent on a queue > 90s.
+
+## Media generation — the GooseWorks proxies (queue loop)
+
+Media APIs go through GooseWorks proxies with your agent token; do NOT use an SDK's default host
+(your token isn't a FAL/ElevenLabs token → 401). Base = \`<api_base>/api/internal/<proxy>\`; pass
+\`?token=<api_key>&agent_id=<agent_id>\` (agent_id bills the Ads agent). FAL = \`fal-proxy\` (+
+\`fal-storage-proxy\` to host a local image and get a CDN URL); ElevenLabs = \`elevenlabs-proxy\`
+(VO / music bed).
+
+**FAL queue gotcha** (#1 waste of generations): submit returns \`status_url\`/\`response_url\` on
+\`queue.fal.run\` (the real host, not the proxy). Polling those 401s forever — rewrite their host
+to the proxy base (keep the path), re-add \`?token=&agent_id=\`. Only the final \`*.fal.media\`
+image is a real public URL. Helper:
+
+\`\`\`python
+import json, os, pathlib, time, requests
+from urllib.parse import urlparse
+
+def _cfg():
+    c = json.loads(pathlib.Path(os.path.expanduser("~/.gooseworks/credentials.json")).read_text())
+    return c["api_base"].rstrip("/"), c["api_key"], c.get("agent_id")
+
+def _params(tok, agent):
+    p = {"token": tok}
+    if agent: p["agent_id"] = agent
+    return p
+
+def fal_generate(model_path, payload, timeout_s=180, poll_s=3):
+    """model_path e.g. 'fal-ai/nano-banana-2/edit' (the recipe names the model).
+    Returns the result image URL (a public *.fal.media CDN URL)."""
+    api_base, tok, agent = _cfg()
+    base = api_base + "/api/internal/fal-proxy"
+    sub = requests.post(f"{base}/{model_path}", params=_params(tok, agent), json=payload).json()
+    to_proxy = lambda u: base + urlparse(u).path
+    status_url, response_url = to_proxy(sub["status_url"]), to_proxy(sub["response_url"])
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        st = requests.get(status_url, params=_params(tok, agent)).json()
+        if st.get("status") == "COMPLETED":
+            return requests.get(response_url, params=_params(tok, agent)).json()["images"][0]["url"]
+        if st.get("status") in ("FAILED", "ERROR"):
+            raise RuntimeError(f"FAL failed: {st}")
+        time.sleep(poll_s)
+    raise TimeoutError("FAL polling exceeded timeout")
+\`\`\`
+
+ElevenLabs (VO / music) is the same shape against \`<api_base>/api/internal/elevenlabs-proxy\`
+with \`?token=&agent_id=\`. Feed FAL a local image by storing it (\`get_upload_url\`) and passing its
+\`get_download_url\` presigned URL as an \`image_urls\` entry, or POST the bytes to \`fal-storage-proxy\`.
+
+## Rules
+
+- **MCP + ffmpeg + Playwright required** — run \`gooseworks doctor\` in Phase 0; stop with the
+  exact fix it prints if anything is ✗.
+- **Prepare ALL ingredients first** (script + every visual: image(s) + end card + whatever else
+  the template needs), mirror the whole set with \`update_ad_project_script\`, and get the user's
+  approval in-session BEFORE rendering — always (review-once).
+- **submit_render LAST**; \`output_url\` = the durable render-file URL, never a CDN URL.
+- **Verify a real, non-empty MP4** (watch it) before marking the render complete.
+- **Reuse the brand** when its research is complete; never re-research.
+- On a hard error (auth/quota/model/timeout) set the render \`failed\` with a short
+  \`error_message\` and stop — don't ship the source unchanged.
+- Always end a successful run with \`app_url\` + \`brand_url\`, verbatim.
 `;
 }

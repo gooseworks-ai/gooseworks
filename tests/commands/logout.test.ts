@@ -15,12 +15,18 @@ jest.mock('../../src/utils/logger', () => ({
   done: jest.fn(),
 }));
 
+jest.mock('../../src/agents/claude-mcp', () => ({
+  removeClaudeMcp: jest.fn(),
+}));
+
 import { getCredentials, clearCredentials } from '../../src/auth/credentials';
 import * as loggerModule from '../../src/utils/logger';
+import { removeClaudeMcp } from '../../src/agents/claude-mcp';
 import { logoutCommand } from '../../src/commands/logout';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 const mockClearCredentials = clearCredentials as jest.MockedFunction<typeof clearCredentials>;
+const mockRemoveClaudeMcp = removeClaudeMcp as jest.MockedFunction<typeof removeClaudeMcp>;
 
 describe('logout command', () => {
   beforeEach(() => {
@@ -34,6 +40,7 @@ describe('logout command', () => {
 
     expect(loggerModule.info).toHaveBeenCalledWith('Not currently logged in.');
     expect(mockClearCredentials).not.toHaveBeenCalled();
+    expect(mockRemoveClaudeMcp).not.toHaveBeenCalled();
   });
 
   it('clears credentials and logs email when logged in', async () => {
@@ -47,6 +54,9 @@ describe('logout command', () => {
     await logoutCommand.parseAsync(['node', 'test']);
 
     expect(mockClearCredentials).toHaveBeenCalled();
+    // logout must also drop the gooseworks MCP registration (so it can't linger
+    // pointing at the logged-out backend with a dead token).
+    expect(mockRemoveClaudeMcp).toHaveBeenCalled();
     expect(loggerModule.success).toHaveBeenCalledWith(
       expect.stringContaining('u@example.com')
     );
