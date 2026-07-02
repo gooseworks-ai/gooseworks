@@ -249,7 +249,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.0.0
+version: 2.1.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -292,8 +292,10 @@ what they'd get in the UI. **Pass these explicitly:**
 - \`ratios\`: **["4:5"]** (Meta feed vertical)
 - \`engine\`: **"gpt_image_2"**
 - \`quality\`: **"medium"**
-- \`preserve_source_styling\`: **true** (keep the template's own colours/fonts; only restyle to
-  the brand palette if the user explicitly asks to "match my brand colours")
+- \`preserve_source_styling\`: **ASK the user** — "Keep original" (the template's own
+  colours/fonts → \`preserve_source_styling: true\`) vs "Match brand" (restyle to the brand
+  palette/fonts → \`preserve_source_styling: false\`). This mirrors the app's Styling control.
+  **The default is "Keep original"** — if the user doesn't answer or doesn't care, send \`true\`.
 
 If the user asks for something the app exposes (more variants, a different ratio like 1:1 or
 9:16, a faster engine, higher quality), pass that instead. Omitting a field lets backend policy
@@ -319,6 +321,12 @@ decide — fine, but prefer sending the app defaults for predictable parity.
   \`status\` is \`"failed"\` — never assume a stall and re-submit, that double-bills.
 - \`list_brand_creatives { brand_id, limit?, offset? }\` — the brand's gallery feed (newest
   first) + \`brand_url\`. Alternative poll target; also use to show everything made for a brand.
+- \`surprise_me_templates { brand_id, count? }\` — the **"Surprise me" recommender**. Picks
+  brand-relevant templates (SAME logic as the web /create "Surprise me" button — templates
+  whose category overlaps the brand float to the top, bucketed + shuffled so picks stay fresh).
+  Returns the picked templates (id, slug, title, image, ratio) AND a ready-to-open \`create_url\`
+  (the /create page with \`cli=true\` and the picks pre-selected). This is how you recommend
+  templates — do NOT hand-pick from the raw catalog yourself (see "Picking templates" below).
 - \`regenerate_creative { project_id, mode?, prompt?, source_render_id?, ... }\` — **edit / re-roll
   one existing creative** through the same pipeline. \`mode: "variation"\` (default) re-rolls from
   the template; \`"edit"\` makes a targeted change to a specific render (\`prompt\` + \`source_render_id\`
@@ -342,21 +350,53 @@ decide — fine, but prefer sending the app defaults for predictable parity.
   image as a private template, then remix it like any other.
 - \`get_ad_project\` / \`append_project_message\` — inspect a creative / leave a note on its thread.
 
+## Picking templates — ASK the user; don't freelance from the catalog
+
+When the user wants to make ads but has NOT named a specific template (id/slug/Community
+ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
+short ask flow — it mirrors the web app and keeps the human in the loop:
+
+1. **Ask what kind of ads they want** — the angle/offer/theme/season, the vibe, and which
+   product from the brand kit to feature. This shapes both the template choice and your steering
+   \`prompt\`. Keep it to one or two quick questions.
+2. **Ask how to pick templates: "Choose explicitly" or "Surprise me".**
+   - **Surprise me** (they want you/the app to pick) → call
+     \`surprise_me_templates { brand_id, count }\` and hand the user the returned \`create_url\`.
+     It opens /create in **CLI mode** with the picks pre-selected, a preview modal, and the
+     **copyable remix prompt at the bottom** (in place of the Generate input). They can swap
+     picks and copy that prompt. If they'd rather you "just make them" without reviewing in the
+     app, you MAY submit the \`surprise_me_templates\` picks directly (skip to submit).
+   - **Choose explicitly** (they want to browse and select) → hand the user this URL, with the
+     active brand's slug filled in:
+     \`https://make.gooseworks.ai/create?brand=<brand-slug>&cli=true\`
+     In CLI mode the app shows the copyable remix prompt at the bottom (dismissable / switchable
+     back to the UI composer). They browse, select templates, and copy the prompt.
+3. **Ask the styling** — "Keep original" (default) vs "Match brand" — per the Defaults section.
+4. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
+   (it names the brand + the templates they chose), THAT is your cue to generate: resolve the
+   named template(s), then \`submit_remix_batch\` with the app defaults + the styling they chose.
+
+If the user already named a template (id/slug), a Community ad, or an upload, skip the ask flow
+for template choice — they've chosen — but still confirm the styling default and steer the prompt.
+
 ## Workflow — make ads from a template
 
 1. **Resolve the brand.** \`list_ad_brands\` by name/site → \`get_brand_kit { brand_id }\`. If the
    kit's \`researchStatus\` isn't \`complete\`, you can still submit (the batch queues and runs when
    research finishes) — just tell the user. Use the kit to pick \`product_name\` (a real entry from
    \`products[]\`, not a guess) and, if the user supplied product photos, \`reference_image_urls\`.
-2. **Resolve the template(s).** \`get_static_ad_template { template_id }\` for each. For a Community
-   ad, \`remix_community_ad\` first; for an uploaded image, \`create_user_ad_template\` first.
+2. **Pick the template(s) via the ask flow above** (kind of ads → Choose explicitly vs Surprise
+   me → styling). Once you have concrete ids: \`get_static_ad_template { template_id }\` for each.
+   For a Community ad, \`remix_community_ad\` first; for an uploaded image, \`create_user_ad_template\`
+   first.
 3. **(Optional) Craft the steering prompt.** The \`prompt\` is OPTIONAL — this is where the skill
-   adds value: turn the user's intent into a concise steering note (e.g. tone, season, emphasis).
-   Don't over-specify; the backend pipeline + brand kit handle palette, fonts, product swap.
+   adds value: turn the user's intent (from step 1) into a concise steering note (e.g. tone,
+   season, emphasis). Don't over-specify; the backend pipeline + brand kit handle palette, fonts,
+   product swap.
 4. **(Optional) Quote the cost.** \`estimate_remix_batch { items, engine, quality }\` → tell the user.
 5. **Submit ONE batch.** \`submit_remix_batch { brand_id, items, prompt?, product_name?, engine,
-   quality, preserve_source_styling }\` using the app defaults above. Keep the returned \`batch_id\`
-   and \`links\`.
+   quality, preserve_source_styling }\` using the app defaults above and the styling the user chose.
+   Keep the returned \`batch_id\` and \`links\`.
 6. **Poll until done.** \`get_remix_batch { batch_id }\` (or \`list_brand_creatives\`) every ~20-30s
    until every creative's \`pending\` is 0. Most images finish in a few minutes; text-heavy templates
    and \`quality: high\` take longer. Read each render's \`elapsed_seconds\` rather than guessing — a
@@ -413,6 +453,12 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
   each creative's \`app_url\`), copied verbatim. Never end on just "done" or a file path.
 - **Quote cost before generating** when it's non-trivial (use \`estimate_remix_batch\`), and
   relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
+- **Don't hand-pick templates silently.** If the user didn't name a template, run the ask flow
+  (kind of ads → Choose explicitly vs Surprise me → styling). "Surprise me" goes through
+  \`surprise_me_templates\`; "Choose explicitly" sends them to \`/create?brand=<slug>&cli=true\`.
+  Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
+  directly if they'd rather not review).
+- **Ask the styling** — Keep original (default) vs Match brand — before you submit.
 - **Don't busy-loop** — poll \`get_remix_batch\` on a sensible interval (~20-30s); a \`queued\`
   batch is waiting on research and will start on its own.
 `;

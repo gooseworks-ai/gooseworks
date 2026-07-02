@@ -123,6 +123,27 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('"4:5"');
     expect(ads).toContain('preserve_source_styling');
   });
+
+  it('recommends templates via surprise_me_templates instead of hand-picking the catalog', () => {
+    expect(ads).toContain('surprise_me_templates');
+    expect(ads).toContain('create_url');
+    // Explicitly tells the agent NOT to freelance a pick from the raw catalog.
+    expect(ads).toMatch(/do NOT .*hand-pick|Don't hand-pick templates/i);
+  });
+
+  it('routes "choose explicitly" to the /create page in CLI mode', () => {
+    expect(ads).toContain('/create?brand=<brand-slug>&cli=true');
+    expect(ads).toContain('Choose explicitly');
+    expect(ads).toContain('Surprise me');
+    // The app surfaces the copyable remix prompt the user pastes back to close the loop.
+    expect(ads).toMatch(/copyable remix prompt|paste/i);
+  });
+
+  it('asks the styling (keep original default vs match brand) before submitting', () => {
+    expect(ads).toContain('Keep original');
+    expect(ads).toContain('Match brand');
+    expect(ads).toMatch(/default is "Keep original"/i);
+  });
 });
 
 describe('skills/getEntrySkills', () => {
