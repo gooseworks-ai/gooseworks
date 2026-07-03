@@ -520,9 +520,24 @@ id). The app NEVER runs you — it is the viewer + review surface; you are the r
   (the render-file route) from the org's DEFAULT agent, but MCP file writes default to your
   token's pinned agent — which can be a DIFFERENT agent, so a render written with the default
   scope is **invisible in the app**. First resolve the Ads agent: \`list_accessible_scopes\` → the
-  scope with \`is_org_default: true\` → its \`agent_id\` is \`ADS_AGENT\`. Then pass
-  \`target: { type: "agent", agent_id: ADS_AGENT }\` on EVERY \`get_upload_url\` / \`get_download_url\`
-  / \`write_file\` / \`list_directory\` / \`read_file\` — NEVER omit \`target\`.
+  scope with \`is_org_default: true\` (the ORG default — NOT the \`is_default\` / \`default_agent_id\`
+  fields, which are the *user's* default agent and are often a DIFFERENT agent). Its \`agent_id\` is
+  \`ADS_AGENT\` (name "Ads agent", slug \`org-default\`; usually also the \`agent_id\` in
+  credentials.json). Then pass \`target: { type: "agent", agent_id: ADS_AGENT }\` on EVERY
+  \`get_upload_url\` / \`get_download_url\` / \`write_file\` / \`list_directory\` / \`read_file\` — NEVER
+  omit \`target\`.
+- **CRITICAL — publish under the PROJECT FOLDER, not the workspace root (the #1 "video renders but
+  is invisible" bug).** \`get_upload_url\` stores at \`<ADS_AGENT>/files/<path>\` verbatim, but the
+  render-file route reads from
+  \`<ADS_AGENT>/files/agent-config/brands/<brand_slug>/projects/<project_id>/<path>\`
+  (see backend \`resolveProjectFileKey\`). So EVERY publish/preview \`path\` MUST be prefixed with
+  \`agent-config/brands/<brand_slug>/projects/<project_id>/\` — e.g. upload to
+  \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\`, NEVER bare
+  \`working/final.mp4\`. A bare path 404s in the app even though the render row AND a bare-path
+  \`get_download_url\` both "succeed" (they resolve the wrong key). The render \`output_url\` still
+  stays the project-relative \`...render-file?path=working/final.mp4\` — the route re-prepends the
+  prefix itself. Always verify with \`get_download_url\` on the FULL \`agent-config/...\` path (must
+  be non-empty; curl it for HTTP 200) BEFORE marking the render complete.
 - Media generation (FAL / ElevenLabs) is billed to the agent through the GooseWorks proxies.
   \`submit_render { kind: "full" }\` debits **1 ad credit at row creation** — so sequence it LAST
   (render + verify a good MP4 first), and never re-submit on a guess (that double-bills). Call
@@ -539,14 +554,21 @@ id). The app NEVER runs you — it is the viewer + review surface; you are the r
 
 ## Step 2 — fetch the recipe + its pack skills for the format
 
-The video-ad format skills live in the goose-skills **\`video-ad-formats\`** pack. Map the project's
-\`format\` to its recipe slug:
+The video-ad format skills live in two goose-skills packs — **\`video-ad-formats\`** (phone-surface
+HTML-mockup renders) and **\`ugc-video-formats\`** (GPT-image-2 + Seedance 2.0 reference-to-video).
+Map the project's \`format\` to its recipe slug:
 
 | format | recipe slug | renderer + atoms it drives |
 | --- | --- | --- |
 | \`imessage\` | \`remix-imessage-ad-from-sample\` | create-imessage-video-ad, create-imessage-mockup, stitch-videos-ffmpeg, mix-master, watch |
 | \`chatgpt\` | \`remix-chatgpt-ad-from-sample\` | create-chatgpt-video-ad, create-chatgpt-mockup, render-ios-keyboard, stitch-videos-ffmpeg, watch |
 | \`apple-notes\` | \`remix-apple-notes-ad-from-sample\` | create-apple-notes-video-ad, create-apple-notes-mockup, stitch-videos-ffmpeg, watch |
+| \`ugc-product\` | \`remix-ugc-product-from-sample\` | create-ugc-product-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+| \`ugc-grwm\` | \`remix-ugc-grwm-from-sample\` | create-ugc-grwm-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+| \`ugc-skincare\` | \`remix-ugc-skincare-from-sample\` | create-ugc-skincare-demo-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+| \`ugc-car-confessional\` | \`remix-ugc-car-confessional-from-sample\` | create-ugc-car-confessional-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+| \`ugc-walk-and-talk\` | \`remix-ugc-walk-and-talk-from-sample\` | create-ugc-walk-and-talk-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+| \`ugc-street-testimonial\` | \`remix-ugc-street-testimonial-from-sample\` | create-ugc-street-testimonial-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
 
 (photo-grid + music-video coming.) Pack skills are fetchable individually by slug but do NOT
 auto-resolve dependencies (no \`dependencySkills\`), so \`gooseworks fetch\` the recipe **and** each
@@ -573,7 +595,10 @@ ingredients out one at a time.
    that's typically: the **script** (the bubble thread), the **image(s)** shown in the conversation
    (one or more), and the **end card**. Richer templates add more (hook frame, background, product
    shots, music bed…). Read the recipe for the exact ingredient list. Generate the visuals NOW
-   (media proxies / recipe), and \`get_upload_url\` each preview asset to \`working/review/<name>\`.
+   (media proxies / recipe), and \`get_upload_url\` each preview asset to the project folder
+   \`agent-config/brands/<brand_slug>/projects/<project_id>/working/review/<name>\` (the same
+   path-prefix rule as final publish — a bare \`working/review/<name>\` won't render in the panel).
+   In \`script_drafts\`, set each ingredient's \`path\` to the project-relative \`working/review/<name>\`.
    You may ask the user a couple of clarifying questions about the generation first if the recipe
    calls for it (angle, which product, offer/code) — batch them, then prepare everything.
 2. **Mirror the whole ingredient set for review** — \`update_ad_project_script { project_id,
@@ -605,11 +630,18 @@ ingredients out one at a time.
    \`append_project_message\` instead.
 3. QC by watching: run the \`watch\` skill on the master — verify bubble/beat order + SFX, that
    the brand's product (not the source's) is shown, the end card has the real wordmark + code,
-   and the duration is within ~20% of the source.
+   and the duration is within ~20% of the source. For UGC/Seedance formats there are no captions
+   and often no local Whisper key: extract frames with ffmpeg for the visual pass, and get the
+   spoken transcript by running \`fal-ai/whisper\` through the SAME \`fal-proxy\` (upload the audio,
+   pass its \`get_download_url\` as \`audio_url\`) — confirm the transcript matches the script and the
+   brand name is pronounced right, with no word-repeat dysfluency, BEFORE spending the render credit.
 4. Publish: \`get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }\` → PUT the master
-   to \`working/final.mp4\` and a poster to \`working/final-thumb.jpg\`. **Always target ADS_AGENT**
-   (see Identity — a file on your token's own agent is invisible to the app). Verify servable:
-   \`get_download_url { target: ADS_AGENT, path: "working/final.mp4" }\` must return a non-empty URL.
+   and poster **under the project folder** (see Identity's path-prefix rule) — to
+   \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\` and
+   \`.../working/final-thumb.jpg\`. **Always target ADS_AGENT AND use the full project-folder path**
+   — a bare \`working/final.mp4\`, even on the right agent, 404s in the app. Verify servable:
+   \`get_download_url { target: ADS_AGENT, path: "agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4" }\`
+   must return a non-empty URL (curl it for HTTP 200).
    Then \`update_render_status { render_id, status: "complete", output_url, thumbnail_url }\` where
    **output_url MUST be the durable render-file URL**
    \`/api/ads/projects/<project_id>/render-file?path=working/final.mp4\` (the app re-presigns it on
@@ -667,7 +699,9 @@ def fal_generate(model_path, payload, timeout_s=180, poll_s=3):
 
 ElevenLabs (VO / music) is the same shape against \`<api_base>/api/internal/elevenlabs-proxy\`
 with \`?token=&agent_id=\`. Feed FAL a local image by storing it (\`get_upload_url\`) and passing its
-\`get_download_url\` presigned URL as an \`image_urls\` entry, or POST the bytes to \`fal-storage-proxy\`.
+\`get_download_url\` presigned URL as an \`image_urls\` / \`audio_url\` entry — this is the reliable
+path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it — prefer the
+\`get_download_url\` presigned URL.)
 
 ## Rules
 
