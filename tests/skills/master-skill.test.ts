@@ -167,8 +167,11 @@ describe('skills/getGooseVideoSkillContent', () => {
     expect(video).toContain('update_render_status');
     expect(video).toContain('update_ad_project_script');
     expect(video).toContain('set_final_render');
-    // Fetches the per-format recipe by slug.
-    expect(video).toContain('remix-imessage-ad-from-sample');
+    // DB-driven: reads the template's recipe (get_ad_template → recipe.atoms /
+    // recipe.instructions) instead of mapping format → a hardcoded recipe slug.
+    expect(video).toContain('get_ad_template');
+    expect(video).toContain('recipe.atoms');
+    expect(video).not.toContain('remix-imessage-ad-from-sample');
     // Single review-once gate over the full ingredient set (script + visuals),
     // mirrored as container-tagged ingredients.
     expect(video).toMatch(/review/i);

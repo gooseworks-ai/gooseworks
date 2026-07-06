@@ -416,10 +416,49 @@ Then poll with \`get_remix_batch\` and hand back the links, same as above.
 
 ## Brand research
 
-Research normally runs in the GooseWorks backend (on onboarding). Just read the result with
-\`get_brand_kit\`. If a brand doesn't exist yet, you may \`create_ad_brand\` and let backend
-research run; you don't need to research locally. (A standalone local recipe still exists via
-\`gooseworks fetch brand-research\` if the user explicitly wants the agent to do it.)
+Prefer the backend's result: \`get_brand_kit { brand_id }\`. If \`researchStatus\` is
+\`complete\`, REUSE it — never re-research.
+
+**The split — backend owns visuals, you own the qualitative depth:**
+
+- **Backend LIGHT pass (automatic).** \`create_ad_brand\` with a \`website_url\` kicks off the same
+  backend research the web app uses, in \`mode: "light"\`: it resolves the **authoritative logo,
+  colors, and fonts** (Brandfetch + context.dev) plus a baseline kit, then flips
+  \`research_status\` to \`complete\` — usually under a minute. You can't reproduce those visual
+  signals locally, so **never re-derive logo/colors/fonts.** (Web onboarding via \`/api/ads/onboard\`
+  runs the full thing; nothing to do but read it.)
+- **Your DEEP pass (local, agentic).** You add the qualitative depth the light pass leaves thin —
+  positioning, audience segments, voice, brandType, value props, proof points, products — grounded
+  on the actual site.
+
+**CLI brand-research flow:**
+
+1. \`create_ad_brand { name, website_url }\` → keep \`brand_id\` + \`slug\`. The brand comes back with
+   \`research_status: "pending"\` (light pass in flight).
+2. **Wait for the backend light pass:** poll \`get_brand_kit { brand_id }\` until \`researchStatus\`
+   is \`complete\` (usually <60s). Now the kit has authoritative logo/colors/fonts + a baseline.
+   At this point generation is already unblocked — but do the deep pass to make it good.
+3. **Deep research locally:** \`gooseworks fetch brand-research\` and follow its phases. **Ground
+   every fact on the fetched site** — if the site can't be read, say so and ask the user; never
+   guess a category from the brand name alone.
+4. **Write the pack** with \`write_file\` under \`agent-config/brands/<slug>/\`:
+   - the \`brand-research/*.md\` docs + \`brand-assets/manifest.json\` (human-readable pack), AND
+   - \`brand-research/kit-patch.json\` — the STRUCTURED fields the web UI renders. Field-for-field
+     contract; only what you put here reaches the kit. Shape:
+     \`{ positioning?: string, audience?: string, voice?: string, brandType?: string, tagline?: string, valueProps?: string[], proofPoints?: string[], products?: [{ name, description?, link?, pricing?, imageUrls?: string[] }] }\`
+     (\`brandType\` ∈ product | saas | service | agency | restaurant | fashion | beauty | fitness |
+     finance | education | health). Only URLs already in our storage for product images.
+   - **Do NOT set logo / colors / fonts here** — the backend light pass already owns those.
+5. **Persist it:** \`finalize_brand_research { brand_id }\` merges \`kit-patch.json\` into the kit
+   NON-CLOBBERINGLY (it will NOT overwrite the backend's visuals or any user edit), then re-confirms
+   \`research_status: complete\`.
+6. **Verify:** \`get_brand_kit { brand_id }\` — confirm the qualitative fields you wrote are present
+   before generating.
+
+**If the brand has NO website**, the backend light pass can't run (nothing to fetch) — do the whole
+thing locally (steps 3–6) and finalize; an un-finalized brand has no kit for generation and leaves
+no artifact to debug a wrong run (this is how a bad local classification, e.g. mislabelling a SaaS
+as a "drink company", used to vanish without a trace).
 
 ## Analyze / intelligence (fetched recipes — NOT generation)
 
@@ -552,38 +591,34 @@ id). The app NEVER runs you — it is the viewer + review surface; you are the r
    never re-research. If not, run brand research first (\`gooseworks fetch brand-research\`,
    follow it, then \`finalize_brand_research { brand_id }\`) before continuing.
 
-## Step 2 — fetch the recipe + its pack skills for the format
+## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
-The video-ad format skills live in two goose-skills packs — **\`video-ad-formats\`** (phone-surface
-HTML-mockup renders) and **\`ugc-video-formats\`** (GPT-image-2 + Seedance 2.0 reference-to-video).
-Map the project's \`format\` to its recipe slug:
+The ad format is a **template (data) in the ad_sample DB**, not a per-format skill.
+\`get_ad_template(source_sample_id)\` returns the template's \`recipe\` — a self-contained brief you
+read and execute. **Do NOT map \`format\` to a hardcoded recipe slug** (there is no such table):
 
-| format | recipe slug | renderer + atoms it drives |
-| --- | --- | --- |
-| \`imessage\` | \`remix-imessage-ad-from-sample\` | create-imessage-video-ad, create-imessage-mockup, stitch-videos-ffmpeg, mix-master, watch |
-| \`chatgpt\` | \`remix-chatgpt-ad-from-sample\` | create-chatgpt-video-ad, create-chatgpt-mockup, render-ios-keyboard, stitch-videos-ffmpeg, watch |
-| \`apple-notes\` | \`remix-apple-notes-ad-from-sample\` | create-apple-notes-video-ad, create-apple-notes-mockup, stitch-videos-ffmpeg, watch |
-| \`ugc-product\` | \`remix-ugc-product-from-sample\` | create-ugc-product-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
-| \`ugc-grwm\` | \`remix-ugc-grwm-from-sample\` | create-ugc-grwm-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
-| \`ugc-skincare\` | \`remix-ugc-skincare-from-sample\` | create-ugc-skincare-demo-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
-| \`ugc-car-confessional\` | \`remix-ugc-car-confessional-from-sample\` | create-ugc-car-confessional-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
-| \`ugc-walk-and-talk\` | \`remix-ugc-walk-and-talk-from-sample\` | create-ugc-walk-and-talk-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
-| \`ugc-street-testimonial\` | \`remix-ugc-street-testimonial-from-sample\` | create-ugc-street-testimonial-video-from-refs, create-video-seedance-2-fal, create-image-gpt-image-fal, watch |
+- \`recipe.format\` — the format label (e.g. \`vignette\`), for display only.
+- \`recipe.atoms\` — the **capabilities** this template composes (e.g. \`create-video-seedance-2-fal\`,
+  \`create-image-gpt-image-fal\`, \`review-ugc-render\`, \`watch\`). \`gooseworks fetch <name>\` each — they
+  live in \`skills/ads/capabilities/\` and are reused across templates (so they cache).
+- \`recipe.instructions\` — the **playbook** to follow: \`instructions.inline\` prose, or
+  \`instructions.doc_url\` (an S3 markdown doc — fetch it).
+- \`recipe.config\` — every param (prompts, layout, timings, palette, model choices).
+- \`recipe.inputs\` — the brand-asset contract (which product / logo / offer this template needs).
+- \`recipe.assets\` — reference material as S3 links (reference render, style guide, example frames) —
+  fetch as needed.
 
-(photo-grid + music-video coming.) Pack skills are fetchable individually by slug but do NOT
-auto-resolve dependencies (no \`dependencySkills\`), so \`gooseworks fetch\` the recipe **and** each
-skill in its row — e.g. for iMessage:
+Runtime: **read the recipe → \`gooseworks fetch\` each capability in \`recipe.atoms\` → follow
+\`recipe.instructions\` with \`recipe.config\` + the brand's bound \`inputs\`.** The template IS the recipe;
+there is no \`format → recipe-slug\` table and no per-format skill to fetch.
 
-\`\`\`bash
-for s in remix-imessage-ad-from-sample create-imessage-video-ad create-imessage-mockup \\
-         stitch-videos-ffmpeg mix-master watch; do gooseworks fetch "$s"; done
-\`\`\`
+Save each fetched capability's scripts + files under \`/tmp/gooseworks-scripts/<name>/\`. If a capability
+is a Node package (a phone-mockup renderer), \`npm install\` in its folder so its \`generate.js\` +
+Playwright resolve, and point the recorder's \`NODE_PATH\` at it.
 
-Each prints \`{ content, scripts, files }\`. Save each skill's scripts + files under
-\`/tmp/gooseworks-scripts/<slug>/\` and FOLLOW the recipe's SKILL.md — it orchestrates the others.
-The renderer (the \`create-*-mockup\` atom for the format) is a Node package —
-\`npm install\` in its folder so its \`generate.js\` + Playwright resolve, and point the recorder's
-\`NODE_PATH\` at it.
+> **Migration note:** older phone-mockup formats (\`imessage\` / \`chatgpt\` / \`apple-notes\`) whose DB
+> recipe does not yet carry \`atoms\` / \`instructions\` still hold the legacy \`recipe.thread\` payload;
+> migrate them to this shape (capabilities + instructions in the DB) — do not reintroduce a CLI map.
 
 ## Step 3 — prepare ALL the ingredients, then review ONCE (always, before any paid render)
 
