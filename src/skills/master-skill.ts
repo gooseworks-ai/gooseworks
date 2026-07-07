@@ -663,26 +663,35 @@ ingredients out one at a time.
    \`update_render_status { render_id, status: "running" }\`. The render row tracks status only
    (queued / running / complete / failed) — narrate fine-grained progress with
    \`append_project_message\` instead.
-3. **MANDATORY final-video review gate — review EVERY finished master before you finalize it,
-   whatever the format (UGC or not).** A render that looks fine on a still can still have a
-   mis-voiced word, a caption drifting off its line or mistiming the audio, a beat out of order,
-   or a deformation — so review the actual VIDEO (not stills), and do it BEFORE spending the
-   render credit / \`set_final_render\`. Run all three passes that apply:
-   - **Audio ↔ script** (any video with speech — VO or native/Seedance voice): \`gooseworks fetch
-     review-ugc-render\` and run it — it Whisper-transcribes the master's audio and word-diffs it
-     against the approved spoken script, blocking a mis-voiced word (approved "human-vetted" →
-     "human witted"), a dropped phrase, or silence. No local Whisper key? run \`fal-ai/whisper\`
-     through the same \`fal-proxy\` (upload the audio, pass its \`get_download_url\` as \`audio_url\`).
-   - **Captions / subtitles** (ANY captioned format — NOT just UGC; this is the most common
-     non-UGC defect): confirm every caption is on screen at the right time, matches the
-     spoken/scripted line word-for-word, and doesn't collide with a hyperframe or the end card.
-     Mis-timed / misspelled / drifted captions fail the gate.
-   - **Visual + structure**: run the \`watch\` skill on the master — beat/scene order + SFX, the
-     brand's product (not the source's) is shown, the end card has the real wordmark + code, no
+3. **MANDATORY final-video review gate — review EVERY finished master before \`set_final_render\`,
+   whatever the format (UGC or not).** The render credit is already spent (\`submit_render\` in 4.2);
+   this gate stands between a rendered master and PINNING/publishing it, so a bad render never gets
+   set as final. A master that looks fine on a still can still have a mis-voiced word, a caption
+   drifting off its line, a beat out of order, or a deformation — review the actual VIDEO, not
+   stills. Run the passes that APPLY to this format:
+   - **Audio ↔ script** — any master with SPEECH (VO or native/Seedance voice); **skip for
+     music-only / no-speech formats.** \`review-ugc-render\` is format-agnostic despite the name —
+     a deterministic Whisper transcript-vs-script diff, not UGC-specific: persist the approved
+     spoken lines to \`working/approved-script.txt\`, then \`gooseworks fetch review-ugc-render\` and
+     run \`review_render.py --video <master>.mp4 --script-file working/approved-script.txt --json
+     working/review-verdict.json\` (exit 0 PASS / 2 FAIL / 3 ERROR). It blocks a mis-voiced word
+     (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
+     through the gooseworks proxy when \`OPENAI_BASE_URL\` is set; with no backend at all, run
+     \`fal-ai/whisper\` via \`fal-proxy\` (upload the audio, pass its \`get_download_url\` as \`audio_url\`)
+     and diff the transcript yourself.
+   - **Captions / subtitles** — ANY captioned format (the most common non-UGC defect); **skip for
+     UGC/Seedance masters, which carry no subtitle track.** Concrete check: diff the caption file
+     you burned (SRT/ASS) against the SAME Whisper transcript + word timings from the audio pass —
+     every caption line must match the heard/scripted words and sit within ~0.3s of when they're
+     spoken; then in the visual pass below, OCR-read the burned caption off 4–5 sampled frames to
+     confirm it's actually on screen at that time and not colliding with a hyperframe or the end
+     card. Mismatched text or >0.3s drift fails the gate.
+   - **Visual + structure** — always: run the \`watch\` skill on the master — beat/scene order + SFX,
+     the brand's product (not the source's) is shown, the end card has the real wordmark + code, no
      deformation/artifact, duration within ~20% of the source.
-   If ANY pass fails, FIX it (regenerate/stitch the offending window, rebuild captions) and
-   re-review — only a clean pass proceeds to publish. **This gate is universal: it runs for every
-   format from the master skill, so a recipe never has to opt in.**
+   If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
+   and re-review — only a clean pass proceeds to \`set_final_render\`. **This gate is universal: it
+   runs from the master skill for every format, so a recipe never has to opt in.**
 4. Publish: \`get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }\` → PUT the master
    and poster **under the project folder** (see Identity's path-prefix rule) — to
    \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\` and
