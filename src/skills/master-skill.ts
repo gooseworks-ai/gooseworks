@@ -663,13 +663,26 @@ ingredients out one at a time.
    \`update_render_status { render_id, status: "running" }\`. The render row tracks status only
    (queued / running / complete / failed) — narrate fine-grained progress with
    \`append_project_message\` instead.
-3. QC by watching: run the \`watch\` skill on the master — verify bubble/beat order + SFX, that
-   the brand's product (not the source's) is shown, the end card has the real wordmark + code,
-   and the duration is within ~20% of the source. For UGC/Seedance formats there are no captions
-   and often no local Whisper key: extract frames with ffmpeg for the visual pass, and get the
-   spoken transcript by running \`fal-ai/whisper\` through the SAME \`fal-proxy\` (upload the audio,
-   pass its \`get_download_url\` as \`audio_url\`) — confirm the transcript matches the script and the
-   brand name is pronounced right, with no word-repeat dysfluency, BEFORE spending the render credit.
+3. **MANDATORY final-video review gate — review EVERY finished master before you finalize it,
+   whatever the format (UGC or not).** A render that looks fine on a still can still have a
+   mis-voiced word, a caption drifting off its line or mistiming the audio, a beat out of order,
+   or a deformation — so review the actual VIDEO (not stills), and do it BEFORE spending the
+   render credit / \`set_final_render\`. Run all three passes that apply:
+   - **Audio ↔ script** (any video with speech — VO or native/Seedance voice): \`gooseworks fetch
+     review-ugc-render\` and run it — it Whisper-transcribes the master's audio and word-diffs it
+     against the approved spoken script, blocking a mis-voiced word (approved "human-vetted" →
+     "human witted"), a dropped phrase, or silence. No local Whisper key? run \`fal-ai/whisper\`
+     through the same \`fal-proxy\` (upload the audio, pass its \`get_download_url\` as \`audio_url\`).
+   - **Captions / subtitles** (ANY captioned format — NOT just UGC; this is the most common
+     non-UGC defect): confirm every caption is on screen at the right time, matches the
+     spoken/scripted line word-for-word, and doesn't collide with a hyperframe or the end card.
+     Mis-timed / misspelled / drifted captions fail the gate.
+   - **Visual + structure**: run the \`watch\` skill on the master — beat/scene order + SFX, the
+     brand's product (not the source's) is shown, the end card has the real wordmark + code, no
+     deformation/artifact, duration within ~20% of the source.
+   If ANY pass fails, FIX it (regenerate/stitch the offending window, rebuild captions) and
+   re-review — only a clean pass proceeds to publish. **This gate is universal: it runs for every
+   format from the master skill, so a recipe never has to opt in.**
 4. Publish: \`get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }\` → PUT the master
    and poster **under the project folder** (see Identity's path-prefix rule) — to
    \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\` and
