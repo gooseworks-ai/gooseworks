@@ -83,7 +83,16 @@ Examples:
     for (const agent of targetAgents) {
       if (agent === 'claude') {
         logger.info('Creating symlinks in ~/.claude/skills/');
-        configureClaude();
+        // Skill linking must never abort MCP registration — on Windows a symlink
+        // privilege error used to throw here and skip MCP entirely (GOOSE-2418).
+        try {
+          configureClaude();
+        } catch (err) {
+          logger.warn(
+            `Skill linking failed: ${err instanceof Error ? err.message : String(err)}. ` +
+              'Continuing — the MCP server will still be registered.'
+          );
+        }
         if (wantMcp) {
           if (configureClaudeMcp()) {
             logger.success("Registered 'gooseworks' MCP server in ~/.claude.json");
@@ -105,7 +114,14 @@ Examples:
       }
       if (agent === 'codex') {
         logger.info('Creating symlinks in ~/.codex/skills/');
-        configureCodex();
+        try {
+          configureCodex();
+        } catch (err) {
+          logger.warn(
+            `Skill linking failed: ${err instanceof Error ? err.message : String(err)}. ` +
+              'Continuing — the MCP server will still be registered.'
+          );
+        }
         if (wantMcp) {
           if (configureCodexMcp()) {
             logger.success("Registered 'gooseworks' MCP server in ~/.codex/config.toml");

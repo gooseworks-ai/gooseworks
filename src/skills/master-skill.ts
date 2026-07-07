@@ -249,7 +249,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.1.0
+version: 2.2.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -332,6 +332,29 @@ decide — fine, but prefer sending the app defaults for predictable parity.
   the template; \`"edit"\` makes a targeted change to a specific render (\`prompt\` + \`source_render_id\`
   required); \`"exact"\` runs \`prompt\` verbatim against that render's references. Returns a
   single-item batch — poll it with \`get_remix_batch\`.
+- \`set_creative_feedback { render_id, rating?, comment?, reasons? }\` — record the user's reaction
+  to a generated image (the SAME happy/neutral/sad + comment + reason chips the app captures). Use
+  it whenever the user reacts ("love this one" / "the logo is wrong"). \`render_id\` is a RENDER id
+  from \`get_remix_batch\` / \`list_brand_creatives\`, not a project/batch id. \`reasons\` are quick
+  chips (wrong_product, brand_or_logo_wrong, off_brand, text_garbled, weak_copy, ai_or_distorted).
+
+### Plan mode — review the plan BEFORE generating (optional)
+
+For users who want to approve each ad's plan before spending credits (the app's "Plan it" flow):
+
+- \`submit_remix_batch { ..., requires_approval: true }\` — composes each creative's plan and PAUSES.
+  **No credits are reserved and no image renders** until you approve.
+- \`list_ad_approvals { brand_id? }\` — poll this; returns \`{ items, counts }\`. While a creative is
+  \`composing\`, wait; once \`awaiting_approval\`, show its \`plan\` (composed prompt + refs + quality)
+  to the user.
+- \`revise_ad_plan { project_id, message?, variant_label? }\` — recompose from a chat steer, still
+  free. Poll \`list_ad_approvals\` until it's \`awaiting_approval\` again.
+- \`approve_ad_plan { project_id | batch_id }\` — approve ONE creative (\`project_id\`) or the whole
+  batch (\`batch_id\`). **This is the step that reserves credits and renders.** Then poll
+  \`get_remix_batch\` and hand back links as usual.
+
+Only offer plan mode when the user asks to review/approve first — the default path generates
+immediately.
 
 ## Reading the brand & picking inputs (still MCP, read-only)
 
@@ -349,6 +372,33 @@ decide — fine, but prefer sending the app defaults for predictable parity.
 - \`create_user_ad_template { workspace_path }\` — "bring your own ad": upload the user's own
   image as a private template, then remix it like any other.
 - \`get_ad_project\` / \`append_project_message\` — inspect a creative / leave a note on its thread.
+
+## Keep the brand kit in sync — reconcile, then update (ASK first)
+
+The brand kit is the source of truth every generation reads. During ANY task, when the user
+**tells you something about the brand or asks to change something brand-level** — a different
+tagline, audience, voice, a product's name/price/description, "our logo is X", "we don't sell Y
+anymore", a new product photo — treat it as a possible kit update, don't just use it for this one
+ad and forget it:
+
+1. **Check it against the kit.** \`get_brand_kit { brand_id }\` and see whether what the user said
+   matches, is missing from, or contradicts the kit.
+2. **If it's already in the kit and matches** — nothing to do; proceed.
+3. **If it's new or different — ASK before writing.** Confirm in one line: *"Want me to update
+   the brand kit so this sticks for future ads?"* Only persist on a yes (or when the user clearly
+   asked you to change the brand). Don't silently mutate the kit, and don't nag on trivia.
+4. **Persist with the write tools** (partial — only the fields you pass are touched; each edit is
+   recorded as a user override that later re-research won't clobber):
+   - \`update_brand_kit { brand_id, description?, audience?, voice?, instructions?, brand_type?,
+     value_props?, primary_color?, accent_color? }\` — the structured kit fields.
+   - \`upsert_brand_product { brand_id, ... }\` / \`delete_brand_product\` — manage products.
+   - \`add_brand_product_image { brand_id, ... }\` / \`remove_brand_reference_image\` — product /
+     reference photos.
+5. **Confirm what changed** and continue the task. (Logo, colors, and fonts are owned by the
+   backend research pass — prefer \`update_ad_brand\` / the research flow for those, not free text.)
+
+This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
+able to flow back into the kit — with their ok — instead of being lost.
 
 ## Picking templates — ASK the user; don't freelance from the catalog
 
@@ -498,6 +548,15 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
   directly if they'd rather not review).
 - **Ask the styling** — Keep original (default) vs Match brand — before you submit.
+- **Reconcile brand facts into the kit** — when the user states or changes something brand-level
+  mid-task, check it against \`get_brand_kit\` and, with their ok, persist it via \`update_brand_kit\`
+  / \`upsert_brand_product\` / \`add_brand_product_image\` so it sticks for future ads. Ask first;
+  never silently mutate the kit.
+- **Record feedback** — when the user reacts to a generated image, capture it with
+  \`set_creative_feedback { render_id, rating/comment/reasons }\` so the quality loop learns.
+- **Plan mode is opt-in** — only compose-and-pause (\`requires_approval: true\` → \`list_ad_approvals\`
+  → \`approve_ad_plan\`) when the user wants to review before spending credits; otherwise generate
+  immediately.
 - **Don't busy-loop** — poll \`get_remix_batch\` on a sensible interval (~20-30s); a \`queued\`
   batch is waiting on research and will start on its own.
 `;
@@ -527,7 +586,7 @@ description: >
   template, or asks to remix a video ad. Unlike goose-ads (static images, generated server-side),
   video renders locally and reports progress + the result back through the gooseworks MCP tools.
 category: ads
-version: 0.1.0
+version: 0.2.0
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
 ---
@@ -713,8 +772,10 @@ content }\` — never sit silent on a queue > 90s.
 
 Media APIs go through GooseWorks proxies with your agent token; do NOT use an SDK's default host
 (your token isn't a FAL/ElevenLabs token → 401). Base = \`<api_base>/api/internal/<proxy>\`; pass
-\`?token=<api_key>&agent_id=<agent_id>\` (agent_id bills the Ads agent). FAL = \`fal-proxy\` (+
-\`fal-storage-proxy\` to host a local image and get a CDN URL); ElevenLabs = \`elevenlabs-proxy\`
+\`?token=<api_key>&agent_id=<agent_id>&project_id=<project_id>\` (agent_id bills the Ads agent;
+\`project_id\` = the id of the project you're rendering — it attributes this generation's credits to
+that ad project so the user sees per-project spend in the app. ALWAYS pass it). FAL = \`fal-proxy\`
+(+ \`fal-storage-proxy\` to host a local image and get a CDN URL); ElevenLabs = \`elevenlabs-proxy\`
 (VO / music bed).
 
 **FAL queue gotcha** (#1 waste of generations): submit returns \`status_url\`/\`response_url\` on
@@ -730,24 +791,26 @@ def _cfg():
     c = json.loads(pathlib.Path(os.path.expanduser("~/.gooseworks/credentials.json")).read_text())
     return c["api_base"].rstrip("/"), c["api_key"], c.get("agent_id")
 
-def _params(tok, agent):
+def _params(tok, agent, project_id=None):
     p = {"token": tok}
     if agent: p["agent_id"] = agent
+    if project_id: p["project_id"] = project_id  # attributes the spend to this ad project
     return p
 
-def fal_generate(model_path, payload, timeout_s=180, poll_s=3):
+def fal_generate(model_path, payload, project_id=None, timeout_s=180, poll_s=3):
     """model_path e.g. 'fal-ai/nano-banana-2/edit' (the recipe names the model).
+    Pass project_id = the ad project you're rendering so credits attribute to it.
     Returns the result image URL (a public *.fal.media CDN URL)."""
     api_base, tok, agent = _cfg()
     base = api_base + "/api/internal/fal-proxy"
-    sub = requests.post(f"{base}/{model_path}", params=_params(tok, agent), json=payload).json()
+    sub = requests.post(f"{base}/{model_path}", params=_params(tok, agent, project_id), json=payload).json()
     to_proxy = lambda u: base + urlparse(u).path
     status_url, response_url = to_proxy(sub["status_url"]), to_proxy(sub["response_url"])
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        st = requests.get(status_url, params=_params(tok, agent)).json()
+        st = requests.get(status_url, params=_params(tok, agent, project_id)).json()
         if st.get("status") == "COMPLETED":
-            return requests.get(response_url, params=_params(tok, agent)).json()["images"][0]["url"]
+            return requests.get(response_url, params=_params(tok, agent, project_id)).json()["images"][0]["url"]
         if st.get("status") in ("FAILED", "ERROR"):
             raise RuntimeError(f"FAL failed: {st}")
         time.sleep(poll_s)
@@ -755,7 +818,7 @@ def fal_generate(model_path, payload, timeout_s=180, poll_s=3):
 \`\`\`
 
 ElevenLabs (VO / music) is the same shape against \`<api_base>/api/internal/elevenlabs-proxy\`
-with \`?token=&agent_id=\`. Feed FAL a local image by storing it (\`get_upload_url\`) and passing its
+with \`?token=&agent_id=&project_id=\`. Feed FAL a local image by storing it (\`get_upload_url\`) and passing its
 \`get_download_url\` presigned URL as an \`image_urls\` / \`audio_url\` entry — this is the reliable
 path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it — prefer the
 \`get_download_url\` presigned URL.)
@@ -768,6 +831,8 @@ path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it
   the template needs), mirror the whole set with \`update_ad_project_script\`, and get the user's
   approval in-session BEFORE rendering — always (review-once).
 - **submit_render LAST**; \`output_url\` = the durable render-file URL, never a CDN URL.
+- **Always pass \`project_id\` on media-proxy calls** (fal / ElevenLabs) so the credits attribute
+  to this ad project — that's what lets the user see per-project spend in the app.
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
 - **Reuse the brand** when its research is complete; never re-research.
 - On a hard error (auth/quota/model/timeout) set the render \`failed\` with a short

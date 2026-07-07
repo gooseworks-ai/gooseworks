@@ -3,6 +3,19 @@ import * as os from 'os';
 
 jest.mock('fs');
 jest.mock('os');
+// codex.ts now links via skill-links.ts, which imports logger (→ ESM chalk).
+// Factory mock so the real chalk-importing module is never loaded.
+jest.mock('../../src/utils/logger', () => ({
+  banner: jest.fn(),
+  step: jest.fn(),
+  info: jest.fn(),
+  success: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  example: jest.fn(),
+  spinner: jest.fn(),
+  done: jest.fn(),
+}));
 jest.mock('../../src/auth/credentials', () => ({
   getCredentials: jest.fn(),
 }));

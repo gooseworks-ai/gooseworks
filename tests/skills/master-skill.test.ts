@@ -144,6 +144,27 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('Match brand');
     expect(ads).toMatch(/default is "Keep original"/i);
   });
+
+  it('exposes plan mode (compose → review/approve → generate) for parity with the app', () => {
+    expect(ads).toContain('requires_approval');
+    expect(ads).toContain('list_ad_approvals');
+    expect(ads).toContain('revise_ad_plan');
+    expect(ads).toContain('approve_ad_plan');
+    // It must be opt-in, not the default path.
+    expect(ads).toMatch(/opt-in|only offer plan mode|only when the user asks/i);
+  });
+
+  it('records the user’s reaction to a creative via set_creative_feedback', () => {
+    expect(ads).toContain('set_creative_feedback');
+  });
+
+  it('reconciles brand facts back into the kit — ask first, then update', () => {
+    expect(ads).toContain('Keep the brand kit in sync');
+    expect(ads).toContain('update_brand_kit');
+    expect(ads).toContain('upsert_brand_product');
+    // Must ask permission, not silently mutate the kit.
+    expect(ads).toMatch(/ASK first|Ask first|ASK before writing|never silently mutate/i);
+  });
 });
 
 describe('skills/getEntrySkills', () => {
