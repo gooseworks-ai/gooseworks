@@ -1,6 +1,6 @@
 {
   "name": "gooseworks",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "GooseWorks CLI — give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "test": "jest",
-    "prepublishOnly": "npm run build && npm test"
+    "generate:skills": "tsx scripts/generate-skill-files.ts",
+    "prepublishOnly": "npm run generate:skills && npm run build && npm test"
   },
   "dependencies": {
     "chalk": "^4.1.2",

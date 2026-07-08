@@ -83,6 +83,18 @@ Examples — all of these route to \`goose-ads\`, not the data flow: "remix this
 
 All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. To log out: \`npx gooseworks logout\`.
 
+### CLI-free environments (cowork / headless)
+
+If the \`gooseworks\` CLI binary isn't available (e.g. Anthropic cowork) but the
+\`mcp__gooseworks__*\` tools are connected, use the MCP equivalents instead of shelling out:
+- \`gooseworks search <q>\` → the **\`search_skills\`** MCP tool.
+- \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (same content/scripts/files/deps).
+- \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
+
+Discovery and fetching a skill's instructions work fully CLI-free this way. Note: the paid data
+proxy (\`gooseworks call <provider> <path>\`) still requires the CLI for now — if a task needs it
+and no CLI is present, tell the user that step must run where the \`gooseworks\` CLI is installed.
+
 To check credit balance:
 \`\`\`bash
 gooseworks credits
@@ -601,14 +613,43 @@ you *what to make*; read both, and this doc wins on any conflict about the envir
 You run inside the user's own Claude Code session (they pasted an instruction with a project
 id). The app NEVER runs you — it is the viewer + review surface; you are the renderer.
 
-## Prerequisite — MCP + a local toolchain (Phase 0 preflight)
+## CLI-free environments (cowork / headless)
+
+You may be running WITHOUT the \`gooseworks\` CLI binary (e.g. Anthropic cowork). The
+\`mcp__gooseworks__*\` tools work over the MCP connection regardless, so wherever this skill
+says to shell out, use the MCP equivalent:
+
+- \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (returns the same content/scripts/
+  files/dependencySkills). \`gooseworks search <q>\` → **\`search_skills\`**.
+- \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
+- \`gooseworks doctor\` → do the manual toolchain check in the preflight below.
+
+## Prerequisite — MCP + a render toolchain (Phase 0 preflight)
 
 - The \`mcp__gooseworks__*\` tools are REQUIRED. If they're unavailable, stop and tell the user
-  to run \`gooseworks install --claude --mcp\` and restart Claude Code. There is no REST fallback.
-- This is a LOCAL render. Run \`gooseworks doctor\` FIRST — it checks login, the MCP server,
-  **ffmpeg** + **ffprobe**, and **Playwright Chromium** in one shot. If it reports any ✗, relay
-  the exact fix it prints (e.g. \`brew install ffmpeg\`, \`npx playwright install chromium\`) and
-  stop — don't half-render.
+  to connect the GooseWorks MCP server (or run \`gooseworks install --claude --mcp\` on the CLI)
+  and restart. There is no REST fallback.
+- **The render runs wherever THIS agent runs, and it needs a real toolchain: \`ffmpeg\` +
+  \`ffprobe\` + a Playwright **Chromium**.** Establish it in this priority order, and do NOT start
+  rendering until one is confirmed:
+  1. **CLI present →** run \`gooseworks doctor\` (checks login, MCP, ffmpeg/ffprobe, Playwright
+     Chromium in one shot). Fix any ✗ with the command it prints, then continue.
+  2. **No CLI →** check the toolchain yourself: \`ffmpeg -version\`, \`ffprobe -version\`, and a
+     Playwright Chromium probe (\`npx playwright --version\` and, if needed, \`npx playwright install
+     chromium\`). If all resolve, continue.
+  3. **Docker available →** this is the most reliable way to get the toolchain in a sandbox that
+     lacks it: run the render steps inside the prebuilt image
+     **\`ghcr.io/gooseworks-ai/goose-video-render\`** (ffmpeg + ffprobe + Playwright Chromium baked
+     in), mounting the project working directory. Use Docker whenever the host is missing ffmpeg or
+     Chromium and \`docker\` is on PATH. (Note: nested Docker is usually disabled inside managed
+     sandboxes like cowork — treat this as an option, not a guarantee.)
+  4. **None of the above works →** STOP and tell the user plainly, e.g.: *"Video rendering needs
+     ffmpeg + a Playwright Chromium (or Docker) on the machine running this agent. This environment
+     doesn't have them and I can't install them here. Options: (a) enable/allow Docker so I can use
+     the goose-video-render image, (b) install ffmpeg + \`npx playwright install chromium\`, or
+     (c) run this skill locally in your own Claude Code where the toolchain is available."* Do not
+     half-render or fake a result. Static image ads (the \`goose-ads\` skill) do NOT need any of this
+     and work anywhere — offer that as the fallback if they just want an ad now.
 
 ## Identity, token, credits
 

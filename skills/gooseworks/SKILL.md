@@ -1,5 +1,6 @@
 ---
 name: gooseworks
+slug: gooseworks
 description: >
   GooseWorks data toolkit. Search and scrape Twitter/X, Reddit, LinkedIn, websites, and the web.
   Find people, emails, and company info. Enrich contacts and companies.
@@ -7,16 +8,10 @@ description: >
   LinkedIn scraping: extract post engagers, commenters, profile data, and job postings.
   Reach for it when you need data at scale, sources behind auth, or a specific provider — not as
   a replacement for your built-in web search/fetch on quick, one-off lookups.
+category: general
 version: 1.0.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
-homepage: https://github.com/gooseworks-ai/gooseworks
-metadata:
-  clawdbot:
-    emoji: "\U0001F9AE"
-    primaryEnv: GOOSEWORKS_API_KEY
-    requires:
-      env: [GOOSEWORKS_API_KEY]
 ---
 
 # GooseWorks
@@ -33,7 +28,7 @@ Before anything else, check whether the request belongs to a specialized domain.
 | --- | --- | --- |
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
-| Ad/UGC/talking-head **video** | **`goose-video`** | Coming soon. Until it ships, search the catalog (`gooseworks search "ugc video"`) and `gooseworks fetch` the matching recipe. |
+| Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>" | **`goose-video`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -41,6 +36,18 @@ Examples — all of these route to `goose-ads`, not the data flow: "remix this a
 ## Setup
 
 All commands below auto-load credentials from `~/.gooseworks/credentials.json`. If a command exits with "Not logged in", tell the user to run: `npx gooseworks login`. To log out: `npx gooseworks logout`.
+
+### CLI-free environments (cowork / headless)
+
+If the `gooseworks` CLI binary isn't available (e.g. Anthropic cowork) but the
+`mcp__gooseworks__*` tools are connected, use the MCP equivalents instead of shelling out:
+- `gooseworks search <q>` → the **`search_skills`** MCP tool.
+- `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (same content/scripts/files/deps).
+- `gooseworks credits` → the **`get_ad_credits`** MCP tool.
+
+Discovery and fetching a skill's instructions work fully CLI-free this way. Note: the paid data
+proxy (`gooseworks call <provider> <path>`) still requires the CLI for now — if a task needs it
+and no CLI is present, tell the user that step must run where the `gooseworks` CLI is installed.
 
 To check credit balance:
 ```bash
@@ -81,11 +88,11 @@ If the response includes `dependencySkills` (non-empty array), set up each depen
 ### Step 4: Set up and run the skill
 Follow the instructions in the skill's `content` field. **Save ALL files from both `scripts` AND `files` before running anything:**
 
-> **Credential translation rule:** Individual skill instructions may show legacy `export GOOSEWORKS_API_KEY=$(python3 ...)` setup steps and raw `curl` commands. **Ignore those — do not run them.** Instead:
-> - Skip any `## Setup` block that exports `GOOSEWORKS_API_KEY` or `GOOSEWORKS_API_BASE` — credentials are already loaded by the `gooseworks` CLI.
-> - Replace `curl ... $GOOSEWORKS_API_BASE/v1/proxy/orthogonal/run ... -d '{"api":"X","path":"/Y","body":{...}}'` with `gooseworks call X /Y --body='{...}'`
-> - Replace `curl ... $GOOSEWORKS_API_BASE/v1/proxy/<provider>/<path> ... -d '{...}'` with `gooseworks call <provider> <path> --body='{...}'`
-> - Replace `curl ... $GOOSEWORKS_API_BASE/v1/proxy/orthogonal/search ... -d '{"prompt":"..."}'` with `gooseworks orthogonal find "..."`
+> **Credential translation rule:** Individual skill instructions may contain a legacy `## Setup` block with `export GOOSEWORKS_API_KEY=$(python3 ...)` and raw `curl` commands. **Replace those with the clean equivalents below.**
+> - **Credentials (only needed before running Python scripts, NOT before gooseworks commands):** replace the python one-liner exports with `eval $(gooseworks env)`. Skip entirely if you are only using `gooseworks call` — it loads credentials automatically.
+> - **Orthogonal run:** replace `curl ... /v1/proxy/orthogonal/run ... -d '{"api":"X","path":"/Y","body":{...}}'` with `gooseworks call X /Y --body='{...}'`
+> - **Direct proxy:** replace `curl ... /v1/proxy/<provider>/<path> ... -d '{...}'` with `gooseworks call <provider> <path> --body='{...}'`
+> - **Orthogonal search:** replace `curl ... /v1/proxy/orthogonal/search ... -d '{"prompt":"..."}'` with `gooseworks orthogonal find "..."`
 
 1. Save each script from `scripts` to `/tmp/gooseworks-scripts/<slug>/scripts/` — **NEVER save scripts into the user's project directory**
 2. **IMPORTANT: Also save everything from `files`** — these contain required modules (like `tools/apify_guard.py`) that scripts import at runtime:
@@ -174,3 +181,4 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to `/tmp/gooseworks-scripts/`, install pip deps, then execute. NEVER pollute the user's project directory
 6. **Output files default to `~/Gooseworks/`** — always confirm with the user before saving
+7. **Prefer `gooseworks call` over raw curl** — if it returns an error, first fix the parameters (check types, required fields, format) and retry. Only fall back to raw curl if you have strong reason to believe it is a CLI bug, not a parameter issue.
