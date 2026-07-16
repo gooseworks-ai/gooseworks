@@ -204,4 +204,14 @@ describe('skills/getGooseVideoSkillContent', () => {
     // It is NOT the static backend-batch wrapper.
     expect(video).not.toContain('submit_remix_batch');
   });
+
+  it('forbids assembling the full video before approval (GOOSE-2542)', () => {
+    // The review must show the individual PIECES, not an already-stitched cut —
+    // otherwise the user sees a finished video under "Review before rendering".
+    expect(video).toContain('individual PIECES, never the finished cut');
+    expect(video).toMatch(/never assemble the full video/i);
+    expect(video).toMatch(/full cascade/i);
+    // The prohibition is cross-referenced to the ticket so it can't silently regress.
+    expect(video).toContain('GOOSE-2542');
+  });
 });

@@ -93,6 +93,31 @@ npx gooseworks logout
 
 Deletes `~/.gooseworks/credentials.json`.
 
+### `whoami`
+
+Show which account you're currently signed in as. Handy when you have multiple
+GooseWorks accounts and need to confirm the active one before running a command.
+Reads local credentials only — no network call.
+
+```bash
+npx gooseworks whoami
+npx gooseworks whoami --json    # machine-readable output
+```
+
+Output:
+```
+Signed in as you@example.com
+Scope:      user
+Agent:      2e32bd49-…
+API base:   https://api.gooseworks.ai
+```
+
+To switch accounts, run `gooseworks logout` then `gooseworks login`.
+
+> The GooseWorks MCP server exposes the same identity check as the `whoami` tool
+> (email + the exact agent/org the token is pinned to), separate from
+> `list_accessible_scopes`, which lists *every* workspace you can reach.
+
 ### `search`
 
 Search the GooseWorks skill catalog.

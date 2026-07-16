@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { installCommand } from './commands/install';
 import { loginCommand } from './commands/login';
 import { logoutCommand } from './commands/logout';
+import { whoamiCommand } from './commands/whoami';
 import { updateCommand } from './commands/update';
 import { creditsCommand } from './commands/credits';
 import { searchCommand } from './commands/search';
@@ -24,6 +25,7 @@ program
 program.addCommand(installCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
+program.addCommand(whoamiCommand);
 program.addCommand(updateCommand);
 program.addCommand(creditsCommand);
 program.addCommand(searchCommand);

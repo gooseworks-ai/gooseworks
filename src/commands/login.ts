@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import open from 'open';
 import { getCredentials } from '../auth/credentials';
 import { runOAuthFlow } from '../auth/oauth-server';
 import { getInstalledSkills, installManagedEntrySkills } from '../skills/installer';
@@ -7,7 +8,7 @@ import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { isAgentInstalled } from '../agents/detect';
 import * as logger from '../utils/logger';
-import { API_BASE } from '../config';
+import { API_BASE, HUB_URL } from '../config';
 
 /**
  * Refresh vendored entry skills on login for users who have already set up
@@ -41,6 +42,25 @@ function syncMcpRegistration(): void {
   }
 }
 
+/**
+ * After a FRESH login, open the onboarding page so the user lands on a "get
+ * started" experience and is nudged to run `/gooseworks onboard me` (GOOSE-2596).
+ * The `?onboard=true` param is analytics-only today. Only fires on a genuine new
+ * login — never when reusing existing creds — so the browser opens at most once.
+ * Best-effort: a headless / CI box that can't open a browser just prints the URL.
+ */
+function openOnboarding(): void {
+  const url = `${HUB_URL}/?onboard=true`;
+  open(url).catch(() => logger.info(`Get started: ${url}`));
+}
+
+/** Two focused next-steps after auth: onboard, or jump straight into an ad. */
+function showNextSteps(): void {
+  logger.info('Open Claude/Codex and pick one to get started:');
+  logger.info('  • New here? Get set up:   /gooseworks onboard me');
+  logger.info('  • Or make an ad now:      /goose-ads make an ad for <your brand>');
+}
+
 export const loginCommand = new Command('login')
   .description('Sign in to GooseWorks with Google')
   .option('--api-base <url>', 'API base URL', API_BASE)
@@ -59,6 +79,8 @@ export const loginCommand = new Command('login')
       logger.success(`Logged in as ${result.email}`);
       refreshEntrySkillsOnLogin();
       syncMcpRegistration();
+      openOnboarding();
+      showNextSteps();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed';
       logger.error(message);
@@ -80,5 +102,8 @@ export async function ensureLoggedIn(apiBase: string = API_BASE) {
     logger.error('Failed to save credentials after login');
     process.exit(1);
   }
+  // Fresh login via an install/other command path — nudge onboarding too, so
+  // `gooseworks install --all` on a logged-out machine also opens the page.
+  openOnboarding();
   return creds;
 }

@@ -100,6 +100,42 @@ To check credit balance:
 gooseworks credits
 \`\`\`
 
+## User Context (onboarding)
+
+You have two MCP tools for the user's onboarding CONTEXT — who they are and what they want GooseWorks for. It's stored server-side (org-scoped), separate from the ads brand kit.
+
+- \`get_user_context\` — read it. **At the START of a session, call this once** and use what you learn (company, role, the use-cases they picked, their goals, freeform notes) to tailor which skills/APIs you reach for. Best-effort: if the \`mcp__gooseworks__*\` tools aren't connected, skip silently and carry on.
+- \`update_user_context\` — save it (partial update; only the fields you pass are touched).
+
+### Running "onboard me" (or a first run with empty context)
+
+If the user says "onboard me" — or \`get_user_context\` returns \`onboarded: false\` and they're starting fresh — run a short, friendly interview, then save the answers. Open with this framing:
+
+> Gooseworks gives your AI agent access to skills and APIs for growth and marketing work. For example: making ad creatives, finding influencers, scraping social profiles and posts from X/LinkedIn, scraping ads from Meta/LinkedIn, scraping reddit, and finding leads to target and their emails — and much more. Visit skills.gooseworks.ai to see the full library of skills.
+
+Then ask (a few at a time is fine — don't interrogate):
+1. **What's your company's website?** → \`company_website\`
+2. **What's your role?** → \`role\`
+3. **What are you hoping to use Goose skills for?** (multi-select — pick any): generate ad creatives · research and run ads end-to-end · finding influencers · data scraping (social / ads / reddit) · finding leads & emails · something else → \`use_cases\` (array)
+4. **What high-priority growth / marketing tasks would you like help with right now?** The more context they share, the better you can help. → \`goals\`
+
+**Save** with \`update_user_context { company_website, role, use_cases, goals, context_md }\` — put any extra detail you learned into \`context_md\` as a short summary.
+
+**Then recommend REAL next steps — grounded, not from memory. This is the WHOLE POINT of onboarding; do not skip it or wing a generic playbook:**
+1. **Route each answer to the RIGHT tool first — don't blindly search one catalog. Match their use-cases to domains (same routing as "Route to the right skill FIRST" above):**
+   - **Make / edit / analyze ADS** (generate ad creatives, research & run ads) → the **\`goose-ads\`** skill (brand research + template remix). Do NOT \`gooseworks search\` for these — ad creation is NOT in the data catalog.
+   - **VIDEO ads** → **\`goose-video\`**.  **Charts / slides / graphics** → **\`goose-graphics\`**.
+   - **GTM / DATA** (finding leads & emails, influencers, scraping social / ads / reddit, enrichment, competitor intel) → run \`gooseworks search "<that task>"\` (free) and recommend the REAL skill slugs it returns.
+   Recommend specific, real things BY NAME — never a from-memory playbook, never a skill you assume exists; if a GTM search returns nothing relevant, say so.
+2. **Ground it in THEIR business.** If they gave a company website, read it with your web tools to infer their actual product + ICP, so suggestions are about their company — not a template. (For ad work, prefer \`goose-ads\`'s own brand research over a raw read.)
+3. **Be honest about cost.** Data / lead / enrichment / ad-generation skills bill GooseWorks credits — say so, and estimate before running anything (\`gooseworks credits\` to check balance).
+4. **Offer to start ONE concrete play** built from the ROUTED skill (\`goose-ads\` for ads, a real searched skill for GTM) and ask for the one or two inputs it needs.
+
+A suggestion is only "grounded" if it came from routing to the right domain skill (\`goose-ads\` / \`goose-video\` / \`goose-graphics\`) or from \`gooseworks search\` (a real GTM skill) — plus, ideally, reading their site. Do that BEFORE you suggest; never present a from-memory capability list as if you'd checked.
+
+### Update as needed
+Whenever the user reveals durable context mid-session (their company, role, what they're trying to accomplish), persist it with \`update_user_context\` so future sessions start smarter.
+
 ## How to Use
 
 ### If a specific skill is requested (e.g. --skill <slug> or "use the <name> skill")
@@ -607,8 +643,17 @@ tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
 
 You produce **video** ad creative on the user's OWN machine and sync the result back to the
 GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
-proxies, data I/O, the review gate). A separate **recipe skill** — fetched per format — tells
-you *what to make*; read both, and this doc wins on any conflict about the environment.
+proxies, data I/O, the review gate). A separate **recipe skill** — fetched per format — tells you
+*what to make* (the pieces, prompts, models, order of assembly).
+
+**Division of authority — read both, but when they disagree THIS doc wins on the environment AND the
+review/approval flow.** The recipe governs WHAT to make; this doc governs WHEN you pause, generate,
+and spend. In particular: a recipe may spell out a **multi-phase, multi-gate** flow — "generate the
+still [GATE] → approve → author the prompt [GATE] → approve → render [GATE] → approve", several
+separate pauses. **Do NOT run it that way.** Collapse every one of those gates into the single
+**review-once** flow below: one review set, one approval (Step 3). Take the recipe's pieces, prompts
+and models; ignore its intermediate pauses. This is the exact contradiction that confused past runs
+(GOOSE-2542) — there is no ambiguity: review-once wins.
 
 You run inside the user's own Claude Code session (they pasted an instruction with a project
 id). The app NEVER runs you — it is the viewer + review surface; you are the renderer.
@@ -677,14 +722,18 @@ says to shell out, use the MCP equivalent:
   stays the project-relative \`...render-file?path=working/final.mp4\` — the route re-prepends the
   prefix itself. Always verify with \`get_download_url\` on the FULL \`agent-config/...\` path (must
   be non-empty; curl it for HTTP 200) BEFORE marking the render complete.
-- Media generation (FAL / ElevenLabs) is billed to the agent through the GooseWorks proxies.
-  \`submit_render { kind: "full" }\` debits **1 ad credit at row creation** — so sequence it LAST
-  (render + verify a good MP4 first), and never re-submit on a guess (that double-bills). Call
-  \`get_ad_credits\` first; the user can check \`gooseworks credits\`.
+- Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
+  to the agent per call as you generate (Step 4). \`submit_render { kind: "full" }\` additionally
+  debits **1 nominal ad credit when the render ROW is opened** (a bookkeeping fee, NOT the render's
+  true cost) — so open it only once you actually have a rendered master (Step 4.1/4.2), and never
+  re-submit on a guess (that double-bills). The final-video QC gate (Step 4.3) then sits between
+  that master and PINNING it. Call \`get_ad_credits\` first; the user can check \`gooseworks credits\`.
 
 ## Step 1 — resolve the project, source, brand
 
-1. \`get_ad_project { project_id }\` → keep \`brand_id\`, \`source_sample_id\`, \`name\`, \`status\`.
+1. \`get_ad_project { project_id }\` → keep \`brand_id\`, \`source_sample_id\`, \`name\`, \`status\`, and
+   the **top-level** \`app_url\` + \`brand_url\` (returned alongside \`project\`, NOT inside it) — these
+   are the links you hand the user for the in-app review (Step 3) and the final delivery (Step 5).
 2. \`get_ad_template { template_id: source_sample_id }\` → the source video: \`media_url\`,
    \`recipe\`, \`format\` (e.g. "imessage"), \`extracted_script\`, \`how_to\`, \`remix_spec\`.
 3. Brand gate: \`get_brand_kit { brand_id }\`. If \`researchStatus\` is \`complete\`, REUSE it —
@@ -720,22 +769,55 @@ Playwright resolve, and point the recorder's \`NODE_PATH\` at it.
 > recipe does not yet carry \`atoms\` / \`instructions\` still hold the legacy \`recipe.thread\` payload;
 > migrate them to this shape (capabilities + instructions in the DB) — do not reintroduce a CLI map.
 
-## Step 3 — prepare ALL the ingredients, then review ONCE (always, before any paid render)
+## Step 3 — assemble the review set, then get ONE approval in the app (before the expensive render)
 
-This is a **review-once** flow: prepare every ingredient the video needs, show the whole set to
-the user in the app, get ONE approval, then render. Never render before approval, and don't drip
-ingredients out one at a time.
+This is a **review-once** flow: put the whole review set in the app, get ONE approval, then run the
+expensive render + any remaining paid work end-to-end. Never spend on the expensive render before
+approval, and don't drip pieces out one at a time and re-pause.
 
-1. **Generate every ingredient the format needs — not just the script.** For an iMessage video
-   that's typically: the **script** (the bubble thread), the **image(s)** shown in the conversation
-   (one or more), and the **end card**. Richer templates add more (hook frame, background, product
-   shots, music bed…). Read the recipe for the exact ingredient list. Generate the visuals NOW
-   (media proxies / recipe), and \`get_upload_url\` each preview asset to the project folder
-   \`agent-config/brands/<brand_slug>/projects/<project_id>/working/review/<name>\` (the same
-   path-prefix rule as final publish — a bare \`working/review/<name>\` won't render in the panel).
-   In \`script_drafts\`, set each ingredient's \`path\` to the project-relative \`working/review/<name>\`.
-   You may ask the user a couple of clarifying questions about the generation first if the recipe
-   calls for it (angle, which product, offer/code) — batch them, then prepare everything.
+**What goes in the review — show the REAL cheap pieces, PROMPT only the expensive render.** Split
+every piece three ways by cost, NOT just "free vs paid":
+- **FREE** (an iMessage / Apple-Notes HTML mockup, a text/CTA line — rendered locally, no proxy
+  call) → generate NOW and mirror the real asset.
+- **CHEAP paid** — a single still/image, the creator/avatar frame, the end card, a short voiceover
+  or music bed (each costs cents → roughly **≤ 100 credits**) → **generate these NOW too** and
+  mirror the real asset. The few credits buy a real review: the user SEES the actual creator face
+  and end card and HEARS the VO, instead of judging a prompt. **This OVERRIDES any recipe rule that
+  says to gate ALL paid calls** — only the expensive render below is gated.
+- **EXPENSIVE paid** — the video take / final AI render (hundreds of credits) → do NOT generate.
+  Put its **exact prompt/spec** (+ ref image URLs) in the tile. This is the ONE thing approved as a
+  prompt (you can't preview a hundreds-of-credits video for free); it's generated only in Step 4.
+
+**The expensive render's exact prompt must be in the panel BEFORE you ask for approval** — so a
+single "go" runs it (plus any remaining paid work) without re-pausing mid-run.
+
+**Show every cost in CREDITS, never dollars.** 1 credit = $0.01 and media generations bill at
+provider-cost × 1.2, so **credits ≈ round-up(provider-$ × 120)** per generation, plus a flat
+**200-credit base per video**. Convert any $ figures to credits and show ONLY credits to the user —
+never print a "$…" amount.
+
+**Never assemble/stitch the finished video for review.** The review is of the individual pieces (or
+their prompts) — never a "full cascade" / "approved cut" clip. Building the whole video before
+approval defeats the gate (the user opens the review to an already-finished video) and wastes the
+render (GOOSE-2542). The full video is assembled ONLY in Step 4, after approval. A \`video\`
+ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. supplied b-roll).
+
+1. **Assemble every piece the format needs — not just the script.** Read the recipe for the exact
+   list. For an iMessage video that's the **script** (bubble thread), the **conversation image(s)**,
+   and the **end card**; richer templates add a hook frame, background, product shots, music bed, a
+   creator/avatar, a voiceover… For each piece, decide FREE / CHEAP-paid / EXPENSIVE-paid (above):
+   - **FREE or CHEAP paid** (≤ ~100 credits — HTML mockups, a still, the creator frame, the end
+     card, a short VO/music bed) → generate it now and \`get_upload_url\` the asset to the project
+     folder \`agent-config/brands/<brand_slug>/projects/<project_id>/working/review/<name>\` (same
+     path-prefix rule as final publish — a bare \`working/review/<name>\` won't render in the panel);
+     set that piece's \`path\` in \`script_drafts\` to the project-relative \`working/review/<name>\`.
+   - **EXPENSIVE paid** (the video take / final render, hundreds of credits) → do NOT generate. Put
+     the **exact prompt/spec** (and any ref image URLs) in the tile's \`text\` / \`subtitle\` so the
+     user reviews what will be spent on. No \`path\` yet — it's generated in Step 4.
+   Include the **estimated cost in CREDITS** (never dollars) of the cheap pieces already generated +
+   the pending render, so the user approves knowing the total spend. You may batch a couple of
+   clarifying questions first if the recipe calls for it (angle, which product, offer/code), then
+   assemble everything.
 2. **Mirror the whole ingredient set for review** — \`update_ad_project_script { project_id,
    script_drafts, script }\`. \`script_drafts\` is a structured payload of **container-tagged
    ingredients** so the app renders each piece the right way:
@@ -750,21 +832,34 @@ ingredients out one at a time.
      for the podcast shape, or pass the readable \`script\` string).
    \`path\` = \`working/review/<name>\` (upload the preview asset first via \`get_upload_url\`); \`url\`
    works too. **Label every ingredient** ("Hook image", "End card", "Voiceover", "Background
-   music", "HER"). This writes NO render and costs NO credits — it populates the review panel.
-3. **STOP and ask the user to approve the ingredients in THIS Claude Code session.** Do not render
-   until they say go. If they want changes, regenerate the affected ingredient, call
-   \`update_ad_project_script\` again, and re-ask. Only AFTER approval do Step 4.
+   music", "HER"). The \`update_ad_project_script\` call itself writes no render and costs no credits
+   (the cheap pieces you already generated above have their own small cost) — it just populates the
+   review panel.
+3. **STOP — the review happens in the APP's review panel, NOT in this chat.** You've mirrored the
+   ingredients (3.2); now hand the user the project's \`app_url\` (from \`get_ad_project\`) and tell
+   them to review the pieces there and hit **"Approve & render"**. That button gives them a short
+   message to paste back into this session — THAT is your go-ahead. Do NOT paste the
+   script/ingredients into the chat for a thumbs-up, and do NOT render until that approval comes
+   back from the app. If they want changes (via the app's comments or here), regenerate the
+   affected ingredient, call \`update_ad_project_script\` again, tell them it's refreshed in the
+   app, and wait for a fresh approval. Only AFTER the app approval do Step 4. A single approval
+   authorises the WHOLE remaining chain — generate every paid piece, render, self-QC, publish —
+   with NO further pauses (that is exactly why every paid prompt must already be in the panel).
 
 ## Step 4 — render locally, report stages, publish
 
-1. Render per the recipe (Playwright record → ffmpeg stitch → \`mix-master\` audio). Generate any
-   hook / background / end-card assets through the media proxies (below).
+1. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, voice,
+   music, the end-card render — through the media proxies (below), each from its approved prompt.
+   Then assemble per the recipe (Playwright record where needed → ffmpeg stitch → \`mix-master\`
+   audio).
 2. Open the row LAST: \`submit_render { project_id, kind: "full" }\` → keep \`render_id\`, then
    \`update_render_status { render_id, status: "running" }\`. The render row tracks status only
    (queued / running / complete / failed) — narrate fine-grained progress with
    \`append_project_message\` instead.
-3. **MANDATORY final-video review gate — review EVERY finished master before \`set_final_render\`,
-   whatever the format (UGC or not).** The render credit is already spent (\`submit_render\` in 4.2);
+3. **MANDATORY final-video QC gate — YOU review EVERY finished master before \`set_final_render\`,
+   whatever the format (UGC or not).** This is your own automated quality check, separate from the
+   user's Step-3 approval — it does not go back to the user. The render row is already open (its
+   nominal credit spent, \`submit_render\` in 4.2);
    this gate stands between a rendered master and PINNING/publishing it, so a bad render never gets
    set as final. A master that looks fine on a still can still have a mis-voiced word, a caption
    drifting off its line, a beat out of order, or a deformation — review the actual VIDEO, not
@@ -868,10 +963,23 @@ path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it
 
 - **MCP + ffmpeg + Playwright required** — run \`gooseworks doctor\` in Phase 0; stop with the
   exact fix it prints if anything is ✗.
-- **Prepare ALL ingredients first** (script + every visual: image(s) + end card + whatever else
-  the template needs), mirror the whole set with \`update_ad_project_script\`, and get the user's
-  approval in-session BEFORE rendering — always (review-once).
-- **submit_render LAST**; \`output_url\` = the durable render-file URL, never a CDN URL.
+- **Assemble the whole review set first**, mirror it with \`update_ad_project_script\`, and get the
+  user's approval **in the app's review panel** (the "Approve & render" button) BEFORE the expensive
+  render — never ask for a thumbs-up in this chat (review-once, in-app).
+- **Show the REAL cheap pieces; PROMPT only the expensive render.** Generate the FREE + CHEAP-paid
+  pieces (≤ ~100 credits — stills, creator frame, end card, short VO/music) and mirror the real
+  assets; put ONLY the expensive video take/render in the panel as its exact prompt. That prompt
+  must be in the panel before you ask to approve, so a single "go" runs the render + any remaining
+  paid work (→ QC → publish) with no re-pausing.
+- **Costs in CREDITS, never dollars.** credits ≈ round-up(provider-$ × 120) per generation + a flat
+  200-credit base per video; never show a "$…" figure to the user.
+- **Never assemble the full video before approval.** The review shows the
+  individual PIECES, never the finished cut (or their prompts) — not a
+  stitched/composited cut; do not add a "full cascade" / finished-video clip
+  as a review ingredient (GOOSE-2542). The assembled video is produced only in
+  Step 4.
+- **submit_render only after the master is rendered** (Step 4.2), never on a guess; \`output_url\` =
+  the durable render-file URL, never a CDN URL.
 - **Always pass \`project_id\` on media-proxy calls** (fal / ElevenLabs) so the credits attribute
   to this ad project — that's what lets the user see per-project spend in the app.
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.

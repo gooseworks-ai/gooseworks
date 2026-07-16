@@ -197,7 +197,7 @@ describe('install command', () => {
     );
   });
 
-  it('prints multiple example prompts after install', async () => {
+  it('prints the two focused next-step CTAs after install', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
@@ -206,32 +206,25 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--claude']);
 
     expect(loggerModule.example).toHaveBeenCalled();
-    const calls = (loggerModule.example as jest.Mock).mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(3);
-    const joined = calls.map((c) => c[0]).join('\n');
-    expect(joined).toMatch(/linkedin/i);
-    expect(joined).not.toMatch(/find me leads/);
-    // goose-ads is always installed, so the success message must surface it.
-    expect(joined).toMatch(/\/goose-ads/);
+    const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    // Deliberately just two options: get set up, or make an ad.
+    expect(joined).toMatch(/\/gooseworks onboard me/);
+    expect(joined).toMatch(/\/goose-ads make an ad/);
   });
 
-  it('suggests /goose-graphics only when installed with --with', async () => {
+  it('keeps the success message to the two CTAs — no GTM/graphics examples, even with --with', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
     const { createInstallCommand } = await import("../../src/commands/install");
 
-    // Without --with goose-graphics: no graphics example.
-    await createInstallCommand().parseAsync(['node', 'test', '--claude']);
-    let joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
-    expect(joined).not.toMatch(/\/goose-graphics/);
-
-    (loggerModule.example as jest.Mock).mockClear();
-
-    // With --with goose-graphics: graphics example shown.
+    // Even with --with goose-graphics (still installed), the success message
+    // stays focused on onboarding + ads — no graphics/GTM example prompts.
     await createInstallCommand().parseAsync([
       'node', 'test', '--claude', '--with', 'goose-graphics',
     ]);
-    joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
-    expect(joined).toMatch(/\/goose-graphics/);
+    const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    expect(joined).not.toMatch(/\/goose-graphics/);
+    expect(joined).not.toMatch(/find people|find leads|research </i);
+    expect(joined).toMatch(/onboard me/);
   });
 
   it('--claude without --mcp installs skill only, no MCP write', async () => {

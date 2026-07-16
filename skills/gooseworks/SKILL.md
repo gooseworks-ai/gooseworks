@@ -54,6 +54,42 @@ To check credit balance:
 gooseworks credits
 ```
 
+## User Context (onboarding)
+
+You have two MCP tools for the user's onboarding CONTEXT — who they are and what they want GooseWorks for. It's stored server-side (org-scoped), separate from the ads brand kit.
+
+- `get_user_context` — read it. **At the START of a session, call this once** and use what you learn (company, role, the use-cases they picked, their goals, freeform notes) to tailor which skills/APIs you reach for. Best-effort: if the `mcp__gooseworks__*` tools aren't connected, skip silently and carry on.
+- `update_user_context` — save it (partial update; only the fields you pass are touched).
+
+### Running "onboard me" (or a first run with empty context)
+
+If the user says "onboard me" — or `get_user_context` returns `onboarded: false` and they're starting fresh — run a short, friendly interview, then save the answers. Open with this framing:
+
+> Gooseworks gives your AI agent access to skills and APIs for growth and marketing work. For example: making ad creatives, finding influencers, scraping social profiles and posts from X/LinkedIn, scraping ads from Meta/LinkedIn, scraping reddit, and finding leads to target and their emails — and much more. Visit skills.gooseworks.ai to see the full library of skills.
+
+Then ask (a few at a time is fine — don't interrogate):
+1. **What's your company's website?** → `company_website`
+2. **What's your role?** → `role`
+3. **What are you hoping to use Goose skills for?** (multi-select — pick any): generate ad creatives · research and run ads end-to-end · finding influencers · data scraping (social / ads / reddit) · finding leads & emails · something else → `use_cases` (array)
+4. **What high-priority growth / marketing tasks would you like help with right now?** The more context they share, the better you can help. → `goals`
+
+**Save** with `update_user_context { company_website, role, use_cases, goals, context_md }` — put any extra detail you learned into `context_md` as a short summary.
+
+**Then recommend REAL next steps — grounded, not from memory. This is the WHOLE POINT of onboarding; do not skip it or wing a generic playbook:**
+1. **Route each answer to the RIGHT tool first — don't blindly search one catalog. Match their use-cases to domains (same routing as "Route to the right skill FIRST" above):**
+   - **Make / edit / analyze ADS** (generate ad creatives, research & run ads) → the **`goose-ads`** skill (brand research + template remix). Do NOT `gooseworks search` for these — ad creation is NOT in the data catalog.
+   - **VIDEO ads** → **`goose-video`**.  **Charts / slides / graphics** → **`goose-graphics`**.
+   - **GTM / DATA** (finding leads & emails, influencers, scraping social / ads / reddit, enrichment, competitor intel) → run `gooseworks search "<that task>"` (free) and recommend the REAL skill slugs it returns.
+   Recommend specific, real things BY NAME — never a from-memory playbook, never a skill you assume exists; if a GTM search returns nothing relevant, say so.
+2. **Ground it in THEIR business.** If they gave a company website, read it with your web tools to infer their actual product + ICP, so suggestions are about their company — not a template. (For ad work, prefer `goose-ads`'s own brand research over a raw read.)
+3. **Be honest about cost.** Data / lead / enrichment / ad-generation skills bill GooseWorks credits — say so, and estimate before running anything (`gooseworks credits` to check balance).
+4. **Offer to start ONE concrete play** built from the ROUTED skill (`goose-ads` for ads, a real searched skill for GTM) and ask for the one or two inputs it needs.
+
+A suggestion is only "grounded" if it came from routing to the right domain skill (`goose-ads` / `goose-video` / `goose-graphics`) or from `gooseworks search` (a real GTM skill) — plus, ideally, reading their site. Do that BEFORE you suggest; never present a from-memory capability list as if you'd checked.
+
+### Update as needed
+Whenever the user reveals durable context mid-session (their company, role, what they're trying to accomplish), persist it with `update_user_context` so future sessions start smarter.
+
 ## How to Use
 
 ### If a specific skill is requested (e.g. --skill <slug> or "use the <name> skill")

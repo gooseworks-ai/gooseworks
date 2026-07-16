@@ -163,26 +163,15 @@ Examples:
     const agentNames = targetAgents.map((a) =>
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
-    logger.done(`Setup complete! Open ${agentNames} and try one of these:`);
+    logger.done(`Setup complete! Open ${agentNames} and pick one to get started:`);
 
-    logger.info('Data & GTM:');
-    logger.example('/gooseworks find people who know <linkedin-profile-url>');
-    logger.example('/gooseworks find leads similar to <linkedin-company-url>');
-    logger.example('/gooseworks research <company name>');
-
-    // goose-ads is a vendored entry skill — always installed, so always shown.
     console.log('');
-    logger.info('Ads (create, edit & analyze):');
-    logger.example('/goose-ads remix template <id-or-url> for <your-product>');
-    logger.example('/goose-ads make an ad for <your-product>');
-    logger.example('/goose-ads why is my Meta campaign underperforming?');
+    logger.info('New here? Get set up in 30 seconds:');
+    logger.example('/gooseworks onboard me');
 
-    // Graphics is a standalone skill — only suggest it if it was installed.
-    if ((opts.with || []).includes('goose-graphics')) {
-      console.log('');
-      logger.info('Graphics:');
-      logger.example('/goose-graphics make a chart from <data>');
-    }
+    console.log('');
+    logger.info('Or jump straight into making an ad:');
+    logger.example('/goose-ads make an ad for <your brand>');
     console.log('');
   });
 }
