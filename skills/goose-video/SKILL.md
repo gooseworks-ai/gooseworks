@@ -33,30 +33,61 @@ and models; ignore its intermediate pauses. This is the exact contradiction that
 You run inside the user's own Claude Code session (they pasted an instruction with a project
 id). The app NEVER runs you — it is the viewer + review surface; you are the renderer.
 
-## CLI-free environments (cowork / headless)
+## CLI-free environments (headless) — and where video CANNOT run
 
-You may be running WITHOUT the `gooseworks` CLI binary (e.g. Anthropic cowork). The
-`mcp__gooseworks__*` tools work over the MCP connection regardless, so wherever this skill
-says to shell out, use the MCP equivalent:
+You may be running WITHOUT the `gooseworks` CLI binary. The `mcp__gooseworks__*` tools work over
+the MCP connection regardless, so wherever this skill says to shell out, use the MCP equivalent:
 
 - `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (returns the same content/scripts/
   files/dependencySkills). `gooseworks search <q>` → **`search_skills`**.
 - `gooseworks credits` → the **`get_ad_credits`** MCP tool.
 - `gooseworks doctor` → do the manual toolchain check in the preflight below.
 
+**HARD LIMIT — hosted connectors (Anthropic cowork, ChatGPT work) CANNOT render video.** Their
+sandbox blocks all network egress except a fixed allowlist, so the media providers (FAL /
+ElevenLabs) and the GooseWorks proxies are unreachable, AND a finished video can't be moved back out
+(verified: the S3 upload path is 403-blocked and inline binary transport through MCP corrupts and is
+size-capped). Video rendering therefore only works where THIS agent has **real network egress + a
+filesystem** — local Claude Code or the desktop app. In a hosted / no-egress connector, do NOT
+attempt to render: run the Phase-0 egress gate below, then STOP and route the user to **`goose-ads`**
+(static image ads — generated server-side, work anywhere) or to running `goose-video` locally. The
+MCP control-plane tools (project, brand, script, credits) still work there — only the *render* is
+unsupported.
+
 ## Prerequisite — MCP + a render toolchain (Phase 0 preflight)
 
+- **FIRST — environment egress gate (before anything else; do NOT skip).** Rendering needs direct
+  network egress to the GooseWorks proxies + FAL / ElevenLabs. Probe it: attempt a quick reachability
+  check to your `api_base` — e.g. `curl -m 6 -o /dev/null -w "%{http_code}" <api_base>` (or DNS-resolve
+  the proxy host). If it FAILS — no DNS, connection blocked, `000`, or `403 blocked-by-allowlist` —
+  you are in a hosted / no-egress connector (cowork / ChatGPT) and **CANNOT render video here.** Do
+  NOT build ingredients, generate media, or open a render row. STOP and tell the user, e.g.: *"I can
+  set up the project here, but video rendering needs a machine with network access — this hosted
+  environment blocks it. Options: (a) make a static image ad now with `goose-ads` (works here), or
+  (b) run `goose-video` in local Claude Code / the desktop app to render the video."* Only proceed
+  past this gate once egress to the proxies is confirmed reachable.
 - The `mcp__gooseworks__*` tools are REQUIRED. If they're unavailable, stop and tell the user
   to connect the GooseWorks MCP server (or run `gooseworks install --claude --mcp` on the CLI)
   and restart. There is no REST fallback.
 - **The render runs wherever THIS agent runs, and it needs a real toolchain: `ffmpeg` +
-  `ffprobe` + a Playwright **Chromium**.** Establish it in this priority order, and do NOT start
-  rendering until one is confirmed:
+  `ffprobe`, plus a Playwright **Chromium** ONLY for formats that record HTML (the phone-mockup
+  formats — iMessage / notes / chat-reveal). Pure-ffmpeg formats (a VO + still Ken-Burns reel like
+  `cosmic-mythology-voiceover`) need NO Chromium — don't block them on it.** Also confirm ffmpeg can
+  actually render TEXT, because `ffmpeg -version` passing does NOT prove it: stock Homebrew ffmpeg
+  frequently ships WITHOUT `drawtext` (needs `--enable-libfreetype`) and WITHOUT `subtitles`/libass —
+  the two filters the caption + hook burns assume. Probe them:
+  `ffmpeg -hide_banner -filters | grep -E '\b(drawtext|subtitles)\b'`. When they're MISSING it is NOT
+  a blocker: the `render-<format>` capabilities fall back to timed **PIL PNG overlays** (Pillow) for
+  the hook + captions — so instead verify `python3 -c "import PIL"` resolves (a `pip install pillow`
+  fixes it). Establish it in this priority order, and do NOT start rendering until one is confirmed:
   1. **CLI present →** run `gooseworks doctor` (checks login, MCP, ffmpeg/ffprobe, Playwright
-     Chromium in one shot). Fix any ✗ with the command it prints, then continue.
-  2. **No CLI →** check the toolchain yourself: `ffmpeg -version`, `ffprobe -version`, and a
-     Playwright Chromium probe (`npx playwright --version` and, if needed, `npx playwright install
-     chromium`). If all resolve, continue.
+     Chromium in one shot). Fix any ✗ with the command it prints, then continue. NOTE: `doctor`
+     confirms ffmpeg is PRESENT but not that it carries `drawtext`/`libass` — run the `-filters`
+     probe above yourself, and confirm Pillow, before a text-burning format.
+  2. **No CLI →** check the toolchain yourself: `ffmpeg -version`, `ffprobe -version`, the
+     `drawtext`/`subtitles` filter probe above (+ `python3 -c "import PIL"` for the fallback), and —
+     only for an HTML/phone-mockup format — a Playwright Chromium probe (`npx playwright --version`
+     and, if needed, `npx playwright install chromium`). If all resolve, continue.
   3. **Docker available →** this is the most reliable way to get the toolchain in a sandbox that
      lacks it: run the render steps inside the prebuilt image
      **`ghcr.io/gooseworks-ai/goose-video-render`** (ffmpeg + ffprobe + Playwright Chromium baked
@@ -248,17 +279,39 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when `OPENAI_BASE_URL` is set; with no backend at all, run
      `fal-ai/whisper` via `fal-proxy` (upload the audio, pass its `get_download_url` as `audio_url`)
-     and diff the transcript yourself.
-   - **Captions / subtitles** — ANY captioned format (the most common non-UGC defect); **skip for
-     UGC/Seedance masters, which carry no subtitle track.** Concrete check: diff the caption file
-     you burned (SRT/ASS) against the SAME Whisper transcript + word timings from the audio pass —
-     every caption line must match the heard/scripted words and sit within ~0.3s of when they're
-     spoken; then in the visual pass below, OCR-read the burned caption off 4–5 sampled frames to
-     confirm it's actually on screen at that time and not colliding with a hyperframe or the end
-     card. Mismatched text or >0.3s drift fails the gate.
+     and diff the transcript yourself. **If NO Whisper backend is reachable — the `fal-ai/whisper`
+     proxy has 900s-timed-out (validated 2026-07-18) — do NOT block shipping:** the burned captions
+     are authored from the LOCKED script (brand-correct by construction), so treat that as the
+     on-screen safety net and record in the QC report that the transcript diff was skipped for want
+     of a Whisper backend. Note that a native-audio Seedance take can mis-voice even COMMON words
+     ("curdle"→"curtage", "espresso"→"espressro"); the fix for sound-on is to rephrase the trip-word
+     + re-roll SEED-LOCKED, not to rely on the (unavailable) diff.
+   - **Captions / on-screen text** — ANY format that BURNS text: a subtitle/caption track (the most
+     common non-UGC defect) OR stat-callout / hyperframe pills (e.g. a Seedance product-sizzle that
+     burns callout pills). **Skip ONLY when the master carries NO burned text — do NOT skip just
+     because it's a UGC/Seedance master; those still burn callout pills, and the skip must key on
+     "is there burned text?", not on which model made the video.** Concrete check: diff the burned
+     text against its source of truth — for spoken captions, the SAME Whisper transcript + word
+     timings from the audio pass (each line matches the heard/scripted words within ~0.3s) — or,
+     when no Whisper backend is reachable, time cues from ffmpeg `silencedetect` VOICED SPANS mapped
+     onto the phrase-cues (a single linear distribution across the clip drifts LATE because the
+     speaker pauses; a strict transcript-diff gate is then not runnable, so lean on the locked-script
+     spelling); for
+     silent callout pills, the config's callout strings at their t_start/t_end beats. Then in the
+     visual pass below, OCR-read the burned text off 4–5 sampled frames to confirm it's on screen at
+     the right time, spelled correctly (no diffusion/typo drift), and not colliding with a hyperframe
+     or the end card. Mismatched text, a typo, or >0.3s drift fails the gate.
    - **Visual + structure** — always: run the `watch` skill on the master — beat/scene order + SFX,
      the brand's product (not the source's) is shown, the end card has the real wordmark + code, no
      deformation/artifact, duration within ~20% of the source.
+   - **File size / bitrate** — always: `ffprobe` the master for duration + bitrate and check the MP4
+     size on disk. Renders can balloon (a 30s clip has come out **22MB+**, ~6 Mbps and up), which
+     uploads slowly and some ad platforms reject or hard-transcode. Target roughly **≤ ~1MB/s of
+     video** (≤ ~30MB for a 30s ad) and a bitrate around **2–4 Mbps** for 1080p social. If the master
+     is over that, re-encode to H.264 before publishing — e.g.
+     `ffmpeg -i <master>.mp4 -c:v libx264 -crf 23 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart <out>.mp4`
+     (raise `-crf` toward 26 or set an explicit `-maxrate 4M -bufsize 8M` if it's still large) — then
+     re-check size and re-run the visual pass on the re-encoded file. Never publish an oversized master.
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
    and re-review — only a clean pass proceeds to `set_final_render`. **This gate is universal: it
    runs from the master skill for every format, so a recipe never has to opt in.**
@@ -273,7 +326,15 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    **output_url MUST be the durable render-file URL**
    `/api/ads/projects/<project_id>/render-file?path=working/final.mp4` (the app re-presigns it on
    every view) — NEVER a raw proxy/CDN URL (those expire). Same for `thumbnail_url`.
-5. `set_final_render { project_id, render_id }` to pin it, then return the `app_url` +
+5. **Re-sync the review panel to the FINAL assets (mandatory on every iteration/fix).** The review
+   ingredients (`working/review/*`) do NOT auto-update when you re-render — a fix that regenerates
+   keyframes → re-renders clips → re-assembles `final.mp4` leaves the panel showing the OLD stills,
+   so the video is correct while the panel lies. Whenever ANY asset that has a review mirror changed
+   (a product fix, a re-rolled keyframe/still, a new end card, a swapped VO), re-`get_upload_url` the
+   updated version to the SAME `working/review/<name>` path AND call `update_ad_project_script` again
+   so the panel matches what you just published. Do this for every changed ingredient, not just the
+   final video — parity between `working/review/*` and `final.mp4` is required before you finish.
+6. `set_final_render { project_id, render_id }` to pin it, then return the `app_url` +
    `brand_url` (from the project/links) verbatim. Never end on just "done" or a file path.
 
 Narrate each long step in one line via `append_project_message { project_id, role: "agent",
@@ -292,7 +353,20 @@ that ad project so the user sees per-project spend in the app. ALWAYS pass it). 
 **FAL queue gotcha** (#1 waste of generations): submit returns `status_url`/`response_url` on
 `queue.fal.run` (the real host, not the proxy). Polling those 401s forever — rewrite their host
 to the proxy base (keep the path), re-add `?token=&agent_id=`. Only the final `*.fal.media`
-image is a real public URL. Helper:
+image is a real public URL.
+
+**Double-submit / duration / reused-face gotchas** (validated 2026-07-18): (a) a flaky backend can
+drop a submit's POST *response* after FAL already queued the job, so a retry-on-connection-drop
+**double-fires** — two near-identical `request_id`s for ONE take. They share one underlying FAL job,
+so **cancelling the "duplicate" returns `NOT_FOUND` on BOTH and kills your real render.** → submit
+each paid take with a **single** POST (don't auto-retry a submit that may have already gone through);
+if you get twins, let one finish, never cancel a twin. (b) Send Seedance `duration` as an **int** —
+`bytedance/seedance-2.0/reference-to-video` 400s a string with `invalid_request`. (c) For a
+Seedance-native creator use a **freshly generated** Seedream v5 Pro face
+(`bytedance/seedream/v5/pro/text-to-image`, NO `fal-ai/` prefix) — reusing a saved photoreal face
+trips the likeness gate.
+
+Helper:
 
 ```python
 import json, os, pathlib, time, requests
@@ -357,7 +431,15 @@ path. (`fal-storage-proxy` may 404 depending on the install; don't block on it �
   the durable render-file URL, never a CDN URL.
 - **Always pass `project_id` on media-proxy calls** (fal / ElevenLabs) so the credits attribute
   to this ad project — that's what lets the user see per-project spend in the app.
+- **Keep the review panel in parity with the FINAL assets on every iteration.** Re-rendering a fix
+  does NOT refresh `working/review/*` — after any re-roll (product fix, new keyframe/still, end card,
+  VO), re-upload the changed asset to the SAME `working/review/<name>` path and call
+  `update_ad_project_script` again, so the panel never shows stale ingredients against a corrected
+  video.
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
+- **Check the file size / bitrate** of the finished master (`ffprobe` + size on disk) — renders can
+  balloon (30s → 22MB+). Aim for ≤ ~1MB/s and ~2–4 Mbps at 1080p; if it's over, re-encode with
+  H.264 (`-crf 23`, or cap with `-maxrate 4M`) and re-check before publishing.
 - **Reuse the brand** when its research is complete; never re-research.
 - On a hard error (auth/quota/model/timeout) set the render `failed` with a short
   `error_message` and stop — don't ship the source unchanged.
