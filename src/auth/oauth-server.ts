@@ -17,7 +17,17 @@ interface OAuthResult {
   mcp_server_url?: string;
 }
 
-export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
+/**
+ * @param creatorRef Creator Program referral code (from `--ref`). Forwarded to
+ *   the `/cli/auth` page as `?creator_ref=`, which passes it onto `/auth/google`
+ *   so the backend attributes a first-time signup to that creator's cash rail.
+ *   No-op for users who are already signed in (attribution only lands on the
+ *   OAuth signup, not on token re-exchange).
+ */
+export async function runOAuthFlow(
+  apiBase: string,
+  creatorRef?: string,
+): Promise<OAuthResult> {
   const state = crypto.randomBytes(16).toString('hex');
   const frontendBase = FRONTEND_URL;
 
@@ -119,7 +129,12 @@ export async function runOAuthFlow(apiBase: string): Promise<OAuthResult> {
       // Pass api_base so the frontend can route Google OAuth back through the
       // correct backend (e.g. http://localhost:5999 for local dev vs. the
       // ngrok/prod URL baked into NEXT_PUBLIC_API_URL).
-      const authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}&api_base=${encodeURIComponent(apiBase)}`;
+      let authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}&api_base=${encodeURIComponent(apiBase)}`;
+      // Carry the creator referral code through so the frontend can forward it
+      // to /auth/google as ?creator_ref= for signup attribution.
+      if (creatorRef) {
+        authUrl += `&creator_ref=${encodeURIComponent(creatorRef)}`;
+      }
 
       logger.info('Opening browser for Google sign-in...');
       open(authUrl).catch(() => {

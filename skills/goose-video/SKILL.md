@@ -5,11 +5,12 @@ description: >
   GooseWorks video ads — remix a video ad template (iMessage chat-reveal, more coming) into a
   branded video ad for the user's product. Renders LOCALLY on the user's machine (Playwright +
   ffmpeg + GooseWorks media proxies) and saves the finished MP4 back to the project over MCP.
-  Use when the user says "make the video for project <id>", references a video ad project or
-  template, or asks to remix a video ad. Unlike goose-ads (static images, generated server-side),
-  video renders locally and reports progress + the result back through the gooseworks MCP tools.
+  Use when the user says "make the video for project <id>", "for video batch <id>", references a
+  video ad project/batch or template, or asks to remix a video ad. Unlike goose-ads (static images,
+  generated server-side), video renders locally and reports progress + the result back through the
+  gooseworks MCP tools.
 category: ads
-version: 0.2.0
+version: 0.3.0
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
 ---
@@ -104,11 +105,63 @@ says to shell out, use the MCP equivalent:
   re-submit on a guess (that double-bills). The final-video QC gate (Step 4.3) then sits between
   that master and PINNING it. Call `get_ad_credits` first; the user can check `gooseworks credits`.
 
+## Step 0 — project id, or video BATCH id? (fan out before anything else)
+
+The handoff you were pasted is EITHER a single `project <id>` OR a `video batch <id>`. A batch is
+the app's "N concepts" flow: one composer submission fans out into **N independent concept projects**
+(the user picked a concept count, default 3), and the app expects EACH to be rendered. **Handle both:**
+
+- **`project <id>`** → you have one project. Treat it as a batch of one and continue to Step 1.
+- **`video batch <id>`** → call `get_ad_video_batch { video_batch_id }`. It returns every child
+  concept under `projects[]` — each is a normal project with its own `id`, `variant_index`
+  (Concept 1..N), and its own `creative_brief` (the per-concept angle/hook/offer/message). **You
+  MUST process every concept, not just the first** — dropping concepts 2..N is the #1 batch bug.
+
+**Loop shape (one agent, sequential, ONE approval for the whole batch):**
+1. Run **Step 1 + Step 1.5 + Step 2 + Step 3-assemble** for EACH concept project (each has its own
+   `project_id`, brief, and `working/` folder — never cross-write between concepts).
+2. Mirror EVERY concept's review set (Step 3's `update_ad_project_script` per project), then stop
+   for **ONE** approval that covers all concepts — show the per-concept credit estimate and the
+   batch total. Set the batch to `review` (`update_ad_video_batch { status: "review" }`).
+3. On approval, set the batch to `rendering` and run **Step 4 (the expensive render)** for each
+   concept **sequentially** (finish Concept 1's master before starting Concept 2 — one machine can't
+   render them in parallel). Deliver each (Step 5). When all concepts are pinned, set the batch to
+   `complete`.
+
+If a single concept fails, keep going with the rest, mark that concept blocked, and report which
+ones shipped — never abort the whole batch on one bad concept. Everything below (Steps 1–5) is
+written per-project; a batch just runs it N times with the shared approval gate above.
+
 ## Step 1 — resolve the project, source, brand
 
-1. `get_ad_project { project_id }` → keep `brand_id`, `source_sample_id`, `name`, `status`, and
-   the **top-level** `app_url` + `brand_url` (returned alongside `project`, NOT inside it) — these
-   are the links you hand the user for the in-app review (Step 3) and the final delivery (Step 5).
+1. `get_ad_project { project_id }` → keep `brand_id`, `source_sample_id`, `name`, `status`, the
+   **top-level** `app_url` + `brand_url` (returned alongside `project`, NOT inside it — the links
+   you hand the user for the in-app review in Step 3 and delivery in Step 5), AND the user's
+   **`creative_brief`**, project **`assets`**, `character_id`, `default_voice_id` — these are the
+   authoritative inputs the user chose in the composer (see Step 1.5). Do NOT discard them.
+
+### Step 1.5 — the project brief is AUTHORITATIVE (honor it; don't re-ask)
+
+The composer already collected the user's creative direction onto the project. **Read it and treat
+it as ground truth — it OVERRIDES the template recipe's defaults, and it REPLACES the clarifying
+questions you would otherwise ask.** Only fall back to the recipe default (then, last, to asking)
+for a field the brief leaves empty. Map the fields you WILL honor:
+
+- `creative_brief.productName` / `.offer` / `.angle` → the product, offer/code, and angle. Do
+  **not** ask "which product / what offer / what angle" if these are set.
+- `creative_brief.concept` (on a batch child) → this concept's **`angle` / `hook` / `offer` /
+  `message` / `note`** — the per-concept differentiator. Honor it verbatim; it's WHY the user asked
+  for N concepts. `angle: "auto"` or empty means "you choose."
+- Project `assets` + `creative_brief.reference_image_urls` → the user's **own reference images**.
+  Use them as the product/brand refs (alongside the brand kit), don't ignore them for generic recipe
+  assets.
+- `character_id` → the avatar/creator to use. `default_voice_id` → the voice for any VO (put its
+  NAME in the review `subtitle`). Use these instead of picking your own.
+- `creative_brief.ratio` / `.durationSeconds` → target aspect ratio + length. Honor when the
+  format's render pipeline supports it; if the format physically can't (e.g. a fixed phone-mockup
+  aspect), keep the format's native value and note the constraint in the review rather than silently
+  ignoring the request.
+- `polish_policy` (`standard` | `extra`) → `extra` means spend the extra pass on QC/polish.
 2. `get_ad_template { template_id: source_sample_id }` → the source video: `media_url`,
    `recipe`, `format` (e.g. "imessage"), `extracted_script`, `how_to`, `remix_spec`.
 3. Brand gate: `get_brand_kit { brand_id }`. If `researchStatus` is `complete`, REUSE it —
@@ -190,9 +243,10 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      the **exact prompt/spec** (and any ref image URLs) in the tile's `text` / `subtitle` so the
      user reviews what will be spent on. No `path` yet — it's generated in Step 4.
    Include the **estimated cost in CREDITS** (never dollars) of the cheap pieces already generated +
-   the pending render, so the user approves knowing the total spend. You may batch a couple of
-   clarifying questions first if the recipe calls for it (angle, which product, offer/code), then
-   assemble everything.
+   the pending render, so the user approves knowing the total spend. **Answer clarifying questions
+   from the project brief FIRST (Step 1.5)** — only ask the user for a field (angle, which product,
+   offer/code) the `creative_brief` leaves empty AND the recipe can't default. Do not re-ask for
+   anything the composer already captured.
 2. **Mirror the whole ingredient set for review** — `update_ad_project_script { project_id,
    script_drafts, script }`. `script_drafts` is a structured payload of **container-tagged
    ingredients** so the app renders each piece the right way:

@@ -19,6 +19,7 @@ interface InstallOptions {
   mcp?: boolean;
   apiBase?: string;
   with?: string[];
+  ref?: string;
 }
 
 export function createInstallCommand(): Command {
@@ -35,6 +36,7 @@ Examples:
   .option('--mcp', 'Also register the GooseWorks MCP server')
   .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
   .option('--api-base <url>', 'API base URL', API_BASE)
+  .option('--ref <code>', 'Creator referral code — attributes your signup to the GooseWorks creator who referred you')
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
 
@@ -49,7 +51,7 @@ Examples:
 
     // Step 1: Authenticate
     logger.step(1, 3, 'Authenticating...');
-    const creds = await ensureLoggedIn(opts.apiBase);
+    const creds = await ensureLoggedIn(opts.apiBase, opts.ref);
     logger.success(`Logged in as ${creds.email}`);
 
     // Step 2: Install entry skills (clean old skills first)
