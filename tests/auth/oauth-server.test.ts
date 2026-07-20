@@ -136,6 +136,38 @@ describe('auth/oauth-server', () => {
     await flow;
   });
 
+  it('forwards the creator referral code onto the /cli/auth URL as creator_ref', async () => {
+    const flow = runOAuthFlow('https://api.gooseworks.ai', 'K7M2QX9P');
+    const url = await waitForOpen();
+    const u = new URL(url);
+    expect(u.searchParams.get('creator_ref')).toBe('K7M2QX9P');
+
+    // Finish the flow so cleanup runs.
+    const { port, state } = extractCallbackParams(url);
+    await hitCallback(port, {
+      token: 'cal_token',
+      email: 'user@example.com',
+      agent_id: 'agent-123',
+      state,
+    });
+    await flow;
+  });
+
+  it('omits creator_ref when no referral code is passed', async () => {
+    const flow = runOAuthFlow('https://api.gooseworks.ai');
+    const url = await waitForOpen();
+    expect(new URL(url).searchParams.has('creator_ref')).toBe(false);
+
+    const { port, state } = extractCallbackParams(url);
+    await hitCallback(port, {
+      token: 'cal_token',
+      email: 'user@example.com',
+      agent_id: 'agent-123',
+      state,
+    });
+    await flow;
+  });
+
   it('forwards optional fields (scope_type, default_agent_id, mcp_server_url) into credentials', async () => {
     const flow = runOAuthFlow('https://api.gooseworks.ai');
     const url = await waitForOpen();

@@ -64,6 +64,7 @@ function showNextSteps(): void {
 export const loginCommand = new Command('login')
   .description('Sign in to GooseWorks with Google')
   .option('--api-base <url>', 'API base URL', API_BASE)
+  .option('--ref <code>', 'Creator referral code — attributes your signup to the GooseWorks creator who referred you')
   .action(async (opts) => {
     const existing = getCredentials();
     if (existing) {
@@ -75,7 +76,7 @@ export const loginCommand = new Command('login')
     }
 
     try {
-      const result = await runOAuthFlow(opts.apiBase);
+      const result = await runOAuthFlow(opts.apiBase, opts.ref);
       logger.success(`Logged in as ${result.email}`);
       refreshEntrySkillsOnLogin();
       syncMcpRegistration();
@@ -92,11 +93,11 @@ export const loginCommand = new Command('login')
  * Ensures the user is logged in, running OAuth if needed.
  * Returns credentials or exits the process.
  */
-export async function ensureLoggedIn(apiBase: string = API_BASE) {
+export async function ensureLoggedIn(apiBase: string = API_BASE, creatorRef?: string) {
   const existing = getCredentials();
   if (existing) return existing;
 
-  const result = await runOAuthFlow(apiBase);
+  const result = await runOAuthFlow(apiBase, creatorRef);
   const creds = getCredentials();
   if (!creds) {
     logger.error('Failed to save credentials after login');
