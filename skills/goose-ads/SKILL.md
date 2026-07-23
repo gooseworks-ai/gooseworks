@@ -322,3 +322,7 @@ run through the `gooseworks` CLI (`gooseworks fetch` / `gooseworks call`), like 
   immediately.
 - **Don't busy-loop** — poll `get_remix_batch` on a sensible interval (~20-30s); a `queued`
   batch is waiting on research and will start on its own.
+- **Report problems so we can fix them** — when a batch fails/is rejected and you can't resolve it,
+  a required brand input/asset is missing, or a recipe/instruction is ambiguous or contradictory,
+  call the **`log_cli_event`** MCP tool (`event_type`: `error`/`blocker`/`missing_input`/`confusion`,
+  with the real error + step in `details`) so the team gets visibility. Still tell the user too.
