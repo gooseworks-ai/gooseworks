@@ -45,6 +45,26 @@ says to shell out, use the MCP equivalent:
 - `gooseworks credits` → the **`get_ad_credits`** MCP tool.
 - `gooseworks doctor` → do the manual toolchain check in the preflight below.
 
+## Report problems so we can fix them (telemetry — do this, don't skip it)
+
+If anything blocks or degrades this run — a media/proxy call fails or errors, a required input or
+asset is missing, a recipe instruction is ambiguous or contradictory, the render toolchain won't set
+up, or you hit a bug you can't work around — **report it** so the team gets visibility and can fix
+the skill. It's fire-and-forget, never counts against you, and never blocks your work.
+
+- **First, set a stable run id** so every event (yours + the auto-logged media calls) groups together:
+  `export GW_RUN_ID="vid-<project_or_batch_id>"` (and `export GW_SKILL="<recipe-slug>"`) in the
+  shell you render from. The media proxies read `GW_RUN_ID` automatically.
+- **CLI present →** `gooseworks log "<what happened>" --event-type <type> --level error --details '{"error":"...","step":"...","model":"..."}'`
+- **No CLI (cowork / headless) →** the **`log_cli_event`** MCP tool with the same fields (pass `run_id`).
+- `--event-type`: `api_failure` (a proxy/model call failed) · `missing_input` · `blocker` ·
+  `confusion` (unclear/contradictory instruction) · `error` (a bug) · `step`/`info` (progress notes).
+- Put the **real error text + the step you were on** in `--details`. Paid FAL/ElevenLabs calls
+  ALREADY auto-log their own failures, so focus your manual logs on what the proxy can't see:
+  missing inputs, confusing/contradictory recipe instructions, toolchain/setup failures, and bugs.
+- Logging is FOR US — it does not replace telling the user. When a problem blocks the run, still
+  explain it to the user (and ask if you need a decision); just also `log` it so we can fix the skill.
+
 ## Prerequisite — MCP + a render toolchain (Phase 0 preflight)
 
 - The `mcp__gooseworks__*` tools are REQUIRED. If they're unavailable, stop and tell the user
@@ -414,5 +434,8 @@ path. (`fal-storage-proxy` may 404 depending on the install; don't block on it �
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
 - **Reuse the brand** when its research is complete; never re-research.
 - On a hard error (auth/quota/model/timeout) set the render `failed` with a short
-  `error_message` and stop — don't ship the source unchanged.
+  `error_message` and stop — don't ship the source unchanged. **Also `log` it** (`gooseworks log`
+  / `log_cli_event`, `--event-type api_failure|error`) so we can see + fix it (see "Report problems").
+- **Report blockers/bugs/confusing instructions via telemetry** (`gooseworks log` or the
+  `log_cli_event` MCP tool) — not just to the user. Set `GW_RUN_ID` once so events group.
 - Always end a successful run with `app_url` + `brand_url`, verbatim.

@@ -14,6 +14,7 @@ import { orthogonalCommand } from './commands/orthogonal';
 import { stylesCommand } from './commands/styles';
 import { formatsCommand } from './commands/formats';
 import { doctorCommand } from './commands/doctor';
+import { logCommand } from './commands/log';
 import { getVersion } from './version';
 
 const program = new Command();
@@ -36,5 +37,6 @@ program.addCommand(orthogonalCommand);
 program.addCommand(stylesCommand);
 program.addCommand(formatsCommand);
 program.addCommand(doctorCommand);
+program.addCommand(logCommand);
 
 program.parse();
