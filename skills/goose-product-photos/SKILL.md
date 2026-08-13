@@ -1,0 +1,105 @@
+---
+name: goose-product-photos
+slug: goose-product-photos
+description: >
+  GooseWorks Product Photos — turn a brand's product images into publish-ready photography
+  (clean studio shots, lifestyle scenes, on-model looks) while keeping the product faithful
+  (silhouette, materials, logo, colorway). You pick a brand + product and submit; the GooseWorks
+  backend runs the SAME server-side pipeline the Product Photos studio uses (compose → generate →
+  judge → auto-retry) and bills credits. Use when the user says "make product photos", "shoot my
+  product", "studio/lifestyle/on-model photo of <product>", "generate product photography", or
+  references a product to photograph. Unlike goose-ads (ad creative) this produces clean PRODUCT
+  photos that can then feed the ad workflow.
+category: ads
+version: 0.1.0
+author: GooseWorks
+tags: [gooseworks, ads, product-photos, photoshoot, product, ecommerce, studio, lifestyle, on-model]
+---
+
+# GooseWorks Product Photos — branded product photography
+
+The GooseWorks Product Photos skill. You **pick a brand + product and submit one generation**;
+the **backend** runs the whole pipeline (compose the shot prompt → generate on `gpt_image_2` →
+judge for product fidelity → auto-retry a few times for free) and stores the results. You do NOT
+generate images, call a model, or manage files — this is the exact same workflow the Product
+Photos studio uses, so the skill and the app can never drift. The point is to **enrich a brand's
+usable product imagery** — approved photos join the brand kit and can then feed the ad workflow
+(`goose-ads`).
+
+## Prerequisite — the GooseWorks MCP server is REQUIRED
+
+Everything goes through the `mcp__gooseworks__*` tools. If they are not available, **stop and
+tell the user to run `gooseworks install --claude --mcp`** (and restart Claude Code). There is no
+HTTP/file fallback.
+
+## Identity & credits
+
+- One agent-scoped token authenticates the tools; they resolve your org automatically. Never
+  print the token. (You may pass an optional `target` to operate on a specific agent/org, exactly
+  as the other GooseWorks tools; omit it to use your pinned scope.)
+- **Credits are handled by the backend.** `generate_product_photos` reserves the estimated cost up
+  front and bills only the photos that pass the judge — **automatic retries are free**, and a photo
+  the judge can't get right (`flagged`) is shown but **never billed**. Call
+  `estimate_product_photos` first to quote the cost; `get_ad_credits` shows the balance.
+
+## The tools
+
+**Pick the brand + product**
+- `list_ad_brands` — the user's ad brands (get a `brand_id`; also carries `slug`).
+- `list_brand_products { brand_id, search?, page?, page_size? }` — the brand's imported products.
+  Pick a `product_id` to shoot. `search` matches name / type / variant / SKU.
+- `import_product { brand_id, kind, url, product_name? }` — import a product if it isn't in the
+  catalog yet. `kind` is `product_url` (a single product page), `shopify_store` (a store URL →
+  imports the catalog), or `image_url` (a direct image; requires `product_name`). Returns an import
+  row with an `id`; if its `status` isn't `complete`, poll `get_product_import` until it is, then
+  `list_brand_products` to find the new product. (File uploads aren't available over MCP — use a URL.)
+- `get_product_import { import_id }` — poll an import until `status` is `complete` or `failed`.
+
+**Generate**
+- `estimate_product_photos { count, quality? }` — cost preview (per-photo + total credits). `count`
+  is 1, 2, 4, or 8; `quality` is `low` | `medium` | `high` (default `medium`). Reserves nothing.
+- `generate_product_photos { brand_id, product_id, variant_id?, category, controls?, prompt?,
+  count?, quality?, reference_image_urls?, attestation_accepted? }` — **the one call that makes
+  photos.** `category` is `apparel` | `beauty` | `cpg` (seeds sensible scene/framing defaults).
+  Omit `controls` to use the category preset; pass `prompt` as free-text steering **added on top of**
+  the settings (it doesn't replace them). Returns a generation with an `id` **immediately** — poll
+  `get_product_photo_generation` until done, then read each `outputs[].final_image_url`.
+  **If you request a human model** (`controls.model.presence` is not `none`) you MUST pass
+  `attestation_accepted: true` to confirm the user has the rights for model imagery.
+- `get_product_photo_generation { generation_id }` — poll until `status` is `complete`,
+  `partial_failure`, or `failed`. Each `outputs[]` entry has its own `status` and, once ready, a
+  `final_image_url`. A `flagged` output is the best attempt but wasn't billed.
+
+**Use the results**
+- `list_product_photos { brand_id, archived? }` — the brand's generated photos (`archived: false`
+  = active, `true` = archived).
+- `approve_product_photo { output_id }` — approve a photo: links it to the product and makes it
+  available in the **brand kit**, so `goose-ads` can use it. **Photos are not used anywhere until
+  approved.**
+- `archive_product_photo { output_id, reason? }` — archive a photo; archived photos are **excluded**
+  from ad generation.
+
+## Workflow — shoot a product
+
+1. **Resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
+   `product_id`. If the product isn't there, `import_product` (poll `get_product_import`).
+2. **Quote the cost.** `estimate_product_photos { count, quality }` → tell the user credits.
+3. **Generate.** `generate_product_photos { brand_id, product_id, category, count, quality, prompt? }`.
+   Returns a generation `id` right away.
+4. **Poll.** `get_product_photo_generation { generation_id }` until terminal; hand back each
+   `final_image_url`.
+5. **Approve the keepers.** Show the results and let the user pick; `approve_product_photo` the ones
+   they'd publish (that's what puts them in the brand kit for ads), `archive_product_photo` the rest.
+
+## Rules
+
+- **Never invent product facts.** The backend grounds the shot on the product's real images; don't
+  describe a product you can't see.
+- **Ask before spending.** Quote the estimate and confirm `count` / `quality` before
+  `generate_product_photos` — it reserves credits.
+- **Poll, don't re-submit.** A generation that's still `running` is not stuck; re-submitting
+  double-bills. Only a `failed` generation should be retried.
+- **Model imagery needs consent.** Only set a human model when the user asks, and pass
+  `attestation_accepted: true`.
+- **Approval is the hand-off to ads.** Remind the user that only **approved** photos reach the brand
+  kit / ad workflow; archived ones never do.

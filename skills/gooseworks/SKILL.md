@@ -29,6 +29,7 @@ Before anything else, check whether the request belongs to a specialized domain.
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
 | Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>" | **`goose-video`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
+| Make **product photos** — studio / lifestyle / on-model photography of a product ("shoot my product", "make product photos", "generate product photography") | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -78,14 +79,14 @@ Then ask (a few at a time is fine — don't interrogate):
 **Then recommend REAL next steps — grounded, not from memory. This is the WHOLE POINT of onboarding; do not skip it or wing a generic playbook:**
 1. **Route each answer to the RIGHT tool first — don't blindly search one catalog. Match their use-cases to domains (same routing as "Route to the right skill FIRST" above):**
    - **Make / edit / analyze ADS** (generate ad creatives, research & run ads) → the **`goose-ads`** skill (brand research + template remix). Do NOT `gooseworks search` for these — ad creation is NOT in the data catalog.
-   - **VIDEO ads** → **`goose-video`**.  **Charts / slides / graphics** → **`goose-graphics`**.
+   - **VIDEO ads** → **`goose-video`**.  **Charts / slides / graphics** → **`goose-graphics`**.  **Product photos** (studio / lifestyle / on-model) → **`goose-product-photos`**.
    - **GTM / DATA** (finding leads & emails, influencers, scraping social / ads / reddit, enrichment, competitor intel) → run `gooseworks search "<that task>"` (free) and recommend the REAL skill slugs it returns.
    Recommend specific, real things BY NAME — never a from-memory playbook, never a skill you assume exists; if a GTM search returns nothing relevant, say so.
 2. **Ground it in THEIR business.** If they gave a company website, read it with your web tools to infer their actual product + ICP, so suggestions are about their company — not a template. (For ad work, prefer `goose-ads`'s own brand research over a raw read.)
 3. **Be honest about cost.** Data / lead / enrichment / ad-generation skills bill GooseWorks credits — say so, and estimate before running anything (`gooseworks credits` to check balance).
 4. **Offer to start ONE concrete play** built from the ROUTED skill (`goose-ads` for ads, a real searched skill for GTM) and ask for the one or two inputs it needs.
 
-A suggestion is only "grounded" if it came from routing to the right domain skill (`goose-ads` / `goose-video` / `goose-graphics`) or from `gooseworks search` (a real GTM skill) — plus, ideally, reading their site. Do that BEFORE you suggest; never present a from-memory capability list as if you'd checked.
+A suggestion is only "grounded" if it came from routing to the right domain skill (`goose-ads` / `goose-video` / `goose-graphics` / `goose-product-photos`) or from `gooseworks search` (a real GTM skill) — plus, ideally, reading their site. Do that BEFORE you suggest; never present a from-memory capability list as if you'd checked.
 
 ### Update as needed
 Whenever the user reveals durable context mid-session (their company, role, what they're trying to accomplish), persist it with `update_user_context` so future sessions start smarter.
