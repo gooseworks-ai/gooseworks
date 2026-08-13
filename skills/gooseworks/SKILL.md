@@ -2,12 +2,10 @@
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks data toolkit. Search and scrape Twitter/X, Reddit, LinkedIn, websites, and the web.
-  Find people, emails, and company info. Enrich contacts and companies.
-  GTM tasks: lead generation, prospect research, ICP identification, competitor analysis, outbound list building.
-  LinkedIn scraping: extract post engagers, commenters, profile data, and job postings.
-  Reach for it when you need data at scale, sources behind auth, or a specific provider — not as
-  a replacement for your built-in web search/fetch on quick, one-off lookups.
+  GooseWorks growth coworker and specialist-skill router. Research brands, customers, competitors,
+  creators, markets, and prospects; analyze ads and performance; create ads, product photos,
+  graphics, and video; search and scrape public web and social data; find and enrich leads.
+  Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
 version: 1.0.0
 author: GooseWorks
@@ -16,7 +14,7 @@ tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, peo
 
 # GooseWorks
 
-You have access to GooseWorks — a toolkit with 100+ data skills for scraping, research, lead generation, enrichment, and more. Reach for a GooseWorks skill when it's the right tool: data at scale, sources behind auth, or specific providers (Twitter/X, Reddit, LinkedIn, people/company enrichment).
+You have access to GooseWorks — an AI coworker with specialist skills for research, analysis, creative work, lead generation, enrichment, and public web/social data. Use the right specialist when the request needs brand context, a managed creative workflow, data at scale, a source behind authentication, or a specific provider.
 
 This skill is also the **parent router** for the GooseWorks family. Data/GTM work you handle here (see "How to Use"); specialized work you hand off to a dedicated `goose-*` skill.
 
@@ -29,7 +27,8 @@ Before anything else, check whether the request belongs to a specialized domain.
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
 | Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>" | **`goose-video`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Make **product photos** — studio / lifestyle / on-model photography of a product ("shoot my product", "make product photos", "generate product photography") | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
+| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
+| Animate an approved static ad or product image | **`animate-image`** | Fetch with `gooseworks fetch animate-image` and follow its GooseWorks MCP workflow. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -55,41 +54,79 @@ To check credit balance:
 gooseworks credits
 ```
 
-## User Context (onboarding)
+## Common company onboarding
 
-You have two MCP tools for the user's onboarding CONTEXT — who they are and what they want GooseWorks for. It's stored server-side (org-scoped), separate from the ads brand kit.
+Onboarding is voluntary and happens inside the current coding agent. Run it when the user explicitly says **`/gooseworks onboard me`**, or ask for one missing answer when it is necessary for the task in front of you. **Never force an existing user through onboarding after an update.**
 
-- `get_user_context` — read it. **At the START of a session, call this once** and use what you learn (company, role, the use-cases they picked, their goals, freeform notes) to tailor which skills/APIs you reach for. Best-effort: if the `mcp__gooseworks__*` tools aren't connected, skip silently and carry on.
-- `update_user_context` — save it (partial update; only the fields you pass are touched).
+The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
 
-### Running "onboard me" (or a first run with empty context)
+- `list_ad_brands` and `create_ad_brand` — select or create the company/brand.
+- `get_brand_onboarding { brand_id }` — load completed answers and `missing_fields` before asking anything.
+- `update_brand_onboarding { brand_id, ...answers }` — save each group of answers and the final first-task choice.
 
-If the user says "onboard me" — or `get_user_context` returns `onboarded: false` and they're starting fresh — run a short, friendly interview, then save the answers. Open with this framing:
+If these tools are unavailable, tell the user that onboarding needs the GooseWorks MCP connection. Do not send them to another UI and do not fall back to a separate context record.
 
-> Gooseworks gives your AI agent access to skills and APIs for growth and marketing work. For example: making ad creatives, finding influencers, scraping social profiles and posts from X/LinkedIn, scraping ads from Meta/LinkedIn, scraping reddit, and finding leads to target and their emails — and much more. Visit skills.gooseworks.ai to see the full library of skills.
+### Resume rules
 
-Then ask (a few at a time is fine — don't interrogate):
-1. **What's your company's website?** → `company_website`
-2. **What's your role?** → `role`
-3. **What are you hoping to use Goose skills for?** (multi-select — pick any): generate ad creatives · research and run ads end-to-end · finding influencers · data scraping (social / ads / reddit) · finding leads & emails · something else → `use_cases` (array)
-4. **What high-priority growth / marketing tasks would you like help with right now?** The more context they share, the better you can help. → `goals`
+1. Run `list_ad_brands`. If there are multiple brands, ask which one to use.
+2. If there is no brand, ask for the company or brand website, research it, and use `create_ad_brand { name, website_url }`. If the domain matches an existing brand, reuse it.
+3. Call `get_brand_onboarding` and ask only the returned missing questions.
+4. Save after each small group so an interrupted interview can resume.
+5. If the record is complete, confirm the brand and continue; do not repeat the interview.
 
-**Save** with `update_user_context { company_website, role, use_cases, goals, context_md }` — put any extra detail you learned into `context_md` as a short summary.
+### Shared questions and answer values
 
-**Then recommend REAL next steps — grounded, not from memory. This is the WHOLE POINT of onboarding; do not skip it or wing a generic playbook:**
-1. **Route each answer to the RIGHT tool first — don't blindly search one catalog. Match their use-cases to domains (same routing as "Route to the right skill FIRST" above):**
-   - **Make / edit / analyze ADS** (generate ad creatives, research & run ads) → the **`goose-ads`** skill (brand research + template remix). Do NOT `gooseworks search` for these — ad creation is NOT in the data catalog.
-   - **VIDEO ads** → **`goose-video`**.  **Charts / slides / graphics** → **`goose-graphics`**.  **Product photos** (studio / lifestyle / on-model) → **`goose-product-photos`**.
-   - **GTM / DATA** (finding leads & emails, influencers, scraping social / ads / reddit, enrichment, competitor intel) → run `gooseworks search "<that task>"` (free) and recommend the REAL skill slugs it returns.
-   Recommend specific, real things BY NAME — never a from-memory playbook, never a skill you assume exists; if a GTM search returns nothing relevant, say so.
-2. **Ground it in THEIR business.** If they gave a company website, read it with your web tools to infer their actual product + ICP, so suggestions are about their company — not a template. (For ad work, prefer `goose-ads`'s own brand research over a raw read.)
-3. **Be honest about cost.** Data / lead / enrichment / ad-generation skills bill GooseWorks credits — say so, and estimate before running anything (`gooseworks credits` to check balance).
-4. **Offer to start ONE concrete play** built from the ROUTED skill (`goose-ads` for ads, a real searched skill for GTM) and ask for the one or two inputs it needs.
+Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by `update_brand_onboarding`.
 
-A suggestion is only "grounded" if it came from routing to the right domain skill (`goose-ads` / `goose-video` / `goose-graphics` / `goose-product-photos`) or from `gooseworks search` (a real GTM skill) — plus, ideally, reading their site. Do that BEFORE you suggest; never present a from-memory capability list as if you'd checked.
+1. **What is your role?** Founder / Business Owner · C-Suite · VP / Director · Performance / Growth Marketing · Brand / Content Marketing · Creative / Design · Agency · Consultant / Freelancer · Other.
+2. **How much do you spend on paid ads right now?** `zero` · `under_10k` · `10k_30k` · `30k_100k` · `100k_plus`.
+3. **What are your goals?** Multi-select: create ads `make_creatives` · analyze ads `analyze_ads` · manage/optimize ads `ai_manage` · competitor or customer research `research_competitors` · creators and social trends `creators_trends` · content `content_growth` · lead generation `lead_generation` · data work `data_work` · work with an expert team `expert_team`.
+4. **Who makes your ad creatives right now?** and **Who manages your ads right now?** Use the shared values returned in the tool schema. Skip both when ad spend is `zero` and no advertising goal was selected.
+5. **Which platforms or channels do you use or want help with?** Multi-select: `meta` · `tiktok` · `google` · `chatgpt` · `x` · `linkedin` · `reddit` · `other`.
+6. **Where did you find GooseWorks?** Use the shared discovery-source values returned in the tool schema.
 
-### Update as needed
-Whenever the user reveals durable context mid-session (their company, role, what they're trying to accomplish), persist it with `update_user_context` so future sessions start smarter.
+Do not add CLI-only questions about business type, products, or audience. Infer them from the website and ask one clarification only when the research is materially uncertain.
+
+### Research while onboarding
+
+Do useful setup work, not only form collection:
+
+1. Fetch `brand-research` and research the website, products/services, audiences, competitors, offers, and messaging evidence.
+2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with `import_product` and poll `get_product_import` rather than submitting duplicates.
+3. When ads are relevant, offer to import existing creative. This is optional.
+4. Suggest evidence-backed messaging angles. Approval is optional and never blocks completion.
+5. Show the researched profile for confirmation: products/services, audience, competitors, imported ads, and suggested angles. Clearly label uncertainty.
+
+### First task
+
+Finish with **What do you want to do first?**
+
+- Connect my tools and data — `connect_tools`
+- Research customers, competitors, creators, or trends — `research`
+- Analyze ads, content, landing pages, or performance — `analyze`
+- Create ads, product images, or social content — `create`
+
+Save the choice as `first_task`, then start that job. If the user already stated a concrete job, save the matching value and start without showing the menu.
+
+## Brand Growth discovery
+
+Brand Growth is a collection inside the normal skill catalog, not a command or installable pack. Use these known routes when relevant, while preserving all existing B2B, sales, research, lead-generation, and data behavior:
+
+| Job | Skill |
+| --- | --- |
+| Brand foundation | `brand-research` |
+| Competitor ads | `competitor-ad-intelligence` |
+| Customer language and angles | `comment-mining` → `ad-angle-miner` |
+| Competitor social content | `competitor-social-research` |
+| Creator discovery and evaluation | `influencer-prospecting` |
+| Trends and outlier posts | `trend-discovery`, `outlier-post-finder` |
+| Social listening and product demand | `social-listening-brief`, `product-demand-research` |
+| Meta performance, policy, and landing-page match | `meta-ads-analyzer`, `meta-ad-policy-checker`, `ad-to-landing-page-auditor` |
+| Static ads | `goose-ads` / `remix-graphic-ad-from-reference` |
+| Product photos | `goose-product-photos` |
+| Graphics and animation | `goose-graphics`, `animate-image` |
+
+Fetch the named public skill before following it. Provider helpers such as `scrapecreators-api` and `transcript-intelligence` are dependencies, not user-facing results.
 
 ## How to Use
 

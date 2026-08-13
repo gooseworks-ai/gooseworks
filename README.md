@@ -1,6 +1,6 @@
 # GooseWorks
 
-Give your coding agent (Claude Code, Cursor, Codex) access to 100+ data tools — scrape Twitter/Reddit/LinkedIn, find emails, enrich companies, research competitors — with one install.
+Put your AI agent on the growth team. GooseWorks gives Claude Code, Cursor, and Codex specialist skills for research, lead generation, social data, ads, product photography, graphics, and growth work—with one install.
 
 ## Install
 
@@ -24,7 +24,15 @@ npx gooseworks install --all
 This does three things:
 1. Opens browser for Google sign-in
 2. Installs the GooseWorks skill into your coding agent
-3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors"
+3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors", or "create product photos"
+
+New to GooseWorks? Start inside your coding agent with:
+
+```text
+/gooseworks onboard me
+```
+
+Onboarding collects the essential information GooseWorks needs to understand the company, its goals, and the work you want help with. That becomes a reusable **Company Brain** which improves future research, analysis, creative, and growth work. Existing users can keep using `/gooseworks` normally and only update their company context when they choose.
 
 Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the main GooseWorks skill. For example, `--with goose-graphics` installs `/goose-graphics` locally so your agent can run it directly without doing a catalog lookup through `/gooseworks`.
 
@@ -57,6 +65,7 @@ npx gooseworks install --codex     # Configure for Codex
 npx gooseworks install --all       # Configure all detected agents
 npx gooseworks install --claude --with goose-graphics
 npx gooseworks install --claude --with goose-graphics --with aeo
+npx gooseworks install --all --ref <campaign-or-referral-code>
 ```
 
 **What it does:**
@@ -158,6 +167,28 @@ npx gooseworks update
 5. **You get results** — structured data returned directly in your coding agent
 
 Standalone skills installed with `--with` skip the catalog search step. After `npx gooseworks install --claude --with goose-graphics`, you can invoke `/goose-graphics ...` directly from Claude Code.
+
+## What growth teams can ask
+
+Use `/gooseworks` naturally. It can bring in specialist capabilities without requiring you to know the internal skill name:
+
+```text
+/gooseworks Analyze the ads my three competitors are currently running.
+/gooseworks Mine these TikTok and Instagram comments for objections and buying intent.
+/gooseworks Find skincare creators whose audiences match women aged 25–40 in the US.
+/gooseworks Diagnose our Meta performance and recommend the next creative test.
+/gooseworks Research demand for this new product idea.
+```
+
+For focused creative work you can also use:
+
+- `/goose-ads` for static ads, ad research, and ad performance.
+- `/goose-product-photos` for studio, lifestyle, marketplace, social, and on-model product photography.
+- `/goose-video` for supported video-ad formats.
+- `goose-graphics` for social graphics, carousels, slides, and branded visual content.
+- `animate-image` to turn an approved still into a short motion creative.
+
+Consumer and ecommerce brands are one important use case. The same `/gooseworks` coworker remains useful for B2B teams, agencies, sales, research, lead generation, and other GTM work.
 
 ## Security & data handling
 

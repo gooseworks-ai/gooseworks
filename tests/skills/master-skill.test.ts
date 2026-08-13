@@ -88,6 +88,33 @@ describe('skills/master-skill', () => {
     it('mentions goose-video as coming soon', () => {
       expect(content).toContain('goose-video');
     });
+
+    it('routes product photos and image animation without a separate collection command', () => {
+      expect(content).toContain('goose-product-photos');
+      expect(content).toContain('animate-image');
+      expect(content).toContain('Brand Growth is a collection inside the normal skill catalog');
+      expect(content).not.toContain('/goose-dtc');
+    });
+  });
+
+  describe('common onboarding', () => {
+    it('uses the shared brand onboarding tools and resumes missing fields', () => {
+      expect(content).toContain('get_brand_onboarding');
+      expect(content).toContain('update_brand_onboarding');
+      expect(content).toContain('missing_fields');
+      expect(content).toContain('Never force an existing user through onboarding');
+      expect(content).not.toContain('get_user_context');
+      expect(content).not.toContain('update_user_context');
+    });
+
+    it('contains the shared questions, conditional ads fields, and first task', () => {
+      expect(content).toContain('How much do you spend on paid ads right now?');
+      expect(content).toContain('Who makes your ad creatives right now?');
+      expect(content).toContain('ad spend is `zero` and no advertising goal was selected');
+      expect(content).toContain('What do you want to do first?');
+      expect(content).toContain('connect_tools');
+      expect(content).toContain('first_task');
+    });
   });
 });
 
