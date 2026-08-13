@@ -212,6 +212,7 @@ Follow the instructions in the skill's \`content\` field. **Save ALL files from 
 > - **Credentials (only needed before running Python scripts, NOT before gooseworks commands):** replace the python one-liner exports with \`eval $(gooseworks env)\`. Skip entirely if you are only using \`gooseworks call\` — it loads credentials automatically.
 > - **Orthogonal run:** replace \`curl ... /v1/proxy/orthogonal/run ... -d '{"api":"X","path":"/Y","body":{...}}'\` with \`gooseworks call X /Y --body='{...}'\`
 > - **Direct proxy:** replace \`curl ... /v1/proxy/<provider>/<path> ... -d '{...}'\` with \`gooseworks call <provider> <path> --body='{...}'\`
+> - **ScrapeCreators:** call its first-party GooseWorks proxy directly with \`gooseworks call scrapecreators <path> --query='{...}'\`. Use ScrapeCreators' official OpenAPI for endpoint parameters; do not use Orthogonal as its endpoint catalog. GET is the default; add \`--method POST --body='{...}'\` only for an official POST operation.
 > - **Orthogonal search:** replace \`curl ... /v1/proxy/orthogonal/search ... -d '{"prompt":"..."}'\` with \`gooseworks orthogonal find "..."\`
 
 1. Save each script from \`scripts\` to \`/tmp/gooseworks-scripts/<slug>/scripts/\` — **NEVER save scripts into the user's project directory**
@@ -250,9 +251,10 @@ gooseworks call hunter /v2/email-finder --query='{"domain":"stripe.com","first_n
 - Output: JSON response data, followed by a \`Cost: <N> credits\` line when applicable
 - **Always tell the user the cost** after each call
 
-The same \`gooseworks call\` command also handles direct-proxy providers (apify, apollo, crustdata):
+The same \`gooseworks call\` command also handles direct-proxy providers (apify, apollo, crustdata, scrapecreators):
 \`\`\`bash
 gooseworks call apify acts/parseforge~reddit-posts-scraper/runs --body='{"subreddit":"ClaudeAI"}'
+gooseworks call scrapecreators /v2/instagram/post/comments --query='{"url":"https://www.instagram.com/p/POST_ID/"}'
 \`\`\`
 
 ### Workflow
@@ -283,7 +285,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 | \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/search\` | POST | \`gooseworks orthogonal find\` |
 | \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/details\` | POST | \`gooseworks orthogonal describe\` |
 | \`$GOOSEWORKS_API_BASE/v1/proxy/orthogonal/run\` | POST | \`gooseworks call\` (orthogonal-routed providers) |
-| \`$GOOSEWORKS_API_BASE/v1/proxy/{apify,apollo,crustdata}/*\` | Various | \`gooseworks call\` (direct-proxy providers) |
+| \`$GOOSEWORKS_API_BASE/v1/proxy/{apify,apollo,crustdata,scrapecreators}/*\` | Various | \`gooseworks call\` (direct-proxy providers; ScrapeCreators uses its managed first-party key) |
 
 ## Security & Privacy
 

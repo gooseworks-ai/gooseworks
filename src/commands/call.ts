@@ -3,12 +3,17 @@ import { getCredentials } from '../auth/credentials';
 import { requestJson } from '../utils/http';
 import * as logger from '../utils/logger';
 
-const DIRECT_PROXIES = new Set(['apify', 'apollo', 'crustdata']);
+const DIRECT_PROXIES = new Set(['apify', 'apollo', 'crustdata', 'scrapecreators']);
 
 interface CallResponse {
   status?: string;
   data?: unknown;
-  cost?: { credits?: number; priceCents?: number; requestId?: string };
+  cost?: {
+    credits?: number;
+    priceCents?: number;
+    requestId?: string;
+    providerCreditsCharged?: number | null;
+  };
   [key: string]: unknown;
 }
 
@@ -22,10 +27,10 @@ function parseJsonOption(value: string | undefined, name: string): unknown {
 }
 
 export const callCommand = new Command('call')
-  .description('Call any external provider (apify, apollo, crustdata, hunter, pdl, etc.)')
-  .argument('<provider>', 'Provider name (e.g. "apify", "hunter", "pdl")')
+  .description('Call any external provider (apify, scrapecreators, apollo, crustdata, hunter, pdl, etc.)')
+  .argument('<provider>', 'Provider name (e.g. "scrapecreators", "apify", "hunter")')
   .argument('<path>', 'Endpoint path (e.g. "acts/.../runs", "/v2/email-finder")')
-  .option('--method <verb>', 'HTTP method (only used for direct-proxy providers; default POST)', 'POST')
+  .option('--method <verb>', 'HTTP method (only used for direct-proxy providers; ScrapeCreators defaults to GET, others to POST)')
   .option('--body <json>', 'Request body as JSON string')
   .option('--query <json>', 'Query parameters as JSON string')
   .action(async (
@@ -58,7 +63,8 @@ export const callCommand = new Command('call')
     if (isDirect) {
       const cleanPath = path.replace(/^\/+/, '');
       endpointPath = `/v1/proxy/${provider.toLowerCase()}/${cleanPath}`;
-      method = (opts.method ?? 'POST').toUpperCase();
+      const defaultMethod = provider.toLowerCase() === 'scrapecreators' ? 'GET' : 'POST';
+      method = (opts.method ?? defaultMethod).toUpperCase();
       body = bodyParsed;
       if (queryParsed && typeof queryParsed === 'object') {
         query = queryParsed as Record<string, string | number | boolean | undefined>;
