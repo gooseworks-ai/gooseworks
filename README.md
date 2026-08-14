@@ -150,23 +150,6 @@ Output:
 Credits: 847 available (500 subscription + 347 purchased)
 ```
 
-### `call`
-
-Call managed data providers without buying a separate provider key. ScrapeCreators uses its first-party GooseWorks proxy and defaults to GET:
-
-```bash
-npx gooseworks call scrapecreators /v2/instagram/post/comments \
-  --query='{"url":"https://www.instagram.com/p/POST_ID/"}'
-```
-
-For the few official ScrapeCreators POST operations, pass the method and JSON body explicitly:
-
-```bash
-npx gooseworks call scrapecreators /v1/facebook/adLibrary/search/ads \
-  --method POST \
-  --body='{"query":"running shoes","country":"US"}'
-```
-
 ### `update`
 
 Re-fetch the latest skill without re-authenticating.
@@ -206,6 +189,25 @@ For focused creative work you can also use:
 - `animate-image` to turn an approved still into a short motion creative.
 
 Consumer and ecommerce brands are one important use case. The same `/gooseworks` coworker remains useful for B2B teams, agencies, sales, research, lead generation, and other GTM work.
+
+## Direct provider calls
+
+### `call`
+
+Call managed data providers without buying a separate provider key. ScrapeCreators uses its first-party GooseWorks proxy and defaults to GET:
+
+```bash
+npx gooseworks call scrapecreators /v2/instagram/post/comments \
+  --query='{"url":"https://www.instagram.com/p/POST_ID/"}'
+```
+
+For the few official ScrapeCreators POST operations, pass the method and JSON body explicitly:
+
+```bash
+npx gooseworks call scrapecreators /v1/facebook/adLibrary/search/ads \
+  --method POST \
+  --body='{"query":"running shoes","country":"US"}'
+```
 
 ## Security & data handling
 
