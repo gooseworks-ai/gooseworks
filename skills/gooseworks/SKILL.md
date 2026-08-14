@@ -37,17 +37,30 @@ Examples — all of these route to `goose-ads`, not the data flow: "remix this a
 
 All commands below auto-load credentials from `~/.gooseworks/credentials.json`. If a command exits with "Not logged in", tell the user to run: `npx gooseworks login`. To log out: `npx gooseworks logout`.
 
-### CLI-free environments (cowork / headless)
+### Choose the available runtime — MCP first, then CLI
 
-If the `gooseworks` CLI binary isn't available (e.g. Anthropic cowork) but the
-`mcp__gooseworks__*` tools are connected, use the MCP equivalents instead of shelling out:
+Skills may describe a managed provider request as an environment-neutral operation with
+`provider`, `method`, `path`, and optional `query` or `body`. Execute the operation through
+the first available runtime:
+
+1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass the
+   operation directly to `call_data_provider`. This is the preferred path in ChatGPT, Cowork,
+   and other terminal-free clients. Do not shell out and do not ask for a separate provider key.
+2. Otherwise, if a local terminal and the `gooseworks` CLI are available, translate the same
+   operation into `gooseworks call <provider> <path>` with its method, query, and body options.
+3. Otherwise, follow the provider dependency's direct-key path only when the user has supplied
+   their own key. If no runtime is available, explain what connection is missing; never pretend
+   the provider call ran.
+
+The same selection applies to catalog and account operations. When the CLI is unavailable but the
+`mcp__gooseworks__*` tools are connected, use these equivalents:
 - `gooseworks search <q>` → the **`search_skills`** MCP tool.
 - `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (same content/scripts/files/deps).
 - `gooseworks credits` → the **`get_ad_credits`** MCP tool.
 
-Discovery and fetching a skill's instructions work fully CLI-free this way. Note: the paid data
-proxy (`gooseworks call <provider> <path>`) still requires the CLI for now — if a task needs it
-and no CLI is present, tell the user that step must run where the `gooseworks` CLI is installed.
+Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
+this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
+provider operation is executed.
 
 To check credit balance:
 ```bash

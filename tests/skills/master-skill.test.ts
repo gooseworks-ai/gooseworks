@@ -1,9 +1,4 @@
-import {
-  getMasterSkillContent,
-  getGooseAdsSkillContent,
-  getGooseVideoSkillContent,
-  getEntrySkills,
-} from '../../src/skills/master-skill';
+import { getMasterSkillContent, getGooseAdsSkillContent, getGooseVideoSkillContent, getEntrySkills } from '../../src/skills/master-skill';
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -95,6 +90,15 @@ describe('skills/master-skill', () => {
       expect(content).toContain('Brand Growth is a collection inside the normal skill catalog');
       expect(content).not.toContain('/goose-dtc');
     });
+
+    it('routes ScrapeCreators through MCP in terminal-free clients', () => {
+      expect(content).toContain('call_data_provider');
+      expect(content).toMatch(/Choose the available runtime.*MCP first/i);
+      expect(content).toMatch(/environment-neutral operation/i);
+      expect(content).toMatch(/Do not shell out.*separate provider key/i);
+      expect(content).toMatch(/gooseworks call <provider> <path>/i);
+      expect(content).not.toMatch(/paid data[\s\S]*still requires the CLI for now/i);
+    });
   });
 
   describe('common onboarding', () => {
@@ -145,11 +149,11 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('competitor-ad-intelligence');
   });
 
-  it('documents the app-matching defaults', () => {
-    expect(ads).toContain('gpt_image_2');
-    expect(ads).toContain('"4:5"');
-    expect(ads).toContain('apply_brand_colors: true');
-    expect(ads).toContain('apply_brand_font: true');
+  it('treats the live MCP schema as the tool input contract', () => {
+    expect(ads).toContain('Live MCP contract');
+    expect(ads).toMatch(/registered MCP tool schemas are the source of truth/i);
+    expect(ads).toMatch(/Ask the user only for required inputs/i);
+    expect(ads).toMatch(/Omit unspecified optional settings/i);
   });
 
   it('recommends templates via surprise_me_templates instead of hand-picking the catalog', () => {
@@ -167,26 +171,25 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/copyable remix prompt|paste/i);
   });
 
-  it('applies brand styling without offering the removed match-original path', () => {
+  it('does not carry removed styling controls in the skill contract', () => {
     expect(ads).not.toContain('Keep original');
     expect(ads).not.toContain('Match brand');
-    expect(ads).toContain('apply_brand_colors: true');
-    expect(ads).toContain('apply_brand_font: true');
-    expect(ads).toMatch(/never send the deprecated `preserve_source_styling`/i);
-    expect(ads).toMatch(/never expose or send the both-false combination/i);
+    expect(ads).not.toContain('preserve_source_styling');
+    expect(ads).not.toContain('apply_brand_colors');
+    expect(ads).not.toContain('apply_brand_font');
   });
 
   it('uses legally safer source paths from GOOSE-2979', () => {
     expect(ads).toContain('list_user_ad_templates');
     expect(ads).toContain('search_ad_templates');
     expect(ads).toContain('remix_community_ad');
-    expect(ads).toContain('rights_attested');
+    expect(ads).toMatch(/ownership\/rights input/i);
     expect(ads).toMatch(/retired curated third-party catalog/i);
     expect(ads).toMatch(/Treat competitor ads as inspiration/i);
   });
 
   it('exposes plan mode (compose → review/approve → generate) for parity with the app', () => {
-    expect(ads).toContain('requires_approval');
+    expect(ads).toMatch(/approval option exposed by `submit_remix_batch`/i);
     expect(ads).toContain('list_ad_approvals');
     expect(ads).toContain('revise_ad_plan');
     expect(ads).toContain('approve_ad_plan');
@@ -209,7 +212,7 @@ describe('skills/goose-ads entry skill', () => {
 
 describe('skills/getEntrySkills', () => {
   it('vendors gooseworks + goose-ads + goose-video (not ads-remix)', () => {
-    const names = getEntrySkills().map((s) => s.name);
+    const names = getEntrySkills().map(s => s.name);
     expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video']);
   });
 });
