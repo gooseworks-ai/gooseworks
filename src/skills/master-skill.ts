@@ -83,17 +83,30 @@ Examples — all of these route to \`goose-ads\`, not the data flow: "remix this
 
 All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. To log out: \`npx gooseworks logout\`.
 
-### CLI-free environments (cowork / headless)
+### Choose the available runtime — MCP first, then CLI
 
-If the \`gooseworks\` CLI binary isn't available (e.g. Anthropic cowork) but the
-\`mcp__gooseworks__*\` tools are connected, use the MCP equivalents instead of shelling out:
+Skills may describe a managed provider request as an environment-neutral operation with
+\`provider\`, \`method\`, \`path\`, and optional \`query\` or \`body\`. Execute the operation through
+the first available runtime:
+
+1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass the
+   operation directly to \`call_data_provider\`. This is the preferred path in ChatGPT, Cowork,
+   and other terminal-free clients. Do not shell out and do not ask for a separate provider key.
+2. Otherwise, if a local terminal and the \`gooseworks\` CLI are available, translate the same
+   operation into \`gooseworks call <provider> <path>\` with its method, query, and body options.
+3. Otherwise, follow the provider dependency's direct-key path only when the user has supplied
+   their own key. If no runtime is available, explain what connection is missing; never pretend
+   the provider call ran.
+
+The same selection applies to catalog and account operations. When the CLI is unavailable but the
+\`mcp__gooseworks__*\` tools are connected, use these equivalents:
 - \`gooseworks search <q>\` → the **\`search_skills\`** MCP tool.
 - \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (same content/scripts/files/deps).
 - \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
 
-Discovery and fetching a skill's instructions work fully CLI-free this way. Note: the paid data
-proxy (\`gooseworks call <provider> <path>\`) still requires the CLI for now — if a task needs it
-and no CLI is present, tell the user that step must run where the \`gooseworks\` CLI is installed.
+Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
+this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
+provider operation is executed.
 
 To check credit balance:
 \`\`\`bash
@@ -342,7 +355,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.3.0
+version: 2.4.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -376,78 +389,63 @@ no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reje
   message and stop) and bills only the images that actually complete. Call
   \`estimate_remix_batch\` first to tell the user the cost; \`gooseworks credits\` shows balance.
 
-## Defaults — match the app (priority: frontend, then backend)
+## Live MCP contract — inspect it before asking
 
-When the user doesn't specify, submit with the **ads app's** defaults so skill output matches
-what they'd get in the UI. **Pass these explicitly:**
+The currently registered MCP tool schemas are the source of truth for inputs, supported choices,
+and defaults. Do not copy an exhaustive input list from this skill or rely on remembered fields.
 
-- \`variants\`: **1** per template
-- \`ratios\`: **["4:5"]** (Meta feed vertical)
-- \`engine\`: **"gpt_image_2"**
-- \`quality\`: **"medium"**
-- \`apply_brand_colors\`: **true**
-- \`apply_brand_font\`: **true**
+Before each tool call:
 
-Do not ask whether to match the source's original styling. That option was removed from the app.
-The normal path always applies the user's brand colors and font. If the user explicitly asks for
-one of the app's mixed treatments, use brand colors + source font (\`true\` / \`false\`) or source
-colors + brand font (\`false\` / \`true\`). Never expose or send the both-false combination, and
-never send the deprecated \`preserve_source_styling\` field.
-
-If the user asks for something the app exposes (more variants, a different ratio like 1:1 or
-9:16, a faster engine, higher quality), pass that instead. Omitting a field lets backend policy
-decide — fine, but prefer sending the app defaults for predictable parity.
+1. Inspect the live schema for the tool you are about to use.
+2. Fill required inputs already known from the Brand Kit, selected source, or conversation.
+3. Ask the user only for required inputs that cannot be inferred and for choices that materially
+   change the result. Do not turn every optional field into a questionnaire.
+4. Omit unspecified optional settings so the backend applies its current app defaults.
+5. If the live schema conflicts with this workflow, follow the live schema and report the drift
+   with \`log_cli_event\`.
 
 ## The generation tools (the new, single-workflow surface)
 
-- \`submit_remix_batch { brand_id, items, prompt?, product_name?, apply_brand_colors?, apply_brand_font?,
-  reference_image_urls?, allow_without_product_image?, engine?, quality? }\` — **the one call
-  that makes ads.** \`items\` is \`[{ template_id, variants?, ratios? }]\` (≤20 templates).
+- \`submit_remix_batch\` — **the one call that makes ads.** Inspect its live schema and supply
+  the required brand/source inputs plus any choices the user explicitly made.
   Returns the batch with a \`links\` block (\`brand_url\` + per-creative \`app_url\`). If the brand's
   research isn't finished yet the batch comes back \`status: "queued"\` — it auto-runs the moment
   research completes; tell the user it'll appear shortly, don't error.
-- \`estimate_remix_batch { items, engine?, quality? }\` — cost preview (images, credits_per_image,
-  total_credits, available_credits). \`template_id\` accepts a uuid OR a slug. Reserves nothing. Use
-  to quote the cost first. Check \`unknown_template_ids\` in the response — any token there didn't
-  resolve (submit would 404 on it); don't quote a cost that silently dropped a bad id.
-- \`get_remix_batch { batch_id }\` — poll status. Returns each creative with its renders and
+- \`estimate_remix_batch\` — cost preview. Reserves nothing. Use it to quote the cost first and
+  check whether every selected source resolved before submitting.
+- \`get_remix_batch\` — poll status. Returns each creative with its renders and
   \`completed\`/\`failed\`/\`pending\` counts, plus \`links\`. A creative is done when its \`pending\` is 0
   — NOT when \`current_render_url\` is set (during a regenerate that field still points at the prior
   image). Each render carries \`age_seconds\` (since queued) and \`elapsed_seconds\` (time generating):
   use them to tell a slow-but-healthy render from a stuck one. A render only failed when its
   \`status\` is \`"failed"\` — never assume a stall and re-submit, that double-bills.
-- \`list_brand_creatives { brand_id, limit?, offset? }\` — the brand's gallery feed (newest
+- \`list_brand_creatives\` — the brand's gallery feed (newest
   first) + \`brand_url\`. Alternative poll target; also use to show everything made for a brand.
-- \`surprise_me_templates { brand_id, count? }\` — the **"Surprise me" recommender**. Picks
+- \`surprise_me_templates\` — the **"Surprise me" recommender**. Picks
   remixable Community creations (SAME logic as the web /create "Surprise me" button), shuffled
   so picks stay fresh. It does not use the retired curated third-party catalog.
   Returns the picked templates (id, slug, title, image, ratio) AND a ready-to-open \`create_url\`
   (the /create page with \`cli=true\` and the picks pre-selected). This is how you recommend
   templates — do NOT hand-pick from the raw catalog yourself (see "Picking templates" below).
-- \`regenerate_creative { project_id, mode?, prompt?, source_render_id?, ... }\` — **edit / re-roll
-  one existing creative** through the same pipeline. \`mode: "variation"\` (default) re-rolls from
-  the template; \`"edit"\` makes a targeted change to a specific render (\`prompt\` + \`source_render_id\`
-  required); \`"exact"\` runs \`prompt\` verbatim against that render's references. Returns a
-  single-item batch — poll it with \`get_remix_batch\`.
-- \`set_creative_feedback { render_id, rating?, comment?, reasons? }\` — record the user's reaction
-  to a generated image (the SAME happy/neutral/sad + comment + reason chips the app captures). Use
-  it whenever the user reacts ("love this one" / "the logo is wrong"). \`render_id\` is a RENDER id
-  from \`get_remix_batch\` / \`list_brand_creatives\`, not a project/batch id. \`reasons\` are quick
-  chips (wrong_product, brand_or_logo_wrong, off_brand, text_garbled, weak_copy, ai_or_distorted).
+- \`regenerate_creative\` — edit or re-roll one existing creative through the same pipeline.
+  Inspect the live schema to select the supported mode and required source inputs. Returns a
+  single-item batch; poll it with \`get_remix_batch\`.
+- \`set_creative_feedback\` — record the user's reaction to a generated image. Use it whenever
+  the user reacts; inspect the schema for the current rating and reason choices.
 
 ### Plan mode — review the plan BEFORE generating (optional)
 
 For users who want to approve each ad's plan before spending credits (the app's "Plan it" flow):
 
-- \`submit_remix_batch { ..., requires_approval: true }\` — composes each creative's plan and PAUSES.
+- Use the approval option exposed by \`submit_remix_batch\` — it composes each creative's plan and PAUSES.
   **No credits are reserved and no image renders** until you approve.
-- \`list_ad_approvals { brand_id? }\` — poll this; returns \`{ items, counts }\`. While a creative is
+- \`list_ad_approvals\` — poll this. While a creative is
   \`composing\`, wait; once \`awaiting_approval\`, show its \`plan\` (composed prompt + refs + quality)
   to the user.
-- \`revise_ad_plan { project_id, message?, variant_label? }\` — recompose from a chat steer, still
+- \`revise_ad_plan\` — recompose from a chat steer, still
   free. Poll \`list_ad_approvals\` until it's \`awaiting_approval\` again.
-- \`approve_ad_plan { project_id | batch_id }\` — approve ONE creative (\`project_id\`) or the whole
-  batch (\`batch_id\`). **This is the step that reserves credits and renders.** Then poll
+- \`approve_ad_plan\` — approve one creative or the whole batch using the live schema.
+  **This is the step that reserves credits and renders.** Then poll
   \`get_remix_batch\` and hand back links as usual.
 
 Only offer plan mode when the user asks to review/approve first — the default path generates
@@ -455,26 +453,23 @@ immediately.
 
 ## Reading the brand & picking inputs (still MCP, read-only)
 
-- \`get_brand_kit { brand_id }\` — the CANONICAL brand context (name, description, audience,
-  voice, brandType, valueProps, colors, typography, logoUrl, \`products[]\`, presigned
-  \`referenceImages[]\`). Read this to choose \`product_name\` and any \`reference_image_urls\`.
-- \`list_ad_brands { query? }\` / \`get_ad_brand { brand_id }\` — find/fetch a brand. Pass \`query\` to
-  filter by name (case-insensitive) instead of listing every brand; rows are lean (no \`brand_kit\` —
-  read \`get_brand_kit\` for the full kit).
-- \`list_user_ad_templates { brand_id?, relationship? }\` — list the org's own uploads and
+- \`get_brand_kit\` — read the canonical brand context and available products/assets.
+- \`list_ad_brands\` / \`get_ad_brand\` — find and fetch the active brand.
+- \`list_user_ad_templates\` — list the org's own uploads and
   imported ads. Prefer \`relationship: "self"\` when the user wants to reuse their own ads;
   \`relationship: "competitor"\` is research/inspiration, never proof that the user owns the ad.
-- \`search_ad_templates { query, brand_id? }\` — search remixable Community generations. The
+- \`search_ad_templates\` — search remixable Community generations. The
   retired curated third-party catalog is not returned.
-- \`get_static_ad_template { template_id }\` — resolve a template (slug OR uuid) already owned by
+- \`get_static_ad_template\` — resolve a source already owned by
   the org, including an own upload or a snapshotted Community creative. It does not resolve the
   retired curated third-party catalog.
-- \`remix_community_ad { community_id }\` — a **Community** ad id is an \`ad_project\` id, not a
+- \`remix_community_ad\` — turn a selected Community creative into a private remix source before
+  submitting it. A Community ad id is an \`ad_project\` id, not a
   template id. Call this FIRST to snapshot it into a private template, then use the returned
   template \`id\` in \`items\`.
-- \`create_user_ad_template { workspace_path, rights_attested? }\` — upload a source image as a
-  private template. Set \`rights_attested: true\` only after the user explicitly confirms they own
-  it or have permission to use it. Never set it true for a competitor ad or an image found online.
+- \`create_user_ad_template\` — upload a source image as a private template. Answer any
+  ownership/rights input only from the user's explicit confirmation. Never claim rights for a
+  competitor ad or an image found online.
 - \`get_ad_project\` / \`append_project_message\` — inspect a creative / leave a note on its thread.
 
 ## Keep the brand kit in sync — reconcile, then update (ASK first)
@@ -485,7 +480,7 @@ tagline, audience, voice, a product's name/price/description, "our logo is X", "
 anymore", a new product photo — treat it as a possible kit update, don't just use it for this one
 ad and forget it:
 
-1. **Check it against the kit.** \`get_brand_kit { brand_id }\` and see whether what the user said
+1. **Check it against the kit.** Call \`get_brand_kit\` for the active brand and see whether what the user said
    matches, is missing from, or contradicts the kit.
 2. **If it's already in the kit and matches** — nothing to do; proceed.
 3. **If it's new or different — ASK before writing.** Confirm in one line: *"Want me to update
@@ -493,11 +488,10 @@ ad and forget it:
    asked you to change the brand). Don't silently mutate the kit, and don't nag on trivia.
 4. **Persist with the write tools** (partial — only the fields you pass are touched; each edit is
    recorded as a user override that later re-research won't clobber):
-   - \`update_brand_kit { brand_id, description?, audience?, voice?, instructions?, brand_type?,
-     value_props?, primary_color?, accent_color? }\` — the structured kit fields.
-   - \`upsert_brand_product { brand_id, ... }\` / \`delete_brand_product\` — manage products.
-   - \`add_brand_product_image { brand_id, ... }\` / \`remove_brand_reference_image\` — product /
-     reference photos.
+   - \`update_brand_kit\` — structured brand fields.
+   - \`upsert_brand_product\` / \`delete_brand_product\` — products.
+   - \`add_brand_product_image\` / \`remove_brand_reference_image\` — product and reference photos.
+   Inspect each live schema and send only the fields needed for the confirmed change.
 5. **Confirm what changed** and continue the task. (Logo, colors, and fonts are owned by the
    backend research pass — prefer \`update_ad_brand\` / the research flow for those, not free text.)
 
@@ -514,14 +508,14 @@ short ask flow — it mirrors the web app and keeps the human in the loop:
    product from the brand kit to feature. This shapes both the source choice and your steering
    \`prompt\`. Keep it to one or two quick questions.
 2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
-   - **Their own ads** → \`list_user_ad_templates { brand_id, relationship: "self" }\` and let
-     them choose from the results.
+   - **Their own ads** → use \`list_user_ad_templates\` to load the active brand's own sources and
+     let them choose from the results.
    - **Community** → \`search_ad_templates\`, let them choose, then call \`remix_community_ad\`
      before submitting.
-   - **Upload** → upload through the workspace and call \`create_user_ad_template\`. Record
-     \`rights_attested: true\` only after explicit confirmation of ownership/permission.
-   - **Surprise me** (they want you/the app to pick) → call
-     \`surprise_me_templates { brand_id, count }\` and hand the user the returned \`create_url\`.
+   - **Upload** → upload through the workspace and call \`create_user_ad_template\`. If its live
+     schema requires an ownership or permission answer, only supply it after explicit confirmation.
+   - **Surprise me** (they want you/the app to pick) → call \`surprise_me_templates\` for the active
+     brand and hand the user the returned \`create_url\`.
      It opens /create in **CLI mode** with the picks pre-selected, a preview modal, and the
      **copyable remix prompt at the bottom** (in place of the Generate input). They can swap
      picks and copy that prompt. If they'd rather you "just make them" without reviewing in the
@@ -531,37 +525,35 @@ short ask flow — it mirrors the web app and keeps the human in the loop:
      \`https://make.gooseworks.ai/create?brand=<brand-slug>&cli=true\`
      In CLI mode the app shows the copyable remix prompt at the bottom (dismissable / switchable
      back to the UI composer). They browse the available own/Community sources and copy the prompt.
-3. **Apply brand styling by default** — brand colors and brand font. Ask only when the user
-   explicitly wants one of the supported mixed treatments described in Defaults.
-4. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
+3. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
    (it names the brand + the templates they chose), THAT is your cue to generate: resolve the
-   named template(s), then \`submit_remix_batch\` with the app defaults + the styling they chose.
+   named source(s), inspect \`submit_remix_batch\`, and collect only its unresolved required inputs.
 
 If the user already named an owned source (id/slug), a Community ad, or an upload, skip the source
-choice. Do not ask a styling question; apply brand colors and font unless they requested a supported
-mixed treatment. Competitor ads may inform the angle or structure, but describe them as inspiration,
-never claim ownership, never promise an original-style match, and never attest rights for the user.
+choice. Competitor ads may inform the angle or structure, but describe them as inspiration, never
+claim ownership, and never attest rights for the user.
 
 ## Workflow — make ads from a template
 
-1. **Resolve the brand.** \`list_ad_brands\` by name/site → \`get_brand_kit { brand_id }\`. If the
+1. **Resolve the brand.** Use \`list_ad_brands\` by name/site, then call \`get_brand_kit\` for the
+   selected brand. If the
    kit's \`researchStatus\` isn't \`complete\`, you can still submit (the batch queues and runs when
    research finishes) — just tell the user. Use the kit to pick \`product_name\` (a real entry from
    \`products[]\`, not a guess) and, if the user supplied product photos, \`reference_image_urls\`.
 2. **Pick the source ad(s) via the ask flow above.** Once you have concrete ids:
-   \`get_static_ad_template { template_id }\` for each.
+   call \`get_static_ad_template\` for each.
    For a Community ad, \`remix_community_ad\` first; for an uploaded image, \`create_user_ad_template\`
    first.
 3. **(Optional) Craft the steering prompt.** The \`prompt\` is OPTIONAL — this is where the skill
    adds value: turn the user's intent (from step 1) into a concise steering note (e.g. tone,
    season, emphasis). Don't over-specify; the backend pipeline + brand kit handle palette, fonts,
    product swap.
-4. **(Optional) Quote the cost.** \`estimate_remix_batch { items, engine, quality }\` → tell the user.
-5. **Submit ONE batch.** \`submit_remix_batch { brand_id, items, prompt?, product_name?, engine,
-   quality, apply_brand_colors: true, apply_brand_font: true }\` using the app defaults above.
-   Change one styling flag only when the user explicitly requested a supported mixed treatment.
-   Keep the returned \`batch_id\` and \`links\`.
-6. **Poll until done.** \`get_remix_batch { batch_id }\` (or \`list_brand_creatives\`) every ~20-30s
+4. **Quote the cost.** Inspect and call \`estimate_remix_batch\`, then tell the user.
+5. **Submit ONE batch.** Inspect the current \`submit_remix_batch\` schema, fill known required
+   inputs, ask only for unresolved user decisions, and omit unspecified optional settings. Keep
+   the returned \`batch_id\` and \`links\`.
+6. **Poll until done.** Call \`get_remix_batch\` for the returned batch (or use
+   \`list_brand_creatives\`) every ~20-30s
    until every creative's \`pending\` is 0. Most images finish in a few minutes; text-heavy templates
    and \`quality: high\` take longer. Read each render's \`elapsed_seconds\` rather than guessing — a
    render that's still \`running\` is healthy; do NOT re-submit thinking it stalled (that double-bills).
@@ -570,17 +562,14 @@ never claim ownership, never promise an original-style match, and never attest r
 
 ## Workflow — edit an existing ad
 
-User wants to tweak a creative they already made → \`regenerate_creative\`:
-- "make another version / different take" → \`mode: "variation"\` (optionally new \`prompt\`,
-  \`product_name\`, \`ratios\`).
-- "change X in this exact image" → \`mode: "edit"\`, \`source_render_id\` = the render to edit,
-  \`prompt\` = the change.
-- "run exactly this prompt on the product" → \`mode: "exact"\`, \`source_render_id\` + \`prompt\`.
-Then poll with \`get_remix_batch\` and hand back the links, same as above.
+User wants to tweak a creative they already made → use \`regenerate_creative\`. Infer whether they
+want another take, a targeted edit, or an exact instructed change from their request. Then inspect
+the live schema, ask only for any required source or instruction that is still missing, submit,
+poll with \`get_remix_batch\`, and hand back the links.
 
 ## Brand research
 
-Prefer the backend's result: \`get_brand_kit { brand_id }\`. If \`researchStatus\` is
+Prefer the backend's result: call \`get_brand_kit\` for the selected brand. If \`researchStatus\` is
 \`complete\`, REUSE it — never re-research.
 
 **The split — backend owns visuals, you own the qualitative depth:**
@@ -597,9 +586,10 @@ Prefer the backend's result: \`get_brand_kit { brand_id }\`. If \`researchStatus
 
 **CLI brand-research flow:**
 
-1. \`create_ad_brand { name, website_url }\` → keep \`brand_id\` + \`slug\`. The brand comes back with
+1. Inspect and call \`create_ad_brand\` with the known brand identity and website, then keep its id
+   and slug. The brand comes back with
    \`research_status: "pending"\` (light pass in flight).
-2. **Wait for the backend light pass:** poll \`get_brand_kit { brand_id }\` until \`researchStatus\`
+2. **Wait for the backend light pass:** poll \`get_brand_kit\` for that brand until \`researchStatus\`
    is \`complete\` (usually <60s). Now the kit has authoritative logo/colors/fonts + a baseline.
    At this point generation is already unblocked — but do the deep pass to make it good.
 3. **Deep research locally:** \`gooseworks fetch brand-research\` and follow its phases. **Ground
@@ -613,10 +603,10 @@ Prefer the backend's result: \`get_brand_kit { brand_id }\`. If \`researchStatus
      (\`brandType\` ∈ product | saas | service | agency | restaurant | fashion | beauty | fitness |
      finance | education | health). Only URLs already in our storage for product images.
    - **Do NOT set logo / colors / fonts here** — the backend light pass already owns those.
-5. **Persist it:** \`finalize_brand_research { brand_id }\` merges \`kit-patch.json\` into the kit
+5. **Persist it:** call \`finalize_brand_research\` for the brand. It merges \`kit-patch.json\` into the kit
    NON-CLOBBERINGLY (it will NOT overwrite the backend's visuals or any user edit), then re-confirms
    \`research_status: complete\`.
-6. **Verify:** \`get_brand_kit { brand_id }\` — confirm the qualitative fields you wrote are present
+6. **Verify:** call \`get_brand_kit\` again and confirm the qualitative fields you wrote are present
    before generating.
 
 **If the brand has NO website**, the backend light pass can't run (nothing to fetch) — do the whole
@@ -662,19 +652,16 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
   curated third-party catalog.
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
   directly if they'd rather not review).
-- **Apply brand styling** — send \`apply_brand_colors: true\` and \`apply_brand_font: true\` by
-  default. Do not ask about matching original styling, do not send \`preserve_source_styling\`, and
-  never send both brand-style flags as false.
 - **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
-  preserve a competitor's original styling.
+  copy a competitor's distinctive expression.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
   mid-task, check it against \`get_brand_kit\` and, with their ok, persist it via \`update_brand_kit\`
   / \`upsert_brand_product\` / \`add_brand_product_image\` so it sticks for future ads. Ask first;
   never silently mutate the kit.
-- **Record feedback** — when the user reacts to a generated image, capture it with
-  \`set_creative_feedback { render_id, rating/comment/reasons }\` so the quality loop learns.
-- **Plan mode is opt-in** — only compose-and-pause (\`requires_approval: true\` → \`list_ad_approvals\`
-  → \`approve_ad_plan\`) when the user wants to review before spending credits; otherwise generate
+- **Record feedback** — when the user reacts to a generated image, inspect and call
+  \`set_creative_feedback\` so the quality loop learns.
+- **Plan mode is opt-in** — only use the live approval option, then \`list_ad_approvals\` and
+  \`approve_ad_plan\`, when the user wants to review before spending credits; otherwise generate
   immediately.
 - **Don't busy-loop** — poll \`get_remix_batch\` on a sensible interval (~20-30s); a \`queued\`
   batch is waiting on research and will start on its own.
