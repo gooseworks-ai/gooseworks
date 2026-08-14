@@ -9,6 +9,7 @@ import { configureClaudeMcp } from '../agents/claude-mcp';
 import { isAgentInstalled } from '../agents/detect';
 import * as logger from '../utils/logger';
 import { API_BASE, HUB_URL } from '../config';
+import { recordAttributionRef } from '../auth/attribution';
 
 /**
  * Refresh vendored entry skills on login for users who have already set up
@@ -64,11 +65,12 @@ function showNextSteps(): void {
 export const loginCommand = new Command('login')
   .description('Sign in to GooseWorks with Google')
   .option('--api-base <url>', 'API base URL', API_BASE)
-  .option('--ref <code>', 'Creator referral code — attributes your signup to the GooseWorks creator who referred you')
+  .option('--ref <code>', 'Referral or marketing campaign code for attribution')
   .action(async (opts) => {
     const existing = getCredentials();
     if (existing) {
       logger.success(`Already logged in as ${existing.email}`);
+      await recordAttributionRef(existing.api_base || opts.apiBase, opts.ref, existing.api_key);
       refreshEntrySkillsOnLogin();
       syncMcpRegistration();
       logger.info('Run "gooseworks logout" first to switch accounts.');
@@ -77,6 +79,7 @@ export const loginCommand = new Command('login')
 
     try {
       const result = await runOAuthFlow(opts.apiBase, opts.ref);
+      await recordAttributionRef(opts.apiBase, opts.ref, result.api_key);
       logger.success(`Logged in as ${result.email}`);
       refreshEntrySkillsOnLogin();
       syncMcpRegistration();
@@ -93,16 +96,20 @@ export const loginCommand = new Command('login')
  * Ensures the user is logged in, running OAuth if needed.
  * Returns credentials or exits the process.
  */
-export async function ensureLoggedIn(apiBase: string = API_BASE, creatorRef?: string) {
+export async function ensureLoggedIn(apiBase: string = API_BASE, ref?: string) {
   const existing = getCredentials();
-  if (existing) return existing;
+  if (existing) {
+    await recordAttributionRef(existing.api_base || apiBase, ref, existing.api_key);
+    return existing;
+  }
 
-  const result = await runOAuthFlow(apiBase, creatorRef);
+  const result = await runOAuthFlow(apiBase, ref);
   const creds = getCredentials();
   if (!creds) {
     logger.error('Failed to save credentials after login');
     process.exit(1);
   }
+  await recordAttributionRef(apiBase, ref, creds.api_key);
   // Fresh login via an install/other command path — nudge onboarding too, so
   // `gooseworks install --all` on a logged-out machine also opens the page.
   openOnboarding();

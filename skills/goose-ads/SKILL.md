@@ -2,8 +2,8 @@
 name: goose-ads
 slug: goose-ads
 description: >
-  GooseWorks ads skill — create, edit, AND analyze ad creative. Remix a static (image) ad
-  template into a branded ad for the user's product, edit/re-roll an existing creative,
+  GooseWorks ads skill — create, edit, AND analyze ad creative. Turn an approved source ad
+  into a branded ad for the user's product, edit/re-roll an existing creative,
   research a brand for ads, OR analyze ad performance (Meta/Google campaign diagnostics,
   creative fatigue, CAC & lead quality, competitor ad intelligence, ad angles & hooks). Use
   when the user says "remix this ad", references a static ad template id/slug, asks to "make
@@ -12,7 +12,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.2.0
+version: 2.3.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -22,7 +22,7 @@ tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, met
 The GooseWorks ads skill. Two jobs:
 
 1. **Create / edit ad creative** — a **thin wrapper** over the backend's single generation
-   workflow. You pick the brand + template(s) and submit ONE batch; the **backend** runs the
+   workflow. You pick the brand + approved source ad(s) and submit ONE batch; the **backend** runs the
    whole pipeline (compose → generate → persist → judge), reserves and bills credits, and
    stores the renders. You do NOT generate images, call FAL, manage render rows, or upload
    files — those are gone. This is the exact same workflow the GooseWorks ads app uses, so the
@@ -55,10 +55,14 @@ what they'd get in the UI. **Pass these explicitly:**
 - `ratios`: **["4:5"]** (Meta feed vertical)
 - `engine`: **"gpt_image_2"**
 - `quality`: **"medium"**
-- `preserve_source_styling`: **ASK the user** — "Keep original" (the template's own
-  colours/fonts → `preserve_source_styling: true`) vs "Match brand" (restyle to the brand
-  palette/fonts → `preserve_source_styling: false`). This mirrors the app's Styling control.
-  **The default is "Keep original"** — if the user doesn't answer or doesn't care, send `true`.
+- `apply_brand_colors`: **true**
+- `apply_brand_font`: **true**
+
+Do not ask whether to match the source's original styling. That option was removed from the app.
+The normal path always applies the user's brand colors and font. If the user explicitly asks for
+one of the app's mixed treatments, use brand colors + source font (`true` / `false`) or source
+colors + brand font (`false` / `true`). Never expose or send the both-false combination, and
+never send the deprecated `preserve_source_styling` field.
 
 If the user asks for something the app exposes (more variants, a different ratio like 1:1 or
 9:16, a faster engine, higher quality), pass that instead. Omitting a field lets backend policy
@@ -66,7 +70,7 @@ decide — fine, but prefer sending the app defaults for predictable parity.
 
 ## The generation tools (the new, single-workflow surface)
 
-- `submit_remix_batch { brand_id, items, prompt?, product_name?, preserve_source_styling?,
+- `submit_remix_batch { brand_id, items, prompt?, product_name?, apply_brand_colors?, apply_brand_font?,
   reference_image_urls?, allow_without_product_image?, engine?, quality? }` — **the one call
   that makes ads.** `items` is `[{ template_id, variants?, ratios? }]` (≤20 templates).
   Returns the batch with a `links` block (`brand_url` + per-creative `app_url`). If the brand's
@@ -85,8 +89,8 @@ decide — fine, but prefer sending the app defaults for predictable parity.
 - `list_brand_creatives { brand_id, limit?, offset? }` — the brand's gallery feed (newest
   first) + `brand_url`. Alternative poll target; also use to show everything made for a brand.
 - `surprise_me_templates { brand_id, count? }` — the **"Surprise me" recommender**. Picks
-  brand-relevant templates (SAME logic as the web /create "Surprise me" button — templates
-  whose category overlaps the brand float to the top, bucketed + shuffled so picks stay fresh).
+  remixable Community creations (SAME logic as the web /create "Surprise me" button), shuffled
+  so picks stay fresh. It does not use the retired curated third-party catalog.
   Returns the picked templates (id, slug, title, image, ratio) AND a ready-to-open `create_url`
   (the /create page with `cli=true` and the picks pre-selected). This is how you recommend
   templates — do NOT hand-pick from the raw catalog yourself (see "Picking templates" below).
@@ -127,13 +131,20 @@ immediately.
 - `list_ad_brands { query? }` / `get_ad_brand { brand_id }` — find/fetch a brand. Pass `query` to
   filter by name (case-insensitive) instead of listing every brand; rows are lean (no `brand_kit` —
   read `get_brand_kit` for the full kit).
-- `get_static_ad_template { template_id }` — resolve a template (slug OR uuid; public catalog
-  AND your org's private templates). Confirms it exists before you submit.
+- `list_user_ad_templates { brand_id?, relationship? }` — list the org's own uploads and
+  imported ads. Prefer `relationship: "self"` when the user wants to reuse their own ads;
+  `relationship: "competitor"` is research/inspiration, never proof that the user owns the ad.
+- `search_ad_templates { query, brand_id? }` — search remixable Community generations. The
+  retired curated third-party catalog is not returned.
+- `get_static_ad_template { template_id }` — resolve a template (slug OR uuid) already owned by
+  the org, including an own upload or a snapshotted Community creative. It does not resolve the
+  retired curated third-party catalog.
 - `remix_community_ad { community_id }` — a **Community** ad id is an `ad_project` id, not a
   template id. Call this FIRST to snapshot it into a private template, then use the returned
   template `id` in `items`.
-- `create_user_ad_template { workspace_path }` — "bring your own ad": upload the user's own
-  image as a private template, then remix it like any other.
+- `create_user_ad_template { workspace_path, rights_attested? }` — upload a source image as a
+  private template. Set `rights_attested: true` only after the user explicitly confirms they own
+  it or have permission to use it. Never set it true for a competitor ad or an image found online.
 - `get_ad_project` / `append_project_message` — inspect a creative / leave a note on its thread.
 
 ## Keep the brand kit in sync — reconcile, then update (ASK first)
@@ -163,34 +174,43 @@ ad and forget it:
 This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
 able to flow back into the kit — with their ok — instead of being lost.
 
-## Picking templates — ASK the user; don't freelance from the catalog
+## Picking source ads — use approved sources, not the retired catalog
 
 When the user wants to make ads but has NOT named a specific template (id/slug/Community
 ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
 short ask flow — it mirrors the web app and keeps the human in the loop:
 
 1. **Ask what kind of ads they want** — the angle/offer/theme/season, the vibe, and which
-   product from the brand kit to feature. This shapes both the template choice and your steering
+   product from the brand kit to feature. This shapes both the source choice and your steering
    `prompt`. Keep it to one or two quick questions.
-2. **Ask how to pick templates: "Choose explicitly" or "Surprise me".**
+2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
+   - **Their own ads** → `list_user_ad_templates { brand_id, relationship: "self" }` and let
+     them choose from the results.
+   - **Community** → `search_ad_templates`, let them choose, then call `remix_community_ad`
+     before submitting.
+   - **Upload** → upload through the workspace and call `create_user_ad_template`. Record
+     `rights_attested: true` only after explicit confirmation of ownership/permission.
    - **Surprise me** (they want you/the app to pick) → call
      `surprise_me_templates { brand_id, count }` and hand the user the returned `create_url`.
      It opens /create in **CLI mode** with the picks pre-selected, a preview modal, and the
      **copyable remix prompt at the bottom** (in place of the Generate input). They can swap
      picks and copy that prompt. If they'd rather you "just make them" without reviewing in the
      app, you MAY submit the `surprise_me_templates` picks directly (skip to submit).
-   - **Choose explicitly** (they want to browse and select) → hand the user this URL, with the
+   - **Browse in the app** → hand the user this URL, with the
      active brand's slug filled in:
      `https://make.gooseworks.ai/create?brand=<brand-slug>&cli=true`
      In CLI mode the app shows the copyable remix prompt at the bottom (dismissable / switchable
-     back to the UI composer). They browse, select templates, and copy the prompt.
-3. **Ask the styling** — "Keep original" (default) vs "Match brand" — per the Defaults section.
+     back to the UI composer). They browse the available own/Community sources and copy the prompt.
+3. **Apply brand styling by default** — brand colors and brand font. Ask only when the user
+   explicitly wants one of the supported mixed treatments described in Defaults.
 4. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
    (it names the brand + the templates they chose), THAT is your cue to generate: resolve the
    named template(s), then `submit_remix_batch` with the app defaults + the styling they chose.
 
-If the user already named a template (id/slug), a Community ad, or an upload, skip the ask flow
-for template choice — they've chosen — but still confirm the styling default and steer the prompt.
+If the user already named an owned source (id/slug), a Community ad, or an upload, skip the source
+choice. Do not ask a styling question; apply brand colors and font unless they requested a supported
+mixed treatment. Competitor ads may inform the angle or structure, but describe them as inspiration,
+never claim ownership, never promise an original-style match, and never attest rights for the user.
 
 ## Workflow — make ads from a template
 
@@ -198,8 +218,8 @@ for template choice — they've chosen — but still confirm the styling default
    kit's `researchStatus` isn't `complete`, you can still submit (the batch queues and runs when
    research finishes) — just tell the user. Use the kit to pick `product_name` (a real entry from
    `products[]`, not a guess) and, if the user supplied product photos, `reference_image_urls`.
-2. **Pick the template(s) via the ask flow above** (kind of ads → Choose explicitly vs Surprise
-   me → styling). Once you have concrete ids: `get_static_ad_template { template_id }` for each.
+2. **Pick the source ad(s) via the ask flow above.** Once you have concrete ids:
+   `get_static_ad_template { template_id }` for each.
    For a Community ad, `remix_community_ad` first; for an uploaded image, `create_user_ad_template`
    first.
 3. **(Optional) Craft the steering prompt.** The `prompt` is OPTIONAL — this is where the skill
@@ -208,7 +228,8 @@ for template choice — they've chosen — but still confirm the styling default
    product swap.
 4. **(Optional) Quote the cost.** `estimate_remix_batch { items, engine, quality }` → tell the user.
 5. **Submit ONE batch.** `submit_remix_batch { brand_id, items, prompt?, product_name?, engine,
-   quality, preserve_source_styling }` using the app defaults above and the styling the user chose.
+   quality, apply_brand_colors: true, apply_brand_font: true }` using the app defaults above.
+   Change one styling flag only when the user explicitly requested a supported mixed treatment.
    Keep the returned `batch_id` and `links`.
 6. **Poll until done.** `get_remix_batch { batch_id }` (or `list_brand_creatives`) every ~20-30s
    until every creative's `pending` is 0. Most images finish in a few minutes; text-heavy templates
@@ -305,12 +326,17 @@ run through the `gooseworks` CLI (`gooseworks fetch` / `gooseworks call`), like 
   each creative's `app_url`), copied verbatim. Never end on just "done" or a file path.
 - **Quote cost before generating** when it's non-trivial (use `estimate_remix_batch`), and
   relay `insufficient_credits` plainly if the submit is rejected — don't retry blindly.
-- **Don't hand-pick templates silently.** If the user didn't name a template, run the ask flow
-  (kind of ads → Choose explicitly vs Surprise me → styling). "Surprise me" goes through
-  `surprise_me_templates`; "Choose explicitly" sends them to `/create?brand=<slug>&cli=true`.
+- **Use approved source paths.** If the user didn't name a source, run the ask flow (own ads,
+  Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
+  `surprise_me_templates`; browsing uses `/create?brand=<slug>&cli=true`. Never use the retired
+  curated third-party catalog.
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
   directly if they'd rather not review).
-- **Ask the styling** — Keep original (default) vs Match brand — before you submit.
+- **Apply brand styling** — send `apply_brand_colors: true` and `apply_brand_font: true` by
+  default. Do not ask about matching original styling, do not send `preserve_source_styling`, and
+  never send both brand-style flags as false.
+- **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
+  preserve a competitor's original styling.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
   mid-task, check it against `get_brand_kit` and, with their ok, persist it via `update_brand_kit`
   / `upsert_brand_product` / `add_brand_product_image` so it sticks for future ads. Ask first;

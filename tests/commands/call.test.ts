@@ -133,6 +133,66 @@ describe('call command', () => {
     expect(logged).toContain('"abc"');
   });
 
+  it('routes ScrapeCreators directly and defaults to GET', async () => {
+    let receivedMethod: string | undefined;
+    let receivedUrl: string | undefined;
+
+    server = await startServer(async (req, res) => {
+      receivedMethod = req.method;
+      receivedUrl = req.url;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'success',
+        data: { username: 'nike' },
+        cost: { credits: 1, providerCreditsCharged: 1 },
+      }));
+    });
+    mockGetCredentials.mockReturnValue(baseCreds(server.url));
+
+    await freshCallCommand().parseAsync([
+      'node',
+      'test',
+      'scrapecreators',
+      '/v1/instagram/profile',
+      '--query',
+      '{"handle":"nike"}',
+    ]);
+
+    expect(receivedMethod).toBe('GET');
+    expect(receivedUrl).toBe('/v1/proxy/scrapecreators/v1/instagram/profile?handle=nike');
+    expect(loggerModule.info).toHaveBeenCalledWith('Cost: 1 credit');
+  });
+
+  it('supports ScrapeCreators POST endpoints explicitly', async () => {
+    let receivedMethod: string | undefined;
+    let receivedUrl: string | undefined;
+    let receivedBody: string | undefined;
+
+    server = await startServer(async (req, res) => {
+      receivedMethod = req.method;
+      receivedUrl = req.url;
+      receivedBody = await readBody(req);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', data: { results: [] } }));
+    });
+    mockGetCredentials.mockReturnValue(baseCreds(server.url));
+
+    await freshCallCommand().parseAsync([
+      'node',
+      'test',
+      'scrapecreators',
+      '/v1/facebook/adLibrary/search/ads',
+      '--method',
+      'POST',
+      '--body',
+      '{"query":"running shoes"}',
+    ]);
+
+    expect(receivedMethod).toBe('POST');
+    expect(receivedUrl).toBe('/v1/proxy/scrapecreators/v1/facebook/adLibrary/search/ads');
+    expect(JSON.parse(receivedBody!)).toEqual({ query: 'running shoes' });
+  });
+
   it('routes orthogonal-routed provider to /v1/proxy/orthogonal/run with wrapped body', async () => {
     let receivedUrl: string | undefined;
     let receivedBody: string | undefined;

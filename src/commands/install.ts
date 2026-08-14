@@ -36,7 +36,7 @@ Examples:
   .option('--mcp', 'Also register the GooseWorks MCP server')
   .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
   .option('--api-base <url>', 'API base URL', API_BASE)
-  .option('--ref <code>', 'Creator referral code — attributes your signup to the GooseWorks creator who referred you')
+  .option('--ref <code>', 'Referral or marketing campaign code for attribution')
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
 

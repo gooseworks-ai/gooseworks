@@ -88,6 +88,33 @@ describe('skills/master-skill', () => {
     it('mentions goose-video as coming soon', () => {
       expect(content).toContain('goose-video');
     });
+
+    it('routes product photos and image animation without a separate collection command', () => {
+      expect(content).toContain('goose-product-photos');
+      expect(content).toContain('animate-image');
+      expect(content).toContain('Brand Growth is a collection inside the normal skill catalog');
+      expect(content).not.toContain('/goose-dtc');
+    });
+  });
+
+  describe('common onboarding', () => {
+    it('uses the shared brand onboarding tools and resumes missing fields', () => {
+      expect(content).toContain('get_brand_onboarding');
+      expect(content).toContain('update_brand_onboarding');
+      expect(content).toContain('missing_fields');
+      expect(content).toContain('Never force an existing user through onboarding');
+      expect(content).not.toContain('get_user_context');
+      expect(content).not.toContain('update_user_context');
+    });
+
+    it('contains the shared questions, conditional ads fields, and first task', () => {
+      expect(content).toContain('How much do you spend on paid ads right now?');
+      expect(content).toContain('Who makes your ad creatives right now?');
+      expect(content).toContain('ad spend is `zero` and no advertising goal was selected');
+      expect(content).toContain('What do you want to do first?');
+      expect(content).toContain('connect_tools');
+      expect(content).toContain('first_task');
+    });
   });
 });
 
@@ -121,7 +148,8 @@ describe('skills/goose-ads entry skill', () => {
   it('documents the app-matching defaults', () => {
     expect(ads).toContain('gpt_image_2');
     expect(ads).toContain('"4:5"');
-    expect(ads).toContain('preserve_source_styling');
+    expect(ads).toContain('apply_brand_colors: true');
+    expect(ads).toContain('apply_brand_font: true');
   });
 
   it('recommends templates via surprise_me_templates instead of hand-picking the catalog', () => {
@@ -131,18 +159,30 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/do NOT .*hand-pick|Don't hand-pick templates/i);
   });
 
-  it('routes "choose explicitly" to the /create page in CLI mode', () => {
+  it('routes browsing to the /create page in CLI mode', () => {
     expect(ads).toContain('/create?brand=<brand-slug>&cli=true');
-    expect(ads).toContain('Choose explicitly');
+    expect(ads).toContain('Browse in the app');
     expect(ads).toContain('Surprise me');
     // The app surfaces the copyable remix prompt the user pastes back to close the loop.
     expect(ads).toMatch(/copyable remix prompt|paste/i);
   });
 
-  it('asks the styling (keep original default vs match brand) before submitting', () => {
-    expect(ads).toContain('Keep original');
-    expect(ads).toContain('Match brand');
-    expect(ads).toMatch(/default is "Keep original"/i);
+  it('applies brand styling without offering the removed match-original path', () => {
+    expect(ads).not.toContain('Keep original');
+    expect(ads).not.toContain('Match brand');
+    expect(ads).toContain('apply_brand_colors: true');
+    expect(ads).toContain('apply_brand_font: true');
+    expect(ads).toMatch(/never send the deprecated `preserve_source_styling`/i);
+    expect(ads).toMatch(/never expose or send the both-false combination/i);
+  });
+
+  it('uses legally safer source paths from GOOSE-2979', () => {
+    expect(ads).toContain('list_user_ad_templates');
+    expect(ads).toContain('search_ad_templates');
+    expect(ads).toContain('remix_community_ad');
+    expect(ads).toContain('rights_attested');
+    expect(ads).toMatch(/retired curated third-party catalog/i);
+    expect(ads).toMatch(/Treat competitor ads as inspiration/i);
   });
 
   it('exposes plan mode (compose → review/approve → generate) for parity with the app', () => {
