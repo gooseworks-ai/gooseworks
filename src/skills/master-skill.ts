@@ -66,7 +66,7 @@ This skill is also the **parent router** for the GooseWorks family. Data/GTM wor
 
 ## Route to the right skill FIRST
 
-Before anything else, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
@@ -115,7 +115,15 @@ gooseworks credits
 
 ## Common company onboarding
 
-Onboarding is voluntary and happens inside the current coding agent. Run it when the user explicitly says **\`/gooseworks onboard me\`**, or ask for one missing answer when it is necessary for the task in front of you. **Never force an existing user through onboarding after an update.**
+Onboarding happens inside the current coding agent and is the first-run gate for every GooseWorks task. The user does not need to type **\`/gooseworks onboard me\`**. Before routing or executing their request, check their onboarding state and:
+
+- start onboarding when no company/brand record exists;
+- resume only the missing steps when onboarding is incomplete;
+- continue immediately when onboarding is already complete.
+
+Keep the user's original task pending and resume it immediately after onboarding. The explicit **\`/gooseworks onboard me\`** command remains a way to start or resume the same flow, but it is not required.
+
+In these tools, a “brand” is the company, organization, or client the user works on. It does not need to be a DTC or ecommerce brand. For B2B and other GTM users, create or reuse the relevant company/client workspace and infer its products or services from the website. Do not require a product catalog, ad account, or creative assets unless the user's task needs them.
 
 The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
 
@@ -127,7 +135,7 @@ If these tools are unavailable, tell the user that onboarding needs the GooseWor
 
 ### Resume rules
 
-1. Run \`list_ad_brands\`. If there are multiple brands, ask which one to use.
+1. Run \`list_ad_brands\`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
 2. If there is no brand, ask for the company or brand website, research it, and use \`create_ad_brand { name, website_url }\`. If the domain matches an existing brand, reuse it.
 3. Call \`get_brand_onboarding\` and ask only the returned missing questions.
 4. Save after each small group so an interrupted interview can resume.

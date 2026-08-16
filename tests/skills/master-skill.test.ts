@@ -102,11 +102,17 @@ describe('skills/master-skill', () => {
   });
 
   describe('common onboarding', () => {
-    it('uses the shared brand onboarding tools and resumes missing fields', () => {
+    it('runs onboarding before the first task and resumes missing fields', () => {
       expect(content).toContain('get_brand_onboarding');
       expect(content).toContain('update_brand_onboarding');
       expect(content).toContain('missing_fields');
-      expect(content).toContain('Never force an existing user through onboarding');
+      expect(content).toContain('first-run gate for every GooseWorks task');
+      expect(content).toMatch(/does not need to type[\s\S]*\/gooseworks onboard me/i);
+      expect(content).toContain('start onboarding when no company/brand record exists');
+      expect(content).toContain('resume only the missing steps when onboarding is incomplete');
+      expect(content).toContain('continue immediately when onboarding is already complete');
+      expect(content).toContain("Keep the user's original task pending");
+      expect(content).toContain('It does not need to be a DTC or ecommerce brand');
       expect(content).not.toContain('get_user_context');
       expect(content).not.toContain('update_user_context');
     });
