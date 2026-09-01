@@ -36,6 +36,24 @@ Everything goes through the `mcp__gooseworks__*` tools. If they are not availabl
 tell the user to run `gooseworks install --claude --mcp`** (and restart Claude Code). There is
 no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reject your token.
 
+## Start from the brand context — don't re-ask what it already answers
+
+If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
+`brand_get_context` first (falling back to `get_brand_kit` for the selected brand). It already
+answers most of what the flows below would otherwise ask the user:
+
+- **Which product to feature** → `products[]`. Offer the real catalog entries; never guess a
+  product name and never ask the user to list their products.
+- **The vibe / tone of the copy** → the brand's **voice**. Use it; don't ask "what tone?".
+- **Who the ad is for** → the brand's **audience**. Don't ask "who's the target?".
+- **The angle, offer framing, and what to claim** → **positioning**, value props, proof points.
+- **Logo, colors, fonts** → owned by the backend research pass. **Never re-derive them.**
+- **Whether the facts are trustworthy yet** → **research status**. If it isn't complete, say so in
+  one line and continue; the batch queues and runs when research finishes.
+
+Ask only for what the context genuinely doesn't answer: the specific campaign intent (season,
+promo, which of several angles), the source ad, and anything the user must consent to.
+
 ## Identity & credits
 
 - One agent-scoped token authenticates the `gooseworks` MCP tools. Never print it. The tools
@@ -161,9 +179,11 @@ When the user wants to make ads but has NOT named a specific template (id/slug/C
 ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
 short ask flow — it mirrors the web app and keeps the human in the loop:
 
-1. **Ask what kind of ads they want** — the angle/offer/theme/season, the vibe, and which
-   product from the brand kit to feature. This shapes both the source choice and your steering
-   `prompt`. Keep it to one or two quick questions.
+1. **Ask what kind of ads they want** — the angle/offer/theme/season. **The brand context already
+   gives you the vibe (voice), the audience, and the product catalog — do NOT ask for those.**
+   Offer the real `products[]` to pick from rather than asking "which product?", and derive the
+   tone from the brand's voice. This shapes both the source choice and your steering `prompt`.
+   Keep it to one quick question about campaign intent.
 2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
    - **Their own ads** → use `list_user_ad_templates` to load the active brand's own sources and
      let them choose from the results.

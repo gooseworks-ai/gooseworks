@@ -46,7 +46,14 @@ describe('agents/skill-links (GOOSE-2418)', () => {
 
   describe('syncManagedSkillLinks', () => {
     it('links managed skills (dir symlink off-Windows) and skips unrelated dirs', () => {
-      readdir(['gooseworks', 'goose-graphics', 'unrelated-dir'], []);
+      // GOOSE-3191: only entry-skill slugs + stamped dirs are ours. `goose-notours`
+      // shares the prefix but carries no stamp, so it must NOT be linked.
+      mockFs.existsSync.mockImplementation(
+        (p: any) =>
+          !String(p).endsWith('.gooseworks-version') ||
+          p === `${BASE}/goose-graphics/.gooseworks-version`,
+      );
+      readdir(['gooseworks', 'goose-graphics', 'goose-notours', 'unrelated-dir'], []);
 
       const { linked, failed } = syncManagedSkillLinks(BASE, DIR);
 
@@ -57,6 +64,7 @@ describe('agents/skill-links (GOOSE-2418)', () => {
       expect(targets).toEqual(
         expect.arrayContaining([`${DIR}/gooseworks`, `${DIR}/goose-graphics`]),
       );
+      expect(targets).not.toContain(`${DIR}/goose-notours`);
       expect(targets).not.toContain(`${DIR}/unrelated-dir`);
       // Off-Windows the link type is a directory symlink.
       expect(mockFs.symlinkSync.mock.calls[0][2]).toBe('dir');
@@ -122,7 +130,7 @@ describe('agents/skill-links (GOOSE-2418)', () => {
         throw new Error('EINVAL');
       }) as any);
 
-      removeManagedSkillLinks(DIR);
+      removeManagedSkillLinks(DIR, BASE);
 
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${DIR}/gooseworks`);
       // Real managed directory is NOT torn down, and unmanaged 'other' is untouched.

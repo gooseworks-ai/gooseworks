@@ -47,9 +47,11 @@ describe('agents/codex', () => {
   });
 
   it('symlinks managed GooseWorks entries into ~/.codex/skills/', () => {
-    mockFs.existsSync.mockImplementation((p) => p === SKILLS_BASE);
+    mockFs.existsSync.mockImplementation(
+      (p) => p === SKILLS_BASE || p === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`,
+    );
     mockFs.readdirSync.mockImplementation((dir) => {
-      if (dir === SKILLS_BASE) return ['gooseworks', 'gooseworks-reddit', 'goose-graphics', 'other'] as any;
+      if (dir === SKILLS_BASE) return ['gooseworks', 'goose-ads', 'goose-graphics', 'goose-notours', 'other'] as any;
       if (dir === CODEX_SKILLS) return [] as any;
       return [] as any;
     });
@@ -60,16 +62,19 @@ describe('agents/codex', () => {
     expect(mockFs.mkdirSync).toHaveBeenCalledWith(CODEX_SKILLS, { recursive: true });
     const targets = mockFs.symlinkSync.mock.calls.map((c) => c[1]);
     expect(targets).toContain(`${CODEX_SKILLS}/gooseworks`);
-    expect(targets).toContain(`${CODEX_SKILLS}/gooseworks-reddit`);
+    expect(targets).toContain(`${CODEX_SKILLS}/goose-ads`);
     expect(targets).toContain(`${CODEX_SKILLS}/goose-graphics`);
+    expect(targets).not.toContain(`${CODEX_SKILLS}/goose-notours`);
     expect(targets).not.toContain(`${CODEX_SKILLS}/other`);
   });
 
   it('removes existing managed symlinks before re-linking', () => {
-    mockFs.existsSync.mockImplementation((p) => p === SKILLS_BASE);
+    mockFs.existsSync.mockImplementation(
+      (p) => p === SKILLS_BASE || p === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`,
+    );
     mockFs.readdirSync.mockImplementation((dir) => {
       if (dir === SKILLS_BASE) return ['gooseworks'] as any;
-      if (dir === CODEX_SKILLS) return ['gooseworks', 'gooseworks-stale', 'goose-graphics'] as any;
+      if (dir === CODEX_SKILLS) return ['gooseworks', 'goose-video', 'goose-graphics', 'goose-notours'] as any;
       return [] as any;
     });
     mockFs.lstatSync.mockReturnValue({ isSymbolicLink: () => true } as any);
@@ -77,13 +82,16 @@ describe('agents/codex', () => {
     configureCodex();
 
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/gooseworks`);
-    expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/gooseworks-stale`);
+    expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/goose-video`);
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/goose-graphics`);
+    expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CODEX_SKILLS}/goose-notours`);
   });
 
   it('removeCodex unlinks only managed symlinks', () => {
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.readdirSync.mockReturnValue(['gooseworks', 'goose-graphics', 'other'] as any);
+    mockFs.existsSync.mockImplementation(
+      (p) => !String(p).endsWith('.gooseworks-version') || String(p).includes('/goose-graphics/'),
+    );
+    mockFs.readdirSync.mockReturnValue(['gooseworks', 'goose-graphics', 'goose-notours', 'other'] as any);
     mockFs.lstatSync.mockImplementation((p) => ({
       isSymbolicLink: () => String(p).includes('goose'),
     }) as any);
@@ -92,6 +100,7 @@ describe('agents/codex', () => {
 
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/gooseworks`);
     expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CODEX_SKILLS}/goose-graphics`);
+    expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CODEX_SKILLS}/goose-notours`);
     expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CODEX_SKILLS}/other`);
   });
 

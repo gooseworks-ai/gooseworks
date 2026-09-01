@@ -20,5 +20,5 @@ export function configureClaude(): number {
 }
 
 export function removeClaude(): void {
-  removeManagedSkillLinks(CLAUDE_SKILLS_DIR);
+  removeManagedSkillLinks(CLAUDE_SKILLS_DIR, getSkillsBasePath());
 }

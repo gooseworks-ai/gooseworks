@@ -22,7 +22,7 @@ export function configureCodex(): number {
 }
 
 export function removeCodex(): void {
-  removeManagedSkillLinks(CODEX_SKILLS_DIR);
+  removeManagedSkillLinks(CODEX_SKILLS_DIR, getSkillsBasePath());
 }
 
 function normalizeMcpUrl(base: string): string {

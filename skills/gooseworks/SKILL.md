@@ -20,7 +20,7 @@ This skill is also the **parent router** for the GooseWorks family. Data/GTM wor
 
 ## Route to the right skill FIRST
 
-Before anything else, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
@@ -32,6 +32,28 @@ Before anything else, check whether the request belongs to a specialized domain.
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
+
+## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
+
+**Call `brand_get_context` before the first substantive step of ANY task**, and before you route to a specialist skill. It is a cheap, read-only call that returns the brand's canonical facts:
+
+| It returns | Use it for |
+| --- | --- |
+| **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
+| **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
+| **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" |
+| **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
+
+Then:
+
+1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
+2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
+3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
+4. **If `brand_get_context` is unavailable** (no MCP connection), fall back to `get_brand_kit` for the selected brand and treat its fields the same way. If neither is available, tell the user the GooseWorks MCP connection is needed rather than guessing brand facts.
+5. **Treat it as read-only.** Writing brand facts back is the reconciliation flow in `goose-ads` (ask first, then `update_brand_kit`) — not something this router does.
+
+Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
 
 ## Setup
 
@@ -69,7 +91,15 @@ gooseworks credits
 
 ## Common company onboarding
 
-Onboarding is voluntary and happens inside the current coding agent. Run it when the user explicitly says **`/gooseworks onboard me`**, or ask for one missing answer when it is necessary for the task in front of you. **Never force an existing user through onboarding after an update.**
+Onboarding happens inside the current coding agent and is the first-run gate for every GooseWorks task. The user does not need to type **`/gooseworks onboard me`**. Before routing or executing their request, check their onboarding state and:
+
+- start onboarding when no company/brand record exists;
+- resume only the missing steps when onboarding is incomplete;
+- continue immediately when onboarding is already complete.
+
+Keep the user's original task pending and resume it immediately after onboarding. The explicit **`/gooseworks onboard me`** command remains a way to start or resume the same flow, but it is not required.
+
+In these tools, a “brand” is the company, organization, or client the user works on. It does not need to be a DTC or ecommerce brand. For B2B and other GTM users, create or reuse the relevant company/client workspace and infer its products or services from the website. Do not require a product catalog, ad account, or creative assets unless the user's task needs them.
 
 The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
 
@@ -81,7 +111,7 @@ If these tools are unavailable, tell the user that onboarding needs the GooseWor
 
 ### Resume rules
 
-1. Run `list_ad_brands`. If there are multiple brands, ask which one to use.
+1. Run `list_ad_brands`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
 2. If there is no brand, ask for the company or brand website, research it, and use `create_ad_brand { name, website_url }`. If the domain matches an existing brand, reuse it.
 3. Call `get_brand_onboarding` and ask only the returned missing questions.
 4. Save after each small group so an interrupted interview can resume.
@@ -129,17 +159,20 @@ Brand Growth is a collection inside the normal skill catalog, not a command or i
 | --- | --- |
 | Brand foundation | `brand-research` |
 | Competitor ads | `competitor-ad-intelligence` |
-| Customer language and angles | `comment-mining` → `ad-angle-miner` |
+| Customer language and angles | `comment-mining`, `ad-angle-miner` |
 | Competitor social content | `competitor-social-research` |
-| Creator discovery and evaluation | `influencer-prospecting` |
+| Audience definition | `audience-research` |
+| Creator discovery and evaluation | `influencer-prospecting`, `creator-profile-teardown` |
 | Trends and outlier posts | `trend-discovery`, `outlier-post-finder` |
 | Social listening and product demand | `social-listening-brief`, `product-demand-research` |
+| Long-form source material (calls, podcasts, videos) | `transcript-intelligence` |
 | Meta performance, policy, and landing-page match | `meta-ads-analyzer`, `meta-ad-policy-checker`, `ad-to-landing-page-auditor` |
-| Static ads | `goose-ads` / `remix-graphic-ad-from-reference` |
-| Product photos | `goose-product-photos` |
+| Static ads | `goose-ads`, `remix-graphic-ad-from-reference` |
+| Product photos | `goose-product-photos`, `product-photoshoot` |
+| Written content and repurposing | `content-repurposing` |
 | Graphics and animation | `goose-graphics`, `animate-image` |
 
-Fetch the named public skill before following it. Provider helpers such as `scrapecreators-api` and `transcript-intelligence` are dependencies, not user-facing results.
+Fetch the named public skill before following it. You already called `brand_get_context` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as `scrapecreators-api` and `transcript-intelligence` are dependencies, not user-facing results.
 
 For a multi-part request, repeat this routing check before each new job. Fetch and follow the
 closest outcome skill first (for example, `comment-mining`, `creator-profile-teardown`, or
@@ -269,6 +302,7 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 
 ## Rules
 
+0. **Call `brand_get_context` before anything else**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost
 3. **If a `gooseworks` command exits with "Not logged in"**: tell the user to run `npx gooseworks login`

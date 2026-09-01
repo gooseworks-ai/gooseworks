@@ -19,19 +19,37 @@
  * …) are NOT vendored here — they live in goose-skills and are fetched live on
  * demand via `gooseworks fetch <slug>`, so they're always current.
  */
+import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
+
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
   name: string;
   content: string;
 }
 
-/** Every entry skill the CLI vendors + installs. */
+/**
+ * THE registry of entry skills (GOOSE-3190) — one list, four consumers:
+ *   - `gooseworks install` / `update` / login-refresh write exactly these dirs,
+ *   - `npm run generate:skills` regenerates exactly these `skills/<name>/SKILL.md`,
+ *   - `skills/names.ts` derives which dirs the CLI is allowed to delete,
+ *   - the backend raw-fetches these paths for hosted connectors.
+ *
+ * `goose-product-photos` used to be a hand-maintained `skills/…/SKILL.md` that
+ * was on disk and served by the backend but absent here — so it was never
+ * regenerated and never refreshed on install. Adding it closes that drift.
+ */
 export function getEntrySkills(): EntrySkill[] {
   return [
     { name: 'gooseworks', content: getMasterSkillContent() },
     { name: 'goose-ads', content: getGooseAdsSkillContent() },
     { name: 'goose-video', content: getGooseVideoSkillContent() },
+    { name: 'goose-product-photos', content: getGooseProductPhotosSkillContent() },
   ];
+}
+
+/** Just the directory names, for callers that don't need the bodies. */
+export function getEntrySkillNames(): string[] {
+  return getEntrySkills().map((s) => s.name);
 }
 
 /**
@@ -66,18 +84,36 @@ This skill is also the **parent router** for the GooseWorks family. Data/GTM wor
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
-| Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **\`goose-ads\`** | Installed locally as an entry skill. Just use it. If unavailable, run \`gooseworks install --claude\`. |
-| Charts, infographics, slides, social graphics, branded visual designs from a style/format | **\`goose-graphics\`** | If installed locally, use it. Otherwise \`gooseworks fetch goose-graphics\` (or \`gooseworks install --claude --with goose-graphics\`). |
-| Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>" | **\`goose-video\`** | Installed locally as an entry skill. Just use it. If unavailable, run \`gooseworks install --claude\`. |
-| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **\`goose-product-photos\`** | Installed locally as an entry skill. Just use it. If unavailable, run \`gooseworks install --claude\`. |
-| Animate an approved static ad or product image | **\`animate-image\`** | Fetch with \`gooseworks fetch animate-image\` and follow its GooseWorks MCP workflow. |
+${renderDomainRouteTable()}
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to \`goose-ads\`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
+
+## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
+
+**Call \`brand_get_context\` before the first substantive step of ANY task**, and before you route to a specialist skill. It is a cheap, read-only call that returns the brand's canonical facts:
+
+| It returns | Use it for |
+| --- | --- |
+| **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
+| **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
+| **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" |
+| **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
+
+Then:
+
+1. **Pass what it returned INTO the routed skill.** When you hand off to \`goose-ads\`, \`goose-video\`, \`goose-product-photos\`, \`goose-graphics\`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
+2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
+3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
+4. **If \`brand_get_context\` is unavailable** (no MCP connection), fall back to \`get_brand_kit\` for the selected brand and treat its fields the same way. If neither is available, tell the user the GooseWorks MCP connection is needed rather than guessing brand facts.
+5. **Treat it as read-only.** Writing brand facts back is the reconciliation flow in \`goose-ads\` (ask first, then \`update_brand_kit\`) — not something this router does.
+
+Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
 
 ## Setup
 
@@ -181,19 +217,9 @@ Brand Growth is a collection inside the normal skill catalog, not a command or i
 
 | Job | Skill |
 | --- | --- |
-| Brand foundation | \`brand-research\` |
-| Competitor ads | \`competitor-ad-intelligence\` |
-| Customer language and angles | \`comment-mining\` → \`ad-angle-miner\` |
-| Competitor social content | \`competitor-social-research\` |
-| Creator discovery and evaluation | \`influencer-prospecting\` |
-| Trends and outlier posts | \`trend-discovery\`, \`outlier-post-finder\` |
-| Social listening and product demand | \`social-listening-brief\`, \`product-demand-research\` |
-| Meta performance, policy, and landing-page match | \`meta-ads-analyzer\`, \`meta-ad-policy-checker\`, \`ad-to-landing-page-auditor\` |
-| Static ads | \`goose-ads\` / \`remix-graphic-ad-from-reference\` |
-| Product photos | \`goose-product-photos\` |
-| Graphics and animation | \`goose-graphics\`, \`animate-image\` |
+${renderBrandGrowthTable()}
 
-Fetch the named public skill before following it. Provider helpers such as \`scrapecreators-api\` and \`transcript-intelligence\` are dependencies, not user-facing results.
+Fetch the named public skill before following it. You already called \`brand_get_context\` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as \`scrapecreators-api\` and \`transcript-intelligence\` are dependencies, not user-facing results.
 
 For a multi-part request, repeat this routing check before each new job. Fetch and follow the
 closest outcome skill first (for example, \`comment-mining\`, \`creator-profile-teardown\`, or
@@ -323,6 +349,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 
 ## Rules
 
+0. **Call \`brand_get_context\` before anything else**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost
 3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
@@ -386,6 +413,24 @@ The GooseWorks ads skill. Two jobs:
 Everything goes through the \`mcp__gooseworks__*\` tools. If they are not available, **stop and
 tell the user to run \`gooseworks install --claude --mcp\`** (and restart Claude Code). There is
 no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reject your token.
+
+## Start from the brand context — don't re-ask what it already answers
+
+If the \`gooseworks\` router handed you brand context, USE IT. If you were invoked directly, call
+\`brand_get_context\` first (falling back to \`get_brand_kit\` for the selected brand). It already
+answers most of what the flows below would otherwise ask the user:
+
+- **Which product to feature** → \`products[]\`. Offer the real catalog entries; never guess a
+  product name and never ask the user to list their products.
+- **The vibe / tone of the copy** → the brand's **voice**. Use it; don't ask "what tone?".
+- **Who the ad is for** → the brand's **audience**. Don't ask "who's the target?".
+- **The angle, offer framing, and what to claim** → **positioning**, value props, proof points.
+- **Logo, colors, fonts** → owned by the backend research pass. **Never re-derive them.**
+- **Whether the facts are trustworthy yet** → **research status**. If it isn't complete, say so in
+  one line and continue; the batch queues and runs when research finishes.
+
+Ask only for what the context genuinely doesn't answer: the specific campaign intent (season,
+promo, which of several angles), the source ad, and anything the user must consent to.
 
 ## Identity & credits
 
@@ -512,9 +557,11 @@ When the user wants to make ads but has NOT named a specific template (id/slug/C
 ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
 short ask flow — it mirrors the web app and keeps the human in the loop:
 
-1. **Ask what kind of ads they want** — the angle/offer/theme/season, the vibe, and which
-   product from the brand kit to feature. This shapes both the source choice and your steering
-   \`prompt\`. Keep it to one or two quick questions.
+1. **Ask what kind of ads they want** — the angle/offer/theme/season. **The brand context already
+   gives you the vibe (voice), the audience, and the product catalog — do NOT ask for those.**
+   Offer the real \`products[]\` to pick from rather than asking "which product?", and derive the
+   tone from the brand's voice. This shapes both the source choice and your steering \`prompt\`.
+   Keep it to one quick question about campaign intent.
 2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
    - **Their own ads** → use \`list_user_ad_templates\` to load the active brand's own sources and
      let them choose from the results.
@@ -1134,5 +1181,148 @@ path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it
 - **Report blockers/bugs/confusing instructions via telemetry** (\`gooseworks log\` or the
   \`log_cli_event\` MCP tool) — not just to the user. Set \`GW_RUN_ID\` once so events group.
 - Always end a successful run with \`app_url\` + \`brand_url\`, verbatim.
+`;
+}
+
+/**
+ * Returns the goose-product-photos entry SKILL.md content.
+ *
+ * GOOSE-3190: this skill already existed on disk (`skills/goose-product-photos/
+ * SKILL.md`, hand-maintained) and was already served by the backend to hosted
+ * connectors — but it was NOT in `getEntrySkills()`, so `npm run generate:skills`
+ * never regenerated it and `install` / `update` / login-refresh never wrote or
+ * refreshed it on a user's machine. Moving the body here makes the registry the
+ * one source: one command emits all four entry skills.
+ */
+export function getGooseProductPhotosSkillContent(): string {
+  return `---
+name: goose-product-photos
+slug: goose-product-photos
+description: >
+  GooseWorks Product Photos — turn a brand's product images into publish-ready photography
+  (clean studio shots, lifestyle scenes, on-model looks) while keeping the product faithful
+  (silhouette, materials, logo, colorway). You pick a brand + product and submit; the GooseWorks
+  backend runs the SAME server-side pipeline the Product Photos studio uses (compose → generate →
+  judge → auto-retry) and bills credits. Use when the user says "make product photos", "shoot my
+  product", "studio/lifestyle/on-model photo of <product>", "generate product photography", or
+  references a product to photograph. Unlike goose-ads (ad creative) this produces clean PRODUCT
+  photos that can then feed the ad workflow.
+category: ads
+version: 0.2.0
+author: GooseWorks
+tags: [gooseworks, ads, product-photos, photoshoot, product, ecommerce, studio, lifestyle, on-model]
+---
+
+# GooseWorks Product Photos — branded product photography
+
+The GooseWorks Product Photos skill. You **pick a brand + product and submit one generation**;
+the **backend** runs the whole pipeline (compose the shot prompt → generate on \`gpt_image_2\` →
+judge for product fidelity → auto-retry a few times for free) and stores the results. You do NOT
+generate images, call a model, or manage files — this is the exact same workflow the Product
+Photos studio uses, so the skill and the app can never drift. The point is to **enrich a brand's
+usable product imagery** — approved photos join the brand kit and can then feed the ad workflow
+(\`goose-ads\`).
+
+## Prerequisite — the GooseWorks MCP server is REQUIRED
+
+Everything goes through the \`mcp__gooseworks__*\` tools. If they are not available, **stop and
+tell the user to run \`gooseworks install --claude --mcp\`** (and restart Claude Code). There is no
+HTTP/file fallback.
+
+## Start from the brand context — don't re-ask what it already answers
+
+If the \`gooseworks\` router handed you brand context, USE IT. If you were invoked directly, call
+\`brand_get_context\` yourself first. It answers most of the setup questions below, so **do not ask
+the user for them**:
+
+- **Which product?** — the context's \`products[]\` are the real catalog entries. Offer them; never
+  invent a product or ask the user to describe one you can already see.
+- **What does it look like / what is it made of?** — grounded in the product's stored images and
+  description. Never guess a material, colorway, or silhouette.
+- **What vibe / who is it for?** — the context's voice, positioning, and audience already say. Let
+  them shape the scene and styling instead of asking "what mood do you want?".
+- **Brand look** — logo, colors, and fonts are owned by the backend research pass. Read them, never
+  re-derive them.
+
+Ask only for the genuinely open choices: the shot \`category\`, how many photos, quality, and
+whether a human model is wanted (which needs explicit consent — see the rules).
+
+## Identity & credits
+
+- One agent-scoped token authenticates the tools; they resolve your org automatically. Never
+  print the token. (You may pass an optional \`target\` to operate on a specific agent/org, exactly
+  as the other GooseWorks tools; omit it to use your pinned scope.)
+- **Credits are handled by the backend.** \`generate_product_photos\` reserves the estimated cost up
+  front and bills only the photos that pass the judge — **automatic retries are free**, and a photo
+  the judge can't get right (\`flagged\`) is shown but **never billed**. Call
+  \`estimate_product_photos\` first to quote the cost; \`get_ad_credits\` shows the balance.
+
+## The tools
+
+**Pick the brand + product**
+- \`list_ad_brands\` — the user's ad brands (get a \`brand_id\`; also carries \`slug\`).
+- \`list_brand_products { brand_id, search?, page?, page_size? }\` — the brand's imported products.
+  Pick a \`product_id\` to shoot. \`search\` matches name / type / variant / SKU.
+- \`import_product { brand_id, kind, url, product_name? }\` — import a product if it isn't in the
+  catalog yet. \`kind\` is \`product_url\` (a single product page), \`shopify_store\` (a store URL →
+  imports the catalog), or \`image_url\` (a direct image; requires \`product_name\`). Returns an import
+  row with an \`id\`; if its \`status\` isn't \`complete\`, poll \`get_product_import\` until it is, then
+  \`list_brand_products\` to find the new product. (File uploads aren't available over MCP — use a URL.)
+- \`get_product_import { import_id }\` — poll an import until \`status\` is \`complete\` or \`failed\`.
+
+**Generate**
+- \`estimate_product_photos { count, quality? }\` — cost preview (per-photo + total credits). \`count\`
+  is 1, 2, 4, or 8; \`quality\` is \`low\` | \`medium\` | \`high\` (default \`medium\`). Reserves nothing.
+- \`generate_product_photos { brand_id, product_id, variant_id?, category, controls?, prompt?,
+  count?, quality?, reference_image_urls?, attestation_accepted? }\` — **the one call that makes
+  photos.** \`category\` is \`apparel\` | \`beauty\` | \`cpg\` (seeds sensible scene/framing defaults).
+  Omit \`controls\` to use the category preset; pass \`prompt\` as free-text steering **added on top of**
+  the settings (it doesn't replace them). Returns a generation with an \`id\` **immediately** — poll
+  \`get_product_photo_generation\` until done, then read each \`outputs[].final_image_url\`.
+  **If you request a human model** (\`controls.model.presence\` is not \`none\`) you MUST pass
+  \`attestation_accepted: true\` to confirm the user has the rights for model imagery.
+- \`get_product_photo_generation { generation_id }\` — poll until \`status\` is \`complete\`,
+  \`partial_failure\`, or \`failed\`. Each \`outputs[]\` entry has its own \`status\` and, once ready, a
+  \`final_image_url\`. A \`flagged\` output is the best attempt but wasn't billed.
+
+**Use the results**
+- \`list_product_photos { brand_id, archived? }\` — the brand's generated photos (\`archived: false\`
+  = active, \`true\` = archived).
+- \`approve_product_photo { output_id }\` — approve a photo: links it to the product and makes it
+  available in the **brand kit**, so \`goose-ads\` can use it. **Photos are not used anywhere until
+  approved.**
+- \`archive_product_photo { output_id, reason? }\` — archive a photo; archived photos are **excluded**
+  from ad generation.
+
+## Workflow — shoot a product
+
+1. **Load the brand context** (\`brand_get_context\`, or reuse what the router passed you) and
+   **resolve the brand + product.** \`list_ad_brands\` → \`brand_id\`. \`list_brand_products\` → pick a
+   \`product_id\` from the catalog you already know about. If the product genuinely isn't there,
+   \`import_product\` (poll \`get_product_import\`).
+2. **Quote the cost.** \`estimate_product_photos { count, quality }\` → tell the user credits.
+3. **Generate.** \`generate_product_photos { brand_id, product_id, category, count, quality, prompt? }\`.
+   Build \`prompt\` from the brand's voice/positioning you already have — don't interview the user for it.
+   Returns a generation \`id\` right away.
+4. **Poll.** \`get_product_photo_generation { generation_id }\` until terminal; hand back each
+   \`final_image_url\`.
+5. **Approve the keepers.** Show the results and let the user pick; \`approve_product_photo\` the ones
+   they'd publish (that's what puts them in the brand kit for ads), \`archive_product_photo\` the rest.
+
+## Rules
+
+- **Never invent product facts.** The backend grounds the shot on the product's real images; don't
+  describe a product you can't see.
+- **Use the brand context instead of interviewing the user.** Product, audience, voice, positioning,
+  logo/colors/fonts all come from \`brand_get_context\` / the brand kit. Ask only for the shot
+  category, count, quality, and model consent.
+- **Ask before spending.** Quote the estimate and confirm \`count\` / \`quality\` before
+  \`generate_product_photos\` — it reserves credits.
+- **Poll, don't re-submit.** A generation that's still \`running\` is not stuck; re-submitting
+  double-bills. Only a \`failed\` generation should be retried.
+- **Model imagery needs consent.** Only set a human model when the user asks, and pass
+  \`attestation_accepted: true\`.
+- **Approval is the hand-off to ads.** Remind the user that only **approved** photos reach the brand
+  kit / ad workflow; archived ones never do.
 `;
 }

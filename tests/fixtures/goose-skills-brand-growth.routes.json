@@ -1,0 +1,30 @@
+{
+  "$comment": "SNAPSHOT of the Brand Growth membership declared by the PUBLIC SKILLS repo. That repo derives its copy from this CLI's route table; this snapshot lets the CLI test catch drift in the other direction. If the drift test fails, update BOTH this snapshot AND the source file named below (then re-run `npm run build:index` there).",
+  "source_repo": "goose-skills",
+  "source_file": "collections/brand-growth/routes.json",
+  "derived_from": "gooseworks/src/skills/routes.ts",
+  "captured": "2026-08-31",
+  "brand_growth_skills": [
+    "ad-angle-miner",
+    "ad-to-landing-page-auditor",
+    "animate-image",
+    "audience-research",
+    "brand-research",
+    "comment-mining",
+    "competitor-ad-intelligence",
+    "competitor-social-research",
+    "content-repurposing",
+    "creator-profile-teardown",
+    "goose-graphics",
+    "influencer-prospecting",
+    "meta-ad-policy-checker",
+    "meta-ads-analyzer",
+    "outlier-post-finder",
+    "product-demand-research",
+    "product-photoshoot",
+    "remix-graphic-ad-from-reference",
+    "social-listening-brief",
+    "transcript-intelligence",
+    "trend-discovery"
+  ]
+}

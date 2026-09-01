@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { isManagedGooseworksSkill } from './names';
+import { isManagedGooseworksSkill, STAMP_FILE } from './names';
 import type { EntrySkill } from './master-skill';
 
 const SKILLS_BASE = path.join(os.homedir(), '.agents', 'skills');
@@ -38,13 +38,12 @@ export function installMasterSkill(masterSkillMd: string): void {
 }
 
 // ── Vendored entry-skill freshness ──────────────────────────────────────────
-// Entry skills (gooseworks, goose-ads) are vendored in the CLI and written to
+// Entry skills (gooseworks, goose-ads, goose-video, goose-product-photos) are
+// vendored in the CLI and written to
 // ~/.agents/skills/<name>/. We stamp each install with a content hash so we can
 // skip rewriting an unchanged skill ("already local → don't call") and rewrite
 // only when the vendored content changed ("updated → call again"). Recipe skills
 // are fetched live via `gooseworks fetch`, so they need no stamping.
-
-const STAMP_FILE = '.gooseworks-version';
 
 function entryContentHash(content: string): string {
   return crypto.createHash('sha256').update(content, 'utf-8').digest('hex').slice(0, 16);
@@ -125,6 +124,11 @@ export async function installStandaloneSkill(
       options.onProgress?.({ downloaded: completed, total: files.length });
     });
 
+    // Stamp the staged tree BEFORE it becomes the live dir, so a standalone
+    // skill is recognisably ours on the next install (GOOSE-3191). Without a
+    // stamp `removeAllSkills()` leaves it alone — safe, but it then goes stale
+    // until the user re-installs it.
+    fs.writeFileSync(path.join(stagingDir, STAMP_FILE), `standalone:${slug}`, 'utf-8');
     fs.rmSync(targetDir, { recursive: true, force: true });
     fs.renameSync(stagingDir, targetDir);
   } catch (error) {
@@ -177,19 +181,28 @@ export function getInstalledSkills(): string[] {
   if (!fs.existsSync(SKILLS_BASE)) return [];
 
   return fs.readdirSync(SKILLS_BASE)
-    .filter(isManagedGooseworksSkill)
+    .filter((entry) => isManagedGooseworksSkill(entry, SKILLS_BASE))
     .filter((entry) => {
       const skillMd = path.join(SKILLS_BASE, entry, 'SKILL.md');
       return fs.existsSync(skillMd);
     });
 }
 
+/**
+ * Delete every skill directory the CLI itself installed.
+ *
+ * GOOSE-3191: this used to delete ANY `goose-*` / `gooseworks-*` directory, so a
+ * user's own third-party skill (e.g. `goose-notes`) was destroyed on every
+ * install / update / login. It now deletes only known entry-skill slugs and
+ * directories carrying our `.gooseworks-version` stamp — see `names.ts`.
+ * An unstamped directory that isn't a known entry slug is NEVER removed.
+ */
 export function removeAllSkills(): void {
   if (!fs.existsSync(SKILLS_BASE)) return;
 
   const entries = fs.readdirSync(SKILLS_BASE);
   for (const entry of entries) {
-    if (!isManagedGooseworksSkill(entry)) continue;
+    if (!isManagedGooseworksSkill(entry, SKILLS_BASE)) continue;
     fs.rmSync(path.join(SKILLS_BASE, entry), { recursive: true, force: true });
   }
 }

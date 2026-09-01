@@ -41,11 +41,15 @@ describe('agents/claude', () => {
       expect(mockFs.symlinkSync).not.toHaveBeenCalled();
     });
 
+    // GOOSE-3191: "managed" = a known entry-skill slug, or a dir carrying our
+    // `.gooseworks-version` stamp. A same-prefix stranger is NOT linked.
     it('symlinks managed GooseWorks entries, skipping unrelated dirs', () => {
-      mockFs.existsSync.mockImplementation((p) => p === SKILLS_BASE);
+      mockFs.existsSync.mockImplementation(
+        (p) => p === SKILLS_BASE || p === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`,
+      );
       mockFs.readdirSync.mockImplementation((dir) => {
         if (dir === SKILLS_BASE) {
-          return ['gooseworks', 'gooseworks-reddit', 'goose-graphics', 'unrelated-dir'] as any;
+          return ['gooseworks', 'goose-ads', 'goose-graphics', 'goose-notours', 'unrelated-dir'] as any;
         }
         if (dir === CLAUDE_SKILLS) {
           return [] as any;
@@ -61,16 +65,19 @@ describe('agents/claude', () => {
       expect(symlinkCalls).toHaveLength(3);
       const targets = symlinkCalls.map((c) => c[1]);
       expect(targets).toContain(`${CLAUDE_SKILLS}/gooseworks`);
-      expect(targets).toContain(`${CLAUDE_SKILLS}/gooseworks-reddit`);
+      expect(targets).toContain(`${CLAUDE_SKILLS}/goose-ads`);
       expect(targets).toContain(`${CLAUDE_SKILLS}/goose-graphics`);
+      expect(targets).not.toContain(`${CLAUDE_SKILLS}/goose-notours`);
       expect(targets).not.toContain(`${CLAUDE_SKILLS}/unrelated-dir`);
     });
 
     it('cleans up pre-existing managed symlinks before re-linking', () => {
-      mockFs.existsSync.mockImplementation((p) => p === SKILLS_BASE);
+      mockFs.existsSync.mockImplementation(
+        (p) => p === SKILLS_BASE || p === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`,
+      );
       mockFs.readdirSync.mockImplementation((dir) => {
         if (dir === SKILLS_BASE) return ['gooseworks'] as any;
-        if (dir === CLAUDE_SKILLS) return ['gooseworks', 'gooseworks-old', 'goose-graphics', 'other-symlink'] as any;
+        if (dir === CLAUDE_SKILLS) return ['gooseworks', 'goose-ads', 'goose-graphics', 'goose-notours', 'other-symlink'] as any;
         return [] as any;
       });
       mockFs.lstatSync.mockReturnValue({ isSymbolicLink: () => true } as any);
@@ -78,8 +85,9 @@ describe('agents/claude', () => {
       configureClaude();
 
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/gooseworks`);
-      expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/gooseworks-old`);
+      expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-ads`);
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-graphics`);
+      expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-notours`);
       expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CLAUDE_SKILLS}/other-symlink`);
     });
   });
@@ -92,8 +100,10 @@ describe('agents/claude', () => {
     });
 
     it('unlinks only symlinked managed entries', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockReturnValue(['gooseworks', 'gooseworks-reddit', 'goose-graphics', 'other'] as any);
+      mockFs.existsSync.mockImplementation(
+        (p) => !String(p).endsWith('.gooseworks-version') || String(p).includes('/goose-graphics/'),
+      );
+      mockFs.readdirSync.mockReturnValue(['gooseworks', 'goose-ads', 'goose-graphics', 'goose-notours', 'other'] as any);
       mockFs.lstatSync.mockImplementation((p) => ({
         isSymbolicLink: () => String(p).includes('goose'),
       }) as any);
@@ -101,8 +111,9 @@ describe('agents/claude', () => {
       removeClaude();
 
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/gooseworks`);
-      expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/gooseworks-reddit`);
+      expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-ads`);
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-graphics`);
+      expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CLAUDE_SKILLS}/goose-notours`);
       expect(mockFs.unlinkSync).not.toHaveBeenCalledWith(`${CLAUDE_SKILLS}/other`);
     });
   });

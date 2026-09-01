@@ -1,4 +1,11 @@
-import { getMasterSkillContent, getGooseAdsSkillContent, getGooseVideoSkillContent, getEntrySkills } from '../../src/skills/master-skill';
+import {
+  getMasterSkillContent,
+  getGooseAdsSkillContent,
+  getGooseVideoSkillContent,
+  getGooseProductPhotosSkillContent,
+  getEntrySkills,
+  getEntrySkillNames,
+} from '../../src/skills/master-skill';
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -217,9 +224,58 @@ describe('skills/goose-ads entry skill', () => {
 });
 
 describe('skills/getEntrySkills', () => {
-  it('vendors gooseworks + goose-ads + goose-video (not ads-remix)', () => {
+  // GOOSE-3190: the registry is the ONE source — goose-product-photos used to be
+  // a hand-maintained SKILL.md on disk that this list never emitted or refreshed.
+  it('vendors all four entry skills (not ads-remix)', () => {
     const names = getEntrySkills().map(s => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-product-photos']);
+    expect(getEntrySkillNames()).toEqual(names);
+  });
+
+  it('every entry skill has non-empty content with matching frontmatter', () => {
+    for (const skill of getEntrySkills()) {
+      expect(skill.content.length).toBeGreaterThan(0);
+      expect(skill.content).toMatch(/^---\n/);
+      expect(skill.content).toContain(`slug: ${skill.name}`);
+    }
+  });
+});
+
+describe('skills/brand-aware router preamble (GOOSE-3193)', () => {
+  it('the router mandates brand_get_context BEFORE routing', () => {
+    const master = getMasterSkillContent();
+    expect(master).toContain('brand_get_context');
+    expect(master).toContain('Load the brand context FIRST');
+    // The five things the preamble must carry into the routed skill.
+    for (const field of ['voice', 'products', 'audience', 'positioning', 'research status']) {
+      expect(master.toLowerCase()).toContain(field);
+    }
+    expect(master).toContain('Never re-ask the user for something the brand context already answers');
+  });
+
+  it.each([
+    ['goose-ads', getGooseAdsSkillContent()],
+    ['goose-product-photos', getGooseProductPhotosSkillContent()],
+  ])('%s tells the agent to use the brand context instead of asking', (_name, skill) => {
+    expect(skill).toContain('brand_get_context');
+    expect(skill).toContain("don't re-ask what it already answers");
+  });
+});
+
+describe('skills/getGooseProductPhotosSkillContent', () => {
+  const photos = getGooseProductPhotosSkillContent();
+
+  it('is named/slugged goose-product-photos', () => {
+    expect(photos).toContain('name: goose-product-photos');
+    expect(photos).toContain('slug: goose-product-photos');
+  });
+
+  it('keeps the MCP-only product-photo contract', () => {
+    expect(photos).toContain('generate_product_photos');
+    expect(photos).toContain('estimate_product_photos');
+    expect(photos).toContain('get_product_photo_generation');
+    expect(photos).toContain('approve_product_photo');
+    expect(photos).toContain('attestation_accepted');
   });
 });
 
