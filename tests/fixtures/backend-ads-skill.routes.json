@@ -1,0 +1,27 @@
+{
+  "$comment": "SNAPSHOT of the routing declared by the BACKEND's hosted-connector pointer. This repo cannot edit that file, so the drift test asserts against this checked-in copy instead. If the drift test fails, update BOTH this snapshot AND the source file named below.",
+  "source_repo": "gooseworks-app",
+  "source_file": "backend/src/app-mcp-server/lib/ads-skill.ts",
+  "source_symbol": "getSkillsInstructionSection()",
+  "captured": "2026-08-31",
+  "entry_skills": ["goose-ads", "goose-video", "gooseworks"],
+  "brand_growth_skills": [
+    "ad-angle-miner",
+    "ad-to-landing-page-auditor",
+    "audience-research",
+    "brand-research",
+    "comment-mining",
+    "competitor-ad-intelligence",
+    "competitor-social-research",
+    "content-repurposing",
+    "creator-profile-teardown",
+    "goose-ads",
+    "goose-product-photos",
+    "influencer-prospecting",
+    "meta-ads-analyzer",
+    "outlier-post-finder",
+    "product-demand-research",
+    "transcript-intelligence",
+    "trend-discovery"
+  ]
+}
