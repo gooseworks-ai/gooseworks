@@ -11,7 +11,7 @@ description: >
   references a product to photograph. Unlike goose-ads (ad creative) this produces clean PRODUCT
   photos that can then feed the ad workflow.
 category: ads
-version: 0.1.0
+version: 0.2.0
 author: GooseWorks
 tags: [gooseworks, ads, product-photos, photoshoot, product, ecommerce, studio, lifestyle, on-model]
 ---
@@ -31,6 +31,24 @@ usable product imagery** — approved photos join the brand kit and can then fee
 Everything goes through the `mcp__gooseworks__*` tools. If they are not available, **stop and
 tell the user to run `gooseworks install --claude --mcp`** (and restart Claude Code). There is no
 HTTP/file fallback.
+
+## Start from the brand context — don't re-ask what it already answers
+
+If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
+`brand_get_context` yourself first. It answers most of the setup questions below, so **do not ask
+the user for them**:
+
+- **Which product?** — the context's `products[]` are the real catalog entries. Offer them; never
+  invent a product or ask the user to describe one you can already see.
+- **What does it look like / what is it made of?** — grounded in the product's stored images and
+  description. Never guess a material, colorway, or silhouette.
+- **What vibe / who is it for?** — the context's voice, positioning, and audience already say. Let
+  them shape the scene and styling instead of asking "what mood do you want?".
+- **Brand look** — logo, colors, and fonts are owned by the backend research pass. Read them, never
+  re-derive them.
+
+Ask only for the genuinely open choices: the shot `category`, how many photos, quality, and
+whether a human model is wanted (which needs explicit consent — see the rules).
 
 ## Identity & credits
 
@@ -81,10 +99,13 @@ HTTP/file fallback.
 
 ## Workflow — shoot a product
 
-1. **Resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
-   `product_id`. If the product isn't there, `import_product` (poll `get_product_import`).
+1. **Load the brand context** (`brand_get_context`, or reuse what the router passed you) and
+   **resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
+   `product_id` from the catalog you already know about. If the product genuinely isn't there,
+   `import_product` (poll `get_product_import`).
 2. **Quote the cost.** `estimate_product_photos { count, quality }` → tell the user credits.
 3. **Generate.** `generate_product_photos { brand_id, product_id, category, count, quality, prompt? }`.
+   Build `prompt` from the brand's voice/positioning you already have — don't interview the user for it.
    Returns a generation `id` right away.
 4. **Poll.** `get_product_photo_generation { generation_id }` until terminal; hand back each
    `final_image_url`.
@@ -95,6 +116,9 @@ HTTP/file fallback.
 
 - **Never invent product facts.** The backend grounds the shot on the product's real images; don't
   describe a product you can't see.
+- **Use the brand context instead of interviewing the user.** Product, audience, voice, positioning,
+  logo/colors/fonts all come from `brand_get_context` / the brand kit. Ask only for the shot
+  category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm `count` / `quality` before
   `generate_product_photos` — it reserves credits.
 - **Poll, don't re-submit.** A generation that's still `running` is not stuck; re-submitting
