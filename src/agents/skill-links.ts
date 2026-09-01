@@ -70,8 +70,13 @@ function removeLink(target: string): void {
   }
 }
 
-/** Drop every managed link under `targetDir` (leaving real directories alone). */
-export function removeManagedSkillLinks(targetDir: string): void {
+/**
+ * Drop every managed link under `targetDir` (leaving real directories alone).
+ *
+ * `skillsBase` is the skills dir the links point into — ownership is decided by
+ * what's on disk there, not by the link's name (GOOSE-3191).
+ */
+export function removeManagedSkillLinks(targetDir: string, skillsBase: string): void {
   if (!fs.existsSync(targetDir)) return;
   let entries: string[] = [];
   try {
@@ -80,7 +85,7 @@ export function removeManagedSkillLinks(targetDir: string): void {
     return;
   }
   for (const entry of entries) {
-    if (!isManagedGooseworksSkill(entry)) continue;
+    if (!isManagedGooseworksSkill(entry, skillsBase)) continue;
     const target = path.join(targetDir, entry);
     if (isLink(target)) removeLink(target);
   }
@@ -105,7 +110,9 @@ export function syncManagedSkillLinks(
 
   let sources: string[] = [];
   try {
-    sources = fs.readdirSync(skillsBase).filter(isManagedGooseworksSkill);
+    sources = fs.readdirSync(skillsBase).filter((entry) =>
+      isManagedGooseworksSkill(entry, skillsBase),
+    );
   } catch {
     return { linked: 0, failed: 0 };
   }
@@ -115,7 +122,7 @@ export function syncManagedSkillLinks(
   // (so a working junction a Windows user repaired by hand isn't destroyed).
   try {
     for (const entry of fs.readdirSync(targetDir)) {
-      if (!isManagedGooseworksSkill(entry)) continue;
+      if (!isManagedGooseworksSkill(entry, skillsBase)) continue;
       const target = path.join(targetDir, entry);
       const source = wanted.get(entry);
       if (source && resolvesTo(target, source)) continue;

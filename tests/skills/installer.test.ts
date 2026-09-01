@@ -60,27 +60,32 @@ describe('skills/installer', () => {
       expect(getInstalledSkills()).toEqual([]);
     });
 
-    it('returns only gooseworks- prefixed dirs with SKILL.md', () => {
+    // Ownership is decided by the entry-skill registry + the `.gooseworks-version`
+    // stamp, NOT by a name prefix (GOOSE-3191).
+    it('returns entry skills and stamped skills with SKILL.md, and nothing else', () => {
       mockFs.existsSync.mockImplementation((p) => {
         const pathStr = String(p);
         if (pathStr === SKILLS_BASE) return true;
-        if (pathStr.includes('gooseworks-twitter') && pathStr.includes('SKILL.md')) return true;
-        if (pathStr.includes('gooseworks-reddit') && pathStr.includes('SKILL.md')) return true;
-        if (pathStr.includes('other-skill') && pathStr.includes('SKILL.md')) return false;
+        // gooseworks: a known entry skill, has SKILL.md, no stamp needed.
+        if (pathStr === `${SKILLS_BASE}/gooseworks/SKILL.md`) return true;
+        // goose-graphics: not an entry skill, but stamped by `--with`.
+        if (pathStr === `${SKILLS_BASE}/goose-graphics/SKILL.md`) return true;
+        if (pathStr === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`) return true;
+        // goose-notours + other-skill: the user's own — unstamped.
+        if (pathStr === `${SKILLS_BASE}/goose-notours/SKILL.md`) return true;
+        if (pathStr === `${SKILLS_BASE}/other-skill/SKILL.md`) return true;
         return false;
       });
       mockFs.readdirSync.mockReturnValue([
-        'gooseworks-twitter-scraper',
-        'gooseworks-reddit-scraper',
+        'gooseworks',
+        'goose-graphics',
+        'goose-notours',
         'other-skill',
         'readme.md',
       ] as any);
 
       const result = getInstalledSkills();
-      expect(result).toEqual([
-        'gooseworks-twitter-scraper',
-        'gooseworks-reddit-scraper',
-      ]);
+      expect(result).toEqual(['gooseworks', 'goose-graphics']);
     });
   });
 
@@ -233,33 +238,47 @@ describe('skills/installer', () => {
   });
 
   describe('removeAllSkills', () => {
-    it('removes managed GooseWorks directories', () => {
-      mockFs.existsSync.mockReturnValue(true);
+    it('removes entry skills and stamped skills, and NEVER an unstamped stranger', () => {
+      // Only goose-graphics carries our stamp; goose-notours + gooseworks-mine
+      // are the user's own skills that merely share our naming (GOOSE-3191).
+      mockFs.existsSync.mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr === SKILLS_BASE) return true;
+        return pathStr === `${SKILLS_BASE}/goose-graphics/.gooseworks-version`;
+      });
       mockFs.readdirSync.mockReturnValue([
         'gooseworks',
-        'gooseworks-twitter-scraper',
+        'goose-ads',
+        'goose-video',
+        'goose-product-photos',
+        'ads-remix',
         'goose-graphics',
+        'goose-notours',
+        'gooseworks-mine',
         'other-skill',
       ] as any);
 
       removeAllSkills();
 
-      expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks`,
-        { recursive: true, force: true }
-      );
-      expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks-twitter-scraper`,
-        { recursive: true, force: true }
-      );
-      expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/goose-graphics`,
-        { recursive: true, force: true }
-      );
-      expect(mockFs.rmSync).not.toHaveBeenCalledWith(
-        `${SKILLS_BASE}/other-skill`,
-        expect.anything()
-      );
+      for (const removed of [
+        'gooseworks',
+        'goose-ads',
+        'goose-video',
+        'goose-product-photos',
+        'ads-remix',
+        'goose-graphics',
+      ]) {
+        expect(mockFs.rmSync).toHaveBeenCalledWith(
+          `${SKILLS_BASE}/${removed}`,
+          { recursive: true, force: true }
+        );
+      }
+      for (const kept of ['goose-notours', 'gooseworks-mine', 'other-skill']) {
+        expect(mockFs.rmSync).not.toHaveBeenCalledWith(
+          `${SKILLS_BASE}/${kept}`,
+          expect.anything()
+        );
+      }
     });
 
     it('does nothing when base dir does not exist', () => {
