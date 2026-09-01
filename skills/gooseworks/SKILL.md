@@ -76,9 +76,9 @@ the first available runtime:
 
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
 `mcp__gooseworks__*` tools are connected, use these equivalents:
-- `gooseworks search <q>` → the **`search_skills`** MCP tool.
-- `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (same content/scripts/files/deps).
-- `gooseworks credits` → the **`get_ad_credits`** MCP tool.
+- `gooseworks search <q>` → the **`catalog_search`** MCP tool (pass `type: "skill"`).
+- `gooseworks fetch <slug>` → the **`catalog_fetch`** MCP tool (`{ slug, type: "skill" }`; same content/scripts/files/deps).
+- `gooseworks credits` → the **`account_whoami`** MCP tool (read `credits.available_credits`).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -103,23 +103,23 @@ In these tools, a “brand” is the company, organization, or client the user w
 
 The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
 
-- `list_ad_brands` and `create_ad_brand` — select or create the company/brand.
-- `get_brand_onboarding { brand_id }` — load completed answers and `missing_fields` before asking anything.
-- `update_brand_onboarding { brand_id, ...answers }` — save each group of answers and the final first-task choice.
+- `brand_list` and `brand_create` — select or create the company/brand.
+- `brand_get_context { brand_id, sections: ["summary", "onboarding"] }` — load completed answers and `onboarding.missing_fields` before asking anything.
+- `brand_update { brand_id, patch: { onboarding: { ...answers } } }` — save each group of answers and the final first-task choice.
 
 If these tools are unavailable, tell the user that onboarding needs the GooseWorks MCP connection. Do not send them to another UI and do not fall back to a separate context record.
 
 ### Resume rules
 
-1. Run `list_ad_brands`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
-2. If there is no brand, ask for the company or brand website, research it, and use `create_ad_brand { name, website_url }`. If the domain matches an existing brand, reuse it.
-3. Call `get_brand_onboarding` and ask only the returned missing questions.
+1. Run `brand_list`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
+2. If there is no brand, ask for the company or brand website, research it, and use `brand_create { name, website_url }`. If the domain matches an existing brand, reuse it.
+3. Call `brand_get_context` (the `onboarding` section) and ask only the returned missing questions.
 4. Save after each small group so an interrupted interview can resume.
 5. If the record is complete, confirm the brand and continue; do not repeat the interview.
 
 ### Shared questions and answer values
 
-Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by `update_brand_onboarding`.
+Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by `brand_update`'s `patch.onboarding`.
 
 1. **What is your role?** Founder / Business Owner · C-Suite · VP / Director · Performance / Growth Marketing · Brand / Content Marketing · Creative / Design · Agency · Consultant / Freelancer · Other.
 2. **How much do you spend on paid ads right now?** `zero` · `under_10k` · `10k_30k` · `30k_100k` · `100k_plus`.
@@ -135,7 +135,7 @@ Do not add CLI-only questions about business type, products, or audience. Infer 
 Do useful setup work, not only form collection:
 
 1. Fetch `brand-research` and research the website, products/services, audiences, competitors, offers, and messaging evidence.
-2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with `import_product` and poll `get_product_import` rather than submitting duplicates.
+2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with `brand_update { brand_id, patch: { products: [{ import_kind, import_url, name? }] } }` and poll the returned job with `job_get { job_id, kind: "product_import" }` rather than submitting duplicates.
 3. When ads are relevant, offer to import existing creative. This is optional.
 4. Suggest evidence-backed messaging angles. Approval is optional and never blocks completion.
 5. Show the researched profile for confirmation: products/services, audience, competitors, imported ads, and suggested angles. Clearly label uncertainty.

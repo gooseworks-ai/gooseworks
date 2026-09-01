@@ -55,62 +55,62 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - One agent-scoped token authenticates the tools; they resolve your org automatically. Never
   print the token. (You may pass an optional `target` to operate on a specific agent/org, exactly
   as the other GooseWorks tools; omit it to use your pinned scope.)
-- **Credits are handled by the backend.** `generate_product_photos` reserves the estimated cost up
+- **Credits are handled by the backend.** `photos_generate` reserves the estimated cost up
   front and bills only the photos that pass the judge — **automatic retries are free**, and a photo
   the judge can't get right (`flagged`) is shown but **never billed**. Call
-  `estimate_product_photos` first to quote the cost; `get_ad_credits` shows the balance.
+  `photos_generate { dry_run: true }` first to quote the cost; `account_whoami` shows the balance.
 
 ## The tools
 
 **Pick the brand + product**
-- `list_ad_brands` — the user's ad brands (get a `brand_id`; also carries `slug`).
-- `list_brand_products { brand_id, search?, page?, page_size? }` — the brand's imported products.
+- `brand_list` — the user's ad brands (get a `brand_id`; also carries `slug`).
+- `brand_get_context { brand_id, search?, page?, page_size? }` — the brand's imported products.
   Pick a `product_id` to shoot. `search` matches name / type / variant / SKU.
 - `import_product { brand_id, kind, url, product_name? }` — import a product if it isn't in the
   catalog yet. `kind` is `product_url` (a single product page), `shopify_store` (a store URL →
   imports the catalog), or `image_url` (a direct image; requires `product_name`). Returns an import
   row with an `id`; if its `status` isn't `complete`, poll `get_product_import` until it is, then
-  `list_brand_products` to find the new product. (File uploads aren't available over MCP — use a URL.)
+  `brand_get_context` to find the new product. (File uploads aren't available over MCP — use a URL.)
 - `get_product_import { import_id }` — poll an import until `status` is `complete` or `failed`.
 
 **Generate**
-- `estimate_product_photos { count, quality? }` — cost preview (per-photo + total credits). `count`
+- `photos_generate { count, quality?, dry_run: true }` — cost preview (per-photo + total credits). `count`
   is 1, 2, 4, or 8; `quality` is `low` | `medium` | `high` (default `medium`). Reserves nothing.
-- `generate_product_photos { brand_id, product_id, variant_id?, category, controls?, prompt?,
+- `photos_generate { brand_id, product_id, variant_id?, category, controls?, prompt?,
   count?, quality?, reference_image_urls?, attestation_accepted? }` — **the one call that makes
   photos.** `category` is `apparel` | `beauty` | `cpg` (seeds sensible scene/framing defaults).
   Omit `controls` to use the category preset; pass `prompt` as free-text steering **added on top of**
   the settings (it doesn't replace them). Returns a generation with an `id` **immediately** — poll
-  `get_product_photo_generation` until done, then read each `outputs[].final_image_url`.
+  `photos_get` until done, then read each `outputs[].final_image_url`.
   **If you request a human model** (`controls.model.presence` is not `none`) you MUST pass
   `attestation_accepted: true` to confirm the user has the rights for model imagery.
-- `get_product_photo_generation { generation_id }` — poll until `status` is `complete`,
+- `photos_get { generation_id }` — poll until `status` is `complete`,
   `partial_failure`, or `failed`. Each `outputs[]` entry has its own `status` and, once ready, a
   `final_image_url`. A `flagged` output is the best attempt but wasn't billed.
 
 **Use the results**
-- `list_product_photos { brand_id, archived? }` — the brand's generated photos (`archived: false`
+- `photos_list { brand_id, archived? }` — the brand's generated photos (`archived: false`
   = active, `true` = archived).
-- `approve_product_photo { output_id }` — approve a photo: links it to the product and makes it
+- `photos_update { output_id }` — approve a photo: links it to the product and makes it
   available in the **brand kit**, so `goose-ads` can use it. **Photos are not used anywhere until
   approved.**
-- `archive_product_photo { output_id, reason? }` — archive a photo; archived photos are **excluded**
+- `photos_update { output_id, reason? }` — archive a photo; archived photos are **excluded**
   from ad generation.
 
 ## Workflow — shoot a product
 
 1. **Load the brand context** (`brand_get_context`, or reuse what the router passed you) and
-   **resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
+   **resolve the brand + product.** `brand_list` → `brand_id`. `brand_get_context` → pick a
    `product_id` from the catalog you already know about. If the product genuinely isn't there,
    `import_product` (poll `get_product_import`).
-2. **Quote the cost.** `estimate_product_photos { count, quality }` → tell the user credits.
-3. **Generate.** `generate_product_photos { brand_id, product_id, category, count, quality, prompt? }`.
+2. **Quote the cost.** `photos_generate { count, quality, dry_run: true }` → tell the user credits.
+3. **Generate.** `photos_generate { brand_id, product_id, category, count, quality, prompt? }`.
    Build `prompt` from the brand's voice/positioning you already have — don't interview the user for it.
    Returns a generation `id` right away.
-4. **Poll.** `get_product_photo_generation { generation_id }` until terminal; hand back each
+4. **Poll.** `photos_get { generation_id }` until terminal; hand back each
    `final_image_url`.
-5. **Approve the keepers.** Show the results and let the user pick; `approve_product_photo` the ones
-   they'd publish (that's what puts them in the brand kit for ads), `archive_product_photo` the rest.
+5. **Approve the keepers.** Show the results and let the user pick; `photos_update` the ones
+   they'd publish (that's what puts them in the brand kit for ads), `photos_update` the rest.
 
 ## Rules
 
@@ -120,7 +120,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
   logo/colors/fonts all come from `brand_get_context` / the brand kit. Ask only for the shot
   category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm `count` / `quality` before
-  `generate_product_photos` — it reserves credits.
+  `photos_generate` — it reserves credits.
 - **Poll, don't re-submit.** A generation that's still `running` is not stuck; re-submitting
   double-bills. Only a `failed` generation should be retried.
 - **Model imagery needs consent.** Only set a human model when the user asks, and pass

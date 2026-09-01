@@ -123,9 +123,9 @@ API base:   https://api.gooseworks.ai
 
 To switch accounts, run `gooseworks logout` then `gooseworks login`.
 
-> The GooseWorks MCP server exposes the same identity check as the `whoami` tool
-> (email + the exact agent/org the token is pinned to), separate from
-> `list_accessible_scopes`, which lists *every* workspace you can reach.
+> The GooseWorks MCP server exposes the same identity check via the `account_whoami`
+> tool (email + the exact agent/org the token is pinned to), whose `scopes[]` also
+> lists *every* workspace you can reach.
 
 ### `search`
 
@@ -256,15 +256,16 @@ Then in Claude Code: *"remix template `<id>` for `<your-site>`"*.
 
 **The GooseWorks MCP server is REQUIRED for ads.** The skill is a thin wrapper over the
 backend's single ad-generation workflow — the same one the GooseWorks ads app uses — reached
-through the `gooseworks` MCP tools (`get_brand_kit`, `submit_remix_batch`, `get_remix_batch`,
-`regenerate_creative`, …). The skill does NOT generate images, drive FAL, or manage renders
+through the `gooseworks` MCP tools (`brand_get_context`, `ads_generate`, `job_get`,
+`ads_creative_edit`, …). The skill does NOT generate images, drive FAL, or manage renders
 itself; the backend runs the pipeline and stores results. `install` registers the MCP server
 with `--mcp` (or `--all`) and verifies it's reachable; if it isn't, you'll see a warning — the
 ads flow will fail without MCP. Re-run `gooseworks install --claude --mcp` if needed.
 
-Generation is billed to your GooseWorks credits **server-side**: `submit_remix_batch` reserves
+Generation is billed to your GooseWorks credits **server-side**: `ads_generate` reserves
 the estimated cost up front and bills only the images that complete. There's no separate
-ad-credit balance. Use `estimate_remix_batch` (cost preview) and `gooseworks credits` (balance).
+ad-credit balance. Use `ads_generate` with `dry_run: true` (cost preview) and
+`gooseworks credits` (balance).
 
 ### Keeping skills up to date
 
