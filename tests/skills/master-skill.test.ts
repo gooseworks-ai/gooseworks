@@ -110,8 +110,8 @@ describe('skills/master-skill', () => {
 
   describe('common onboarding', () => {
     it('runs onboarding before the first task and resumes missing fields', () => {
-      expect(content).toContain('get_brand_onboarding');
-      expect(content).toContain('update_brand_onboarding');
+      expect(content).toContain('brand_get_context { brand_id, sections: ["summary", "onboarding"] }');
+      expect(content).toContain('patch: { onboarding');
       expect(content).toContain('missing_fields');
       expect(content).toContain('first-run gate for every GooseWorks task');
       expect(content).toMatch(/does not need to type[\s\S]*\/gooseworks onboard me/i);
@@ -145,9 +145,9 @@ describe('skills/goose-ads entry skill', () => {
   });
 
   it('generates via the single backend workflow (MCP batch tools), not a local pipeline', () => {
-    expect(ads).toContain('submit_remix_batch');
-    expect(ads).toContain('regenerate_creative');
-    expect(ads).toContain('get_remix_batch');
+    expect(ads).toContain('ads_generate');
+    expect(ads).toContain('ads_creative_edit');
+    expect(ads).toContain('job_get');
     // The old local-generation path must be gone (the skill no longer fetches a
     // local remix recipe or drives FAL itself). update_render_status / submit_render
     // are still NAMED — but only in a "do NOT call these" prohibition.
@@ -169,8 +169,9 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/Omit unspecified optional settings/i);
   });
 
-  it('recommends templates via surprise_me_templates instead of hand-picking the catalog', () => {
-    expect(ads).toContain('surprise_me_templates');
+  it('recommends templates via ads_template_search surprise mode instead of hand-picking the catalog', () => {
+    expect(ads).toContain('ads_template_search');
+    expect(ads).toContain('mode: "surprise"');
     expect(ads).toContain('create_url');
     // Explicitly tells the agent NOT to freelance a pick from the raw catalog.
     expect(ads).toMatch(/do NOT .*hand-pick|Don't hand-pick templates/i);
@@ -193,31 +194,32 @@ describe('skills/goose-ads entry skill', () => {
   });
 
   it('uses legally safer source paths from GOOSE-2979', () => {
-    expect(ads).toContain('list_user_ad_templates');
-    expect(ads).toContain('search_ad_templates');
-    expect(ads).toContain('remix_community_ad');
+    expect(ads).toContain('mode: "mine"');
+    expect(ads).toContain('mode: "query"');
+    expect(ads).toContain('source.community_ad_ids');
     expect(ads).toMatch(/ownership\/rights input/i);
     expect(ads).toMatch(/retired curated third-party catalog/i);
     expect(ads).toMatch(/Treat competitor ads as inspiration/i);
   });
 
   it('exposes plan mode (compose → review/approve → generate) for parity with the app', () => {
-    expect(ads).toMatch(/approval option exposed by `submit_remix_batch`/i);
-    expect(ads).toContain('list_ad_approvals');
-    expect(ads).toContain('revise_ad_plan');
-    expect(ads).toContain('approve_ad_plan');
+    expect(ads).toMatch(/`ads_generate` with `mode: "plan"`/i);
+    expect(ads).toContain('ads_approval_list');
+    expect(ads).toContain('decision: "revise"');
+    expect(ads).toContain('decision: "approve"');
     // It must be opt-in, not the default path.
     expect(ads).toMatch(/opt-in|only offer plan mode|only when the user asks/i);
   });
 
-  it('records the user’s reaction to a creative via set_creative_feedback', () => {
-    expect(ads).toContain('set_creative_feedback');
+  it('records the user’s reaction to a creative via ads_creative_update feedback', () => {
+    expect(ads).toContain('ads_creative_update');
+    expect(ads).toContain('patch.feedback');
   });
 
   it('reconciles brand facts back into the kit — ask first, then update', () => {
     expect(ads).toContain('Keep the brand kit in sync');
-    expect(ads).toContain('update_brand_kit');
-    expect(ads).toContain('upsert_brand_product');
+    expect(ads).toContain('patch.kit');
+    expect(ads).toContain('patch.products');
     // Must ask permission, not silently mutate the kit.
     expect(ads).toMatch(/ASK first|Ask first|ASK before writing|never silently mutate/i);
   });
@@ -270,12 +272,25 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
     expect(photos).toContain('slug: goose-product-photos');
   });
 
-  it('keeps the MCP-only product-photo contract', () => {
-    expect(photos).toContain('generate_product_photos');
-    expect(photos).toContain('estimate_product_photos');
-    expect(photos).toContain('get_product_photo_generation');
-    expect(photos).toContain('approve_product_photo');
+  it('keeps the MCP-only product-photo contract (new-catalog names)', () => {
+    expect(photos).toContain('photos_generate');
+    // The estimate is the same tool in dry-run form, not a separate one.
+    expect(photos).toContain('dry_run: true');
+    expect(photos).toContain('photos_get');
+    expect(photos).toContain('photos_update');
     expect(photos).toContain('attestation_accepted');
+  });
+
+  it('names no retired product-photo tool', () => {
+    for (const retired of [
+      'generate_product_photos',
+      'estimate_product_photos',
+      'get_product_photo_generation',
+      'list_product_photos',
+      'approve_product_photo',
+    ]) {
+      expect(photos).not.toContain(retired);
+    }
   });
 });
 
@@ -288,14 +303,15 @@ describe('skills/getGooseVideoSkillContent', () => {
   });
 
   it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
-    // Local render lifecycle + the free in-app review tool.
+    // Local render lifecycle (transitional old names until WS2-8) + the free
+    // in-app review mirror (video_project_update patch.script).
     expect(video).toContain('submit_render');
     expect(video).toContain('update_render_status');
-    expect(video).toContain('update_ad_project_script');
+    expect(video).toContain('video_project_update');
     expect(video).toContain('set_final_render');
-    // DB-driven: reads the template's recipe (get_ad_template → recipe.atoms /
+    // DB-driven: reads the template's recipe (catalog_fetch → recipe.atoms /
     // recipe.instructions) instead of mapping format → a hardcoded recipe slug.
-    expect(video).toContain('get_ad_template');
+    expect(video).toContain('catalog_fetch');
     expect(video).toContain('recipe.atoms');
     expect(video).not.toContain('remix-imessage-ad-from-sample');
     // Single review-once gate over the full ingredient set (script + visuals),

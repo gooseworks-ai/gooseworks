@@ -136,9 +136,9 @@ the first available runtime:
 
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
 \`mcp__gooseworks__*\` tools are connected, use these equivalents:
-- \`gooseworks search <q>\` → the **\`search_skills\`** MCP tool.
-- \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (same content/scripts/files/deps).
-- \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
+- \`gooseworks search <q>\` → the **\`catalog_search\`** MCP tool (pass \`type: "skill"\`).
+- \`gooseworks fetch <slug>\` → the **\`catalog_fetch\`** MCP tool (\`{ slug, type: "skill" }\`; same content/scripts/files/deps).
+- \`gooseworks credits\` → the **\`account_whoami\`** MCP tool (read \`credits.available_credits\`).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -163,23 +163,23 @@ In these tools, a “brand” is the company, organization, or client the user w
 
 The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
 
-- \`list_ad_brands\` and \`create_ad_brand\` — select or create the company/brand.
-- \`get_brand_onboarding { brand_id }\` — load completed answers and \`missing_fields\` before asking anything.
-- \`update_brand_onboarding { brand_id, ...answers }\` — save each group of answers and the final first-task choice.
+- \`brand_list\` and \`brand_create\` — select or create the company/brand.
+- \`brand_get_context { brand_id, sections: ["summary", "onboarding"] }\` — load completed answers and \`onboarding.missing_fields\` before asking anything.
+- \`brand_update { brand_id, patch: { onboarding: { ...answers } } }\` — save each group of answers and the final first-task choice.
 
 If these tools are unavailable, tell the user that onboarding needs the GooseWorks MCP connection. Do not send them to another UI and do not fall back to a separate context record.
 
 ### Resume rules
 
-1. Run \`list_ad_brands\`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
-2. If there is no brand, ask for the company or brand website, research it, and use \`create_ad_brand { name, website_url }\`. If the domain matches an existing brand, reuse it.
-3. Call \`get_brand_onboarding\` and ask only the returned missing questions.
+1. Run \`brand_list\`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
+2. If there is no brand, ask for the company or brand website, research it, and use \`brand_create { name, website_url }\`. If the domain matches an existing brand, reuse it.
+3. Call \`brand_get_context\` (the \`onboarding\` section) and ask only the returned missing questions.
 4. Save after each small group so an interrupted interview can resume.
 5. If the record is complete, confirm the brand and continue; do not repeat the interview.
 
 ### Shared questions and answer values
 
-Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by \`update_brand_onboarding\`.
+Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by \`brand_update\`'s \`patch.onboarding\`.
 
 1. **What is your role?** Founder / Business Owner · C-Suite · VP / Director · Performance / Growth Marketing · Brand / Content Marketing · Creative / Design · Agency · Consultant / Freelancer · Other.
 2. **How much do you spend on paid ads right now?** \`zero\` · \`under_10k\` · \`10k_30k\` · \`30k_100k\` · \`100k_plus\`.
@@ -195,7 +195,7 @@ Do not add CLI-only questions about business type, products, or audience. Infer 
 Do useful setup work, not only form collection:
 
 1. Fetch \`brand-research\` and research the website, products/services, audiences, competitors, offers, and messaging evidence.
-2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with \`import_product\` and poll \`get_product_import\` rather than submitting duplicates.
+2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with \`brand_update { brand_id, patch: { products: [{ import_kind, import_url, name? }] } }\` and poll the returned job with \`job_get { job_id, kind: "product_import" }\` rather than submitting duplicates.
 3. When ads are relevant, offer to import existing creative. This is optional.
 4. Suggest evidence-backed messaging angles. Approval is optional and never blocks completion.
 5. Show the researched profile for confirmation: products/services, audience, competitors, imported ads, and suggested angles. Clearly label uncertainty.
@@ -365,8 +365,8 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
  * formerly `ads-remix`).
  *
  * This is the ads domain skill and a THIN WRAPPER over the backend's single ad
- * generation workflow (adRemixBatchesService, exposed via the new
- * mcp__gooseworks__*_remix_batch / regenerate_creative tools — the SAME workflow
+ * generation workflow (adRemixBatchesService, exposed via the
+ * mcp__gooseworks__ads_generate / ads_creative_edit tools — the SAME workflow
  * the ads frontend uses). The skill no longer generates images, manages renders,
  * or uploads files itself; the backend reserves credits, runs the cloud pipeline,
  * and bills. The skill ALSO routes ad analytics/intelligence to recipe skills
@@ -435,12 +435,12 @@ promo, which of several angles), the source ad, and anything the user must conse
 ## Identity & credits
 
 - One agent-scoped token authenticates the \`gooseworks\` MCP tools. Never print it. The tools
-  resolve your org automatically — you do NOT resolve an "Ads agent" or pass \`target\` for the
-  generation tools.
-- **Credits are handled entirely by the backend.** \`submit_remix_batch\` reserves the estimated
+  resolve your org automatically — you do NOT resolve an "Ads agent"; the generation tools are
+  brand-scoped (\`brand_id\`), not agent-targeted.
+- **Credits are handled entirely by the backend.** \`ads_generate\` reserves the estimated
   cost up front (it errors with \`insufficient_credits\` if the wallet is short — relay the
   message and stop) and bills only the images that actually complete. Call
-  \`estimate_remix_batch\` first to tell the user the cost; \`gooseworks credits\` shows balance.
+  \`ads_generate\` with \`dry_run: true\` first to tell the user the cost; \`gooseworks credits\` shows balance.
 
 ## Live MCP contract — inspect it before asking
 
@@ -455,75 +455,84 @@ Before each tool call:
    change the result. Do not turn every optional field into a questionnaire.
 4. Omit unspecified optional settings so the backend applies its current app defaults.
 5. If the live schema conflicts with this workflow, follow the live schema and report the drift
-   with \`log_cli_event\`.
+   with \`gooseworks log\`.
 
 ## The generation tools (the new, single-workflow surface)
 
-- \`submit_remix_batch\` — **the one call that makes ads.** Inspect its live schema and supply
-  the required brand/source inputs plus any choices the user explicitly made.
-  Returns the batch with a \`links\` block (\`brand_url\` + per-creative \`app_url\`). If the brand's
+- \`ads_generate\` — **the one call that makes ads.** Inspect its live schema and supply
+  the required brand/source inputs (\`source.template_ids\` for templates; Community ads and own
+  creatives go in \`source.community_ad_ids\` / \`source.creative_ids\`) plus any choices the user
+  explicitly made.
+  Returns \`batch\` with a \`links\` block (\`brand_url\` + per-creative \`app_url\`). If the brand's
   research isn't finished yet the batch comes back \`status: "queued"\` — it auto-runs the moment
   research completes; tell the user it'll appear shortly, don't error.
-- \`estimate_remix_batch\` — cost preview. Reserves nothing. Use it to quote the cost first and
-  check whether every selected source resolved before submitting.
-- \`get_remix_batch\` — poll status. Returns each creative with its renders and
+- \`ads_generate\` with \`dry_run: true\` — cost preview (returns \`estimate\`). Reserves nothing. Use
+  it to quote the cost first and check whether every selected source resolved before submitting.
+- \`job_get { job_id: <batch id>, kind: "ads_batch" }\` — poll status. Its \`result\` is the batch:
+  each creative with its renders and
   \`completed\`/\`failed\`/\`pending\` counts, plus \`links\`. A creative is done when its \`pending\` is 0
   — NOT when \`current_render_url\` is set (during a regenerate that field still points at the prior
   image). Each render carries \`age_seconds\` (since queued) and \`elapsed_seconds\` (time generating):
   use them to tell a slow-but-healthy render from a stuck one. A render only failed when its
   \`status\` is \`"failed"\` — never assume a stall and re-submit, that double-bills.
-- \`list_brand_creatives\` — the brand's gallery feed (newest
+- \`ads_creative_list\` — the brand's gallery feed (newest
   first) + \`brand_url\`. Alternative poll target; also use to show everything made for a brand.
-- \`surprise_me_templates\` — the **"Surprise me" recommender**. Picks
+- \`ads_template_search\` with \`mode: "surprise"\` — the **"Surprise me" recommender**. Picks
   remixable Community creations (SAME logic as the web /create "Surprise me" button), shuffled
   so picks stay fresh. It does not use the retired curated third-party catalog.
-  Returns the picked templates (id, slug, title, image, ratio) AND a ready-to-open \`create_url\`
+  Returns the picked templates in \`items\` (id, slug, title, image, ratio) AND a ready-to-open \`create_url\`
   (the /create page with \`cli=true\` and the picks pre-selected). This is how you recommend
   templates — do NOT hand-pick from the raw catalog yourself (see "Picking templates" below).
-- \`regenerate_creative\` — edit or re-roll one existing creative through the same pipeline.
-  Inspect the live schema to select the supported mode and required source inputs. Returns a
-  single-item batch; poll it with \`get_remix_batch\`.
-- \`set_creative_feedback\` — record the user's reaction to a generated image. Use it whenever
+- \`ads_creative_edit\` with \`action: "regenerate"\` — edit or re-roll one existing creative
+  (\`creative_id\`) through the same pipeline.
+  Inspect the live schema to select the supported \`regenerate.mode\` and required source inputs.
+  Returns a single-item \`batch\`; poll it with \`job_get\`.
+- \`ads_creative_update\` — record the user's reaction to a generated image via
+  \`patch.feedback: { render_id, rating?, comment?, reasons? }\`. Use it whenever
   the user reacts; inspect the schema for the current rating and reason choices.
 
 ### Plan mode — review the plan BEFORE generating (optional)
 
 For users who want to approve each ad's plan before spending credits (the app's "Plan it" flow):
 
-- Use the approval option exposed by \`submit_remix_batch\` — it composes each creative's plan and PAUSES.
+- Use \`ads_generate\` with \`mode: "plan"\` — it composes each creative's plan and PAUSES.
   **No credits are reserved and no image renders** until you approve.
-- \`list_ad_approvals\` — poll this. While a creative is
+- \`ads_approval_list\` — poll this. While a creative is
   \`composing\`, wait; once \`awaiting_approval\`, show its \`plan\` (composed prompt + refs + quality)
   to the user.
-- \`revise_ad_plan\` — recompose from a chat steer, still
-  free. Poll \`list_ad_approvals\` until it's \`awaiting_approval\` again.
-- \`approve_ad_plan\` — approve one creative or the whole batch using the live schema.
+- \`ads_approval_decide\` with \`decision: "revise"\` (\`creative_id\` + \`revise.message\`) — recompose
+  from a chat steer, still
+  free. Poll \`ads_approval_list\` until it's \`awaiting_approval\` again.
+- \`ads_approval_decide\` with \`decision: "approve"\` — approve one creative (\`creative_id\`) or the
+  whole batch (\`batch_id\`) using the live schema.
   **This is the step that reserves credits and renders.** Then poll
-  \`get_remix_batch\` and hand back links as usual.
+  \`job_get\` and hand back links as usual.
 
 Only offer plan mode when the user asks to review/approve first — the default path generates
 immediately.
 
 ## Reading the brand & picking inputs (still MCP, read-only)
 
-- \`get_brand_kit\` — read the canonical brand context and available products/assets.
-- \`list_ad_brands\` / \`get_ad_brand\` — find and fetch the active brand.
-- \`list_user_ad_templates\` — list the org's own uploads and
-  imported ads. Prefer \`relationship: "self"\` when the user wants to reuse their own ads;
-  \`relationship: "competitor"\` is research/inspiration, never proof that the user owns the ad.
-- \`search_ad_templates\` — search remixable Community generations. The
+- \`brand_get_context { brand_id, sections: ["summary", "kit"] }\` — read the canonical brand
+  context (\`kit\`) and available products/assets.
+- \`brand_list\` / \`brand_get_context\` — find and fetch the active brand.
+- \`ads_template_search\` with \`mode: "mine"\` — list the org's own uploads and
+  imported ads. \`mode: "mine"\` is the user's own ads;
+  \`mode: "competitor"\` is research/inspiration, never proof that the user owns the ad.
+- \`ads_template_search\` with \`mode: "query"\` — search remixable Community generations. The
   retired curated third-party catalog is not returned.
-- \`get_static_ad_template\` — resolve a source already owned by
+- \`ads_template_get\` — resolve a source already owned by
   the org, including an own upload or a snapshotted Community creative. It does not resolve the
   retired curated third-party catalog.
-- \`remix_community_ad\` — turn a selected Community creative into a private remix source before
-  submitting it. A Community ad id is an \`ad_project\` id, not a
-  template id. Call this FIRST to snapshot it into a private template, then use the returned
-  template \`id\` in \`items\`.
-- \`create_user_ad_template\` — upload a source image as a private template. Answer any
+- Remixing a Community creative: a Community ad id is an \`ad_project\` id, not a
+  template id. Pass it in \`ads_generate\`'s \`source.community_ad_ids: [{ community_id }]\` — the
+  backend snapshots it into a private template at submit time (no separate snapshot call).
+- \`ads_template_create\` — upload a source image as a private template
+  (\`source: { type: "workspace", path }\`). Answer any
   ownership/rights input only from the user's explicit confirmation. Never claim rights for a
   competitor ad or an image found online.
-- \`get_ad_project\` / \`append_project_message\` — inspect a creative / leave a note on its thread.
+- \`ads_creative_get\` / \`video_project_update\` (\`patch.message\`) — inspect a creative / leave a
+  note on its project thread.
 
 ## Keep the brand kit in sync — reconcile, then update (ASK first)
 
@@ -533,7 +542,7 @@ tagline, audience, voice, a product's name/price/description, "our logo is X", "
 anymore", a new product photo — treat it as a possible kit update, don't just use it for this one
 ad and forget it:
 
-1. **Check it against the kit.** Call \`get_brand_kit\` for the active brand and see whether what the user said
+1. **Check it against the kit.** Call \`brand_get_context\` (the \`kit\` section) for the active brand and see whether what the user said
    matches, is missing from, or contradicts the kit.
 2. **If it's already in the kit and matches** — nothing to do; proceed.
 3. **If it's new or different — ASK before writing.** Confirm in one line: *"Want me to update
@@ -541,12 +550,13 @@ ad and forget it:
    asked you to change the brand). Don't silently mutate the kit, and don't nag on trivia.
 4. **Persist with the write tools** (partial — only the fields you pass are touched; each edit is
    recorded as a user override that later re-research won't clobber):
-   - \`update_brand_kit\` — structured brand fields.
-   - \`upsert_brand_product\` / \`delete_brand_product\` — products.
-   - \`add_brand_product_image\` / \`remove_brand_reference_image\` — product and reference photos.
+   - \`brand_update\` with \`patch.kit\` — structured brand fields.
+   - \`brand_update\` with \`patch.products\` — products (set \`delete: true\` on an entry to remove it).
+   - \`media_upload\` / \`media_update\` — product and reference photos (upload with
+     \`scope: "product" | "brand"\`, \`kind: "reference"\`; remove/unlink via \`media_update\`).
    Inspect each live schema and send only the fields needed for the confirmed change.
 5. **Confirm what changed** and continue the task. (Logo, colors, and fonts are owned by the
-   backend research pass — prefer \`update_ad_brand\` / the research flow for those, not free text.)
+   backend research pass — prefer \`brand_update\` with \`patch.brand\` / the research flow for those, not free text.)
 
 This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
 able to flow back into the kit — with their ok — instead of being lost.
@@ -563,18 +573,18 @@ short ask flow — it mirrors the web app and keeps the human in the loop:
    tone from the brand's voice. This shapes both the source choice and your steering \`prompt\`.
    Keep it to one quick question about campaign intent.
 2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
-   - **Their own ads** → use \`list_user_ad_templates\` to load the active brand's own sources and
-     let them choose from the results.
-   - **Community** → \`search_ad_templates\`, let them choose, then call \`remix_community_ad\`
-     before submitting.
-   - **Upload** → upload through the workspace and call \`create_user_ad_template\`. If its live
+   - **Their own ads** → use \`ads_template_search\` with \`mode: "mine"\` to load the active brand's
+     own sources and let them choose from the results.
+   - **Community** → \`ads_template_search\` with \`mode: "query"\`, let them choose, then pass the
+     chosen ids in \`ads_generate\`'s \`source.community_ad_ids\` when submitting.
+   - **Upload** → upload through the workspace and call \`ads_template_create\`. If its live
      schema requires an ownership or permission answer, only supply it after explicit confirmation.
-   - **Surprise me** (they want you/the app to pick) → call \`surprise_me_templates\` for the active
-     brand and hand the user the returned \`create_url\`.
+   - **Surprise me** (they want you/the app to pick) → call \`ads_template_search\` with
+     \`mode: "surprise"\` for the active brand and hand the user the returned \`create_url\`.
      It opens /create in **CLI mode** with the picks pre-selected, a preview modal, and the
      **copyable remix prompt at the bottom** (in place of the Generate input). They can swap
      picks and copy that prompt. If they'd rather you "just make them" without reviewing in the
-     app, you MAY submit the \`surprise_me_templates\` picks directly (skip to submit).
+     app, you MAY submit the surprise-mode picks directly (skip to submit).
    - **Browse in the app** → hand the user this URL, with the
      active brand's slug filled in:
      \`https://make.gooseworks.ai/create?brand=<brand-slug>&cli=true\`
@@ -582,7 +592,7 @@ short ask flow — it mirrors the web app and keeps the human in the loop:
      back to the UI composer). They browse the available own/Community sources and copy the prompt.
 3. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
    (it names the brand + the templates they chose), THAT is your cue to generate: resolve the
-   named source(s), inspect \`submit_remix_batch\`, and collect only its unresolved required inputs.
+   named source(s), inspect \`ads_generate\`, and collect only its unresolved required inputs.
 
 If the user already named an owned source (id/slug), a Community ad, or an upload, skip the source
 choice. Competitor ads may inform the angle or structure, but describe them as inspiration, never
@@ -590,25 +600,25 @@ claim ownership, and never attest rights for the user.
 
 ## Workflow — make ads from a template
 
-1. **Resolve the brand.** Use \`list_ad_brands\` by name/site, then call \`get_brand_kit\` for the
-   selected brand. If the
+1. **Resolve the brand.** Use \`brand_list\` by name/site, then call
+   \`brand_get_context { brand_id, sections: ["summary", "kit"] }\` for the selected brand. If the
    kit's \`researchStatus\` isn't \`complete\`, you can still submit (the batch queues and runs when
    research finishes) — just tell the user. Use the kit to pick \`product_name\` (a real entry from
    \`products[]\`, not a guess) and, if the user supplied product photos, \`reference_image_urls\`.
 2. **Pick the source ad(s) via the ask flow above.** Once you have concrete ids:
-   call \`get_static_ad_template\` for each.
-   For a Community ad, \`remix_community_ad\` first; for an uploaded image, \`create_user_ad_template\`
-   first.
+   call \`ads_template_get\` for each.
+   A Community ad goes straight into \`source.community_ad_ids\`; for an uploaded image,
+   \`ads_template_create\` first.
 3. **(Optional) Craft the steering prompt.** The \`prompt\` is OPTIONAL — this is where the skill
    adds value: turn the user's intent (from step 1) into a concise steering note (e.g. tone,
    season, emphasis). Don't over-specify; the backend pipeline + brand kit handle palette, fonts,
    product swap.
-4. **Quote the cost.** Inspect and call \`estimate_remix_batch\`, then tell the user.
-5. **Submit ONE batch.** Inspect the current \`submit_remix_batch\` schema, fill known required
+4. **Quote the cost.** Inspect and call \`ads_generate\` with \`dry_run: true\`, then tell the user.
+5. **Submit ONE batch.** Inspect the current \`ads_generate\` schema, fill known required
    inputs, ask only for unresolved user decisions, and omit unspecified optional settings. Keep
-   the returned \`batch_id\` and \`links\`.
-6. **Poll until done.** Call \`get_remix_batch\` for the returned batch (or use
-   \`list_brand_creatives\`) every ~20-30s
+   the returned batch's id and \`links\`.
+6. **Poll until done.** Call \`job_get { job_id: <batch id>, kind: "ads_batch" }\` (or use
+   \`ads_creative_list\`) every ~20-30s
    until every creative's \`pending\` is 0. Most images finish in a few minutes; text-heavy templates
    and \`quality: high\` take longer. Read each render's \`elapsed_seconds\` rather than guessing — a
    render that's still \`running\` is healthy; do NOT re-submit thinking it stalled (that double-bills).
@@ -617,19 +627,20 @@ claim ownership, and never attest rights for the user.
 
 ## Workflow — edit an existing ad
 
-User wants to tweak a creative they already made → use \`regenerate_creative\`. Infer whether they
+User wants to tweak a creative they already made → use \`ads_creative_edit\` with
+\`action: "regenerate"\`. Infer whether they
 want another take, a targeted edit, or an exact instructed change from their request. Then inspect
 the live schema, ask only for any required source or instruction that is still missing, submit,
-poll with \`get_remix_batch\`, and hand back the links.
+poll with \`job_get\`, and hand back the links.
 
 ## Brand research
 
-Prefer the backend's result: call \`get_brand_kit\` for the selected brand. If \`researchStatus\` is
-\`complete\`, REUSE it — never re-research.
+Prefer the backend's result: call \`brand_get_context\` (the \`kit\` section) for the selected brand.
+If \`researchStatus\` is \`complete\`, REUSE it — never re-research.
 
 **The split — backend owns visuals, you own the qualitative depth:**
 
-- **Backend LIGHT pass (automatic).** \`create_ad_brand\` with a \`website_url\` kicks off the same
+- **Backend LIGHT pass (automatic).** \`brand_create\` with a \`website_url\` kicks off the same
   backend research the web app uses, in \`mode: "light"\`: it resolves the **authoritative logo,
   colors, and fonts** (Brandfetch + context.dev) plus a baseline kit, then flips
   \`research_status\` to \`complete\` — usually under a minute. You can't reproduce those visual
@@ -641,16 +652,17 @@ Prefer the backend's result: call \`get_brand_kit\` for the selected brand. If \
 
 **CLI brand-research flow:**
 
-1. Inspect and call \`create_ad_brand\` with the known brand identity and website, then keep its id
+1. Inspect and call \`brand_create\` with the known brand identity and website, then keep its id
    and slug. The brand comes back with
    \`research_status: "pending"\` (light pass in flight).
-2. **Wait for the backend light pass:** poll \`get_brand_kit\` for that brand until \`researchStatus\`
+2. **Wait for the backend light pass:** poll \`brand_get_context\` (the \`kit\` section) for that
+   brand until \`researchStatus\`
    is \`complete\` (usually <60s). Now the kit has authoritative logo/colors/fonts + a baseline.
    At this point generation is already unblocked — but do the deep pass to make it good.
 3. **Deep research locally:** \`gooseworks fetch brand-research\` and follow its phases. **Ground
    every fact on the fetched site** — if the site can't be read, say so and ask the user; never
    guess a category from the brand name alone.
-4. **Write the pack** with \`write_file\` under \`agent-config/brands/<slug>/\`:
+4. **Write the pack** with \`file_write\` under \`agent-config/brands/<slug>/\`:
    - the \`brand-research/*.md\` docs + \`brand-assets/manifest.json\` (human-readable pack), AND
    - \`brand-research/kit-patch.json\` — the STRUCTURED fields the web UI renders. Field-for-field
      contract; only what you put here reaches the kit. Shape:
@@ -658,11 +670,12 @@ Prefer the backend's result: call \`get_brand_kit\` for the selected brand. If \
      (\`brandType\` ∈ product | saas | service | agency | restaurant | fashion | beauty | fitness |
      finance | education | health). Only URLs already in our storage for product images.
    - **Do NOT set logo / colors / fonts here** — the backend light pass already owns those.
-5. **Persist it:** call \`finalize_brand_research\` for the brand. It merges \`kit-patch.json\` into the kit
+5. **Persist it:** call \`brand_update { brand_id, patch: { finalize_research: true } }\` for the
+   brand. It merges \`kit-patch.json\` into the kit
    NON-CLOBBERINGLY (it will NOT overwrite the backend's visuals or any user edit), then re-confirms
    \`research_status: complete\`.
-6. **Verify:** call \`get_brand_kit\` again and confirm the qualitative fields you wrote are present
-   before generating.
+6. **Verify:** call \`brand_get_context\` again and confirm the qualitative fields you wrote are
+   present before generating.
 
 **If the brand has NO website**, the backend light pass can't run (nothing to fetch) — do the whole
 thing locally (steps 3–6) and finalize; an un-finalized brand has no kit for generation and leaves
@@ -694,36 +707,39 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
 
 - **MCP required** — if \`mcp__gooseworks__*\` is unavailable, stop and tell the user to run
   \`gooseworks install --claude --mcp\`.
-- **One backend workflow** — generation is \`submit_remix_batch\` / \`regenerate_creative\` ONLY.
+- **One backend workflow** — generation is \`ads_generate\` / \`ads_creative_edit\` ONLY.
   Do NOT call FAL, the media proxy, \`submit_render\`, \`update_render_status\`, or upload render
   files yourself; do NOT \`gooseworks fetch\` a local remix recipe to generate. The backend owns it.
 - **Always end a successful run with the links** from the batch's \`links\` block (\`brand_url\` +
   each creative's \`app_url\`), copied verbatim. Never end on just "done" or a file path.
-- **Quote cost before generating** when it's non-trivial (use \`estimate_remix_batch\`), and
+- **Quote cost before generating** when it's non-trivial (use \`ads_generate\` with
+  \`dry_run: true\`), and
   relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
 - **Use approved source paths.** If the user didn't name a source, run the ask flow (own ads,
   Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
-  \`surprise_me_templates\`; browsing uses \`/create?brand=<slug>&cli=true\`. Never use the retired
+  \`ads_template_search\` (\`mode: "surprise"\`); browsing uses \`/create?brand=<slug>&cli=true\`.
+  Never use the retired
   curated third-party catalog.
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
   directly if they'd rather not review).
 - **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
   copy a competitor's distinctive expression.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
-  mid-task, check it against \`get_brand_kit\` and, with their ok, persist it via \`update_brand_kit\`
-  / \`upsert_brand_product\` / \`add_brand_product_image\` so it sticks for future ads. Ask first;
+  mid-task, check it against \`brand_get_context\` and, with their ok, persist it via \`brand_update\`
+  (\`patch.kit\` / \`patch.products\`) / \`media_upload\` so it sticks for future ads. Ask first;
   never silently mutate the kit.
 - **Record feedback** — when the user reacts to a generated image, inspect and call
-  \`set_creative_feedback\` so the quality loop learns.
-- **Plan mode is opt-in** — only use the live approval option, then \`list_ad_approvals\` and
-  \`approve_ad_plan\`, when the user wants to review before spending credits; otherwise generate
+  \`ads_creative_update\` (\`patch.feedback\`) so the quality loop learns.
+- **Plan mode is opt-in** — only use \`mode: "plan"\`, then \`ads_approval_list\` and
+  \`ads_approval_decide\`, when the user wants to review before spending credits; otherwise generate
   immediately.
-- **Don't busy-loop** — poll \`get_remix_batch\` on a sensible interval (~20-30s); a \`queued\`
+- **Don't busy-loop** — poll \`job_get\` on a sensible interval (~20-30s); a \`queued\`
   batch is waiting on research and will start on its own.
 - **Report problems so we can fix them** — when a batch fails/is rejected and you can't resolve it,
   a required brand input/asset is missing, or a recipe/instruction is ambiguous or contradictory,
-  call the **\`log_cli_event\`** MCP tool (\`event_type\`: \`error\`/\`blocker\`/\`missing_input\`/\`confusion\`,
-  with the real error + step in \`details\`) so the team gets visibility. Still tell the user too.
+  run \`gooseworks log\` (\`--event-type error|blocker|missing_input|confusion\`, with the real error
+  + step in \`--details\`) so the team gets visibility. Still tell the user too. Without a CLI
+  (cowork / hosted chat) there is no logging channel — just tell the user.
 `;
 }
 
@@ -782,9 +798,10 @@ You may be running WITHOUT the \`gooseworks\` CLI binary (e.g. Anthropic cowork)
 \`mcp__gooseworks__*\` tools work over the MCP connection regardless, so wherever this skill
 says to shell out, use the MCP equivalent:
 
-- \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (returns the same content/scripts/
-  files/dependencySkills). \`gooseworks search <q>\` → **\`search_skills\`**.
-- \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
+- \`gooseworks fetch <slug>\` → the **\`catalog_fetch\`** MCP tool (\`{ slug, type: "skill" }\`; returns
+  the same content/scripts/
+  files/dependencySkills). \`gooseworks search <q>\` → **\`catalog_search\`** (\`type: "skill"\`).
+- \`gooseworks credits\` → the **\`account_whoami\`** MCP tool (read \`credits.available_credits\`).
 - \`gooseworks doctor\` → do the manual toolchain check in the preflight below.
 
 ## Report problems so we can fix them (telemetry — do this, don't skip it)
@@ -798,7 +815,9 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   \`export GW_RUN_ID="vid-<project_or_batch_id>"\` (and \`export GW_SKILL="<recipe-slug>"\`) in the
   shell you render from. The media proxies read \`GW_RUN_ID\` automatically.
 - **CLI present →** \`gooseworks log "<what happened>" --event-type <type> --level error --details '{"error":"...","step":"...","model":"..."}'\`
-- **No CLI (cowork / headless) →** the **\`log_cli_event\`** MCP tool with the same fields (pass \`run_id\`).
+- **No CLI (cowork / headless) →** no logging channel exists on the hosted surfaces; report the
+  problem to the user instead. (\`log_cli_event\` is an INTERNAL-server tool — it is not in the
+  customer MCP catalog and never was, so calling it from a CLI/hosted session fails: GOOSE-3185.)
 - \`--event-type\`: \`api_failure\` (a proxy/model call failed) · \`missing_input\` · \`blocker\` ·
   \`confusion\` (unclear/contradictory instruction) · \`error\` (a bug) · \`step\`/\`info\` (progress notes).
 - Put the **real error text + the step you were on** in \`--details\`. Paid FAL/ElevenLabs calls
@@ -841,31 +860,36 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
 - **CRITICAL — target the org-default Ads agent on EVERY file op.** The app serves project files
   (the render-file route) from the org's DEFAULT agent, but MCP file writes default to your
   token's pinned agent — which can be a DIFFERENT agent, so a render written with the default
-  scope is **invisible in the app**. First resolve the Ads agent: \`list_accessible_scopes\` → the
+  scope is **invisible in the app**. First resolve the Ads agent: \`account_whoami\` → in its
+  \`scopes[]\`, the
   scope with \`is_org_default: true\` (the ORG default — NOT the \`is_default\` / \`default_agent_id\`
   fields, which are the *user's* default agent and are often a DIFFERENT agent). Its \`agent_id\` is
   \`ADS_AGENT\` (name "Ads agent", slug \`org-default\`; usually also the \`agent_id\` in
-  credentials.json). Then pass \`target: { type: "agent", agent_id: ADS_AGENT }\` on EVERY
-  \`get_upload_url\` / \`get_download_url\` / \`write_file\` / \`list_directory\` / \`read_file\` — NEVER
-  omit \`target\`.
+  credentials.json). Then pass \`scope: { type: "agent", agent_id: ADS_AGENT }\` on EVERY
+  \`file_url\` / \`file_write\` / \`file_list\` / \`file_read\` — NEVER
+  omit \`scope\`.
 - **CRITICAL — publish under the PROJECT FOLDER, not the workspace root (the #1 "video renders but
-  is invisible" bug).** \`get_upload_url\` stores at \`<ADS_AGENT>/files/<path>\` verbatim, but the
+  is invisible" bug).** \`file_url { mode: "upload" }\` stores at \`<ADS_AGENT>/files/<path>\`
+  verbatim, but the
   render-file route reads from
   \`<ADS_AGENT>/files/agent-config/brands/<brand_slug>/projects/<project_id>/<path>\`
   (see backend \`resolveProjectFileKey\`). So EVERY publish/preview \`path\` MUST be prefixed with
   \`agent-config/brands/<brand_slug>/projects/<project_id>/\` — e.g. upload to
   \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\`, NEVER bare
   \`working/final.mp4\`. A bare path 404s in the app even though the render row AND a bare-path
-  \`get_download_url\` both "succeed" (they resolve the wrong key). The render \`output_url\` still
+  \`file_url { mode: "download" }\` both "succeed" (they resolve the wrong key). The render
+  \`output_url\` still
   stays the project-relative \`...render-file?path=working/final.mp4\` — the route re-prepends the
-  prefix itself. Always verify with \`get_download_url\` on the FULL \`agent-config/...\` path (must
+  prefix itself. Always verify with \`file_url { mode: "download" }\` on the FULL
+  \`agent-config/...\` path (its \`url\` must
   be non-empty; curl it for HTTP 200) BEFORE marking the render complete.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   to the agent per call as you generate (Step 4). \`submit_render { kind: "full" }\` additionally
   debits **1 nominal ad credit when the render ROW is opened** (a bookkeeping fee, NOT the render's
   true cost) — so open it only once you actually have a rendered master (Step 4.1/4.2), and never
   re-submit on a guess (that double-bills). The final-video QC gate (Step 4.3) then sits between
-  that master and PINNING it. Call \`get_ad_credits\` first; the user can check \`gooseworks credits\`.
+  that master and PINNING it. Call \`account_whoami\` first (read \`credits.available_credits\`); the
+  user can check \`gooseworks credits\`.
 
 ## Step 0 — project id, or video BATCH id? (fan out before anything else)
 
@@ -874,17 +898,19 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
 (the user picked a concept count, default 3), and the app expects EACH to be rendered. **Handle both:**
 
 - **\`project <id>\`** → you have one project. Treat it as a batch of one and continue to Step 1.
-- **\`video batch <id>\`** → call \`get_ad_video_batch { video_batch_id }\`. It returns every child
-  concept under \`projects[]\` — each is a normal project with its own \`id\`, \`variant_index\`
+- **\`video batch <id>\`** → call \`video_project_list { batch_id }\`. It returns the \`batch\` with
+  every child
+  concept under \`batch.projects[]\` — each is a normal project with its own \`id\`, \`variant_index\`
   (Concept 1..N), and its own \`creative_brief\` (the per-concept angle/hook/offer/message). **You
   MUST process every concept, not just the first** — dropping concepts 2..N is the #1 batch bug.
 
 **Loop shape (one agent, sequential, ONE approval for the whole batch):**
 1. Run **Step 1 + Step 1.5 + Step 2 + Step 3-assemble** for EACH concept project (each has its own
    \`project_id\`, brief, and \`working/\` folder — never cross-write between concepts).
-2. Mirror EVERY concept's review set (Step 3's \`update_ad_project_script\` per project), then stop
+2. Mirror EVERY concept's review set (Step 3's \`video_project_update\` per project), then stop
    for **ONE** approval that covers all concepts — show the per-concept credit estimate and the
-   batch total. Set the batch to \`review\` (\`update_ad_video_batch { status: "review" }\`).
+   batch total. Set the batch to \`review\`
+   (\`video_project_update { batch_id, patch: { batch: { status: "review" } } }\`).
 3. On approval, set the batch to \`rendering\` and run **Step 4 (the expensive render)** for each
    concept **sequentially** (finish Concept 1's master before starting Concept 2 — one machine can't
    render them in parallel). Deliver each (Step 5). When all concepts are pinned, set the batch to
@@ -896,10 +922,12 @@ written per-project; a batch just runs it N times with the shared approval gate 
 
 ## Step 1 — resolve the project, source, brand
 
-1. \`get_ad_project { project_id }\` → keep \`brand_id\`, \`source_sample_id\`, \`name\`, \`status\`, the
+1. \`video_project_get { project_id, include: ["assets"] }\` → keep the \`project\` row's
+   \`brand_id\`, \`source_sample_id\`, \`name\`, \`status\`, the
    **top-level** \`app_url\` + \`brand_url\` (returned alongside \`project\`, NOT inside it — the links
    you hand the user for the in-app review in Step 3 and delivery in Step 5), AND the user's
-   **\`creative_brief\`**, project **\`assets\`**, \`character_id\`, \`default_voice_id\` — these are the
+   **\`project.creative_brief\`**, the returned **\`assets\`**, \`project.character_id\`,
+   \`project.default_voice_id\` — these are the
    authoritative inputs the user chose in the composer (see Step 1.5). Do NOT discard them.
 
 ### Step 1.5 — the project brief is AUTHORITATIVE (honor it; don't re-ask)
@@ -924,16 +952,19 @@ for a field the brief leaves empty. Map the fields you WILL honor:
   aspect), keep the format's native value and note the constraint in the review rather than silently
   ignoring the request.
 - \`polish_policy\` (\`standard\` | \`extra\`) → \`extra\` means spend the extra pass on QC/polish.
-2. \`get_ad_template { template_id: source_sample_id }\` → the source video: \`media_url\`,
+2. \`catalog_fetch { slug: source_sample_id, type: "template" }\` → the source video: \`media_url\`,
    \`recipe\`, \`format\` (e.g. "imessage"), \`extracted_script\`, \`how_to\`, \`remix_spec\`.
-3. Brand gate: \`get_brand_kit { brand_id }\`. If \`researchStatus\` is \`complete\`, REUSE it —
+3. Brand gate: \`brand_get_context { brand_id, sections: ["summary", "kit"] }\`. If the kit's
+   \`researchStatus\` is \`complete\`, REUSE it —
    never re-research. If not, run brand research first (\`gooseworks fetch brand-research\`,
-   follow it, then \`finalize_brand_research { brand_id }\`) before continuing.
+   follow it, then \`brand_update { brand_id, patch: { finalize_research: true } }\`) before
+   continuing.
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
 The ad format is a **template (data) in the ad_sample DB**, not a per-format skill.
-\`get_ad_template(source_sample_id)\` returns the template's \`recipe\` — a self-contained brief you
+\`catalog_fetch({ slug: source_sample_id, type: "template" })\` returns the template's \`recipe\` — a
+self-contained brief you
 read and execute. **Do NOT map \`format\` to a hardcoded recipe slug** (there is no such table):
 
 - \`recipe.format\` — the format label (e.g. \`vignette\`), for display only.
@@ -997,7 +1028,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    and the **end card**; richer templates add a hook frame, background, product shots, music bed, a
    creator/avatar, a voiceover… For each piece, decide FREE / CHEAP-paid / EXPENSIVE-paid (above):
    - **FREE or CHEAP paid** (≤ ~100 credits — HTML mockups, a still, the creator frame, the end
-     card, a short VO/music bed) → generate it now and \`get_upload_url\` the asset to the project
+     card, a short VO/music bed) → generate it now and upload the asset (\`file_url\`
+     \`{ mode: "upload" }\`, then PUT) to the project
      folder \`agent-config/brands/<brand_slug>/projects/<project_id>/working/review/<name>\` (same
      path-prefix rule as final publish — a bare \`working/review/<name>\` won't render in the panel);
      set that piece's \`path\` in \`script_drafts\` to the project-relative \`working/review/<name>\`.
@@ -1009,8 +1041,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    from the project brief FIRST (Step 1.5)** — only ask the user for a field (angle, which product,
    offer/code) the \`creative_brief\` leaves empty AND the recipe can't default. Do not re-ask for
    anything the composer already captured.
-2. **Mirror the whole ingredient set for review** — \`update_ad_project_script { project_id,
-   script_drafts, script }\`. \`script_drafts\` is a structured payload of **container-tagged
+2. **Mirror the whole ingredient set for review** — \`video_project_update { project_id,
+   patch: { script: { script_drafts, script } } }\`. \`script_drafts\` is a structured payload of
+   **container-tagged
    ingredients** so the app renders each piece the right way:
    \`{ format, scenes?, ingredients: [{ container, label, subtitle?, path?, text? }] }\`. Each
    ingredient's \`container\` tells the app HOW to show it:
@@ -1021,18 +1054,19 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - \`video\` (a clip) → a video player. \`text\` (a copy line like the CTA) → a text tile.
    - \`script\` / \`thread\` / \`note\` / \`conversation\` → the written script (or set \`scenes[]\`
      for the podcast shape, or pass the readable \`script\` string).
-   \`path\` = \`working/review/<name>\` (upload the preview asset first via \`get_upload_url\`); \`url\`
+   \`path\` = \`working/review/<name>\` (upload the preview asset first via \`file_url\`
+   \`{ mode: "upload" }\`); \`url\`
    works too. **Label every ingredient** ("Hook image", "End card", "Voiceover", "Background
-   music", "HER"). The \`update_ad_project_script\` call itself writes no render and costs no credits
+   music", "HER"). The \`video_project_update\` call itself writes no render and costs no credits
    (the cheap pieces you already generated above have their own small cost) — it just populates the
    review panel.
 3. **STOP — the review happens in the APP's review panel, NOT in this chat.** You've mirrored the
-   ingredients (3.2); now hand the user the project's \`app_url\` (from \`get_ad_project\`) and tell
+   ingredients (3.2); now hand the user the project's \`app_url\` (from \`video_project_get\`) and tell
    them to review the pieces there and hit **"Approve & render"**. That button gives them a short
    message to paste back into this session — THAT is your go-ahead. Do NOT paste the
    script/ingredients into the chat for a thumbs-up, and do NOT render until that approval comes
    back from the app. If they want changes (via the app's comments or here), regenerate the
-   affected ingredient, call \`update_ad_project_script\` again, tell them it's refreshed in the
+   affected ingredient, call \`video_project_update\` again, tell them it's refreshed in the
    app, and wait for a fresh approval. Only AFTER the app approval do Step 4. A single approval
    authorises the WHOLE remaining chain — generate every paid piece, render, self-QC, publish —
    with NO further pauses (that is exactly why every paid prompt must already be in the panel).
@@ -1046,7 +1080,7 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 2. Open the row LAST: \`submit_render { project_id, kind: "full" }\` → keep \`render_id\`, then
    \`update_render_status { render_id, status: "running" }\`. The render row tracks status only
    (queued / running / complete / failed) — narrate fine-grained progress with
-   \`append_project_message\` instead.
+   \`video_project_update\` (\`patch.message\`) instead.
 3. **MANDATORY final-video QC gate — YOU review EVERY finished master before \`set_final_render\`,
    whatever the format (UGC or not).** This is your own automated quality check, separate from the
    user's Step-3 approval — it does not go back to the user. The render row is already open (its
@@ -1063,7 +1097,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      working/review-verdict.json\` (exit 0 PASS / 2 FAIL / 3 ERROR). It blocks a mis-voiced word
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when \`OPENAI_BASE_URL\` is set; with no backend at all, run
-     \`fal-ai/whisper\` via \`fal-proxy\` (upload the audio, pass its \`get_download_url\` as \`audio_url\`)
+     \`fal-ai/whisper\` via \`fal-proxy\` (upload the audio, pass its \`file_url\` \`{ mode: "download" }\`
+     \`url\` as \`audio_url\`)
      and diff the transcript yourself.
    - **Captions / subtitles** — ANY captioned format (the most common non-UGC defect); **skip for
      UGC/Seedance masters, which carry no subtitle track.** Concrete check: diff the caption file
@@ -1078,13 +1113,14 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
    and re-review — only a clean pass proceeds to \`set_final_render\`. **This gate is universal: it
    runs from the master skill for every format, so a recipe never has to opt in.**
-4. Publish: \`get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }\` → PUT the master
+4. Publish: \`file_url { mode: "upload", scope: { type: "agent", agent_id: ADS_AGENT } }\` → PUT
+   the master
    and poster **under the project folder** (see Identity's path-prefix rule) — to
    \`agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4\` and
    \`.../working/final-thumb.jpg\`. **Always target ADS_AGENT AND use the full project-folder path**
    — a bare \`working/final.mp4\`, even on the right agent, 404s in the app. Verify servable:
-   \`get_download_url { target: ADS_AGENT, path: "agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4" }\`
-   must return a non-empty URL (curl it for HTTP 200).
+   \`file_url { mode: "download", scope: ADS_AGENT, path: "agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4" }\`
+   must return a non-empty \`url\` (curl it for HTTP 200).
    Then \`update_render_status { render_id, status: "complete", output_url, thumbnail_url }\` where
    **output_url MUST be the durable render-file URL**
    \`/api/ads/projects/<project_id>/render-file?path=working/final.mp4\` (the app re-presigns it on
@@ -1092,8 +1128,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 5. \`set_final_render { project_id, render_id }\` to pin it, then return the \`app_url\` +
    \`brand_url\` (from the project/links) verbatim. Never end on just "done" or a file path.
 
-Narrate each long step in one line via \`append_project_message { project_id, role: "agent",
-content }\` — never sit silent on a queue > 90s.
+Narrate each long step in one line via \`video_project_update { project_id, patch: { message:
+{ role: "agent", content } } }\` — never sit silent on a queue > 90s.
 
 ## Media generation — the GooseWorks proxies (queue loop)
 
@@ -1145,16 +1181,19 @@ def fal_generate(model_path, payload, project_id=None, timeout_s=180, poll_s=3):
 \`\`\`
 
 ElevenLabs (VO / music) is the same shape against \`<api_base>/api/internal/elevenlabs-proxy\`
-with \`?token=&agent_id=&project_id=\`. Feed FAL a local image by storing it (\`get_upload_url\`) and passing its
-\`get_download_url\` presigned URL as an \`image_urls\` / \`audio_url\` entry — this is the reliable
+with \`?token=&agent_id=&project_id=\`. Feed FAL a local image by storing it (\`file_url\`
+\`{ mode: "upload" }\` + PUT) and passing its
+\`file_url\` \`{ mode: "download" }\` presigned \`url\` as an \`image_urls\` / \`audio_url\` entry — this
+is the reliable
 path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it — prefer the
-\`get_download_url\` presigned URL.)
+\`file_url\` \`{ mode: "download" }\` presigned \`url\`.)
 
 ## Rules
 
 - **MCP + ffmpeg + Playwright required** — run \`gooseworks doctor\` in Phase 0; stop with the
   exact fix it prints if anything is ✗.
-- **Assemble the whole review set first**, mirror it with \`update_ad_project_script\`, and get the
+- **Assemble the whole review set first**, mirror it with \`video_project_update\`
+  (\`patch.script\`), and get the
   user's approval **in the app's review panel** (the "Approve & render" button) BEFORE the expensive
   render — never ask for a thumbs-up in this chat (review-once, in-app).
 - **Show the REAL cheap pieces; PROMPT only the expensive render.** Generate the FREE + CHEAP-paid
@@ -1176,10 +1215,10 @@ path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
 - **Reuse the brand** when its research is complete; never re-research.
 - On a hard error (auth/quota/model/timeout) set the render \`failed\` with a short
-  \`error_message\` and stop — don't ship the source unchanged. **Also \`log\` it** (\`gooseworks log\`
-  / \`log_cli_event\`, \`--event-type api_failure|error\`) so we can see + fix it (see "Report problems").
-- **Report blockers/bugs/confusing instructions via telemetry** (\`gooseworks log\` or the
-  \`log_cli_event\` MCP tool) — not just to the user. Set \`GW_RUN_ID\` once so events group.
+  \`error_message\` and stop — don't ship the source unchanged. **Also \`log\` it**
+  (\`gooseworks log --event-type api_failure|error\`) so we can see + fix it (see "Report problems").
+- **Report blockers/bugs/confusing instructions via telemetry** (\`gooseworks log\`) — not just to
+  the user. Set \`GW_RUN_ID\` once so events group.
 - Always end a successful run with \`app_url\` + \`brand_url\`, verbatim.
 `;
 }
@@ -1252,62 +1291,62 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - One agent-scoped token authenticates the tools; they resolve your org automatically. Never
   print the token. (You may pass an optional \`target\` to operate on a specific agent/org, exactly
   as the other GooseWorks tools; omit it to use your pinned scope.)
-- **Credits are handled by the backend.** \`generate_product_photos\` reserves the estimated cost up
+- **Credits are handled by the backend.** \`photos_generate\` reserves the estimated cost up
   front and bills only the photos that pass the judge — **automatic retries are free**, and a photo
   the judge can't get right (\`flagged\`) is shown but **never billed**. Call
-  \`estimate_product_photos\` first to quote the cost; \`get_ad_credits\` shows the balance.
+  \`photos_generate { dry_run: true }\` first to quote the cost; \`account_whoami\` shows the balance.
 
 ## The tools
 
 **Pick the brand + product**
-- \`list_ad_brands\` — the user's ad brands (get a \`brand_id\`; also carries \`slug\`).
-- \`list_brand_products { brand_id, search?, page?, page_size? }\` — the brand's imported products.
+- \`brand_list\` — the user's ad brands (get a \`brand_id\`; also carries \`slug\`).
+- \`brand_get_context { brand_id, search?, page?, page_size? }\` — the brand's imported products.
   Pick a \`product_id\` to shoot. \`search\` matches name / type / variant / SKU.
 - \`import_product { brand_id, kind, url, product_name? }\` — import a product if it isn't in the
   catalog yet. \`kind\` is \`product_url\` (a single product page), \`shopify_store\` (a store URL →
   imports the catalog), or \`image_url\` (a direct image; requires \`product_name\`). Returns an import
   row with an \`id\`; if its \`status\` isn't \`complete\`, poll \`get_product_import\` until it is, then
-  \`list_brand_products\` to find the new product. (File uploads aren't available over MCP — use a URL.)
+  \`brand_get_context\` to find the new product. (File uploads aren't available over MCP — use a URL.)
 - \`get_product_import { import_id }\` — poll an import until \`status\` is \`complete\` or \`failed\`.
 
 **Generate**
-- \`estimate_product_photos { count, quality? }\` — cost preview (per-photo + total credits). \`count\`
+- \`photos_generate { count, quality?, dry_run: true }\` — cost preview (per-photo + total credits). \`count\`
   is 1, 2, 4, or 8; \`quality\` is \`low\` | \`medium\` | \`high\` (default \`medium\`). Reserves nothing.
-- \`generate_product_photos { brand_id, product_id, variant_id?, category, controls?, prompt?,
+- \`photos_generate { brand_id, product_id, variant_id?, category, controls?, prompt?,
   count?, quality?, reference_image_urls?, attestation_accepted? }\` — **the one call that makes
   photos.** \`category\` is \`apparel\` | \`beauty\` | \`cpg\` (seeds sensible scene/framing defaults).
   Omit \`controls\` to use the category preset; pass \`prompt\` as free-text steering **added on top of**
   the settings (it doesn't replace them). Returns a generation with an \`id\` **immediately** — poll
-  \`get_product_photo_generation\` until done, then read each \`outputs[].final_image_url\`.
+  \`photos_get\` until done, then read each \`outputs[].final_image_url\`.
   **If you request a human model** (\`controls.model.presence\` is not \`none\`) you MUST pass
   \`attestation_accepted: true\` to confirm the user has the rights for model imagery.
-- \`get_product_photo_generation { generation_id }\` — poll until \`status\` is \`complete\`,
+- \`photos_get { generation_id }\` — poll until \`status\` is \`complete\`,
   \`partial_failure\`, or \`failed\`. Each \`outputs[]\` entry has its own \`status\` and, once ready, a
   \`final_image_url\`. A \`flagged\` output is the best attempt but wasn't billed.
 
 **Use the results**
-- \`list_product_photos { brand_id, archived? }\` — the brand's generated photos (\`archived: false\`
+- \`photos_list { brand_id, archived? }\` — the brand's generated photos (\`archived: false\`
   = active, \`true\` = archived).
-- \`approve_product_photo { output_id }\` — approve a photo: links it to the product and makes it
+- \`photos_update { output_id }\` — approve a photo: links it to the product and makes it
   available in the **brand kit**, so \`goose-ads\` can use it. **Photos are not used anywhere until
   approved.**
-- \`archive_product_photo { output_id, reason? }\` — archive a photo; archived photos are **excluded**
+- \`photos_update { output_id, reason? }\` — archive a photo; archived photos are **excluded**
   from ad generation.
 
 ## Workflow — shoot a product
 
 1. **Load the brand context** (\`brand_get_context\`, or reuse what the router passed you) and
-   **resolve the brand + product.** \`list_ad_brands\` → \`brand_id\`. \`list_brand_products\` → pick a
+   **resolve the brand + product.** \`brand_list\` → \`brand_id\`. \`brand_get_context\` → pick a
    \`product_id\` from the catalog you already know about. If the product genuinely isn't there,
    \`import_product\` (poll \`get_product_import\`).
-2. **Quote the cost.** \`estimate_product_photos { count, quality }\` → tell the user credits.
-3. **Generate.** \`generate_product_photos { brand_id, product_id, category, count, quality, prompt? }\`.
+2. **Quote the cost.** \`photos_generate { count, quality, dry_run: true }\` → tell the user credits.
+3. **Generate.** \`photos_generate { brand_id, product_id, category, count, quality, prompt? }\`.
    Build \`prompt\` from the brand's voice/positioning you already have — don't interview the user for it.
    Returns a generation \`id\` right away.
-4. **Poll.** \`get_product_photo_generation { generation_id }\` until terminal; hand back each
+4. **Poll.** \`photos_get { generation_id }\` until terminal; hand back each
    \`final_image_url\`.
-5. **Approve the keepers.** Show the results and let the user pick; \`approve_product_photo\` the ones
-   they'd publish (that's what puts them in the brand kit for ads), \`archive_product_photo\` the rest.
+5. **Approve the keepers.** Show the results and let the user pick; \`photos_update\` the ones
+   they'd publish (that's what puts them in the brand kit for ads), \`photos_update\` the rest.
 
 ## Rules
 
@@ -1317,7 +1356,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
   logo/colors/fonts all come from \`brand_get_context\` / the brand kit. Ask only for the shot
   category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm \`count\` / \`quality\` before
-  \`generate_product_photos\` — it reserves credits.
+  \`photos_generate\` — it reserves credits.
 - **Poll, don't re-submit.** A generation that's still \`running\` is not stuck; re-submitting
   double-bills. Only a \`failed\` generation should be retried.
 - **Model imagery needs consent.** Only set a human model when the user asks, and pass

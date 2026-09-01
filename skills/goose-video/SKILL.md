@@ -40,9 +40,10 @@ You may be running WITHOUT the `gooseworks` CLI binary (e.g. Anthropic cowork). 
 `mcp__gooseworks__*` tools work over the MCP connection regardless, so wherever this skill
 says to shell out, use the MCP equivalent:
 
-- `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (returns the same content/scripts/
-  files/dependencySkills). `gooseworks search <q>` → **`search_skills`**.
-- `gooseworks credits` → the **`get_ad_credits`** MCP tool.
+- `gooseworks fetch <slug>` → the **`catalog_fetch`** MCP tool (`{ slug, type: "skill" }`; returns
+  the same content/scripts/
+  files/dependencySkills). `gooseworks search <q>` → **`catalog_search`** (`type: "skill"`).
+- `gooseworks credits` → the **`account_whoami`** MCP tool (read `credits.available_credits`).
 - `gooseworks doctor` → do the manual toolchain check in the preflight below.
 
 ## Report problems so we can fix them (telemetry — do this, don't skip it)
@@ -56,7 +57,9 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   `export GW_RUN_ID="vid-<project_or_batch_id>"` (and `export GW_SKILL="<recipe-slug>"`) in the
   shell you render from. The media proxies read `GW_RUN_ID` automatically.
 - **CLI present →** `gooseworks log "<what happened>" --event-type <type> --level error --details '{"error":"...","step":"...","model":"..."}'`
-- **No CLI (cowork / headless) →** the **`log_cli_event`** MCP tool with the same fields (pass `run_id`).
+- **No CLI (cowork / headless) →** no logging channel exists on the hosted surfaces; report the
+  problem to the user instead. (`log_cli_event` is an INTERNAL-server tool — it is not in the
+  customer MCP catalog and never was, so calling it from a CLI/hosted session fails: GOOSE-3185.)
 - `--event-type`: `api_failure` (a proxy/model call failed) · `missing_input` · `blocker` ·
   `confusion` (unclear/contradictory instruction) · `error` (a bug) · `step`/`info` (progress notes).
 - Put the **real error text + the step you were on** in `--details`. Paid FAL/ElevenLabs calls
@@ -99,31 +102,36 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
 - **CRITICAL — target the org-default Ads agent on EVERY file op.** The app serves project files
   (the render-file route) from the org's DEFAULT agent, but MCP file writes default to your
   token's pinned agent — which can be a DIFFERENT agent, so a render written with the default
-  scope is **invisible in the app**. First resolve the Ads agent: `list_accessible_scopes` → the
+  scope is **invisible in the app**. First resolve the Ads agent: `account_whoami` → in its
+  `scopes[]`, the
   scope with `is_org_default: true` (the ORG default — NOT the `is_default` / `default_agent_id`
   fields, which are the *user's* default agent and are often a DIFFERENT agent). Its `agent_id` is
   `ADS_AGENT` (name "Ads agent", slug `org-default`; usually also the `agent_id` in
-  credentials.json). Then pass `target: { type: "agent", agent_id: ADS_AGENT }` on EVERY
-  `get_upload_url` / `get_download_url` / `write_file` / `list_directory` / `read_file` — NEVER
-  omit `target`.
+  credentials.json). Then pass `scope: { type: "agent", agent_id: ADS_AGENT }` on EVERY
+  `file_url` / `file_write` / `file_list` / `file_read` — NEVER
+  omit `scope`.
 - **CRITICAL — publish under the PROJECT FOLDER, not the workspace root (the #1 "video renders but
-  is invisible" bug).** `get_upload_url` stores at `<ADS_AGENT>/files/<path>` verbatim, but the
+  is invisible" bug).** `file_url { mode: "upload" }` stores at `<ADS_AGENT>/files/<path>`
+  verbatim, but the
   render-file route reads from
   `<ADS_AGENT>/files/agent-config/brands/<brand_slug>/projects/<project_id>/<path>`
   (see backend `resolveProjectFileKey`). So EVERY publish/preview `path` MUST be prefixed with
   `agent-config/brands/<brand_slug>/projects/<project_id>/` — e.g. upload to
   `agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4`, NEVER bare
   `working/final.mp4`. A bare path 404s in the app even though the render row AND a bare-path
-  `get_download_url` both "succeed" (they resolve the wrong key). The render `output_url` still
+  `file_url { mode: "download" }` both "succeed" (they resolve the wrong key). The render
+  `output_url` still
   stays the project-relative `...render-file?path=working/final.mp4` — the route re-prepends the
-  prefix itself. Always verify with `get_download_url` on the FULL `agent-config/...` path (must
+  prefix itself. Always verify with `file_url { mode: "download" }` on the FULL
+  `agent-config/...` path (its `url` must
   be non-empty; curl it for HTTP 200) BEFORE marking the render complete.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   to the agent per call as you generate (Step 4). `submit_render { kind: "full" }` additionally
   debits **1 nominal ad credit when the render ROW is opened** (a bookkeeping fee, NOT the render's
   true cost) — so open it only once you actually have a rendered master (Step 4.1/4.2), and never
   re-submit on a guess (that double-bills). The final-video QC gate (Step 4.3) then sits between
-  that master and PINNING it. Call `get_ad_credits` first; the user can check `gooseworks credits`.
+  that master and PINNING it. Call `account_whoami` first (read `credits.available_credits`); the
+  user can check `gooseworks credits`.
 
 ## Step 0 — project id, or video BATCH id? (fan out before anything else)
 
@@ -132,17 +140,19 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
 (the user picked a concept count, default 3), and the app expects EACH to be rendered. **Handle both:**
 
 - **`project <id>`** → you have one project. Treat it as a batch of one and continue to Step 1.
-- **`video batch <id>`** → call `get_ad_video_batch { video_batch_id }`. It returns every child
-  concept under `projects[]` — each is a normal project with its own `id`, `variant_index`
+- **`video batch <id>`** → call `video_project_list { batch_id }`. It returns the `batch` with
+  every child
+  concept under `batch.projects[]` — each is a normal project with its own `id`, `variant_index`
   (Concept 1..N), and its own `creative_brief` (the per-concept angle/hook/offer/message). **You
   MUST process every concept, not just the first** — dropping concepts 2..N is the #1 batch bug.
 
 **Loop shape (one agent, sequential, ONE approval for the whole batch):**
 1. Run **Step 1 + Step 1.5 + Step 2 + Step 3-assemble** for EACH concept project (each has its own
    `project_id`, brief, and `working/` folder — never cross-write between concepts).
-2. Mirror EVERY concept's review set (Step 3's `update_ad_project_script` per project), then stop
+2. Mirror EVERY concept's review set (Step 3's `video_project_update` per project), then stop
    for **ONE** approval that covers all concepts — show the per-concept credit estimate and the
-   batch total. Set the batch to `review` (`update_ad_video_batch { status: "review" }`).
+   batch total. Set the batch to `review`
+   (`video_project_update { batch_id, patch: { batch: { status: "review" } } }`).
 3. On approval, set the batch to `rendering` and run **Step 4 (the expensive render)** for each
    concept **sequentially** (finish Concept 1's master before starting Concept 2 — one machine can't
    render them in parallel). Deliver each (Step 5). When all concepts are pinned, set the batch to
@@ -154,10 +164,12 @@ written per-project; a batch just runs it N times with the shared approval gate 
 
 ## Step 1 — resolve the project, source, brand
 
-1. `get_ad_project { project_id }` → keep `brand_id`, `source_sample_id`, `name`, `status`, the
+1. `video_project_get { project_id, include: ["assets"] }` → keep the `project` row's
+   `brand_id`, `source_sample_id`, `name`, `status`, the
    **top-level** `app_url` + `brand_url` (returned alongside `project`, NOT inside it — the links
    you hand the user for the in-app review in Step 3 and delivery in Step 5), AND the user's
-   **`creative_brief`**, project **`assets`**, `character_id`, `default_voice_id` — these are the
+   **`project.creative_brief`**, the returned **`assets`**, `project.character_id`,
+   `project.default_voice_id` — these are the
    authoritative inputs the user chose in the composer (see Step 1.5). Do NOT discard them.
 
 ### Step 1.5 — the project brief is AUTHORITATIVE (honor it; don't re-ask)
@@ -182,16 +194,19 @@ for a field the brief leaves empty. Map the fields you WILL honor:
   aspect), keep the format's native value and note the constraint in the review rather than silently
   ignoring the request.
 - `polish_policy` (`standard` | `extra`) → `extra` means spend the extra pass on QC/polish.
-2. `get_ad_template { template_id: source_sample_id }` → the source video: `media_url`,
+2. `catalog_fetch { slug: source_sample_id, type: "template" }` → the source video: `media_url`,
    `recipe`, `format` (e.g. "imessage"), `extracted_script`, `how_to`, `remix_spec`.
-3. Brand gate: `get_brand_kit { brand_id }`. If `researchStatus` is `complete`, REUSE it —
+3. Brand gate: `brand_get_context { brand_id, sections: ["summary", "kit"] }`. If the kit's
+   `researchStatus` is `complete`, REUSE it —
    never re-research. If not, run brand research first (`gooseworks fetch brand-research`,
-   follow it, then `finalize_brand_research { brand_id }`) before continuing.
+   follow it, then `brand_update { brand_id, patch: { finalize_research: true } }`) before
+   continuing.
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
 The ad format is a **template (data) in the ad_sample DB**, not a per-format skill.
-`get_ad_template(source_sample_id)` returns the template's `recipe` — a self-contained brief you
+`catalog_fetch({ slug: source_sample_id, type: "template" })` returns the template's `recipe` — a
+self-contained brief you
 read and execute. **Do NOT map `format` to a hardcoded recipe slug** (there is no such table):
 
 - `recipe.format` — the format label (e.g. `vignette`), for display only.
@@ -255,7 +270,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    and the **end card**; richer templates add a hook frame, background, product shots, music bed, a
    creator/avatar, a voiceover… For each piece, decide FREE / CHEAP-paid / EXPENSIVE-paid (above):
    - **FREE or CHEAP paid** (≤ ~100 credits — HTML mockups, a still, the creator frame, the end
-     card, a short VO/music bed) → generate it now and `get_upload_url` the asset to the project
+     card, a short VO/music bed) → generate it now and upload the asset (`file_url`
+     `{ mode: "upload" }`, then PUT) to the project
      folder `agent-config/brands/<brand_slug>/projects/<project_id>/working/review/<name>` (same
      path-prefix rule as final publish — a bare `working/review/<name>` won't render in the panel);
      set that piece's `path` in `script_drafts` to the project-relative `working/review/<name>`.
@@ -267,8 +283,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    from the project brief FIRST (Step 1.5)** — only ask the user for a field (angle, which product,
    offer/code) the `creative_brief` leaves empty AND the recipe can't default. Do not re-ask for
    anything the composer already captured.
-2. **Mirror the whole ingredient set for review** — `update_ad_project_script { project_id,
-   script_drafts, script }`. `script_drafts` is a structured payload of **container-tagged
+2. **Mirror the whole ingredient set for review** — `video_project_update { project_id,
+   patch: { script: { script_drafts, script } } }`. `script_drafts` is a structured payload of
+   **container-tagged
    ingredients** so the app renders each piece the right way:
    `{ format, scenes?, ingredients: [{ container, label, subtitle?, path?, text? }] }`. Each
    ingredient's `container` tells the app HOW to show it:
@@ -279,18 +296,19 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - `video` (a clip) → a video player. `text` (a copy line like the CTA) → a text tile.
    - `script` / `thread` / `note` / `conversation` → the written script (or set `scenes[]`
      for the podcast shape, or pass the readable `script` string).
-   `path` = `working/review/<name>` (upload the preview asset first via `get_upload_url`); `url`
+   `path` = `working/review/<name>` (upload the preview asset first via `file_url`
+   `{ mode: "upload" }`); `url`
    works too. **Label every ingredient** ("Hook image", "End card", "Voiceover", "Background
-   music", "HER"). The `update_ad_project_script` call itself writes no render and costs no credits
+   music", "HER"). The `video_project_update` call itself writes no render and costs no credits
    (the cheap pieces you already generated above have their own small cost) — it just populates the
    review panel.
 3. **STOP — the review happens in the APP's review panel, NOT in this chat.** You've mirrored the
-   ingredients (3.2); now hand the user the project's `app_url` (from `get_ad_project`) and tell
+   ingredients (3.2); now hand the user the project's `app_url` (from `video_project_get`) and tell
    them to review the pieces there and hit **"Approve & render"**. That button gives them a short
    message to paste back into this session — THAT is your go-ahead. Do NOT paste the
    script/ingredients into the chat for a thumbs-up, and do NOT render until that approval comes
    back from the app. If they want changes (via the app's comments or here), regenerate the
-   affected ingredient, call `update_ad_project_script` again, tell them it's refreshed in the
+   affected ingredient, call `video_project_update` again, tell them it's refreshed in the
    app, and wait for a fresh approval. Only AFTER the app approval do Step 4. A single approval
    authorises the WHOLE remaining chain — generate every paid piece, render, self-QC, publish —
    with NO further pauses (that is exactly why every paid prompt must already be in the panel).
@@ -304,7 +322,7 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 2. Open the row LAST: `submit_render { project_id, kind: "full" }` → keep `render_id`, then
    `update_render_status { render_id, status: "running" }`. The render row tracks status only
    (queued / running / complete / failed) — narrate fine-grained progress with
-   `append_project_message` instead.
+   `video_project_update` (`patch.message`) instead.
 3. **MANDATORY final-video QC gate — YOU review EVERY finished master before `set_final_render`,
    whatever the format (UGC or not).** This is your own automated quality check, separate from the
    user's Step-3 approval — it does not go back to the user. The render row is already open (its
@@ -321,7 +339,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      working/review-verdict.json` (exit 0 PASS / 2 FAIL / 3 ERROR). It blocks a mis-voiced word
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when `OPENAI_BASE_URL` is set; with no backend at all, run
-     `fal-ai/whisper` via `fal-proxy` (upload the audio, pass its `get_download_url` as `audio_url`)
+     `fal-ai/whisper` via `fal-proxy` (upload the audio, pass its `file_url` `{ mode: "download" }`
+     `url` as `audio_url`)
      and diff the transcript yourself.
    - **Captions / subtitles** — ANY captioned format (the most common non-UGC defect); **skip for
      UGC/Seedance masters, which carry no subtitle track.** Concrete check: diff the caption file
@@ -336,13 +355,14 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
    and re-review — only a clean pass proceeds to `set_final_render`. **This gate is universal: it
    runs from the master skill for every format, so a recipe never has to opt in.**
-4. Publish: `get_upload_url { target: { type: "agent", agent_id: ADS_AGENT } }` → PUT the master
+4. Publish: `file_url { mode: "upload", scope: { type: "agent", agent_id: ADS_AGENT } }` → PUT
+   the master
    and poster **under the project folder** (see Identity's path-prefix rule) — to
    `agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4` and
    `.../working/final-thumb.jpg`. **Always target ADS_AGENT AND use the full project-folder path**
    — a bare `working/final.mp4`, even on the right agent, 404s in the app. Verify servable:
-   `get_download_url { target: ADS_AGENT, path: "agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4" }`
-   must return a non-empty URL (curl it for HTTP 200).
+   `file_url { mode: "download", scope: ADS_AGENT, path: "agent-config/brands/<brand_slug>/projects/<project_id>/working/final.mp4" }`
+   must return a non-empty `url` (curl it for HTTP 200).
    Then `update_render_status { render_id, status: "complete", output_url, thumbnail_url }` where
    **output_url MUST be the durable render-file URL**
    `/api/ads/projects/<project_id>/render-file?path=working/final.mp4` (the app re-presigns it on
@@ -350,8 +370,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 5. `set_final_render { project_id, render_id }` to pin it, then return the `app_url` +
    `brand_url` (from the project/links) verbatim. Never end on just "done" or a file path.
 
-Narrate each long step in one line via `append_project_message { project_id, role: "agent",
-content }` — never sit silent on a queue > 90s.
+Narrate each long step in one line via `video_project_update { project_id, patch: { message:
+{ role: "agent", content } } }` — never sit silent on a queue > 90s.
 
 ## Media generation — the GooseWorks proxies (queue loop)
 
@@ -403,16 +423,19 @@ def fal_generate(model_path, payload, project_id=None, timeout_s=180, poll_s=3):
 ```
 
 ElevenLabs (VO / music) is the same shape against `<api_base>/api/internal/elevenlabs-proxy`
-with `?token=&agent_id=&project_id=`. Feed FAL a local image by storing it (`get_upload_url`) and passing its
-`get_download_url` presigned URL as an `image_urls` / `audio_url` entry — this is the reliable
+with `?token=&agent_id=&project_id=`. Feed FAL a local image by storing it (`file_url`
+`{ mode: "upload" }` + PUT) and passing its
+`file_url` `{ mode: "download" }` presigned `url` as an `image_urls` / `audio_url` entry — this
+is the reliable
 path. (`fal-storage-proxy` may 404 depending on the install; don't block on it — prefer the
-`get_download_url` presigned URL.)
+`file_url` `{ mode: "download" }` presigned `url`.)
 
 ## Rules
 
 - **MCP + ffmpeg + Playwright required** — run `gooseworks doctor` in Phase 0; stop with the
   exact fix it prints if anything is ✗.
-- **Assemble the whole review set first**, mirror it with `update_ad_project_script`, and get the
+- **Assemble the whole review set first**, mirror it with `video_project_update`
+  (`patch.script`), and get the
   user's approval **in the app's review panel** (the "Approve & render" button) BEFORE the expensive
   render — never ask for a thumbs-up in this chat (review-once, in-app).
 - **Show the REAL cheap pieces; PROMPT only the expensive render.** Generate the FREE + CHEAP-paid
@@ -434,8 +457,8 @@ path. (`fal-storage-proxy` may 404 depending on the install; don't block on it �
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
 - **Reuse the brand** when its research is complete; never re-research.
 - On a hard error (auth/quota/model/timeout) set the render `failed` with a short
-  `error_message` and stop — don't ship the source unchanged. **Also `log` it** (`gooseworks log`
-  / `log_cli_event`, `--event-type api_failure|error`) so we can see + fix it (see "Report problems").
-- **Report blockers/bugs/confusing instructions via telemetry** (`gooseworks log` or the
-  `log_cli_event` MCP tool) — not just to the user. Set `GW_RUN_ID` once so events group.
+  `error_message` and stop — don't ship the source unchanged. **Also `log` it**
+  (`gooseworks log --event-type api_failure|error`) so we can see + fix it (see "Report problems").
+- **Report blockers/bugs/confusing instructions via telemetry** (`gooseworks log`) — not just to
+  the user. Set `GW_RUN_ID` once so events group.
 - Always end a successful run with `app_url` + `brand_url`, verbatim.
