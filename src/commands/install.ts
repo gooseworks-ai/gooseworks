@@ -165,15 +165,17 @@ Examples:
     const agentNames = targetAgents.map((a) =>
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
-    logger.done(`Setup complete! Open ${agentNames} and pick one to get started:`);
+    logger.done(`Setup complete! Open ${agentNames} and ask for the work you want done.`);
 
     console.log('');
-    logger.info('New here? Get set up in 30 seconds:');
-    logger.example('/gooseworks onboard me');
-
-    console.log('');
-    logger.info('Or jump straight into making an ad:');
-    logger.example('/goose-ads make an ad for <your brand>');
+    if (wantMcp) {
+      logger.info('Your first GooseWorks request automatically starts or resumes the same onboarding used on the web.');
+      logger.example('/gooseworks research my competitors');
+    } else {
+      const flag = targetAgents.length === 1 ? `--${targetAgents[0]}` : '--all';
+      logger.info('Shared onboarding needs the GooseWorks MCP connection. Enable it with:');
+      logger.example(`gooseworks install ${flag} --mcp`);
+    }
     console.log('');
   });
 }

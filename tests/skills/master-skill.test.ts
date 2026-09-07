@@ -110,27 +110,32 @@ describe('skills/master-skill', () => {
 
   describe('common onboarding', () => {
     it('runs onboarding before the first task and resumes missing fields', () => {
-      expect(content).toContain('get_brand_onboarding');
-      expect(content).toContain('update_brand_onboarding');
-      expect(content).toContain('missing_fields');
+      expect(content).toContain('brand_onboarding { action: "status" }');
+      expect(content).toContain('next_step');
       expect(content).toContain('first-run gate for every GooseWorks task');
       expect(content).toMatch(/does not need to type[\s\S]*\/gooseworks onboard me/i);
-      expect(content).toContain('start onboarding when no company/brand record exists');
-      expect(content).toContain('resume only the missing steps when onboarding is incomplete');
-      expect(content).toContain('continue immediately when onboarding is already complete');
+      expect(content).toContain('same saved state and step order as the web onboarding');
+      expect(content).toContain('continue the original request immediately');
       expect(content).toContain("Keep the user's original task pending");
-      expect(content).toContain('It does not need to be a DTC or ecommerce brand');
       expect(content).not.toContain('get_user_context');
       expect(content).not.toContain('update_user_context');
     });
 
-    it('contains the shared questions, conditional ads fields, and first task', () => {
-      expect(content).toContain('How much do you spend on paid ads right now?');
-      expect(content).toContain('Who makes your ad creatives right now?');
-      expect(content).toContain('ad spend is `zero` and no advertising goal was selected');
-      expect(content).toContain('What do you want to do first?');
-      expect(content).toContain('connect_tools');
-      expect(content).toContain('first_task');
+    it('matches the current web steps and has none of the retired questions', () => {
+      expect(content).toContain('Your coworker');
+      expect(content).toContain('Your company');
+      expect(content).toContain('Your taste');
+      expect(content).toContain('First campaign');
+      expect(content).toContain('Where you are');
+      expect(content).toContain('Review');
+      expect(content).toContain('Channels');
+      expect(content).toContain('under_1k');
+      expect(content).toContain('revenue');
+      expect(content).toContain('90-day goal');
+      expect(content).not.toContain('Who makes your ad creatives right now?');
+      expect(content).not.toContain('Where did you find GooseWorks?');
+      expect(content).not.toContain('connect_tools');
+      expect(content).not.toContain('first_task');
     });
   });
 });

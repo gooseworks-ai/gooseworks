@@ -197,7 +197,7 @@ describe('install command', () => {
     );
   });
 
-  it('prints the two focused next-step CTAs after install', async () => {
+  it('points a skill-only install to the MCP setup needed for shared onboarding', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 
     const { createInstallCommand } = await import("../../src/commands/install");
@@ -207,24 +207,23 @@ describe('install command', () => {
 
     expect(loggerModule.example).toHaveBeenCalled();
     const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
-    // Deliberately just two options: get set up, or make an ad.
-    expect(joined).toMatch(/\/gooseworks onboard me/);
-    expect(joined).toMatch(/\/goose-ads make an ad/);
+    expect(joined).toMatch(/gooseworks install --claude --mcp/);
+    expect(joined).not.toMatch(/onboard me/);
   });
 
-  it('keeps the success message to the two CTAs — no GTM/graphics examples, even with --with', async () => {
+  it('keeps the success message focused even with --with', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
     const { createInstallCommand } = await import("../../src/commands/install");
 
     // Even with --with goose-graphics (still installed), the success message
-    // stays focused on onboarding + ads — no graphics/GTM example prompts.
+    // stays focused on one natural first request.
     await createInstallCommand().parseAsync([
       'node', 'test', '--claude', '--with', 'goose-graphics',
     ]);
     const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
     expect(joined).not.toMatch(/\/goose-graphics/);
-    expect(joined).not.toMatch(/find people|find leads|research </i);
-    expect(joined).toMatch(/onboard me/);
+    expect(joined).not.toMatch(/onboard me/);
+    expect(joined).toMatch(/gooseworks install --claude --mcp/i);
   });
 
   it('--claude without --mcp installs skill only, no MCP write', async () => {
@@ -246,6 +245,8 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--claude', '--mcp']);
 
     expect(mockConfigureClaudeMcp).toHaveBeenCalled();
+    const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    expect(joined).toMatch(/\/gooseworks research my competitors/);
   });
 
   it('--codex without --mcp installs skill only, no MCP write', async () => {

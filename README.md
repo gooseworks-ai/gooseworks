@@ -8,14 +8,14 @@ Pick your agent:
 
 ```bash
 # Claude Code
-npx gooseworks install --claude
-npx gooseworks install --claude --with goose-graphics
+npx gooseworks install --claude --mcp
+npx gooseworks install --claude --mcp --with goose-graphics
 
 # Cursor
-npx gooseworks install --cursor
+npx gooseworks install --cursor --mcp
 
 # Codex
-npx gooseworks install --codex
+npx gooseworks install --codex --mcp
 
 # All detected agents
 npx gooseworks install --all
@@ -26,13 +26,13 @@ This does three things:
 2. Installs the GooseWorks skill into your coding agent
 3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors", or "create product photos"
 
-New to GooseWorks? Start inside your coding agent with:
+New to GooseWorks? Ask for the work you want done, for example:
 
 ```text
-/gooseworks onboard me
+/gooseworks research my competitors
 ```
 
-Onboarding collects the essential information GooseWorks needs to understand the company, its goals, and the work you want help with. That becomes a reusable **Company Brain** which improves future research, analysis, creative, and growth work. Existing users can keep using `/gooseworks` normally and only update their company context when they choose.
+Your first request automatically starts or resumes the same onboarding used by the GooseWorks web app. It covers your company, coworker, creative taste, first campaign, growth stage, research review, and channels, saving after every step. The resulting **Company Brain** is shared across web, Claude, Codex, ChatGPT, and Cowork; when setup is complete, the agent immediately continues the request you originally made.
 
 Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the main GooseWorks skill. For example, `--with goose-graphics` installs `/goose-graphics` locally so your agent can run it directly without doing a catalog lookup through `/gooseworks`.
 
@@ -214,7 +214,7 @@ npx gooseworks call scrapecreators /v1/facebook/adLibrary/search/ads \
 We'd rather you know exactly what this CLI does before you run it:
 
 - **Skill scripts are open source and fetched at runtime.** `gooseworks fetch <slug>` (and the skills that call it) download skill content and Python scripts from the GooseWorks catalog on demand, save them under `/tmp/gooseworks-scripts/`, and run them on your machine. Every skill and its scripts live in the public, open-source [goose-skills repo](https://github.com/gooseworks-ai/goose-skills/tree/main/skills) — the catalog is synced from there — so the code is the same maintained, auditable source you can read on GitHub. They're served from the catalog (kept current) rather than pinned to the installed CLI version, so you always get the latest version of a skill.
-- **The MCP server is opt-in.** It's only registered when you pass `--mcp` (or `--all`). When you do, the CLI adds a `gooseworks` entry to `~/.claude.json` (Claude Code) or `~/.codex/config.toml` (Codex) that includes your bearer token in an `Authorization` header — this is how every HTTP MCP server authenticates. Skip `--mcp` if you don't want the server registered as a live tool provider; ads creation is the only feature that requires it.
+- **The MCP server is opt-in.** It's only registered when you pass `--mcp` (or `--all`). When you do, the CLI adds a `gooseworks` entry to `~/.claude.json` (Claude Code) or `~/.codex/config.toml` (Codex) that includes your bearer token in an `Authorization` header — this is how every HTTP MCP server authenticates. Skip `--mcp` if you don't want the server registered as a live tool provider; shared onboarding and ads creation require it.
 - **Credentials are stored locally.** Your API key lives in `~/.gooseworks/credentials.json`, written with `0600` permissions in a `0700` directory. `gooseworks logout` deletes it.
 - **`gooseworks env` exposes your key.** `eval $(gooseworks env)` exports `GOOSEWORKS_API_KEY` into your shell environment, where any process you run can read it. Most commands (e.g. `gooseworks call`) load credentials on their own — only use `env` when a script genuinely needs the environment variable.
 - **No install hooks.** `npm install` only downloads files; nothing executes on install. The CLI has four dependencies (chalk, commander, open, ora), uses standard OAuth with CSRF protection, and makes all network calls over HTTPS.
