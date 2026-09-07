@@ -151,65 +151,30 @@ gooseworks credits
 
 ## Common company onboarding
 
-Onboarding happens inside the current coding agent and is the first-run gate for every GooseWorks task. The user does not need to type **\`/gooseworks onboard me\`**. Before routing or executing their request, check their onboarding state and:
+Onboarding happens inside the current agent and is the first-run gate for every GooseWorks task. It uses the exact same saved state and step order as the web onboarding. The user does not need to type **\`/gooseworks onboard me\`**; that explicit command only starts or resumes the same flow.
 
-- start onboarding when no company/brand record exists;
-- resume only the missing steps when onboarding is incomplete;
-- continue immediately when onboarding is already complete.
+Keep the user's original task pending. Call **\`brand_onboarding { action: "status" }\`** before routing or executing it, then:
 
-Keep the user's original task pending and resume it immediately after onboarding. The explicit **\`/gooseworks onboard me\`** command remains a way to start or resume the same flow, but it is not required.
+- follow only the returned \`next_step\`;
+- save each answer immediately with \`brand_onboarding\` so web, Claude, Codex, ChatGPT, and Cowork can resume one another;
+- continue the original request immediately when \`onboarding_completed\` is true.
 
-In these tools, a “brand” is the company, organization, or client the user works on. It does not need to be a DTC or ecommerce brand. For B2B and other GTM users, create or reuse the relevant company/client workspace and infer its products or services from the website. Do not require a product catalog, ad account, or creative assets unless the user's task needs them.
+If \`brand_onboarding\` is unavailable, explain that the GooseWorks MCP connection must be enabled. Do not write a parallel local profile and do not run the retired role / discovery-source / ad-owner questionnaire.
 
-The CLI and GooseWorks Ads share one brand-scoped questionnaire through these MCP tools:
+### Shared flow
 
-- \`list_ad_brands\` and \`create_ad_brand\` — select or create the company/brand.
-- \`get_brand_onboarding { brand_id }\` — load completed answers and \`missing_fields\` before asking anything.
-- \`update_brand_onboarding { brand_id, ...answers }\` — save each group of answers and the final first-task choice.
+Use the host's native question controls. Ask one short group at a time and rely on the live tool schema for accepted values.
 
-If these tools are unavailable, tell the user that onboarding needs the GooseWorks MCP connection. Do not send them to another UI and do not fall back to a separate context record.
+1. **Start** — If status returns \`start\`, ask for the company website or Apple App Store URL. Also offer the optional hero product URL and “Where do you do your work?” choices: Slack, WhatsApp, iMessage, Claude Code, Claude, Codex, and ChatGPT. Call \`action: "start"\`; server-side research begins immediately. If status returns \`select_brand\`, ask which company/client to use. Otherwise reuse the only brand automatically.
+2. **Your coworker** — Ask what they want to name their Growth Coworker. A text-only client may keep the default avatar; do not block on an image. Save with \`action: "save_coworker"\`.
+3. **Your company** — Use the returned \`company_draft\` as the starting point and ask the user to verify or edit: what they sell (\`marketCategory\`), where people buy (\`appPlatforms\`), primary customer, customer problem, promised outcome, and optional differentiator. Save with \`action: "save_company"\`.
+4. **Your taste** — If the host can show the returned \`taste_deck\` images, let the user heart or skip cards until they have three hearts. They may explicitly skip the whole step. Save decisions with \`action: "save_taste"\`; send \`complete: true\` after three hearts or an explicit skip.
+5. **First campaign** — Ask **“What’s happening right now?”**: launch \`launch\`, promotion \`promo\`, seasonal moment \`seasonal\`, or nothing special \`nothing\`, plus an optional note. Call \`action: "propose_campaign"\`, show the returned editable card (name, objective, offer, audience, 2–3 angles, CTA, and product URL), and save edits with \`action: "save_campaign"\`. Send \`accept: true\` only after approval; acceptance can start the complimentary first creatives.
+6. **Where you are** — Ask monthly ad spend (\`none\`, \`under_1k\`, \`1k_5k\`, \`5k_25k\`, \`25k_plus\`), annual revenue (\`under_1m\`, \`1m_10m\`, \`10m_100m\`, \`100m_plus\`), the 90-day goal, current channels (an empty list is a valid “nothing yet”), and at least one channel they are willing to use. Channel values: \`paid_social\`, \`search_ads\`, \`content\`, \`creators\`, \`seo\`, \`communities\`, \`referrals\`, \`partnerships\`, \`outbound\`, \`app_stores\`, \`other\`. Save with \`action: "save_progress"\`.
+7. **Review** — Show the returned founder, researched, and inferred facts with their provenance. The user may correct positioning, audience, voice, value propositions, proof points, or competitors through \`action: "review_research"\`. Complete the review even when research is still running, failed, or sparse; never trap the user waiting for it.
+8. **Channels** — If \`channel_connected\` is already true, this is complete automatically. Otherwise ask whether they want to connect Slack, WhatsApp, or iMessage later, or skip for now. An explicit skip is valid; call \`action: "complete_channels"\`.
 
-### Resume rules
-
-1. Run \`list_ad_brands\`. Reuse the only brand automatically. If there are multiple brands, ask which one to use.
-2. If there is no brand, ask for the company or brand website, research it, and use \`create_ad_brand { name, website_url }\`. If the domain matches an existing brand, reuse it.
-3. Call \`get_brand_onboarding\` and ask only the returned missing questions.
-4. Save after each small group so an interrupted interview can resume.
-5. If the record is complete, confirm the brand and continue; do not repeat the interview.
-
-### Shared questions and answer values
-
-Use the host's native question controls. Keep the labels below; the values in backticks are the stable values accepted by \`update_brand_onboarding\`.
-
-1. **What is your role?** Founder / Business Owner · C-Suite · VP / Director · Performance / Growth Marketing · Brand / Content Marketing · Creative / Design · Agency · Consultant / Freelancer · Other.
-2. **How much do you spend on paid ads right now?** \`zero\` · \`under_10k\` · \`10k_30k\` · \`30k_100k\` · \`100k_plus\`.
-3. **What are your goals?** Multi-select: create ads \`make_creatives\` · analyze ads \`analyze_ads\` · manage/optimize ads \`ai_manage\` · competitor or customer research \`research_competitors\` · creators and social trends \`creators_trends\` · content \`content_growth\` · lead generation \`lead_generation\` · data work \`data_work\` · work with an expert team \`expert_team\`.
-4. **Who makes your ad creatives right now?** and **Who manages your ads right now?** Use the shared values returned in the tool schema. Skip both when ad spend is \`zero\` and no advertising goal was selected.
-5. **Which platforms or channels do you use or want help with?** Multi-select: \`meta\` · \`tiktok\` · \`google\` · \`chatgpt\` · \`x\` · \`linkedin\` · \`reddit\` · \`other\`.
-6. **Where did you find GooseWorks?** Use the shared discovery-source values returned in the tool schema.
-
-Do not add CLI-only questions about business type, products, or audience. Infer them from the website and ask one clarification only when the research is materially uncertain.
-
-### Research while onboarding
-
-Do useful setup work, not only form collection:
-
-1. Fetch \`brand-research\` and research the website, products/services, audiences, competitors, offers, and messaging evidence.
-2. Reuse existing Brand Kit/Core data. For an ecommerce store, import the relevant catalog with \`import_product\` and poll \`get_product_import\` rather than submitting duplicates.
-3. When ads are relevant, offer to import existing creative. This is optional.
-4. Suggest evidence-backed messaging angles. Approval is optional and never blocks completion.
-5. Show the researched profile for confirmation: products/services, audience, competitors, imported ads, and suggested angles. Clearly label uncertainty.
-
-### First task
-
-Finish with **What do you want to do first?**
-
-- Connect my tools and data — \`connect_tools\`
-- Research customers, competitors, creators, or trends — \`research\`
-- Analyze ads, content, landing pages, or performance — \`analyze\`
-- Create ads, product images, or social content — \`create\`
-
-Save the choice as \`first_task\`, then start that job. If the user already stated a concrete job, save the matching value and start without showing the menu.
+Do not ask for role, discovery source, who makes creatives, who manages ads, or a separate “what do you want to do first?” menu. Those belonged to the retired CLI questionnaire. The task the user already asked for is their first task.
 
 ## Brand Growth discovery
 
