@@ -161,6 +161,8 @@ Keep the user's original task pending. Call **\`brand_onboarding { action: "stat
 
 If \`brand_onboarding\` is unavailable, explain that the GooseWorks MCP connection must be enabled. Do not write a parallel local profile and do not run the retired role / discovery-source / ad-owner questionnaire.
 
+When onboarding returns a review link, show that single link and ask the user to review the creatives and reply \`done\`. When they reply \`done\`, do not restart onboarding: continue the task they originally asked for. If there was no earlier task, ask: **“Let’s start your next campaign. What are you promoting, and what result do you want?”** Use the same preserved-task-or-campaign handoff if onboarding completes while the creatives are still being prepared or could not be generated.
+
 ### Shared flow
 
 Use the host's native question controls. Ask one short group at a time and rely on the live tool schema for accepted values.
