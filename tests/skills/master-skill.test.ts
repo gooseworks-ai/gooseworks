@@ -129,6 +129,10 @@ describe('skills/master-skill', () => {
       expect(content).toContain('Your coworker');
       expect(content).toContain('Your company');
       expect(content).toContain('Your taste');
+      expect(content).toContain('taste_url');
+      expect(content).toContain('Choose your taste in GooseWorks');
+      expect(content).toContain('Do not print, enumerate, or summarize');
+      expect(content).toMatch(/After `done`[\s\S]*brand_onboarding \{ action: "status" \}/i);
       expect(content).toContain('First campaign');
       expect(content).toContain('Where you are');
       expect(content).toContain('Review');
