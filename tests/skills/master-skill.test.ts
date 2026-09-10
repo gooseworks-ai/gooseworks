@@ -117,6 +117,10 @@ describe('skills/master-skill', () => {
       expect(content).toContain('same saved state and step order as the web onboarding');
       expect(content).toContain('continue the original request immediately');
       expect(content).toContain("Keep the user's original task pending");
+      expect(content).toContain('reply `done`');
+      expect(content).toContain('do not restart onboarding');
+      expect(content).toContain('start your next campaign');
+      expect(content).toContain('What are you promoting');
       expect(content).not.toContain('get_user_context');
       expect(content).not.toContain('update_user_context');
     });
@@ -125,6 +129,10 @@ describe('skills/master-skill', () => {
       expect(content).toContain('Your coworker');
       expect(content).toContain('Your company');
       expect(content).toContain('Your taste');
+      expect(content).toContain('taste_url');
+      expect(content).toContain('Choose your taste in GooseWorks');
+      expect(content).toContain('Do not print, enumerate, or summarize');
+      expect(content).toMatch(/After `done`[\s\S]*brand_onboarding \{ action: "status" \}/i);
       expect(content).toContain('First campaign');
       expect(content).toContain('Where you are');
       expect(content).toContain('Review');
