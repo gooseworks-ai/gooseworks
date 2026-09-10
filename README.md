@@ -319,7 +319,7 @@ ad-credit balance. Use `estimate_remix_batch` (cost preview) and `gooseworks cre
 
 New users get **200 free credits**. Each skill run costs 1-10 credits depending on the data source. Check your balance with `npx gooseworks credits`.
 
-Need more? Visit [gooseworks.ai/settings](https://app.gooseworks.ai/settings?tab=billing) to add credits.
+Need more? Visit [gooseworks.ai/settings](https://make.gooseworks.ai/settings) to add credits.
 
 ## Requirements
 
