@@ -26,13 +26,13 @@ This does three things:
 2. Installs the GooseWorks skill into your coding agent
 3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors", or "create product photos"
 
-New to GooseWorks? Ask for the work you want done, for example:
+You do not need a special onboarding command. Ask GooseWorks to do a normal task, or say:
 
 ```text
-/gooseworks research my competitors
+Set up GooseWorks for https://yourcompany.com
 ```
 
-Your first request automatically starts or resumes the same onboarding used by the GooseWorks web app. It covers your company, coworker, creative taste, first campaign, growth stage, research review, and channels, saving after every step. The resulting **Company Brain** is shared across web, Claude, Codex, ChatGPT, and Cowork; when setup is complete, the agent immediately continues the request you originally made.
+The agent preserves that request while it completes any missing company setup. Setup uses the same flow as the GooseWorks web app — company, coworker, creative taste, first campaign, growth stage, research review, and channels — saving after every step. The resulting **Company Brain** is shared across web, Claude, Codex, ChatGPT, and Cowork; when setup is complete, the agent immediately continues the request you originally made.
 
 Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the main GooseWorks skill. For example, `--with goose-graphics` installs `/goose-graphics` locally so your agent can run it directly without doing a catalog lookup through `/gooseworks`.
 

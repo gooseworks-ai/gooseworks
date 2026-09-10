@@ -1,0 +1,27 @@
+{
+  "name": "gooseworks",
+  "owner": {
+    "name": "GooseWorks",
+    "email": "goose@gooseworks.ai",
+    "url": "https://gooseworks.ai"
+  },
+  "metadata": {
+    "description": "GooseWorks — AI coworkers for GTM. Ads, research, and 100+ data tools for your coding agent.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "gooseworks",
+      "source": "./",
+      "description": "GooseWorks skills + MCP server: create and remix ads, generate product photos and video, plus 100+ data tools for scraping, research, lead generation, and enrichment (Twitter/X, Reddit, LinkedIn, email finding, company enrichment).",
+      "author": {
+        "name": "GooseWorks",
+        "email": "goose@gooseworks.ai"
+      },
+      "homepage": "https://gooseworks.ai",
+      "license": "MIT",
+      "category": "productivity",
+      "keywords": ["ads", "gtm", "data", "scraping", "leads", "research", "enrichment", "marketing"]
+    }
+  ]
+}

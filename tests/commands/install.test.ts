@@ -245,8 +245,11 @@ describe('install command', () => {
     await installCommand.parseAsync(['node', 'test', '--claude', '--mcp']);
 
     expect(mockConfigureClaudeMcp).toHaveBeenCalled();
-    const joined = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
-    expect(joined).toMatch(/\/gooseworks research my competitors/);
+    const examples = (loggerModule.example as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    const info = (loggerModule.info as jest.Mock).mock.calls.map((c) => c[0]).join('\n');
+    expect(info).toMatch(/You do not need a special onboarding command/);
+    expect(examples).toMatch(/Set up GooseWorks for https:\/\/yourcompany.com/);
+    expect(examples).not.toMatch(/onboard me/);
   });
 
   it('--codex without --mcp installs skill only, no MCP write', async () => {

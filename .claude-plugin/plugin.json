@@ -1,10 +1,13 @@
 {
   "name": "gooseworks",
+  "version": "1.0.0",
   "description": "100+ data tools for scraping, research, lead generation, and enrichment. Search Twitter/X, Reddit, LinkedIn, find emails, enrich companies, and more — all from your coding agent.",
   "author": {
     "name": "GooseWorks",
     "email": "goose@gooseworks.ai"
   },
   "homepage": "https://gooseworks.ai",
+  "repository": "https://github.com/gooseworks-ai/gooseworks",
+  "license": "MIT",
   "keywords": ["data", "scraping", "leads", "research", "gtm", "enrichment", "linkedin", "twitter", "reddit", "email"]
 }

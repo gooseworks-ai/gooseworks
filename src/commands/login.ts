@@ -42,10 +42,11 @@ function syncMcpRegistration(): void {
   }
 }
 
-/** The first request automatically starts or resumes shared onboarding. */
+/** After a fresh login, point the user at a normal first request — not a special onboard command. */
 function showNextSteps(): void {
-  logger.info('Open Claude/Codex and ask for the work you want done.');
-  logger.info('Your first request automatically starts or resumes onboarding.');
+  logger.info('You do not need a special onboarding command. Ask GooseWorks to do a normal task, or say:');
+  logger.example('Set up GooseWorks for https://yourcompany.com');
+  logger.info('The agent preserves that request while it completes any missing company setup.');
 }
 
 export const loginCommand = new Command('login')

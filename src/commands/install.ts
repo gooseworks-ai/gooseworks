@@ -169,8 +169,9 @@ Examples:
 
     console.log('');
     if (wantMcp) {
-      logger.info('Your first GooseWorks request automatically starts or resumes the same onboarding used on the web.');
-      logger.example('/gooseworks research my competitors');
+      logger.info('You do not need a special onboarding command. Ask GooseWorks to do a normal task, or say:');
+      logger.example('Set up GooseWorks for https://yourcompany.com');
+      logger.info('The agent preserves that request while it completes any missing company setup.');
     } else {
       const flag = targetAgents.length === 1 ? `--${targetAgents[0]}` : '--all';
       logger.info('Shared onboarding needs the GooseWorks MCP connection. Enable it with:');
