@@ -57,13 +57,14 @@ MCP tools; the work happens in the app.
 
 - `brand_list`: brand NAME → `brand_id`. Pass `query` when they named one.
 - `brand_create { name, website_url }`: only when the customer asks to add a brand that isn't there. Free.
-- `video_catalog_list { kind: "formats", brand_id }`: what can be ordered. Each format has `card.description`, `card.best_for`, `card.needs`, `ask[]`, `brand_requirements[]`, `default_credits` and `examples[]` (demo videos: a curated sample first, then real runs). The response also carries `brief_fields`: the intent fields every format's `brief` accepts on top of its `ask[]` (`prompt`, `audience`, `must_mention`, `avoid`).
+- `video_catalog_list { kind: "formats", brand_id }`: what can be ordered. Each format has `card.description`, `card.best_for`, `card.needs`, `ask[]`, `brand_requirements[]`, `default_credits` and `examples[]` (demo videos: a curated sample first, then real runs). The response also carries `brief_fields`: the intent fields every format's `brief` accepts on top of its `ask[]` (`prompt`, `audience`, `must_mention`, `avoid`, `notes`).
 - `video_catalog_list { kind: "voices" }`: voices with playable `preview_url`s, for formats that speak.
-- `video_project_upsert`: the free draft. Returns `project_id`, `quote`, `ready`, `missing`.
+- `video_project_upsert`: the free draft. Returns `project_id`, `quote`, `ready`, `missing` and `questions` (0–2 things worth asking before the script is written; usually none).
+- `video_project_upsert { project_id, patch: { brief } }`: changes the brief, checked the same way as when it was created. A key replaces its value, `null` removes it. Free. Once ordered, only the brief fields change (never the format's own answers), and they reach the script on the next `redraft`. A brief change never moves the quote.
 - `video_render_run { dry_run: true }`: re-reads the price. Free.
 - `video_render_run { kind: "partial" }`: **writes the script and stops.** Reserves the quote and shows the script before the expensive work. Works for every orderable format, chat or voiceover.
 - `video_render_run { kind: "full" }`: finishes an approved preview.
-- `video_render_run { kind: "redraft", reason }`: another draft, before approval, written from why they turned this one down. Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. `dry_run: true` says what it would add.
+- `video_render_run { kind: "redraft", reason }`: another draft, before approval, written from why they turned this one down, or with no `reason` after a brief change (the change is the reason). Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. `dry_run: true` says what it would add.
 - `video_project_read { brand_id, project_id }`: status, the drafted script while previewing, and the finished video. Returns an `order` object for recipe projects.
 - `job_cancel { job_id }`: declines a preview. `job_id` is the order id (the project id also works). Releases the whole hold.
 
@@ -150,6 +151,11 @@ Never ask for a promo code.
 
 The server refuses any other key with `invalid_brief` and names every key it accepts. Fix the brief from that message; never drop the customer's intent to make the error go away.
 
+**If `questions` is not empty, ask them now, in one message, before showing the price.** Each one says which brief field its answer fills (`fills`). Save the answers with `video_project_upsert { project_id, patch: { brief: { <fills>: <their answer> } } }`. The bounds:
+- **One round.** Never ask a follow-up, and never ask the same thing twice.
+- **Never required.** If they skip them or say "just make it", carry on with the draft as it is.
+- **Empty `questions` means ask nothing.** The server skips it when the brief already says what the ad is for and who it's for, and never asks what the brand record already knows. "Make me a video ad for X" stays a complete request.
+
 Show the price the draft returned (the `quote`), **never a number from this page or the catalogue**. If it differs from the table's "~N", the quote is right. Convert at **100 credits = $1**.
 
 ### 6. Write the script and show it, before the expensive work
@@ -185,8 +191,11 @@ If `order.preview.brief_check` is present, read it before asking for approval:
 - `missing_mentions`: terms they asked for that the script never says. Tell them which, plainly ("It doesn't mention ChatGPT yet").
 - `endorsement_flags`: lines that make another brand sound like it endorses, partners with or ranks theirs. Show the line and say it has to change: a listed name may appear as "works with", never as "recommends" or "#1 for".
 
+If `order.brief_changed_since_draft` is present, the brief was changed after this draft was written. **Approving renders the draft as shown**, so redraft first (no reason needed), or tell them the change won't be in this video.
+
 Then ask: **use this, change it, or stop?**
 
+- They want to change **the brief itself** (the problem it shows, who it's for, a name to say, something to avoid, a note like "keep it dry") → save it with `video_project_upsert { project_id, patch: { brief } }` (use `notes` for anything that isn't one of the other fields; keep their original `prompt`), then `video_render_run { kind: "redraft" }` with no `reason`. The new draft is written from the updated brief. Same cost wording as below: no new order, no new hold, a few credits inside the hold.
 - Changes → ask **why** in one line, then `video_render_run { kind: "redraft", reason: <their words> }`. The next draft is written from that reason, on the same order. Say what it costs, precisely: "no new order and no new hold; it adds about N credits to what this video costs, inside the hold" (N from the response's `redraft.credits_estimate`). **Never call it free.** Poll `video_project_read` until `preview` again and show the new draft plus `order.spend` (what each draft added, how much of the hold is left). A `redraft_exceeds_hold` or `redraft_limit` refusal means: approve a draft or cancel.
 - Different answers altogether (another format, another angle) → a fresh project, and cancel this one.
 - Stop → `job_cancel { job_id: <order id> }`. The whole hold is released and they pay nothing. Cancel only works while the order is `queued`, `previewing` or `preview`; once they approve and it is `running`, it is being made and cannot be refunded.
@@ -262,10 +271,13 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 | `format_not_available` | Not an orderable format | Re-read the catalogue; offer what's in it |
 | `brand_not_ready` | Brand has no product photos or logo | Relay `missing` in plain words; stop |
 | `invalid_brief` | The brief carried a key this format doesn't accept (e.g. another format's question, or a made-up field like `tone`) | The message lists what is accepted. Move the customer's words into `prompt`/`audience`/`must_mention`/`avoid`; never drop them |
-| The script ignores what they asked for | The step-2 answer wasn't sent (it only sorted the table) | Send it as `brief.prompt` in step 5. The preview's `brief_check` shows missing must-mention terms |
+| The script ignores what they asked for | The step-2 answer wasn't sent (it only sorted the table), or they added something later that never reached the brief | Send it as `brief.prompt` in step 5. Anything they add later goes in with `patch.brief` (`notes`) and then a redraft. The preview's `brief_check` shows missing must-mention terms |
 | Video not on this plan | Lite and trial have no video entitlement | Say so and point at the upgrade; this is the one app trip that's allowed |
 | Insufficient credits | Wallet short | Nothing was created or charged; report the shortfall |
-| Preview looks wrong | The script or the picture isn't what they wanted | `kind: "redraft"` with their reason (same order, adds a few credits inside the hold, never "free"); or `job_cancel` this one |
+| Preview looks wrong | The script or the picture isn't what they wanted | `kind: "redraft"` with their reason, or edit the brief (`patch.brief`) and redraft with no reason. Same order, no new hold, a few credits inside it; never "free". Or `job_cancel` this one |
+| `recipe_brief_locked` | You patched `script_drafts` raw on a format project, which would have skipped the brief's checks | Send the change as `patch.brief` instead |
+| `format_answers_locked` | After ordering, you tried to change the format's own answer (voice, angle, selfie) through the brief | Those change what the run costs. Use `kind: "edit"` where the format lists it, or start a new project |
+| Asked the customer three rounds of questions before anything was made | Treated `questions` as a form, or asked your own follow-ups | Ask what `questions` holds, once, in one message. Nothing else. Skipping is fine |
 | `preview_in_progress` | You called `full` while the script was still being written | Keep polling `video_project_read` until `order.preview` appears |
 | Cancel refused | The order is already `running`; they approved it | Say it's being made; a refund isn't possible now |
 | No render after the format's budget (10 min chat, 20 min kinetic) | The worker didn't pick the run up | Credits are held, not spent. Say it's queued and you'll follow up; don't re-order |
