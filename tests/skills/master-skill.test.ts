@@ -452,5 +452,64 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
       // Never invented: both come from the poll, once the order is done.
       expect(video).toContain('`order.status` is `done`');
     });
+
+    // There was no never-drift case for the picture gate, which is how nobody
+    // noticed customers were approving a generated face they had never been shown:
+    // the backend returned `anchor_images` and the chat showed only text.
+    //
+    // NOT assertions on `order.preview.anchor_images` or `stage: "image"` alone —
+    // both of those strings already existed in the paragraph this change rewrote,
+    // so they pass on a body that still hardcodes a stale list of format names and
+    // still never says what approving costs. Same trap as the bare
+    // `toContain('kind: "edit"')` above. What has to hold is the BRANCH KEY, the
+    // show instruction, and the three things said around it.
+    it('keys the picture branch on `stage`, not on a list of format names', () => {
+      // The branch header itself: resolved by the field the backend sets, so a new
+      // image-anchored format joins without a skill edit.
+      expect(video).toContain('**Any preview with \`order.preview.stage: "image"\`**');
+      expect(video).toContain('never by a list of format names');
+      expect(video).toContain('it follows what the recipe\'s steps produce');
+      // The instruction is to show the URLs, not to describe the picture.
+      expect(video).toContain('Show every URL in \`order.preview.anchor_images\` as a link');
+      // The voiceless format reaches this branch with no spoken script at all, so
+      // an agent reading it must be told not to report an empty script. Pinned
+      // INSIDE the branch, not merely present somewhere in the body — a render-time
+      // table row naming the format would otherwise satisfy this.
+      const branch = video.indexOf('**Any preview with \`order.preview.stage: "image"\`**');
+      const dance = video.indexOf('voiceless dance story');
+      expect(dance).toBeGreaterThan(branch);
+      expect(dance).toBeLessThan(branch + 700);
+      expect(video).toContain('its stills and \`detail\` ARE the draft');
+    });
+
+    it('says what approving the picture COSTS, not only that cancelling is free', () => {
+      // The old paragraph said cancelling releases the hold and stopped there. A
+      // pause with no reason given reads as a broken order, and "approve" read as
+      // the only way forward.
+      expect(video).toContain('nothing has been rendered yet and the pause is deliberate');
+      expect(video).toContain('approving starts the render and commits the credits already held');
+      expect(video).toContain('cancelling instead releases the whole hold');
+      expect(video).toMatch(/A pause with no reason given reads as a broken order/);
+
+      // ORDERING IS LOAD-BEARING, for the same reason as the edit/redraft routing
+      // above: an agent works step 6 in sequence. The picture has to be SHOWN
+      // before it is offered any way to change or approve the draft, or the
+      // customer is choosing about something they were never shown.
+      const show = video.indexOf('Show every URL in \`order.preview.anchor_images\` as a link');
+      const change = video.indexOf('did they give you the actual WORDS, or did they tell you what is wrong?');
+      expect(show).toBeGreaterThan(-1);
+      expect(change).toBeGreaterThan(show);
+    });
+
+    it('never lets a generated face go unapproved, anchor image or not', () => {
+      // The chat formats draw their selfie inside the script step, so it has no
+      // anchor image and the stage stays `script`. The old line ("show the
+      // generated selfie or avatar as a link too, if the format made one") named
+      // no field and was trivially skipped.
+      expect(video).toContain('\`selfie_url\` is a generated face — show it as a link.');
+      expect(video).toContain('it never appears in \`anchor_images\`');
+      expect(video).toContain('It is still a face that will be in the ad, so it still needs their yes.');
+      expect(video).not.toContain('Show the generated selfie or avatar as a link too, if the format made one.');
+    });
   });
 });
