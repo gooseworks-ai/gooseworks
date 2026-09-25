@@ -777,7 +777,8 @@ MCP tools; the work happens in the app.
 - \`video_render_run { dry_run: true }\`: re-reads the price. Free.
 - \`video_render_run { kind: "partial" }\`: **writes the script and stops.** Reserves the quote and shows the script before the expensive work. Works for every orderable format, chat or voiceover.
 - \`video_render_run { kind: "full" }\`: finishes an approved preview.
-- \`video_render_run { kind: "redraft", reason }\`: another draft, before approval, written from why they turned this one down, or with no \`reason\` after a brief change (the change is the reason). Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. \`dry_run: true\` says what it would add.
+- \`video_render_run { kind: "edit", edit: { script } }\`: puts the customer's OWN words into the draft, verbatim, through the format's own guards. Free before approval, and the **only** route that keeps their copy. Offered where the format's \`edits.script\` is non-empty; refused as \`script_not_editable\` elsewhere.
+- \`video_render_run { kind: "redraft", reason }\`: another draft, before approval, written from why they turned this one down, or with no \`reason\` after a brief change (the change is the reason). It **re-runs the writer** either way, so every word (and the picture on a character format) is replaced — it does not keep copy the customer supplied. Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. \`dry_run: true\` says what it would add.
 - \`video_project_read { brand_id, project_id }\`: status, the drafted script while previewing, and the finished video. Returns an \`order\` object for recipe projects.
 - \`job_cancel { job_id }\`: declines a preview. \`job_id\` is the order id (the project id also works). Releases the whole hold.
 
@@ -833,6 +834,7 @@ Order the rows by how well each format fits their answer. Judge fit from \`card.
 - **"What it looks like" is \`card.description\`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief. \`card.best_for\` often carries a dollar figure; never copy it into the table.
 - **When the pick depends on an option, say which.** "Cartoon explainer (as a friendly helper)" in the Format cell, and pre-fill that answer in step 4.
 - **Price** is \`default_credits\`, written approximately ("~60 credits"). It is a guide for choosing. The price they agree to is the server's quote in step 5.
+- **Say which formats won't take their words.** A format whose \`edits.script\` is empty writes its own copy and accepts no hand edit; the only lever is a redraft, which rewrites everything. Put "writes its own words" in that row's "What it looks like" cell. A customer who arrives with a script already written needs to know this **before** they pick, not after they hand it over.
 - **Formats the brand may not be able to run** go last, with \`card.needs\` in plain words, e.g. "needs real before/after photos". Don't hide them; don't suggest them. Judge logo and product photos from the \`brand_list\` row. For anything else (before/after photos, say) you can't see, treat it as missing rather than make extra calls. \`video_project_upsert\` returns \`ready\`/\`missing\`, which is the real check.
 
 **Print the table in your message, THEN ask which one** ("Want the suggested one, or another?"). Never put the formats only inside a structured question control: it renders plain option labels, not links, so the customer would be picking a format they were never able to watch. That happened on the first real run: the picker appeared, the demos didn't, and the customer had to ask where they were. A question control may follow the table to capture the answer; it never replaces it.
@@ -908,8 +910,14 @@ If \`order.brief_changed_since_draft\` is present, the brief was changed after t
 
 Then ask: **use this, change it, or stop?**
 
-- They want to change **the brief itself** (the problem it shows, who it's for, a name to say, something to avoid, a note like "keep it dry") → save it with \`video_project_upsert { project_id, patch: { brief } }\` (use \`notes\` for anything that isn't one of the other fields; keep their original \`prompt\`), then \`video_render_run { kind: "redraft" }\` with no \`reason\`. The new draft is written from the updated brief. Same cost wording as below: no new order, no new hold, a few credits inside the hold.
-- Changes → ask **why** in one line, then \`video_render_run { kind: "redraft", reason: <their words> }\`. The next draft is written from that reason, on the same order. Say what it costs, precisely: "no new order and no new hold; it adds about N credits to what this video costs, inside the hold" (N from the response's \`redraft.credits_estimate\`). **Never call it free.** Poll \`video_project_read\` until \`preview\` again and show the new draft plus \`order.spend\` (what each draft added, how much of the hold is left). A \`redraft_exceeds_hold\` or \`redraft_limit\` refusal means: approve a draft or cancel.
+**One question decides how to change it: did they give you the actual WORDS, or did they tell you what is wrong?** Only the first route below keeps their words. The other two write new ones — which is right when the customer wants something different, and is a silent rewrite when they wanted what they wrote.
+
+- **They gave you the words** ("use these lines", "the end card must say Meet Goose", "keep this but change the second bubble") → \`video_render_run { kind: "edit", edit: { script: { … } } }\`. **This is the only route that keeps copy verbatim.** It puts their text through the format's own guards and costs nothing extra before approval. Send the shape the preview handed you: \`script.thread\` for a chat format, \`script.beats[i].vo_lines\` (one entry per beat, \`{}\` for a beat you are not changing) for a voiceover format, \`script.slates[{ beat_idx, props }]\` for on-screen words, \`script.cta_text\` for the end card, \`ingredient: "character"\` + \`script.character.description\` for the character itself.
+  - **An edit before approval IS the approval**: it applies the copy and starts the render at once (status → \`running\`). So show the exact words you are about to send, get a yes, and only then send it. An unapproved fix stays a proposal in the chat.
+  - Refused with \`script_not_editable\` → this format writes its own copy and takes no hand edit. **Say so, and do not paraphrase their lines into a redraft** — that hands them a video that is not what they wrote. Their real options are a redraft (new words, not theirs), a re-order with different answers, or cancel.
+  - Refused with \`script_rejected\` → a line makes a claim the brand's facts don't support. Relay the reason and offer a rewrite; never argue it through.
+- **They changed the BRIEF, not the copy** — the problem it shows, who it's for, a name to say, something to avoid, a note like "keep it dry" → save it with \`video_project_upsert { project_id, patch: { brief } }\` (use \`notes\` for anything that isn't one of the other fields; keep their original \`prompt\`), then \`video_render_run { kind: "redraft" }\` with no \`reason\`. The new draft is written from the updated brief, so **the words will be new** — this changes the instructions, not the script. Same cost wording as below: no new order, no new hold, a few credits inside the hold.
+- **They only said what's wrong** ("too salesy", "the character looks like a mug") → ask **why** in one line, then \`video_render_run { kind: "redraft", reason: <their words> }\`. **A redraft RE-RUNS the writer: every word, and the picture on a character format, is replaced.** Their reason steers the next draft; it is not copied into it. Never put exact lines in \`reason\` expecting them back. Say what it costs, precisely: "no new order and no new hold; it adds about N credits to what this video costs, inside the hold" (N from the response's \`redraft.credits_estimate\`). **Never call it free.** Poll \`video_project_read\` until \`preview\` again and show the new draft plus \`order.spend\` (what each draft added, how much of the hold is left). A \`redraft_exceeds_hold\` or \`redraft_limit\` refusal means: approve a draft or cancel.
 - Different answers altogether (another format, another angle) → a fresh project, and cancel this one.
 - Stop → \`job_cancel { job_id: <order id> }\`. The whole hold is released and they pay nothing. Cancel only works while the order is \`queued\`, \`previewing\` or \`preview\`; once they approve and it is \`running\`, it is being made and cannot be refunded.
 
@@ -921,7 +929,7 @@ This is the review. It happens here, not in the app.
 
 Only after they approve the script: \`video_render_run { brand_id, project_id, kind: "full" }\`.
 
-Poll \`video_project_read { brand_id, project_id }\` **every 30 seconds.** Done means the project has a final render with an \`output_url\`.
+Poll \`video_project_read { brand_id, project_id }\` **every 30 seconds.** Done means \`order.status\` is \`done\`; the same response then carries \`video_url\` (the project page) and \`mp4_url\` (the file).
 
 **How long depends on the format.** One number is wrong by 2x across the catalogue, and a customer told "about 5 minutes" at minute 9 thinks it has failed:
 
@@ -934,7 +942,9 @@ An unlisted or new format: assume the longer budget. Say the number you are work
 
 ### 8. Deliver in the chat
 
-Give them the video URL directly and say what it is: length, ratio, what's in it. Do **not** tell them to go to the app to see it. If they want a change, offer to make another with different answers. That is a new order and a new charge; say so.
+**Lead with \`video_url\`** — the project page, where the video plays and they can come back to it. Give \`mp4_url\` second and name it as the file ("and the raw MP4, if you want to download or upload it"). Never hand over the CloudFront \`.mp4\` on its own: it is a file, not a place — nothing to return to, nothing to edit from, and it reads like a debug artifact rather than a delivery. If \`video_url\` is missing, poll once more; never substitute the mp4 for it silently.
+
+Say what the video is: length, ratio, what's in it. This is delivery **in the chat** — the link is the video, not an instruction to go to the app. If they want a change, offer to make another with different answers. That is a new order and a new charge; say so.
 
 The only reason to send someone to the app is **payment**: not enough credits, or a plan without video.
 
@@ -951,11 +961,13 @@ The only reason to send someone to the app is **payment**: not enough credits, o
 - **A contradiction with the card outranks every keyword match.** Check what they asked for against what the card and the \`ask[]\` options say the format does; a format that can't do the ask is never Suggested.
 - **They asked for a format that isn't in the catalogue** → it isn't available yet. Say so, show the table, and don't improvise a lab recipe.
 - **Run failed → say so plainly.** The credits are released automatically. Offer a retry; never retry unasked.
+- **Their words go in an \`edit\`, never in a \`redraft\` reason.** A \`reason\` steers the next draft; it is not copied into it. The moment a customer gives you actual copy, the only honest routes are \`kind: "edit"\` or telling them this format will not take it.
+- **Deliver the page, not the file.** \`video_url\` leads, \`mp4_url\` follows. A bare CloudFront link is not a delivery.
 - **The brief is the customer's words, not yours.** \`prompt\` is their answer, verbatim or close to it. \`audience\`, \`must_mention\` and \`avoid\` hold only what they said. Another brand in \`must_mention\` means they asked for it; it can be named as "works with", never as an endorsement or ranking.
 
 ## Output
 
-The finished MP4's URL, in the chat, with its length and ratio. It is also on the brand's creative in the app; mention that as a footnote, not an instruction.
+The finished video in the chat: \`video_url\` (the project page) first, \`mp4_url\` (the file) second, with its length and ratio.
 
 The credits leave the balance when the order is placed (a hold). They are **captured** on success or **released** on failure or cancellation. A balance that dropped does not prove a charge, so don't describe it to the customer that way.
 
@@ -970,7 +982,8 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 - They approved the **script**, not just the price, before the expensive work ran: the thread for a chat format, the on-screen words *and* the voiceover for a kinetic-type one.
 - You told them how long the render would take **for the format they picked**, and said something at the halfway mark instead of going quiet.
 - The quote you showed came from the server, never from memory or the catalogue.
-- The video was delivered in the chat. You did not send them to the app for anything but payment.
+- Every line of copy the customer wrote is in the finished video word for word — it went through \`kind: "edit"\`, or you told them plainly that this format would not take it. No supplied copy was ever paraphrased into a \`redraft\` reason.
+- The video was delivered in the chat as \`video_url\` first and \`mp4_url\` second. You did not send them to the app for anything but payment.
 - You asked for no promo code or reference video, and made no product claim the brand's own facts don't support.
 
 ## Failure Modes
@@ -987,7 +1000,12 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 | The script ignores what they asked for | The step-2 answer wasn't sent (it only sorted the table), or they added something later that never reached the brief | Send it as \`brief.prompt\` in step 5. Anything they add later goes in with \`patch.brief\` (\`notes\`) and then a redraft. The preview's \`brief_check\` shows missing must-mention terms |
 | Video not on this plan | Lite and trial have no video entitlement | Say so and point at the upgrade; this is the one app trip that's allowed |
 | Insufficient credits | Wallet short | Nothing was created or charged; report the shortfall |
-| Preview looks wrong | The script or the picture isn't what they wanted | \`kind: "redraft"\` with their reason, or edit the brief (\`patch.brief\`) and redraft with no reason. Same order, no new hold, a few credits inside it; never "free". Or \`job_cancel\` this one |
+| Preview looks wrong | The script or the picture isn't what they wanted | They gave you the words → \`kind: "edit"\`. They changed the brief → \`patch.brief\` then a redraft with no reason. They only said what's wrong → \`kind: "redraft"\` with their reason. Same order, no new hold, a few credits inside it; never "free". Or \`job_cancel\` this one |
+| **The customer wrote the script and the finished video says something else** | Their lines went into a \`redraft\` \`reason\`. A redraft re-runs the writer: the reason steers the next draft, it is never copied into it. Seen on staging — "Keep this exact draft, use these lines: …" came back paraphrased, twice, and was paid for both times | Copy goes in \`kind: "edit"\`. If the format refuses it (\`script_not_editable\`), say so and let them choose a redraft, a re-order or cancel — knowing the words will be new |
+| Video started rendering before the customer approved | \`kind: "edit"\` on a preview applies the copy **and** starts the full render (status → \`running\`) | Show the exact words you're about to send, get a yes, then send the edit. An unapproved fix stays a proposal in the chat |
+| \`draft_is_your_copy\` on a redraft | The current draft is the customer's own edited copy; another draft would replace their words | Correct behaviour. Edit their copy again with \`kind: "edit"\`, approve it, or cancel |
+| \`script_rejected\` on an edit | A line makes a claim the brand's facts don't support | Relay the reason verbatim and offer a rewrite; nothing was charged |
+| The customer was sent a raw \`cloudfront.net/….mp4\` | Delivered \`mp4_url\` (or \`order.output_url\`) instead of \`video_url\` | \`video_url\` leads and \`mp4_url\` follows. Both come back from \`video_project_read\` once \`order.status\` is \`done\` |
 | \`recipe_brief_locked\` | You patched \`script_drafts\` raw on a format project, which would have skipped the brief's checks | Send the change as \`patch.brief\` instead |
 | \`format_answers_locked\` | After ordering, you tried to change the format's own answer (voice, angle, selfie) through the brief | Those change what the run costs. Use \`kind: "edit"\` where the format lists it, or start a new project |
 | Asked the customer three rounds of questions before anything was made | Treated \`questions\` as a form, or asked your own follow-ups | Ask what \`questions\` holds, once, in one message. Nothing else. Skipping is fine |
@@ -995,7 +1013,7 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 | Cancel refused | The order is already \`running\`; they approved it | Say it's being made; a refund isn't possible now |
 | No render after the format's budget (10 min chat, 20 min kinetic) | The worker didn't pick the run up | Credits are held, not spent. Say it's queued and you'll follow up; don't re-order |
 | \`preview_not_available\` on an orderable format | A bug; every sold format has a script preview | Say so and stop. Do not order without showing the script |
-| An edited script is refused (\`script_not_editable\`) | The format writes its own copy from the answers; a patched script would be stored and ignored | Correct behaviour. Cancel and re-order with different answers, or change the brand's facts |
+| An edited script is refused (\`script_not_editable\`) | This format's writer takes no hand edit (its \`edits.script\` is empty). Only some formats do | Should have been said at the table. Their words cannot be rendered verbatim here: offer a redraft (new words), a re-order with different answers, or cancel — and never quietly paraphrase their copy into the redraft reason |
 | A "hero, no villain" brief got the villain cartoon | The card was paraphrased ("narrates the fix") and the fit check never read what the format can't do | Quote \`card.description\`; check the ask against the card and \`ask[]\`; never Suggest a contradiction |
 | Two videos, two charges | A second project was created instead of continuing the first | Continue on the SAME \`project_id\` |
 
