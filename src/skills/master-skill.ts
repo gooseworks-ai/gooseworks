@@ -887,9 +887,11 @@ This reserves the credits and writes the script only: **no video is rendered.** 
 > **me:** I literally just chose to betray the duke
 > **them:** omg is this a game or a book
 
-Show the generated selfie or avatar as a link too, if the format made one.
+**\`selfie_url\` is a generated face — show it as a link.** These formats draw the selfie INSIDE the script step, so it never appears in \`anchor_images\` and \`stage\` stays \`"script"\`. It is still a face that will be in the ad, so it still needs their yes.
 
-**A character format** (animated character, reaction selfie, podcast hosts, UGC creator) has \`order.preview.stage: "image"\`: the preview stopped after the **picture**, not just the words, so they judge the face before paying for the video. Show every URL in \`order.preview.anchor_images\` as a link (the podcast format has two, one per host), alongside the script. Say plainly: the picture was made before approval so they can judge it, and if they cancel, the whole hold is released and it costs them nothing.
+**Any preview with \`order.preview.stage: "image"\`** stopped after the **picture**, not just the words, so they judge the face before paying for the video. Go by that field, never by a list of format names — it follows what the recipe's steps produce, so a format joins this branch without a skill edit. Today: the animated character, the reaction selfie, the podcast hosts, the UGC creator, and the voiceless dance story (four to six stills, and no spoken script at all — its stills and \`detail\` ARE the draft, so say that rather than reporting an empty script).
+
+Show every URL in \`order.preview.anchor_images\` as a link (the podcast format has two, one per host), alongside the script. Then say plainly, in this order: what they are looking at; that **nothing has been rendered yet and the pause is deliberate**, because the video is generated FROM this picture and changing the face now is cheap; that **approving starts the render and commits the credits already held**; and that cancelling instead releases the whole hold, so the picture costs them nothing. A pause with no reason given reads as a broken order.
 
 **A voiceover format** (kinetic type) fills \`beats\` instead, and \`thread\` is null. Each beat has \`vo_lines\` (what is spoken) and a \`beat\` label. \`detail.hyperframe.plan.slates[].props\` holds the words that go **on screen**, which for this format is most of the ad. Show both columns, in order:
 
