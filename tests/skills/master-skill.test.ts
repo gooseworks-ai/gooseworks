@@ -392,5 +392,65 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
       expect(video).toContain('Never create a second project; that is a second charge.');
       expect(video).toContain('Never use the charging tool as a status probe.');
     });
+
+    // Staging shipped videos whose copy the customer had written out line by
+    // line. The skill routed EVERY change through `kind: "redraft"` and never
+    // mentioned `kind: "edit"`, so their lines went into the redraft `reason` —
+    // where they steer the writer instead of being the script. A redraft re-runs
+    // the writer by design, so the words were replaced, and charged for. This is
+    // the same class as the three rules above: the customer paid for something
+    // they did not agree to.
+    it('verbatim customer copy goes to `edit`, never to a `redraft` reason', () => {
+      // NOT a bare `toContain('kind: "edit"')`: the name already appears in a
+      // failure-mode row ("use `kind: "edit"` where the format lists it"), so
+      // that assertion passes on a body that never tells the agent to reach for
+      // it. What has to hold is that step 6 ROUTES to it.
+      expect(video).toContain('→ \`video_render_run { kind: "edit", edit: { script: { … } } }\`');
+      // The choice is made on ONE question, before any tool is named, and the
+      // stakes of getting it wrong are stated.
+      expect(video).toContain('did they give you the actual WORDS, or did they tell you what is wrong?');
+      expect(video).toContain('Only the first route below keeps their words.');
+      expect(video).toContain('is a silent rewrite when they wanted what they wrote');
+      // `edit` is the only word-preserving route…
+      expect(video).toContain('**This is the only route that keeps copy verbatim.**');
+      // …and every route that replaces the words says so IN ITS OWN BRANCH.
+      // The brief-patch route is the easiest to mistake for word-preserving:
+      // the customer is handing over text either way.
+      expect(video).toContain('**A redraft RE-RUNS the writer: every word, and the picture on a character format, is replaced.**');
+      expect(video).toContain('so **the words will be new** — this changes the instructions, not the script');
+      expect(video).toContain('Their reason steers the next draft; it is not copied into it.');
+      expect(video).toMatch(/Never put exact lines in `reason` expecting them back/);
+      // A hard rule too, so it survives a future rewrite of step 6's prose.
+      expect(video).toContain('**Their words go in an \`edit\`, never in a \`redraft\` reason.**');
+
+      // ORDERING IS LOAD-BEARING. An agent reads step 6 in sequence and takes the
+      // first branch that matches; routing verbatim copy through `redraft` is what
+      // rewrote a customer's script. So the word-preserving branch must come
+      // before BOTH branches that replace the words.
+      const edit = video.indexOf('**They gave you the words**');
+      const brief = video.indexOf('**They changed the BRIEF, not the copy**');
+      const redraft = video.indexOf('**They only said what is wrong**') >= 0
+        ? video.indexOf('**They only said what is wrong**')
+        : video.indexOf('**They only said what\'s wrong**');
+      expect(edit).toBeGreaterThan(-1);
+      expect(brief).toBeGreaterThan(edit);
+      expect(redraft).toBeGreaterThan(edit);
+
+      // A format that cannot take copy must be declared at the table, not
+      // discovered after the customer has handed their script over.
+      expect(video).toContain('**Say which formats won\'t take their words.**');
+      // And the refusal must never be answered by paraphrasing into a redraft.
+      expect(video).toContain('do not paraphrase their lines into a redraft');
+    });
+
+    it('delivers the project page first and the raw mp4 second', () => {
+      // The raw CloudFront mp4 was the only link a customer got: a file, not a
+      // place — nothing to come back to and nothing to edit from.
+      expect(video).toContain('**Lead with `video_url`**');
+      expect(video).toContain('**Deliver the page, not the file.** `video_url` leads, `mp4_url` follows.');
+      expect(video).toContain('`video_url` (the project page) first, `mp4_url` (the file) second');
+      // Never invented: both come from the poll, once the order is done.
+      expect(video).toContain('`order.status` is `done`');
+    });
   });
 });
