@@ -3,8 +3,8 @@
   "source_repo": "gooseworks-app",
   "source_file": "backend/src/app-mcp-server/lib/ads-skill.ts",
   "source_symbol": "getSkillsInstructionSection()",
-  "captured": "2026-08-31",
-  "entry_skills": ["goose-ads", "goose-video", "gooseworks"],
+  "captured": "2026-09-26",
+  "entry_skills": ["goose-ads", "goose-video", "goose-video-local", "gooseworks"],
   "brand_growth_skills": [
     "ad-angle-miner",
     "ad-to-landing-page-auditor",

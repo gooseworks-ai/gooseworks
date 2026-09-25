@@ -7,6 +7,7 @@ description: >
   when the app's "copy for Claude" command names goose-video-local, for "make the video for
   project <id>" / "for video batch <id>", or to remix a video ad template locally. Needs a machine
   with network egress and ffmpeg (local Claude Code or the desktop app), not a hosted connector.
+  To order a NEW video ad in chat, use goose-video instead.
 category: ads
 version: 0.3.0
 author: GooseWorks
