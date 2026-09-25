@@ -3,6 +3,7 @@ import {
   getGooseAdsSkillContent,
   getGooseVideoSkillContent,
   getGooseProductPhotosSkillContent,
+  getGooseVideoLocalSkillContent,
   getEntrySkills,
   getEntrySkillNames,
 } from '../../src/skills/master-skill';
@@ -239,9 +240,9 @@ describe('skills/goose-ads entry skill', () => {
 describe('skills/getEntrySkills', () => {
   // GOOSE-3190: the registry is the ONE source — goose-product-photos used to be
   // a hand-maintained SKILL.md on disk that this list never emitted or refreshed.
-  it('vendors all four entry skills (not ads-remix)', () => {
+  it('vendors all five entry skills (not ads-remix)', () => {
     const names = getEntrySkills().map(s => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-product-photos']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos']);
     expect(getEntrySkillNames()).toEqual(names);
   });
 
@@ -289,6 +290,28 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
     expect(photos).toContain('get_product_photo_generation');
     expect(photos).toContain('approve_product_photo');
     expect(photos).toContain('attestation_accepted');
+  });
+});
+
+// GOOSE-3677: the local-render runtime under its own name, so goose-video can be
+// handed to the server-rendered ordering flow without stranding the app screens
+// that still render on the customer's machine.
+describe('skills/getGooseVideoLocalSkillContent', () => {
+  const local = getGooseVideoLocalSkillContent();
+
+  it('is named/slugged goose-video-local, with exactly one frontmatter block', () => {
+    expect(local).toMatch(/^---\nname: goose-video-local\nslug: goose-video-local\n/);
+    expect(local).not.toContain('name: goose-video\n');
+    expect(local.match(/^---$/gm)).toHaveLength(2);
+  });
+
+  it('carries the whole local runtime body', () => {
+    const video = getGooseVideoSkillContent();
+    const body = (s: string) => s.slice(s.indexOf('\n---\n', 4) + 5);
+    expect(body(local)).toBe(body(video));
+    expect(local).toContain('# GooseWorks Video Ads — local remix runtime');
+    expect(local).toContain('submit_render');
+    expect(local).toContain('Playwright');
   });
 });
 

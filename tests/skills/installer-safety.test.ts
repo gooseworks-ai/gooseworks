@@ -69,14 +69,14 @@ describe('removeAllSkills — third-party skills survive install (GOOSE-3191)', 
 
   it('removes every known entry-skill slug even when it has no stamp (old CLI upgrade)', () => {
     withTempHome((installer, skillsBase) => {
-      for (const name of ['gooseworks', 'goose-ads', 'goose-video', 'goose-product-photos', 'ads-remix']) {
+      for (const name of ['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos', 'ads-remix']) {
         writeSkill(path.join(skillsBase, name), `# ${name}\n`); // no stamp
       }
       writeSkill(path.join(skillsBase, 'goose-notours'), '# mine\n');
 
       installer.removeAllSkills();
 
-      for (const name of ['gooseworks', 'goose-ads', 'goose-video', 'goose-product-photos', 'ads-remix']) {
+      for (const name of ['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos', 'ads-remix']) {
         expect(fs.existsSync(path.join(skillsBase, name))).toBe(false);
       }
       expect(fs.existsSync(path.join(skillsBase, 'goose-notours'))).toBe(true);

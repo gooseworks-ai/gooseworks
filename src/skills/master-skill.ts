@@ -43,6 +43,7 @@ export function getEntrySkills(): EntrySkill[] {
     { name: 'gooseworks', content: getMasterSkillContent() },
     { name: 'goose-ads', content: getGooseAdsSkillContent() },
     { name: 'goose-video', content: getGooseVideoSkillContent() },
+    { name: 'goose-video-local', content: getGooseVideoLocalSkillContent() },
     { name: 'goose-product-photos', content: getGooseProductPhotosSkillContent() },
   ];
 }
@@ -1149,6 +1150,41 @@ path. (\`fal-storage-proxy\` may 404 depending on the install; don't block on it
   \`log_cli_event\` MCP tool) — not just to the user. Set \`GW_RUN_ID\` once so events group.
 - Always end a successful run with \`app_url\` + \`brand_url\`, verbatim.
 `;
+}
+
+/**
+ * Returns the goose-video-local entry SKILL.md content (GOOSE-3677).
+ *
+ * The local-render runtime under its own name, so `goose-video` can be handed to
+ * the server-rendered ordering flow without stranding the app screens that still
+ * render on the customer's machine (template remixes, concept batches, and every
+ * project that is not a recipe order: their `video_render_run` opens a render row
+ * that only this skill consumes). It is the same body as today's `goose-video`
+ * with its own frontmatter; when `goose-video` swaps bodies, this becomes the
+ * only home of the local runtime.
+ */
+export function getGooseVideoLocalSkillContent(): string {
+  const video = getGooseVideoSkillContent();
+  const end = video.indexOf('\n---\n', 4);
+  if (!video.startsWith('---\n') || end < 0) {
+    throw new Error('goose-video SKILL.md has no frontmatter block');
+  }
+  const body = video.slice(end + '\n---\n'.length);
+  return `---
+name: goose-video-local
+slug: goose-video-local
+description: >
+  Render an EXISTING GooseWorks video ad project or video batch on this machine (Playwright +
+  ffmpeg + GooseWorks media proxies) and save the finished MP4 back to the project over MCP. Use
+  when the app's "copy for Claude" command names goose-video-local, for "make the video for
+  project <id>" / "for video batch <id>", or to remix a video ad template locally. Needs a machine
+  with network egress and ffmpeg (local Claude Code or the desktop app), not a hosted connector.
+category: ads
+version: 0.3.0
+author: GooseWorks
+tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
+---
+${body}`;
 }
 
 /**
