@@ -88,8 +88,9 @@ describe('skills/master-skill', () => {
       expect(content).toContain('goose-graphics');
     });
 
-    it('mentions goose-video as coming soon', () => {
+    it('routes video orders to goose-video and existing app projects to goose-video-local', () => {
       expect(content).toContain('goose-video');
+      expect(content).toContain('goose-video-local');
     });
 
     it('routes product photos and image animation without a separate collection command', () => {
@@ -293,9 +294,8 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
   });
 });
 
-// GOOSE-3677: the local-render runtime under its own name, so goose-video can be
-// handed to the server-rendered ordering flow without stranding the app screens
-// that still render on the customer's machine.
+// GOOSE-3677: goose-video is the server-rendered ORDERING flow; the local-render
+// runtime lives on, under its own name, for the app's existing projects/batches.
 describe('skills/getGooseVideoLocalSkillContent', () => {
   const local = getGooseVideoLocalSkillContent();
 
@@ -303,56 +303,94 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toMatch(/^---\nname: goose-video-local\nslug: goose-video-local\n/);
     expect(local).not.toContain('name: goose-video\n');
     expect(local.match(/^---$/gm)).toHaveLength(2);
-  });
-
-  it('carries the whole local runtime body', () => {
-    const video = getGooseVideoSkillContent();
-    const body = (s: string) => s.slice(s.indexOf('\n---\n', 4) + 5);
-    expect(body(local)).toBe(body(video));
     expect(local).toContain('# GooseWorks Video Ads — local remix runtime');
-    expect(local).toContain('submit_render');
-    expect(local).toContain('Playwright');
-  });
-});
-
-describe('skills/getGooseVideoSkillContent', () => {
-  const video = getGooseVideoSkillContent();
-
-  it('is named/slugged goose-video', () => {
-    expect(video).toContain('name: goose-video');
-    expect(video).toContain('slug: goose-video');
   });
 
   it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
     // Local render lifecycle + the free in-app review tool.
-    expect(video).toContain('submit_render');
-    expect(video).toContain('update_render_status');
-    expect(video).toContain('update_ad_project_script');
-    expect(video).toContain('set_final_render');
+    expect(local).toContain('Playwright');
+    expect(local).toContain('submit_render');
+    expect(local).toContain('update_render_status');
+    expect(local).toContain('update_ad_project_script');
+    expect(local).toContain('set_final_render');
     // DB-driven: reads the template's recipe (get_ad_template → recipe.atoms /
     // recipe.instructions) instead of mapping format → a hardcoded recipe slug.
-    expect(video).toContain('get_ad_template');
-    expect(video).toContain('recipe.atoms');
-    expect(video).not.toContain('remix-imessage-ad-from-sample');
+    expect(local).toContain('get_ad_template');
+    expect(local).toContain('recipe.atoms');
+    expect(local).not.toContain('remix-imessage-ad-from-sample');
     // Single review-once gate over the full ingredient set (script + visuals),
     // mirrored as container-tagged ingredients.
-    expect(video).toMatch(/review/i);
-    expect(video).toContain('ingredients');
-    expect(video).toContain('container');
-    expect(video).toMatch(/end card/i);
+    expect(local).toMatch(/review/i);
+    expect(local).toContain('ingredients');
+    expect(local).toContain('container');
+    expect(local).toMatch(/end card/i);
     // Durable render-file URL, never a CDN URL.
-    expect(video).toContain('render-file?path=');
+    expect(local).toContain('render-file?path=');
     // It is NOT the static backend-batch wrapper.
-    expect(video).not.toContain('submit_remix_batch');
+    expect(local).not.toContain('submit_remix_batch');
   });
 
   it('forbids assembling the full video before approval (GOOSE-2542)', () => {
     // The review must show the individual PIECES, not an already-stitched cut —
     // otherwise the user sees a finished video under "Review before rendering".
-    expect(video).toContain('individual PIECES, never the finished cut');
-    expect(video).toMatch(/never assemble the full video/i);
-    expect(video).toMatch(/full cascade/i);
+    expect(local).toContain('individual PIECES, never the finished cut');
+    expect(local).toMatch(/never assemble the full video/i);
+    expect(local).toMatch(/full cascade/i);
     // The prohibition is cross-referenced to the ticket so it can't silently regress.
-    expect(video).toContain('GOOSE-2542');
+    expect(local).toContain('GOOSE-2542');
+  });
+});
+
+describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
+  const video = getGooseVideoSkillContent();
+
+  it('is named/slugged goose-video, with exactly one frontmatter block', () => {
+    expect(video).toMatch(/^---\nname: goose-video\nslug: goose-video\n/);
+    expect(video.match(/^---$/gm)).toHaveLength(2);
+  });
+
+  it('orders on the server through the video_* tools and renders nothing locally', () => {
+    for (const tool of ['brand_list', 'video_catalog_list', 'video_project_upsert', 'video_render_run', 'video_project_read', 'job_cancel']) {
+      expect(video).toContain(tool);
+    }
+    expect(video).not.toContain('Playwright');
+    expect(video).not.toContain('submit_render');
+    expect(video).not.toContain('set_final_render');
+  });
+
+  it('routes existing app projects and batches to goose-video-local first', () => {
+    const route = video.indexOf('## Route first');
+    expect(route).toBeGreaterThan(-1);
+    expect(route).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
+    expect(video).toContain('fetch_skill("goose-video-local")');
+    expect(video).toContain('script_drafts.recipe');
+  });
+
+  it('carries no goose-lab-only syntax (wikilinks, ticket ids, lab frontmatter)', () => {
+    expect(video).not.toMatch(/\[\[/);
+    expect(video).not.toMatch(/GOOSE-\d+/);
+    expect(video).not.toMatch(/^owner:|^level:|^variant-of:/m);
+  });
+
+  // THE invariants. goose-lab keeps only a stub, so this test is what stops the
+  // ordering flow drifting into spending a customer's money on the wrong terms.
+  describe('never-drift rules', () => {
+    it('the SCRIPT is approved before the expensive render', () => {
+      expect(video).toContain('No approval of the SCRIPT → do not call `kind: "full"`');
+      const preview = video.indexOf('kind: "partial" }`.');
+      const full = video.indexOf('Only after they approve the script: `video_render_run { brand_id, project_id, kind: "full" }`');
+      expect(preview).toBeGreaterThan(-1);
+      expect(full).toBeGreaterThan(preview);
+    });
+
+    it('the price shown is the server quote, never a number from the page or catalogue', () => {
+      expect(video).toContain('Show the price the draft returned (the `quote`), **never a number from this page or the catalogue**');
+      expect(video).toContain('The quote you showed came from the server');
+    });
+
+    it('one project is one order: never a second project, never the charging tool as a status probe', () => {
+      expect(video).toContain('Never create a second project; that is a second charge.');
+      expect(video).toContain('Never use the charging tool as a status probe.');
+    });
   });
 });

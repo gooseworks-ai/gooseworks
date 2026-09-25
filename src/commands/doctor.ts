@@ -35,7 +35,7 @@ interface Check {
 
 /**
  * `gooseworks doctor` — verify the local prerequisites for making VIDEO ads
- * (the goose-video skill renders locally: Playwright records the mockup, ffmpeg
+ * (the goose-video-local skill renders locally: Playwright records the mockup, ffmpeg
  * stitches/mixes). Also checks auth + that the GooseWorks MCP server is wired,
  * since the skill reads/writes the project over MCP. Exits non-zero if anything
  * is missing so the agent's Phase-0 preflight can relay the fix and stop.
@@ -82,7 +82,7 @@ export const doctorCommand = new Command('doctor')
     }
     logger.info('');
     if (allOk) {
-      logger.success('All set — you can make video ads locally (goose-video).');
+      logger.success('All set — you can render video ads locally (goose-video-local).');
     } else {
       logger.warn(
         'Some prerequisites are missing. Fix the items above, then re-run: gooseworks doctor',

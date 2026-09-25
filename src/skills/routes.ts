@@ -61,7 +61,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   },
   {
     skill: 'goose-video',
-    when: 'Make a **video** ad — remix a video ad template (e.g. iMessage chat-reveal), or "make the video for project <id>"',
+    when: 'Order a **video** ad in chat — "make me a video ad for <brand>", a UGC / iMessage / explainer video; renders on the GooseWorks server',
     how: 'Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.',
     delivery: 'entry',
   },

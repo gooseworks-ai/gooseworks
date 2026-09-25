@@ -184,7 +184,8 @@ For focused creative work you can also use:
 
 - `/goose-ads` for static ads, ad research, and ad performance.
 - `/goose-product-photos` for studio, lifestyle, marketplace, social, and on-model product photography.
-- `/goose-video` for supported video-ad formats.
+- `/goose-video` to order a video ad in chat (renders on the GooseWorks server).
+- `/goose-video-local` to render a video project you started in the app, on this machine.
 - `goose-graphics` for social graphics, carousels, slides, and branded visual content.
 - `animate-image` to turn an approved still into a short motion creative.
 
