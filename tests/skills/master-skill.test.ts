@@ -375,11 +375,13 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
   // THE invariants. goose-lab keeps only a stub, so this test is what stops the
   // ordering flow drifting into spending a customer's money on the wrong terms.
   describe('never-drift rules', () => {
-    it('the SCRIPT is approved before the expensive render', () => {
-      expect(video).toContain('No approval of the SCRIPT → do not call `kind: "full"`');
+    it('each declared artifact is approved before the expensive render', () => {
+      expect(video).toContain('No approval of the CURRENT artifact → do not call `kind: "full"`');
       const preview = video.indexOf('kind: "partial" }`.');
-      const full = video.indexOf('Only after they approve the script: `video_render_run { brand_id, project_id, kind: "full" }`');
+      const gateLoop = video.indexOf('#### Gate loop (authoritative)');
+      const full = video.indexOf('kind: "full", gate_step_idx: order.preview.gate.step_idx');
       expect(preview).toBeGreaterThan(-1);
+      expect(gateLoop).toBeGreaterThan(preview);
       expect(full).toBeGreaterThan(preview);
     });
 

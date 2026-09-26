@@ -718,12 +718,12 @@ description: >
   Order a finished video ad without leaving the chat. Use it when the user says "make me a video
   ad for <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer video. One
   sentence is enough: it picks the brand, asks what the ad is for, suggests formats in a table
-  with demo links, asks that format's questions, and shows the script for approval before any
+  with demo links, asks that format's questions, and walks each required approval artifact before any
   real spend. It renders on the GooseWorks server, returns the video in the chat, and works in
   hosted connectors too. For an existing app video project or batch, it hands off to
   goose-video-local.
 category: ads
-version: 1.0.0
+version: 1.1.0
 author: GooseWorks
 tags: [gooseworks, ads, video, order, server-render]
 ---
@@ -776,7 +776,7 @@ MCP tools; the work happens in the app.
 - \`video_project_upsert { project_id, patch: { brief } }\`: changes the brief, checked the same way as when it was created. A key replaces its value, \`null\` removes it. Free. Once ordered, only the brief fields change (never the format's own answers), and they reach the script on the next \`redraft\`. A brief change never moves the quote.
 - \`video_render_run { dry_run: true }\`: re-reads the price. Free.
 - \`video_render_run { kind: "partial" }\`: **writes the script and stops.** Reserves the quote and shows the script before the expensive work. Works for every orderable format, chat or voiceover.
-- \`video_render_run { kind: "full" }\`: finishes an approved preview.
+- \`video_render_run { kind: "full", gate_step_idx }\`: approves exactly the gate the customer just saw and advances to the next required review; only the final approval starts the costly render.
 - \`video_render_run { kind: "edit", edit: { script } }\`: puts the customer's OWN words into the draft, verbatim, through the format's own guards. Free before approval, and the **only** route that keeps their copy. Offered where the format's \`edits.script\` is non-empty; refused as \`script_not_editable\` elsewhere.
 - \`video_render_run { kind: "redraft", reason }\`: another draft, before approval, written from why they turned this one down, or with no \`reason\` after a brief change (the change is the reason). It **re-runs the writer** either way, so every word (and the picture on a character format) is replaced — it does not keep copy the customer supplied. Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. \`dry_run: true\` says what it would add.
 - \`video_project_read { brand_id, project_id }\`: status, the drafted script while previewing, and the finished video. Returns an \`order\` object for recipe projects.
@@ -879,6 +879,25 @@ Show the price the draft returned (the \`quote\`), **never a number from this pa
 
 This reserves the credits and writes the script only: **no video is rendered.** It returns immediately with \`status: "previewing"\` and no script yet; the writing happens in the background. Poll \`video_project_read\` every 20 seconds (it lands in about 40) and read \`order.preview\`. Calling \`kind: "full"\` while it is still \`previewing\` is refused with \`preview_in_progress\`.
 
+#### Gate loop (authoritative)
+
+Recipes can require more than a script. Treat \`order.preview.gate\` as the one current, server-authoritative approval and \`order.preview.gates\` as its complete ordered timeline. A gate is one of \`script\`, \`look\`, \`voice\`, \`sound\`, \`storyboard\`, or \`end_card\`. The older single-script wording below describes how to present its artifact; this loop controls when a render may advance.
+
+Show the current artifact before asking for approval:
+
+| Gate | Required review |
+|---|---|
+| \`script\` | Exact thread, beats, spoken words and CTA; include a chat selfie if present. |
+| \`look\` | Every \`anchor_images\` URL and \`preview.design\` in words: identity, setting, wardrobe. Show every podcast host. |
+| \`voice\` | \`preview.voice_sample.url\`, its exact \`text\`, selected voice, and the identity it will speak for. |
+| \`sound\` | \`preview.music.audio_url\`, duration and prompt. |
+| \`storyboard\` | \`preview.storyboard_sheet_url\`, or every \`preview.keyframes\` image when no contact sheet is available. |
+| \`end_card\` | \`preview.end_card\`: logo, packshot, headline/CTA and URL. |
+
+On an explicit yes, call \`video_render_run { brand_id, project_id, kind: "full", gate_step_idx: order.preview.gate.step_idx }\`. The index is a compare-and-set: a double approval is safe, and a stale approval is refused rather than clearing a different gate. Poll again; if another \`preview.gate\` appears, repeat the review. **Never call \`full\` without the current gate's step index and never generate clips until no gate remains.**
+
+An edit or redraft before final approval changes the draft or ingredient but does not approve anything. Read the project again, show the regenerated current artifact, and get a fresh yes. This rule supersedes any earlier wording that makes an edit sound like approval.
+
 \`order.preview\` is shaped by the format, and **every** orderable format has one. A preview was chat-only until 2026-09-25, and a kinetic-type customer approved a price and first saw the copy in the finished video.
 
 **A chat format** (iMessage / ChatGPT / Notes) fills \`thread\` (the message list), \`angle\`, \`cta_text\` and \`selfie_url\`. Show it as a readable transcript, not JSON:
@@ -929,7 +948,7 @@ This is the review. It happens here, not in the app.
 
 ### 7. Finish it
 
-Only after they approve the script: \`video_render_run { brand_id, project_id, kind: "full" }\`.
+After the **final** current gate has been approved with its \`gate_step_idx\`, the worker starts the expensive clips and assembly. Do not make a second bare \`kind: "full"\` call; poll the order instead.
 
 Poll \`video_project_read { brand_id, project_id }\` **every 30 seconds.** Done means \`order.status\` is \`done\`; the same response then carries \`video_url\` (the project page) and \`mp4_url\` (the file).
 
@@ -955,7 +974,7 @@ The only reason to send someone to the app is **payment**: not enough credits, o
 - **One sentence is a complete request.** Never answer "make me a video ad for X" by asking which format, which tool or what to do next. Run steps 1–3 and let the table do the asking.
 - **One brand in the org → never ask which brand.** State the one you used.
 - **Open question first, table second.** Don't lead with the whole catalogue. The goal question comes before any list, and the table comes ordered, with one suggestion.
-- **No approval of the SCRIPT → do not call \`kind: "full"\`.** The price gate is not the script gate. They approve a number in step 5 and the actual ad in step 6.
+- **No approval of the CURRENT artifact → do not call \`kind: "full"\`.** The price gate is not an artifact gate. Show every declared stage and pass the current \`preview.gate.step_idx\`; script, look, voice, sound, storyboard and end card each need their own yes when present.
 - **More than two options → table in the message.** Every time. Options with a sample or demo the customer can't hear or see are not really choices. A question control may capture the answer after the table, never instead of it.
 - **\`ready: false\` → stop.** Ordering anyway fails and wastes their time.
 - **Unsure whether an order went through → read \`video_project_read\` first.** Never use the charging tool as a status probe. Only if the project shows nothing at all, re-call \`video_render_run\` on the SAME \`project_id\` (idempotent per project). Never create a second project; that is a second charge.
@@ -981,7 +1000,7 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 - Every multi-option question was a table in the message, with a demo or sample column wherever one exists.
 - Only the picked format's \`ask[]\` questions were asked.
 - The step-2 answer went into the order as \`brief.prompt\`, and no intent field held anything the customer didn't say.
-- They approved the **script**, not just the price, before the expensive work ran: the thread for a chat format, the on-screen words *and* the voiceover for a kinetic-type one.
+- They approved every declared artifact, not just the price, before expensive clips ran: script, look, voice, sound, storyboard and end card where the recipe uses them.
 - You told them how long the render would take **for the format they picked**, and said something at the halfway mark instead of going quiet.
 - The quote you showed came from the server, never from memory or the catalogue.
 - Every line of copy the customer wrote is in the finished video word for word — it went through \`kind: "edit"\`, or you told them plainly that this format would not take it. No supplied copy was ever paraphrased into a \`redraft\` reason.
