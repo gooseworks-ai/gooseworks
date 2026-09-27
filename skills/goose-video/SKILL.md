@@ -5,12 +5,13 @@ description: >
   Order a finished video ad without leaving the chat. Use it when the user says "make me a video
   ad for <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer video. One
   sentence is enough: it picks the brand, asks what the ad is for, suggests formats in a table
-  with demo links, asks that format's questions, and shows the script for approval before any
-  real spend. It renders on the GooseWorks server, returns the video in the chat, and works in
-  hosted connectors too. For an existing app video project or batch, it hands off to
-  goose-video-local.
+  with demo links, asks that format's questions, shows the current plan and quote, and walks
+  each required approval artifact before expensive generation. It renders on the GooseWorks
+  server and returns the video in the chat, including in hosted connectors. Existing
+  CreativeSpec orders stay on this gated server path; only verified legacy template-remix
+  projects and batches hand off to goose-video-local.
 category: ads
-version: 1.0.0
+version: 1.1.0
 author: GooseWorks
 tags: [gooseworks, ads, video, order, server-render]
 ---
@@ -30,17 +31,77 @@ Produces one finished vertical video ad, rendered on the GooseWorks server and b
 
 ## Route first: is this a new order?
 
-This skill **orders a new video**. Hand off to **`goose-video-local`** and stop following this skill when the customer brings any of these:
+This skill orders a new video **and continues existing CreativeSpec orders**. For any existing
+`project_id` (including one inside a copy-for-Claude command), first call
+`video_project_read { brand_id, project_id }`. If the response has `creative_plan`,
+`project.creative_spec_revision_id`, `order.creative_spec_revision_id`, or a planning
+`lifecycle` for a recipe project, keep the same project here and follow the **CreativeSpec
+server path** below. A planning project is not a legacy remix just because its revision is not
+ready yet. If the response is unclear, read again or ask; never infer that it is safe to render
+locally. The app's copy-for-Claude label is not authority to bypass this check.
+
+Only after that check, hand off to **`goose-video-local`** and stop following this skill for a
+legacy template-remix project or batch, including:
 
 - a **video batch** id ("for video batch <id>");
-- the app's copy-for-Claude command (it names `goose-video-local`);
+- the app's copy-for-Claude command (it names `goose-video-local`) for a verified legacy remix;
 - "remix this video ad template" for a specific app template.
 
 Those render on the customer's own machine. Use `goose-video-local` if it is installed; otherwise load it with `fetch_skill("goose-video-local")` on the GooseWorks MCP.
 
-A bare **project** id ("make the video for project <id>"): call `video_project_read { brand_id, project_id }` first. **Stay here** when it returns an `order`, or the project's `script_drafts.recipe` is set: that is an order made through this skill, so continue it on the same `project_id`. **Anything else** goes to `goose-video-local`.
+A bare **project** id: after the read above, also stay here when it returns an `order` or the
+project's `script_drafts.recipe` is set. **Only a verified legacy template remix** goes to
+`goose-video-local`.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
+
+## CreativeSpec server path — three customer gates
+
+CreativeSpec is the typed `creative_plan` returned by `video_project_read`; it is **not** the
+legacy template recipe. The CLI has no vetted local CreativeSpec node-execution API yet. Use the
+current GooseWorks **server** `video_project_read` / `video_render_run` flow as the explicit
+fallback, even on a machine with ffmpeg and Playwright. Do not fetch template atoms, call media
+proxies directly, use BYOA/local rendering, mirror a review-once panel, or call
+`submit_render` / `update_render_status` / `set_final_render` for this order. The legacy
+workflow later in this skill does not override this section.
+
+First inspect the current `order.status`. If an order already exists, resume at its present
+`preview`, `pending_quote`, or `final_review`; do not issue a new `partial`, create
+another project, or replay an earlier approval.
+
+1. **Plan and quote gate:** Poll `video_project_read` on the same project until
+   `creative_plan.revision_id` is present. Planning/needs-answers is not approval-ready.
+   Show the script **and full decision sheet** from the current plan in this chat: scenes,
+   cast/setting, actual selected image thumbnails and their uses, voice/sound direction, CTA,
+   end card, open decisions and copy warnings. Get the current server quote with
+   `video_render_run { brand_id, project_id, dry_run: true }`; show its line items and hold
+   terms. Resolve required decisions and ask for explicit approval of this revision **and**
+   exact quote before the first paid call. Start only with the current
+   `estimate.quote_digest` as `approved_quote_digest` on `kind: "partial"`. If the
+   plan/quote changed, read and ask again. Then poll `video_project_read` for the parked
+   `preview.gate.kind: "script"`. Show its current plan/script subject and copy warnings,
+   and seek explicit approval of that exact subject. Approve it with `kind: "full"` and
+   `preview.gate.step_idx`, `revision_id`, and `subject_digest` from that read. Do not
+   demand generated ingredient media at this first script/plan gate.
+2. **Actual ingredient gate(s):** Poll `video_project_read` for the later parked
+   `preview` gates. Show each gate's actual preview media **in this chat**, alongside the
+   current subject and actual metered spend; do not approve a prompt in place of media. After
+   the customer explicitly approves that exact subject, call `video_render_run` with
+   `kind: "full"` and the read's `preview.gate.step_idx`, `revision_id`, and
+   `subject_digest`. Read again for every later gate; never reuse prior tokens. If
+   `order.pending_quote` appears, show the revised cap and line items and obtain fresh
+   approval before passing its `quote_digest` as `approved_quote_digest`.
+3. **Final video gate:** When `order.final_review` appears, play
+   `final_review.output_url` here, report `captured_credits` already spent, and ask for
+   explicit acceptance, rejection, or a targeted edit. Only acceptance of this exact
+   provisional MP4 permits `kind: "full"` with the final review's `revision_id` and
+   `subject_digest`. Rejection is `job_cancel`; it does not undo metered provider spend.
+   Never call a provisional MP4 delivered. After acceptance, read the project and provide the
+   completed output in this chat.
+
+The server response is the source of truth for the next gate and its tokens. If tokens or actual
+preview media are absent, poll/read again rather than skipping the gate. The older single-script
+approval steps below apply only to non-CreativeSpec recipe orders.
 
 ## Inputs
 
@@ -63,7 +124,7 @@ MCP tools; the work happens in the app.
 - `video_project_upsert { project_id, patch: { brief } }`: changes the brief, checked the same way as when it was created. A key replaces its value, `null` removes it. Free. Once ordered, only the brief fields change (never the format's own answers), and they reach the script on the next `redraft`. A brief change never moves the quote.
 - `video_render_run { dry_run: true }`: re-reads the price. Free.
 - `video_render_run { kind: "partial" }`: **writes the script and stops.** Reserves the quote and shows the script before the expensive work. Works for every orderable format, chat or voiceover.
-- `video_render_run { kind: "full" }`: finishes an approved preview.
+- `video_render_run { kind: "full", gate_step_idx }`: approves exactly the gate the customer just saw and advances to the next required review; only the final approval starts the costly render.
 - `video_render_run { kind: "edit", edit: { script } }`: puts the customer's OWN words into the draft, verbatim, through the format's own guards. Free before approval, and the **only** route that keeps their copy. Offered where the format's `edits.script` is non-empty; refused as `script_not_editable` elsewhere.
 - `video_render_run { kind: "redraft", reason }`: another draft, before approval, written from why they turned this one down, or with no `reason` after a brief change (the change is the reason). It **re-runs the writer** either way, so every word (and the picture on a character format) is replaced — it does not keep copy the customer supplied. Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. `dry_run: true` says what it would add.
 - `video_project_read { brand_id, project_id }`: status, the drafted script while previewing, and the finished video. Returns an `order` object for recipe projects.
@@ -166,6 +227,25 @@ Show the price the draft returned (the `quote`), **never a number from this page
 
 This reserves the credits and writes the script only: **no video is rendered.** It returns immediately with `status: "previewing"` and no script yet; the writing happens in the background. Poll `video_project_read` every 20 seconds (it lands in about 40) and read `order.preview`. Calling `kind: "full"` while it is still `previewing` is refused with `preview_in_progress`.
 
+#### Gate loop (authoritative)
+
+Recipes can require more than a script. Treat `order.preview.gate` as the one current, server-authoritative approval and `order.preview.gates` as its complete ordered timeline. A gate is one of `script`, `look`, `voice`, `sound`, `storyboard`, or `end_card`. The older single-script wording below describes how to present its artifact; this loop controls when a render may advance.
+
+Show the current artifact before asking for approval:
+
+| Gate | Required review |
+|---|---|
+| `script` | Exact thread, beats, spoken words and CTA; include a chat selfie if present. |
+| `look` | Every `anchor_images` URL and `preview.design` in words: identity, setting, wardrobe. Show every podcast host. |
+| `voice` | `preview.voice_sample.url`, its exact `text`, selected voice, and the identity it will speak for. |
+| `sound` | `preview.music.audio_url`, duration and prompt. |
+| `storyboard` | `preview.storyboard_sheet_url`, or every `preview.keyframes` image when no contact sheet is available. |
+| `end_card` | `preview.end_card`: logo, packshot, headline/CTA and URL. |
+
+On an explicit yes, call `video_render_run { brand_id, project_id, kind: "full", gate_step_idx: order.preview.gate.step_idx }`. The index is a compare-and-set: a double approval is safe, and a stale approval is refused rather than clearing a different gate. Poll again; if another `preview.gate` appears, repeat the review. **Never call `full` without the current gate's step index and never generate clips until no gate remains.**
+
+An edit or redraft before final approval changes the draft or ingredient but does not approve anything. Read the project again, show the regenerated current artifact, and get a fresh yes. This rule supersedes any earlier wording that makes an edit sound like approval.
+
 `order.preview` is shaped by the format, and **every** orderable format has one. A preview was chat-only until 2026-09-25, and a kinetic-type customer approved a price and first saw the copy in the finished video.
 
 **A chat format** (iMessage / ChatGPT / Notes) fills `thread` (the message list), `angle`, `cta_text` and `selfie_url`. Show it as a readable transcript, not JSON:
@@ -216,7 +296,7 @@ This is the review. It happens here, not in the app.
 
 ### 7. Finish it
 
-Only after they approve the script: `video_render_run { brand_id, project_id, kind: "full" }`.
+After the **final** current gate has been approved with its `gate_step_idx`, the worker starts the expensive clips and assembly. Do not make a second bare `kind: "full"` call; poll the order instead.
 
 Poll `video_project_read { brand_id, project_id }` **every 30 seconds.** Done means `order.status` is `done`; the same response then carries `video_url` (the project page) and `mp4_url` (the file).
 
@@ -242,7 +322,7 @@ The only reason to send someone to the app is **payment**: not enough credits, o
 - **One sentence is a complete request.** Never answer "make me a video ad for X" by asking which format, which tool or what to do next. Run steps 1–3 and let the table do the asking.
 - **One brand in the org → never ask which brand.** State the one you used.
 - **Open question first, table second.** Don't lead with the whole catalogue. The goal question comes before any list, and the table comes ordered, with one suggestion.
-- **No approval of the SCRIPT → do not call `kind: "full"`.** The price gate is not the script gate. They approve a number in step 5 and the actual ad in step 6.
+- **No approval of the CURRENT artifact → do not call `kind: "full"`.** The price gate is not an artifact gate. Show every declared stage and pass the current `preview.gate.step_idx`; script, look, voice, sound, storyboard and end card each need their own yes when present.
 - **More than two options → table in the message.** Every time. Options with a sample or demo the customer can't hear or see are not really choices. A question control may capture the answer after the table, never instead of it.
 - **`ready: false` → stop.** Ordering anyway fails and wastes their time.
 - **Unsure whether an order went through → read `video_project_read` first.** Never use the charging tool as a status probe. Only if the project shows nothing at all, re-call `video_render_run` on the SAME `project_id` (idempotent per project). Never create a second project; that is a second charge.
@@ -268,7 +348,7 @@ The credits leave the balance when the order is placed (a hold). They are **capt
 - Every multi-option question was a table in the message, with a demo or sample column wherever one exists.
 - Only the picked format's `ask[]` questions were asked.
 - The step-2 answer went into the order as `brief.prompt`, and no intent field held anything the customer didn't say.
-- They approved the **script**, not just the price, before the expensive work ran: the thread for a chat format, the on-screen words *and* the voiceover for a kinetic-type one.
+- They approved every declared artifact, not just the price, before expensive clips ran: script, look, voice, sound, storyboard and end card where the recipe uses them.
 - You told them how long the render would take **for the format they picked**, and said something at the halfway mark instead of going quiet.
 - The quote you showed came from the server, never from memory or the catalogue.
 - Every line of copy the customer wrote is in the finished video word for word — it went through `kind: "edit"`, or you told them plainly that this format would not take it. No supplied copy was ever paraphrased into a `redraft` reason.
