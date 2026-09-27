@@ -4,8 +4,9 @@ slug: goose-video-local
 description: >
   Render an EXISTING GooseWorks video ad project or video batch on this machine (Playwright +
   ffmpeg + GooseWorks media proxies) and save the finished MP4 back to the project over MCP. Use
-  when the app's "copy for Claude" command names goose-video-local, for "make the video for
-  project <id>" / "for video batch <id>", or to remix a video ad template locally. Needs a machine
+  for a verified legacy template-remix project or video batch. A copy-for-Claude command or
+  project id must first be checked with video_project_read; CreativeSpec orders stay on the
+  server flow in goose-video. Needs a machine
   with network egress and ffmpeg (local Claude Code or the desktop app), not a hosted connector.
   To order a NEW video ad in chat, use goose-video instead.
 category: ads
@@ -16,12 +17,34 @@ tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
 
 # GooseWorks Video Ads — local remix runtime
 
-You produce **video** ad creative on the user's OWN machine and sync the result back to the
-GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
+## Mandatory route check before any local work or spend
+
+For every existing `project_id` (including one supplied by the app's copy-for-Claude command),
+call `video_project_read { brand_id, project_id }` **before** template lookup, toolchain setup,
+BYOA authorization, media-proxy calls, or a review-set upload. If the response contains
+`creative_plan`, `project.creative_spec_revision_id`, `order.creative_spec_revision_id`,
+or a planning `lifecycle` for a recipe project, **stop this local workflow** and follow the
+`goose-video` CreativeSpec server path on the SAME project. Fetch that skill if necessary with
+`fetch_skill("goose-video")`. This applies even when a copy prompt names this local skill;
+it is not proof that the project is a legacy template remix. If classification is unclear,
+read again or ask; do not guess and generate locally. For a batch, inspect each child project
+before running its local recipe. An `order` or `script_drafts.recipe` without CreativeSpec
+also belongs to `goose-video`, using that skill's non-CreativeSpec order path. Continue below
+only for a verified legacy template remix.
+
+CreativeSpec has **no vetted local node-execution API** yet. The supported fallback is the
+server's `video_project_read` / `video_render_run` three-gate flow, with plan/quote,
+actual ingredient previews, and provisional final MP4 shown and approved **in chat**. Do not
+collapse those gates into review-once, use BYOA media proxies, or call legacy
+`update_ad_project_script` / `submit_render` / `set_final_render` for CreativeSpec.
+The steps below are only for legacy template remixes.
+
+For legacy template remixes, you produce **video** ad creative on the user's OWN machine and sync
+the result back to the GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
 proxies, data I/O, the review gate). A separate **recipe skill** — fetched per format — tells you
 *what to make* (the pieces, prompts, models, order of assembly).
 
-**Division of authority — read both, but when they disagree THIS doc wins on the environment AND the
+**Legacy remixes only — division of authority: read both, but when they disagree THIS doc wins on the environment AND the
 review/approval flow.** The recipe governs WHAT to make; this doc governs WHEN you pause, generate,
 and spend. In particular: a recipe may spell out a **multi-phase, multi-gate** flow — "generate the
 still [GATE] → approve → author the prompt [GATE] → approve → render [GATE] → approve", several

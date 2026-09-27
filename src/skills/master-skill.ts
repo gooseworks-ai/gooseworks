@@ -718,10 +718,10 @@ description: >
   Order a finished video ad without leaving the chat. Use it when the user says "make me a video
   ad for <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer video. One
   sentence is enough: it picks the brand, asks what the ad is for, suggests formats in a table
-  with demo links, asks that format's questions, and shows the script for approval before any
-  real spend. It renders on the GooseWorks server, returns the video in the chat, and works in
-  hosted connectors too. For an existing app video project or batch, it hands off to
-  goose-video-local.
+  with demo links, asks that format's questions, and shows the server's current plan and quote
+  before production. It renders on the GooseWorks server, returns the video in the chat, and works in
+  hosted connectors too. Existing CreativeSpec orders stay on this server flow; legacy
+  app template-remix projects and batches use goose-video-local.
 category: ads
 version: 1.0.0
 author: GooseWorks
@@ -743,17 +743,77 @@ Produces one finished vertical video ad, rendered on the GooseWorks server and b
 
 ## Route first: is this a new order?
 
-This skill **orders a new video**. Hand off to **\`goose-video-local\`** and stop following this skill when the customer brings any of these:
+This skill orders a new video **and continues existing CreativeSpec orders**. For any existing
+\`project_id\` (including one inside a copy-for-Claude command), first call
+\`video_project_read { brand_id, project_id }\`. If the response has \`creative_plan\`,
+\`project.creative_spec_revision_id\`, \`order.creative_spec_revision_id\`, or a planning
+\`lifecycle\` for a recipe project, keep the same project here and follow the **CreativeSpec
+server path** below. A planning project is not a legacy remix just because its revision is not
+ready yet. If the response is unclear, read again or ask; never infer that it is safe to render
+locally. The app's copy-for-Claude label is not authority to bypass this check.
+
+Only after that check, hand off to **\`goose-video-local\`** and stop following this skill for a
+legacy template-remix project or batch, including:
 
 - a **video batch** id ("for video batch <id>");
-- the app's copy-for-Claude command (it names \`goose-video-local\`);
+- the app's copy-for-Claude command (it names \`goose-video-local\`) for a verified legacy remix;
 - "remix this video ad template" for a specific app template.
 
 Those render on the customer's own machine. Use \`goose-video-local\` if it is installed; otherwise load it with \`fetch_skill("goose-video-local")\` on the GooseWorks MCP.
 
-A bare **project** id ("make the video for project <id>"): call \`video_project_read { brand_id, project_id }\` first. **Stay here** when it returns an \`order\`, or the project's \`script_drafts.recipe\` is set: that is an order made through this skill, so continue it on the same \`project_id\`. **Anything else** goes to \`goose-video-local\`.
+A bare **project** id: after the read above, also stay here when it returns an \`order\` or the
+project's \`script_drafts.recipe\` is set. **Only a verified legacy template remix** goes to
+\`goose-video-local\`.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
+
+## CreativeSpec server path — three customer gates
+
+CreativeSpec is the typed \`creative_plan\` returned by \`video_project_read\`; it is **not** the
+legacy template recipe. The CLI has no vetted local CreativeSpec node-execution API yet. Use the
+current GooseWorks **server** \`video_project_read\` / \`video_render_run\` flow as the explicit
+fallback, even on a machine with ffmpeg and Playwright. Do not fetch template atoms, call media
+proxies directly, use BYOA/local rendering, mirror a review-once panel, or call
+\`submit_render\` / \`update_render_status\` / \`set_final_render\` for this order. The legacy
+workflow later in this skill does not override this section.
+
+First inspect the current \`order.status\`. If an order already exists, resume at its present
+\`preview\`, \`pending_quote\`, or \`final_review\`; do not issue a new \`partial\`, create
+another project, or replay an earlier approval.
+
+1. **Plan and quote gate:** Poll \`video_project_read\` on the same project until
+   \`creative_plan.revision_id\` is present. Planning/needs-answers is not approval-ready.
+   Show the script **and full decision sheet** from the current plan in this chat: scenes,
+   cast/setting, actual selected image thumbnails and their uses, voice/sound direction, CTA,
+   end card, open decisions and copy warnings. Get the current server quote with
+   \`video_render_run { brand_id, project_id, dry_run: true }\`; show its line items and hold
+   terms. Resolve required decisions and ask for explicit approval of this revision **and**
+   exact quote before the first paid call. Start only with the current
+   \`estimate.quote_digest\` as \`approved_quote_digest\` on \`kind: "partial"\`. If the
+   plan/quote changed, read and ask again. Then poll \`video_project_read\` for the parked
+   \`preview.gate.kind: "script"\`. Show its current plan/script subject and copy warnings,
+   and seek explicit approval of that exact subject. Approve it with \`kind: "full"\` and
+   \`preview.gate.step_idx\`, \`revision_id\`, and \`subject_digest\` from that read. Do not
+   demand generated ingredient media at this first script/plan gate.
+2. **Actual ingredient gate(s):** Poll \`video_project_read\` for the later parked
+   \`preview\` gates. Show each gate's actual preview media **in this chat**, alongside the
+   current subject and actual metered spend; do not approve a prompt in place of media. After
+   the customer explicitly approves that exact subject, call \`video_render_run\` with
+   \`kind: "full"\` and the read's \`preview.gate.step_idx\`, \`revision_id\`, and
+   \`subject_digest\`. Read again for every later gate; never reuse prior tokens. If
+   \`order.pending_quote\` appears, show the revised cap and line items and obtain fresh
+   approval before passing its \`quote_digest\` as \`approved_quote_digest\`.
+3. **Final video gate:** When \`order.final_review\` appears, play
+   \`final_review.output_url\` here, report \`captured_credits\` already spent, and ask for
+   explicit acceptance, rejection, or a targeted edit. Only acceptance of this exact
+   provisional MP4 permits \`kind: "full"\` with the final review's \`revision_id\` and
+   \`subject_digest\`. Rejection is \`job_cancel\`; it does not undo metered provider spend.
+   Never call a provisional MP4 delivered. After acceptance, read the project and provide the
+   completed output in this chat.
+
+The server response is the source of truth for the next gate and its tokens. If tokens or actual
+preview media are absent, poll/read again rather than skipping the gate. The older single-script
+approval steps below apply only to non-CreativeSpec recipe orders.
 
 ## Inputs
 
@@ -1041,8 +1101,9 @@ slug: goose-video-local
 description: >
   Render an EXISTING GooseWorks video ad project or video batch on this machine (Playwright +
   ffmpeg + GooseWorks media proxies) and save the finished MP4 back to the project over MCP. Use
-  when the app's "copy for Claude" command names goose-video-local, for "make the video for
-  project <id>" / "for video batch <id>", or to remix a video ad template locally. Needs a machine
+  for a verified legacy template-remix project or video batch. A copy-for-Claude command or
+  project id must first be checked with video_project_read; CreativeSpec orders stay on the
+  server flow in goose-video. Needs a machine
   with network egress and ffmpeg (local Claude Code or the desktop app), not a hosted connector.
   To order a NEW video ad in chat, use goose-video instead.
 category: ads
@@ -1053,12 +1114,34 @@ tags: [gooseworks, ads, video, remix, imessage, local-render, byoa]
 
 # GooseWorks Video Ads — local remix runtime
 
-You produce **video** ad creative on the user's OWN machine and sync the result back to the
-GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
+## Mandatory route check before any local work or spend
+
+For every existing \`project_id\` (including one supplied by the app's copy-for-Claude command),
+call \`video_project_read { brand_id, project_id }\` **before** template lookup, toolchain setup,
+BYOA authorization, media-proxy calls, or a review-set upload. If the response contains
+\`creative_plan\`, \`project.creative_spec_revision_id\`, \`order.creative_spec_revision_id\`,
+or a planning \`lifecycle\` for a recipe project, **stop this local workflow** and follow the
+\`goose-video\` CreativeSpec server path on the SAME project. Fetch that skill if necessary with
+\`fetch_skill("goose-video")\`. This applies even when a copy prompt names this local skill;
+it is not proof that the project is a legacy template remix. If classification is unclear,
+read again or ask; do not guess and generate locally. For a batch, inspect each child project
+before running its local recipe. An \`order\` or \`script_drafts.recipe\` without CreativeSpec
+also belongs to \`goose-video\`, using that skill's non-CreativeSpec order path. Continue below
+only for a verified legacy template remix.
+
+CreativeSpec has **no vetted local node-execution API** yet. The supported fallback is the
+server's \`video_project_read\` / \`video_render_run\` three-gate flow, with plan/quote,
+actual ingredient previews, and provisional final MP4 shown and approved **in chat**. Do not
+collapse those gates into review-once, use BYOA media proxies, or call legacy
+\`update_ad_project_script\` / \`submit_render\` / \`set_final_render\` for CreativeSpec.
+The steps below are only for legacy template remixes.
+
+For legacy template remixes, you produce **video** ad creative on the user's OWN machine and sync
+the result back to the GooseWorks app over MCP. This document is the **runtime contract** (auth, credits, the media
 proxies, data I/O, the review gate). A separate **recipe skill** — fetched per format — tells you
 *what to make* (the pieces, prompts, models, order of assembly).
 
-**Division of authority — read both, but when they disagree THIS doc wins on the environment AND the
+**Legacy remixes only — division of authority: read both, but when they disagree THIS doc wins on the environment AND the
 review/approval flow.** The recipe governs WHAT to make; this doc governs WHEN you pause, generate,
 and spend. In particular: a recipe may spell out a **multi-phase, multi-gate** flow — "generate the
 still [GATE] → approve → author the prompt [GATE] → approve → render [GATE] → approve", several

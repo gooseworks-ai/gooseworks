@@ -339,6 +339,21 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     // The prohibition is cross-referenced to the ticket so it can't silently regress.
     expect(local).toContain('GOOSE-2542');
   });
+
+  it('checks project type before local BYOA work and redirects CreativeSpec to the server', () => {
+    const guard = local.indexOf('## Mandatory route check before any local work or spend');
+    const preflight = local.indexOf('## Prerequisite — MCP + a render toolchain');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(preflight);
+    expect(local).toContain('video_project_read { brand_id, project_id }');
+    expect(local).toContain('creative_plan');
+    expect(local).toContain('creative_spec_revision_id');
+    expect(local).toContain('fetch_skill("goose-video")');
+    expect(local).toContain('script_drafts.recipe');
+    expect(local).toMatch(/Do not\s+collapse those gates into review-once, use BYOA media proxies/);
+    expect(local).toContain('no vetted local node-execution API');
+    expect(local).toMatch(/Continue below\s+only for a verified legacy template remix/);
+  });
 });
 
 describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
@@ -353,17 +368,29 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
     for (const tool of ['brand_list', 'video_catalog_list', 'video_project_upsert', 'video_render_run', 'video_project_read', 'job_cancel']) {
       expect(video).toContain(tool);
     }
-    expect(video).not.toContain('Playwright');
-    expect(video).not.toContain('submit_render');
-    expect(video).not.toContain('set_final_render');
+    expect(video).toMatch(/Do not fetch template atoms, call media\s+proxies directly, use BYOA\/local rendering/);
+    expect(video).toMatch(/or call\s+`submit_render` \/ `update_render_status` \/ `set_final_render`/);
   });
 
-  it('routes existing app projects and batches to goose-video-local first', () => {
+  it('reads existing projects before routing CreativeSpec versus legacy remixes', () => {
     const route = video.indexOf('## Route first');
     expect(route).toBeGreaterThan(-1);
     expect(route).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
     expect(video).toContain('fetch_skill("goose-video-local")');
     expect(video).toContain('script_drafts.recipe');
+    expect(video).toContain('video_project_read { brand_id, project_id }');
+    expect(video).toContain('project.creative_spec_revision_id');
+    expect(video).toContain('order.creative_spec_revision_id');
+    expect(video).toContain('Only a verified legacy template remix');
+    expect(video).toContain('CreativeSpec server path — three customer gates');
+    expect(video).toContain('plan/quote');
+    expect(video).toContain('Actual ingredient');
+    expect(video).toContain('Final video gate');
+    expect(video).toContain('subject_digest');
+    expect(video).toContain('approved_quote_digest');
+    expect(video).toContain('preview.gate.kind: "script"');
+    expect(video).toContain('Do not\n   demand generated ingredient media at this first script/plan gate');
+    expect(video).toContain('provisional MP4');
   });
 
   it('carries no goose-lab-only syntax (wikilinks, ticket ids, lab frontmatter)', () => {
