@@ -1645,19 +1645,34 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 
 ## Step 4 — render, report stages, publish
 
-1. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
+1. **Open the render row FIRST** — right after the Step 3 approval, before any paid generation:
+   \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }\` (no \`dry_run\`; returns
+   \`render_id\`) → keep \`render_id\`, then mark it running:
+   \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "running",
+   workflow_stage: "preparing", progress_note: "starting", progress_percent: 5 } }\`. The user sees this
+   live in the app and gets a WhatsApp "started" message automatically — don't message them yourself
+   about start / blocked / complete.
+2. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
    clips, voice, music — through the media proxies (below), each from its approved prompt, with
    \`GW_PROJECT_ID\` exported. **Save as you go** (section above): skip any piece already saved
    with the same \`input_digest\` (download it), and upload each new piece with its
    \`ingredient_key\` + \`input_digest\` the moment it passes QC. Then assemble per the recipe (ffmpeg stitch; PIL captions / end card;
    Playwright record only where the format needs it and the host has Chromium → \`mix-master\` audio).
-2. Open the row LAST: \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }\` (no \`dry_run\`; returns \`render_id\`) → keep \`render_id\`. Mark it running with
-   \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "running" } }\`. The render row tracks status only (queued / running / complete /
-   failed) — narrate fine-grained progress with \`video_project_upsert patch.message\` instead.
+   **Report progress at each milestone** — about one update per milestone, never per poll:
+   \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "running", workflow_stage, progress_note, progress_percent } }\`
+   (\`progress_note\` = plain words, ≤200 chars):
+   - voiceovers done → \`"preparing"\`, \`"voiceovers done"\`, 20
+   - stills done → \`"preparing"\`, \`"stills done"\`, 35
+   - each lipsync / video clip → \`"rendering"\`, e.g. \`"lipsync 5/8"\`, 35–75
+   - assembly → \`"rendering"\`, \`"assembling the cut"\`, 85
+   - QC (4.3) → \`"checking"\`, \`"watching the final"\`, 95
+   **Hard stop that needs the user** → \`{ render_id, status: "running", workflow_stage: "blocked",
+   error_message: "<what's wrong + what you need>" }\`; an unrecoverable failure → \`status: "failed"\`
+   + \`error_message\`. Completing (4.4) sets the bar to 100.
 3. **MANDATORY final-video QC gate — YOU review EVERY finished master before pinning it
    (\`patch.final_render_id\`), whatever the format (UGC or not).** This is your own automated quality
    check, separate from the user's Step-3 approval — it does not go back to the user. The render row
-   is already open (4.2); this gate stands between a rendered master and PINNING/publishing it, so a
+   is already open (4.1); this gate stands between a rendered master and PINNING/publishing it, so a
    bad render never gets set as final. A master that looks fine on a still can still have a
    mis-voiced word, a caption drifting off its line, a beat out of order, or a deformation — review
    the actual VIDEO, not stills. Run the passes that APPLY to this format:
