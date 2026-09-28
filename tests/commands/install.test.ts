@@ -66,6 +66,10 @@ jest.mock('../../src/agents/detect', () => ({
   detectAgents: jest.fn().mockReturnValue([]),
 }));
 
+jest.mock('../../src/commands/doctor', () => ({
+  runDoctorChecks: jest.fn().mockReturnValue([]),
+}));
+
 // Mock logger to suppress output in tests
 jest.mock('../../src/utils/logger', () => ({
   banner: jest.fn(),
@@ -343,5 +347,31 @@ describe('install command', () => {
 
     expect(help).toContain('--with <skill-slug>');
     expect(help).toContain('gooseworks install --claude --with goose-graphics');
+  });
+
+  // GOOSE-3718: the choice goose-video offers is only real if the customer
+  // knows whether their machine can take it.
+  describe('local video toolchain summary', () => {
+    const { runDoctorChecks } = jest.requireMock('../../src/commands/doctor') as { runDoctorChecks: jest.Mock };
+
+    it('says the toolchain is ready when every non-auth check passes', async () => {
+      runDoctorChecks.mockReturnValueOnce([]);
+      mockGetCredentials.mockReturnValue(mockCreds);
+      const { createInstallCommand } = await import('../../src/commands/install');
+      await createInstallCommand().parseAsync(['node', 'test', '--claude']);
+      expect(runDoctorChecks).toHaveBeenCalledWith({ includeAuth: false });
+      expect(loggerModule.success).toHaveBeenCalledWith(expect.stringContaining('Local video toolchain ready'));
+    });
+
+    it('lists each missing item with its fix, and still completes the install', async () => {
+      runDoctorChecks.mockReturnValueOnce([
+        { id: 'chromium', label: 'Playwright Chromium downloaded', ok: false, fix: 'npx playwright install chromium' },
+      ]);
+      mockGetCredentials.mockReturnValue(mockCreds);
+      const { createInstallCommand } = await import('../../src/commands/install');
+      await createInstallCommand().parseAsync(['node', 'test', '--claude']);
+      expect(loggerModule.warn).toHaveBeenCalledWith(expect.stringContaining('Playwright Chromium downloaded  →  npx playwright install chromium'));
+      expect(loggerModule.done).toHaveBeenCalled();
+    });
   });
 });

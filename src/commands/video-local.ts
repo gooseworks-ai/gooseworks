@@ -7,7 +7,7 @@ import { executeNextCaptionClaim } from '../lib/video-local-captions';
 import { createCaptionRuntime, createCaptionTransport } from '../lib/video-local-runtime';
 import * as logger from '../utils/logger';
 
-/** Opt-in narrow worker command. The agent-facing skill does not advertise it yet. */
+/** Narrow local worker. goose-video runs it after a terminal-host customer picks local assembly (GOOSE-3718). */
 export const videoLocalCommand = new Command('video-local')
   .description('Run a server-vetted local video node (experimental)');
 
