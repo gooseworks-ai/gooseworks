@@ -1810,8 +1810,9 @@ FAL storage proxy. Never pass a \`render-file\` URL to a provider — it needs a
   stitched/composited cut; do not add a "full cascade" / finished-video clip
   as a review ingredient (GOOSE-2542). The assembled video is produced only in
   Step 4.
-- **Open the render row only after the master is rendered** (Step 4.2), never on a guess;
-  \`output_url\` = the durable render-file URL, never a CDN URL.
+- **Open the render row at the start of Step 4** (4.1, after the approval) and keep its stage /
+  progress current; mark it \`complete\` only after the master passes QC. \`output_url\` = the
+  durable render-file URL, never a CDN URL.
 - **Always export \`GW_PROJECT_ID\`** (and pass \`project_id\` on hand-rolled proxy calls) so the
   credits attribute to this ad project.
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
