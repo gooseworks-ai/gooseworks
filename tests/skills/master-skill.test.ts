@@ -302,6 +302,29 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
 describe('skills/getGooseVideoLocalSkillContent', () => {
   const local = getGooseVideoLocalSkillContent();
 
+  // GOOSE-3731: a dead sandbox must not lose paid work — save each piece as it
+  // passes QC, and every run starts by reusing what is already saved.
+  it('saves every piece as it goes and resumes from saved ingredients', () => {
+    expect(local).toContain('## Save as you go — and resume (never pay twice for a piece)');
+    // Save: upload right after QC, tagged with key + digest, into working/<role>/.
+    expect(local).toContain('After EACH piece is generated AND passes its own QC, upload it right away');
+    expect(local).toContain('path:\n"working/<role>/<file>", ingredient_key, input_digest');
+    expect(local).toContain('from media_proxy import input_digest');
+    // Record media_id + path in the ingredients list, batching the script patch.
+    expect(local).toContain('Put the piece\'s `media_id` (`media.id`), `path`');
+    expect(local).toMatch(/Batch this\s+script patch every 3–5 pieces/);
+    // Resume: one media_list at start, reuse only on a matching digest.
+    expect(local).toContain('ingredient_key_prefix: "",\nlimit: 100 }');
+    expect(local).toContain('AND the same `input_digest`, **download it instead of\ngenerating**');
+    // Download via the presigned url, never the session-auth render-file route.
+    expect(local).toContain('curl -fsSL "$URL"');
+    expect(local).toMatch(/Never fetch the\s+`\/api\/ads\/projects\/<id>\/render-file\?path=…` route from the sandbox/);
+    // Working files on local /tmp, not the s3fs mount.
+    expect(local).toContain('never the s3fs workspace mount');
+    // The final master is an ingredient too.
+    expect(local).toContain('ingredient_key: "final", input_digest');
+  });
+
   it('is named/slugged goose-video-local, with exactly one frontmatter block', () => {
     expect(local).toMatch(/^---\nname: goose-video-local\nslug: goose-video-local\n/);
     expect(local).not.toContain('name: goose-video\n');

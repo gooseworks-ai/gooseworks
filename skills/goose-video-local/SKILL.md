@@ -93,6 +93,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
 | Batch status | `video_project_upsert { brand_id, batch_id, patch: { batch: { status } } }` | `update_ad_video_batch` |
 | Upload a file to the project | `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }` → PUT (no confirm for `path` uploads) | `get_upload_url` / `get_ad_upload_url` |
+| Save / find a finished piece (resume) | `media_upload { …, path, ingredient_key, input_digest }` / `media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "" }` (see "Save as you go") | none |
 | Open the render row | `video_render_run { brand_id, project_id, kind: "full" }` (no `dry_run`; returns `render_id`) | `submit_render { project_id, kind: "full" }` |
 | Update the render row | `video_render_run { brand_id, project_id, render: { render_id, status, output_url?, thumbnail_url?, error_message?, quality_status?, quality_report? } }` | `update_render_status` |
 | Pin the final render | `video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }` | `set_final_render` |
@@ -139,8 +140,10 @@ and usually `GW_PROJECT_ID`.
   open and that changes the ad), never for a mechanical or recoverable decision. The Step 3
   approval still applies: the approval may arrive in this chat or from the app's
   "Approve & render" button.
-- **Outputs:** keep working files under `/tmp/gooseworks-video/<project_id>/`; anything the user
-  must see goes to the project via `media_upload` (never leave the result only in the sandbox).
+- **Outputs:** keep working files under `/tmp/gooseworks-video/<project_id>/` (local disk — never
+  the s3fs workspace mount, which is slow and can drop writes); anything the user must see goes to
+  the project via `media_upload` (never leave the result only in the sandbox). Every paid piece is
+  also SAVED to the project as soon as it passes QC — see "Save as you go — and resume".
 
 ## Report problems so we can fix them (telemetry — do this, don't skip it)
 
@@ -218,6 +221,78 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   actually have a rendered master (Step 4.1/4.2), and never open a second row on a guess (a second
   completed row bills again). The final-video QC gate (Step 4.3) then sits between
   that master and PINNING it. Call `account_whoami` first to see the credit balance.
+
+## Save as you go — and resume (never pay twice for a piece)
+
+A sandbox can die mid-run (timeout, restart, a new session picks the project up). Anything that
+lives only in `/tmp` is then gone, and regenerating it pays again. So: **save every piece to the
+project the moment it passes its QC, and start every run by loading what is already saved.**
+Working files stay in `/tmp/gooseworks-video/<project_id>/` (never the s3fs workspace mount);
+the project is the durable copy.
+
+**Ingredient keys.** Give every planned piece a stable key before you generate it, the same on
+every run: `vo/scene-03`, `vo/sample-her`, `still/her-base`, `still/scene-05`,
+`clip/scene-05` (a lipsync / video clip), `music/bed`, `endcard`, `captions`, `final`,
+`final-thumb`. Upload path = `working/<role>/<file>` (`working/vo/scene-03.mp3`,
+`working/clip/scene-05.mp4`); the review set keeps its `working/review/<name>` paths.
+
+**Input digest.** Name the exact inputs of each generation with `input_digest` from
+`media_proxy` (in every media capability's `scripts/` folder):
+
+```python
+from media_proxy import input_digest
+digest = input_digest(model_path, args)   # the model + the EXACT payload you send
+```
+
+Hash only what decides the output (prompt, voice_id, model_id, seed, duration, aspect…). An input
+that is a presigned or proxy URL changes every run, so swap it for that input's own identity
+before hashing, e.g. `{**args, "image_url": {"ingredient": "still/her-base", "digest": her_digest}}`
+— then a changed still correctly invalidates every clip made from it. For a piece you build
+locally (ffmpeg stitch, PIL end card, captions) use `input_digest("local/<step>", {params,
+inputs: {key: digest, …}})`.
+
+**1. At the START of every run (first run, resume, new sandbox), load what exists — one call:**
+`media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "",
+limit: 100 }`. It returns ONE compact row per `ingredient_key` (the newest):
+`{ id, ingredient_key, input_digest, kind, status, mime, bytes, url, path, created_at }`. Every
+status except archived is included (project-path uploads stay `pending` — that is normal).
+Page with `cursor` if `next_cursor` is set (keep the first row you see per key — it is the newest). Also read `script_drafts.ingredients` from
+`video_project_read`: it records which pieces were already approved in the review.
+
+**2. For each planned piece:** compute its digest from the args you WOULD send now. If a saved row
+has the same `ingredient_key` AND the same `input_digest`, **download it instead of
+generating**:
+
+```bash
+curl -fsSL "$URL" -o /tmp/gooseworks-video/<project_id>/<path>   # URL = that row's `url`
+```
+
+That `url` is a short-lived (~15 min) presigned S3 GET the server signs for you, so it needs no
+auth header — download right after listing (list again if it expired). **Never fetch the
+`/api/ads/projects/<id>/render-file?path=…` route from the sandbox:** it needs the app's
+browser session and answers 401 to a token. Check the file is non-empty and plays (ffprobe for
+audio/video, open the image); if the download fails or the file is broken, regenerate the piece.
+Only generate what is missing or whose digest changed — a changed digest means the inputs changed,
+so the old file is stale.
+
+**3. After EACH piece is generated AND passes its own QC, upload it right away** — don't batch
+the uploads to the end:
+`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
+"working/<role>/<file>", ingredient_key, input_digest, source: { type: "file", filename,
+content_type } }` → PUT the bytes to `upload.url` with `upload.required_headers` (no
+`media_confirm` for a `path` upload). Kind: `audio` (VO), `music`, `image` (a still),
+`video` (a clip), `endcard`, `document` (captions / a JSON sidecar), `render` (the master),
+`thumbnail`. Re-uploading the same key is fine — the newest wins. A piece that FAILED QC is never
+uploaded under its key.
+
+**4. Record it in the ingredients list.** Put the piece's `media_id` (`media.id`), `path`
+and `ingredient_key` on its entry in `script_drafts.ingredients` and mirror with
+`video_project_upsert { brand_id, project_id, patch: { script: { script_drafts } } }`. Batch this
+script patch every 3–5 pieces (and always once more when a stage ends) to limit calls — the
+`media_upload` itself is what makes a piece safe, so it is never batched.
+
+The `final` master and `final-thumb` poster (Step 4.4) carry `ingredient_key` too, so a
+resumed run that finds a passing `final` with the same digest only needs to publish.
 
 ## Step 0 — project id, or video BATCH id? (fan out before anything else)
 
@@ -357,9 +432,11 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    EXPENSIVE-paid (above):
    - **FREE or CHEAP paid** (≤ ~100 credits) → generate it now and upload it with
      `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
-     "working/review/<name>", source: { type: "file", filename: "<name>", content_type } }` →
-     PUT (no `media_confirm` for a `path` upload); set that piece's `path` in `script_drafts` to the project-relative
-     `working/review/<name>`.
+     "working/review/<name>", ingredient_key, input_digest, source: { type: "file", filename:
+     "<name>", content_type } }` → PUT (no `media_confirm` for a `path` upload); set that
+     piece's `path` (+ `media_id`, `ingredient_key`) in `script_drafts` to the project-relative
+     `working/review/<name>`. First check "Save as you go" — a piece already saved with the same
+     digest is downloaded, not regenerated.
    - **EXPENSIVE paid** → do NOT generate. Put the **exact prompt/spec** (and any ref image URLs)
      in the tile's `text` / `subtitle` so the user reviews what will be spent on. No `path` yet —
      it's generated in Step 4.
@@ -396,7 +473,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 
 1. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
    clips, voice, music — through the media proxies (below), each from its approved prompt, with
-   `GW_PROJECT_ID` exported. Then assemble per the recipe (ffmpeg stitch; PIL captions / end card;
+   `GW_PROJECT_ID` exported. **Save as you go** (section above): skip any piece already saved
+   with the same `input_digest` (download it), and upload each new piece with its
+   `ingredient_key` + `input_digest` the moment it passes QC. Then assemble per the recipe (ffmpeg stitch; PIL captions / end card;
    Playwright record only where the format needs it and the host has Chromium → `mix-master` audio).
 2. Open the row LAST: `video_render_run { brand_id, project_id, kind: "full" }` (no `dry_run`; returns `render_id`) → keep `render_id`. Mark it running with
    `video_render_run { brand_id, project_id, render: { render_id, status: "running" } }`. The render row tracks status only (queued / running / complete /
@@ -431,9 +510,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    and re-review — only a clean pass proceeds to pinning. **This gate is universal: it runs from
    this skill for every format, so a recipe never has to opt in.**
 4. Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
-   path: "working/final.mp4", source: { type: "file", filename: "final.mp4", content_type:
+   path: "working/final.mp4", ingredient_key: "final", input_digest, source: { type: "file", filename: "final.mp4", content_type:
    "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` (no
-   `media_confirm` — path uploads don't take one). Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`).
+   `media_confirm` — path uploads don't take one). Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
    Keep each `upload.render_file_url`. Verify the PUT returned 2xx and the file you uploaded is a
    real, non-empty MP4 (ffprobe it) BEFORE marking the render complete.
    Then `video_render_run { brand_id, project_id, render: { render_id, status: "complete", output_url, thumbnail_url } }` (attach the Step 4.3 verdict as `quality_status: "passed"` +
