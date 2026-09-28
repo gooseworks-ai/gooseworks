@@ -49,7 +49,7 @@ legacy template-remix project or batch, including:
 - the app's copy-for-Claude command (it names `goose-video-local`) for a verified legacy remix;
 - "remix this video ad template" for a specific app template.
 
-Those render on the customer's own machine. Use `goose-video-local` if it is installed; otherwise load it with `fetch_skill("goose-video-local")` on the GooseWorks MCP.
+Those render on the customer's own machine or, for podcast/UGC formats, inside a GooseWorks workspace sandbox. Use `goose-video-local` if it is installed; otherwise load it with `catalog_fetch { type: "skill", slug: "goose-video-local" }` on the GooseWorks MCP (older clients: `fetch_skill("goose-video-local")`).
 
 A bare **project** id: after the read above, also stay here when it returns an `order` or the
 project's `script_drafts.recipe` is set. **Only a verified legacy template remix** goes to
