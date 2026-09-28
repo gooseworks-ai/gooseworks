@@ -1266,7 +1266,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Project assets | \`video_project_upsert { …, patch: { assets: [...] } }\` | \`update_ad_project_asset\` |
 | Progress note | \`video_project_upsert { …, patch: { message: { role: "agent", content } } }\` | \`append_project_message\` |
 | Batch status | \`video_project_upsert { brand_id, batch_id, patch: { batch: { status } } }\` | \`update_ad_video_batch\` |
-| Upload a file to the project | \`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }\` → PUT → \`media_confirm { brand_id, media_id }\` | \`get_upload_url\` / \`get_ad_upload_url\` |
+| Upload a file to the project | \`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }\` → PUT (no confirm for \`path\` uploads) | \`get_upload_url\` / \`get_ad_upload_url\` |
 | Open the render row | \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }\` (no \`dry_run\`; returns \`render_id\`) | \`submit_render { project_id, kind: "full" }\` |
 | Update the render row | \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status, output_url?, thumbnail_url?, error_message?, quality_status?, quality_report? } }\` | \`update_render_status\` |
 | Pin the final render | \`video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }\` | \`set_final_render\` |
@@ -1381,9 +1381,11 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   project-relative path (\`working/final.mp4\`, \`working/review/end-card.png\`). The server stores it
   in the project folder of the org-default Ads agent (where the app's render-file route reads) and
   returns \`upload.url\` (presigned PUT), \`upload.required_headers\` and
-  \`upload.render_file_url\`. PUT the bytes with exactly those headers, then
-  \`media_confirm { brand_id, media_id: media.id }\`. Never hand-build storage paths or agent
-  prefixes; a bare workspace upload is invisible in the app.
+  \`upload.render_file_url\`. PUT the bytes with exactly those headers. **Do NOT call
+  \`media_confirm\` for a \`path\` upload** — it is a workspace-file upload and the server rejects
+  confirm on it ("not created through a presigned upload"); \`media_confirm\` is only for a
+  path-less upload. Never hand-build storage paths or agent prefixes; a bare workspace upload is
+  invisible in the app.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   per call as you generate (Step 4). The render row (\`${RENDER_ROW_TOOL} ${RENDER_OPEN_ARGS}\`) charges the flat
   **video base fee once, when a full render is reported \`complete\`** — so open it only once you
@@ -1530,7 +1532,7 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - **FREE or CHEAP paid** (≤ ~100 credits) → generate it now and upload it with
      \`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
      "working/review/<name>", source: { type: "file", filename: "<name>", content_type } }\` →
-     PUT → \`media_confirm\`; set that piece's \`path\` in \`script_drafts\` to the project-relative
+     PUT (no \`media_confirm\` for a \`path\` upload); set that piece's \`path\` in \`script_drafts\` to the project-relative
      \`working/review/<name>\`.
    - **EXPENSIVE paid** → do NOT generate. Put the **exact prompt/spec** (and any ref image URLs)
      in the tile's \`text\` / \`subtitle\` so the user reviews what will be spent on. No \`path\` yet —
@@ -1604,12 +1606,16 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    this skill for every format, so a recipe never has to opt in.**
 4. Publish: \`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
    path: "working/final.mp4", source: { type: "file", filename: "final.mp4", content_type:
-   "video/mp4" } }\` → PUT the master to \`upload.url\` with \`upload.required_headers\` →
-   \`media_confirm\`. Same for the poster (\`kind: "thumbnail"\`, \`path: "working/final-thumb.jpg"\`).
+   "video/mp4" } }\` → PUT the master to \`upload.url\` with \`upload.required_headers\` (no
+   \`media_confirm\` — path uploads don't take one). Same for the poster (\`kind: "thumbnail"\`, \`path: "working/final-thumb.jpg"\`).
    Keep each \`upload.render_file_url\`. Verify the PUT returned 2xx and the file you uploaded is a
    real, non-empty MP4 (ffprobe it) BEFORE marking the render complete.
    Then \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "complete", output_url, thumbnail_url } }\` (attach the Step 4.3 verdict as \`quality_status: "passed"\` +
-   \`quality_report\` — a batch concept cannot complete without it) where **output_url MUST be the durable render-file URL**
+   \`quality_report\` — a batch concept cannot complete without it; exact shape, strict (no extra keys):
+   \`{ version: 1, summary: string, checks: { source, brand, product, hook_and_scene_order,
+   voice_and_script, captions, endcard_and_cta, duration_and_ratio, visual_artifacts }, detected_issues?:
+   string[], repair_actions?: string[] }\` where EVERY check is \`{ status: "pass"|"fail"|"not_applicable",
+   note?: string }\`) where **output_url MUST be the durable render-file URL**
    (\`upload.render_file_url\`, i.e. \`/api/ads/projects/<project_id>/render-file?path=working/final.mp4\`
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for \`thumbnail_url\`.
