@@ -10,6 +10,7 @@ import * as logger from '../utils/logger';
 import { getEntrySkills } from '../skills/master-skill';
 import { API_BASE } from '../config';
 import { getVersion } from '../version';
+import { runDoctorChecks } from './doctor';
 
 interface InstallOptions {
   claude?: boolean;
@@ -162,6 +163,10 @@ Examples:
       }
     }
 
+    // GOOSE-3718: say up front whether THIS machine can assemble a video ad
+    // locally, so the choice the goose-video skill offers is a real one.
+    reportLocalVideoToolchain();
+
     const agentNames = targetAgents.map((a) =>
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
@@ -198,6 +203,24 @@ function resolveTargetAgents(opts: InstallOptions): AgentType[] {
   if (opts.codex) targets.push('codex');
   if (opts.cursor) targets.push('cursor');
   return targets;
+}
+
+function reportLocalVideoToolchain(): void {
+  let missing: ReturnType<typeof runDoctorChecks>;
+  try {
+    missing = runDoctorChecks({ includeAuth: false }).filter((c) => !c.ok);
+  } catch {
+    return; // a broken probe must never fail the install
+  }
+  if (missing.length === 0) {
+    logger.success('Local video toolchain ready (ffmpeg, ffprobe, Playwright Chromium, Node): you can choose local assembly when ordering a video ad.');
+    return;
+  }
+  logger.info('Local video assembly is optional. Video ads render on the GooseWorks server unless you enable it. To enable it here:');
+  for (const c of missing) {
+    logger.warn(`  ${c.label}  →  ${c.fix}`);
+  }
+  logger.info('Then run `gooseworks doctor` to confirm.');
 }
 
 function collectSkillSlug(value: string, previous: string[]): string[] {

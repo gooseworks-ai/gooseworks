@@ -705,6 +705,8 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
  * what it's for → format table with demos → the format's questions → a free
  * draft and a server quote → a script preview before the expensive work → the
  * finished video in the chat. Works in hosted connectors (nothing runs locally).
+ * A terminal host (Claude Code / Codex / Cursor) may choose local captions
+ * assembly after `gooseworks doctor` passes (GOOSE-3718, step 5b).
  * It routes existing app projects/batches to `goose-video-local` first.
  *
  * This is the ONLY full copy of the body. goose-lab's `order-video` is a stub
@@ -720,13 +722,15 @@ description: >
   sentence is enough: it picks the brand, asks what the ad is for, suggests formats in a table
   with demo links, asks that format's questions, shows the current plan and quote, and walks
   each required approval artifact before expensive generation. It renders on the GooseWorks
-  server and returns the video in the chat, including in hosted connectors. Existing
+  server and returns the video in the chat, including in hosted connectors. In Claude Code,
+  Codex or Cursor the customer may instead choose local assembly (captions on their machine;
+  paid generation still on the server) once \`gooseworks doctor\` passes. Existing
   CreativeSpec orders stay on this gated server path; only verified legacy template-remix
   projects and batches hand off to goose-video-local.
 category: ads
-version: 1.1.0
+version: 1.2.0
 author: GooseWorks
-tags: [gooseworks, ads, video, order, server-render]
+tags: [gooseworks, ads, video, order, server-render, local-assembly]
 ---
 
 # GooseWorks Video Ads — order a video in chat
@@ -771,12 +775,13 @@ Everything else, including "make me a video ad for <brand>", starts at step 1 be
 ## CreativeSpec server path — three customer gates
 
 CreativeSpec is the typed \`creative_plan\` returned by \`video_project_read\`; it is **not** the
-legacy template recipe. The CLI has no vetted local CreativeSpec node-execution API yet. Use the
-current GooseWorks **server** \`video_project_read\` / \`video_render_run\` flow as the explicit
-fallback, even on a machine with ffmpeg and Playwright. Do not fetch template atoms, call media
-proxies directly, use BYOA/local rendering, mirror a review-once panel, or call
-\`submit_render\` / \`update_render_status\` / \`set_final_render\` for this order. The legacy
-workflow later in this skill does not override this section.
+legacy template recipe. Every CreativeSpec order runs through the GooseWorks **server**
+\`video_project_read\` / \`video_render_run\` flow, on any machine. The one local option is
+\`execution_mode: "local"\` (step 5b): captions assembly on the customer's machine through the
+CLI worker, offered only to terminal hosts after a toolchain check, with paid generation still on
+the server. Do not fetch template atoms, call media proxies directly, render with BYOA, mirror a
+review-once panel, or call \`submit_render\` / \`update_render_status\` / \`set_final_render\`
+for this order. The legacy workflow later in this skill does not override this section.
 
 First inspect the current \`order.status\`. If an order already exists, resume at its present
 \`preview\`, \`pending_quote\`, or \`final_review\`; do not issue a new \`partial\`, create
@@ -934,9 +939,39 @@ The server refuses any other key with \`invalid_brief\` and names every key it a
 
 Show the price the draft returned (the \`quote\`), **never a number from this page or the catalogue**. If it differs from the table's "~N", the quote is right. Convert at **100 credits = $1**.
 
+### 5b. Where to assemble: only in a terminal host, only once
+
+The quote (\`video_render_run { dry_run: true }\`) and \`video_project_read\` carry
+\`execution_choice\`. **Go by that field, never by guessing the host.**
+
+- \`offer_choice: false\` → say nothing about it. Hosted connectors (ChatGPT, cowork, Claude
+  Desktop, claude.ai) have no shell and cannot run a worker; the server does everything.
+- \`offer_choice: true\` (Claude Code, Codex, Cursor with a ready creative plan) → ask the
+  customer **once**, with the host's native question control (AskUserQuestion in Claude Code),
+  before the first \`kind: "partial"\`. Two options, server first and recommended:
+  1. **On the GooseWorks server** (default): nothing to install, works the same everywhere.
+  2. **On this machine**: read \`execution_choice.local.scope\` to them in plain words. Today
+     that means the captions are burned in here with their ffmpeg; the paid image, audio and
+     clip generation, every approval and the bill stay on the server. Do not sell it as a free
+     or fully local render.
+
+If they pick this machine, **check the toolchain before you commit to it**:
+
+- CLI present → run \`gooseworks doctor\` (\`--json\` if you want to parse it). It checks Node 18+,
+  ffmpeg with libx264 + libass, ffprobe, and that Playwright's Chromium is actually downloaded.
+- No CLI → run each \`execution_choice.local.prerequisites[].check\` yourself.
+- Anything fails → show the exact \`fix\` for each failing item and ask: fix it now, or use the
+  server? Never start a local order on a machine that failed the check.
+
+Then pass the answer on the order: \`video_render_run { …, kind: "partial", execution_mode:
+"local" }\` (or \`"server"\`, or leave it out). **The mode is fixed once the order exists**
+(\`execution_mode_stale\`), so ask before the partial, not after. \`local_creative_only\` means
+the creative plan was not ready yet: read the project again and ask when it is.
+
 ### 6. Write the script and show it, before the expensive work
 
-\`video_render_run { brand_id, project_id, kind: "partial" }\`.
+\`video_render_run { brand_id, project_id, kind: "partial" }\`. Add \`execution_mode: "local"\` to
+that same call when they chose their machine in 5b.
 
 This reserves the credits and writes the script only: **no video is rendered.** It returns immediately with \`status: "previewing"\` and no script yet; the writing happens in the background. Poll \`video_project_read\` every 20 seconds (it lands in about 40) and read \`order.preview\`. Calling \`kind: "full"\` while it is still \`previewing\` is refused with \`preview_in_progress\`.
 
@@ -1010,6 +1045,15 @@ This is the review. It happens here, not in the app.
 ### 7. Finish it
 
 After the **final** current gate has been approved with its \`gate_step_idx\`, the worker starts the expensive clips and assembly. Do not make a second bare \`kind: "full"\` call; poll the order instead.
+
+**If they chose their machine (5b):** while polling, watch \`order.local_assembly\`. When its
+\`status\` is \`offered\`, run \`gooseworks video-local captions --project-id <project_id>\` (the
+CLI claims the step, burns the captions with the local ffmpeg, uploads the result and verifies it;
+nothing is generated or charged by that command). Tell the customer it is running here. Then keep
+polling: \`completed\` means it was accepted, \`fallback\` means the server took the step back
+(it does so after about 30 minutes unclaimed, or if the local output failed verification) — say so,
+it is not an error in their video. Without the CLI there is no local worker; if you reach this
+point without it, tell them the server will assemble the captions instead.
 
 Poll \`video_project_read { brand_id, project_id }\` **every 30 seconds.** Done means \`order.status\` is \`done\`; the same response then carries \`video_url\` (the project page) and \`mp4_url\` (the file).
 
@@ -1212,11 +1256,15 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
 - **The render runs wherever THIS agent runs, and it needs a real toolchain: \`ffmpeg\` +
   \`ffprobe\` + a Playwright **Chromium**.** Establish it in this priority order, and do NOT start
   rendering until one is confirmed:
-  1. **CLI present →** run \`gooseworks doctor\` (checks login, MCP, ffmpeg/ffprobe, Playwright
-     Chromium in one shot). Fix any ✗ with the command it prints, then continue.
-  2. **No CLI →** check the toolchain yourself: \`ffmpeg -version\`, \`ffprobe -version\`, and a
-     Playwright Chromium probe (\`npx playwright --version\` and, if needed, \`npx playwright install
-     chromium\`). If all resolve, continue.
+  1. **CLI present →** run \`gooseworks doctor\` (checks login, MCP, Node 18+, ffmpeg with
+     libx264 + libass, ffprobe, and that Playwright's Chromium is actually DOWNLOADED, in one
+     shot). Fix any ✗ with the command it prints, then continue.
+  2. **No CLI →** check the toolchain yourself: \`node --version\` (18+), \`ffmpeg -version\`,
+     \`ffprobe -version\`, and the Chromium browser itself — \`npx --no-install playwright install
+     --dry-run chromium\` prints the install location; if that folder is missing, run
+     \`npx playwright install chromium\`. A resolvable \`playwright\` package with no browser
+     downloaded is the classic false pass. The \`watch\` QC step later needs the same ffmpeg and,
+     for transcripts, a Whisper backend (an OpenAI key) — without one it degrades to frames only.
   3. **Docker available →** this is the most reliable way to get the toolchain in a sandbox that
      lacks it: run the render steps inside the prebuilt image
      **\`ghcr.io/gooseworks-ai/goose-video-render\`** (ffmpeg + ffprobe + Playwright Chromium baked

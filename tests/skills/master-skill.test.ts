@@ -309,6 +309,9 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
   it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
     // Local render lifecycle + the free in-app review tool.
     expect(local).toContain('Playwright');
+    // The classic false pass: the package resolves, the browser was never downloaded.
+    expect(local).toMatch(/Chromium is actually DOWNLOADED/);
+    expect(local).toContain('node --version');
     expect(local).toContain('submit_render');
     expect(local).toContain('update_render_status');
     expect(local).toContain('update_ad_project_script');
@@ -368,8 +371,26 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
     for (const tool of ['brand_list', 'video_catalog_list', 'video_project_upsert', 'video_render_run', 'video_project_read', 'job_cancel']) {
       expect(video).toContain(tool);
     }
-    expect(video).toMatch(/Do not fetch template atoms, call media\s+proxies directly, use BYOA\/local rendering/);
+    expect(video).toMatch(/Do not fetch template atoms, call media\s+proxies directly, render with BYOA/);
     expect(video).toMatch(/or call\s+`submit_render` \/ `update_render_status` \/ `set_final_render`/);
+  });
+
+  // Terminal hosts get a real choice about WHERE the video assembles, but only
+  // after the machine passes the toolchain check, and never in a hosted connector.
+  it('offers local assembly only from execution_choice, after gooseworks doctor, before the partial', () => {
+    expect(video).toContain('### 5b. Where to assemble');
+    expect(video).toContain('execution_choice');
+    expect(video).toContain('offer_choice: false');
+    expect(video).toContain('offer_choice: true');
+    expect(video).toMatch(/gooseworks doctor/);
+    expect(video).toContain('execution_mode:\n"local"');
+    expect(video).toContain('execution_mode_stale');
+    expect(video).toContain('gooseworks video-local captions --project-id <project_id>');
+    expect(video).toMatch(/paid image, audio and\s+clip generation, every approval and the bill stay on the server/);
+    const choice = video.indexOf('### 5b. Where to assemble');
+    const partial = video.indexOf('kind: "partial" }`.');
+    expect(choice).toBeGreaterThan(-1);
+    expect(partial).toBeGreaterThan(choice);
   });
 
   it('reads existing projects before routing CreativeSpec versus legacy remixes', () => {

@@ -95,11 +95,15 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
 - **The render runs wherever THIS agent runs, and it needs a real toolchain: `ffmpeg` +
   `ffprobe` + a Playwright **Chromium**.** Establish it in this priority order, and do NOT start
   rendering until one is confirmed:
-  1. **CLI present →** run `gooseworks doctor` (checks login, MCP, ffmpeg/ffprobe, Playwright
-     Chromium in one shot). Fix any ✗ with the command it prints, then continue.
-  2. **No CLI →** check the toolchain yourself: `ffmpeg -version`, `ffprobe -version`, and a
-     Playwright Chromium probe (`npx playwright --version` and, if needed, `npx playwright install
-     chromium`). If all resolve, continue.
+  1. **CLI present →** run `gooseworks doctor` (checks login, MCP, Node 18+, ffmpeg with
+     libx264 + libass, ffprobe, and that Playwright's Chromium is actually DOWNLOADED, in one
+     shot). Fix any ✗ with the command it prints, then continue.
+  2. **No CLI →** check the toolchain yourself: `node --version` (18+), `ffmpeg -version`,
+     `ffprobe -version`, and the Chromium browser itself — `npx --no-install playwright install
+     --dry-run chromium` prints the install location; if that folder is missing, run
+     `npx playwright install chromium`. A resolvable `playwright` package with no browser
+     downloaded is the classic false pass. The `watch` QC step later needs the same ffmpeg and,
+     for transcripts, a Whisper backend (an OpenAI key) — without one it degrades to frames only.
   3. **Docker available →** this is the most reliable way to get the toolchain in a sandbox that
      lacks it: run the render steps inside the prebuilt image
      **`ghcr.io/gooseworks-ai/goose-video-render`** (ffmpeg + ffprobe + Playwright Chromium baked
