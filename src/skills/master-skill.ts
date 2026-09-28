@@ -1449,6 +1449,12 @@ audio/video, open the image); if the download fails or the file is broken, regen
 Only generate what is missing or whose digest changed — a changed digest means the inputs changed,
 so the old file is stale.
 
+**Pass the digest to the proxy too:** \`fal_generate(..., input_digest=digest)\` (and
+\`fal_generate_video\` / \`fal_whisper\`). A piece that was generated but never saved (the sandbox
+died between the fal result and the upload) is then handed back by the proxy instead of paid for
+again, even though its input URLs changed. Only pass \`new_take=True\` when the user wants a
+different take of the same inputs.
+
 **3. After EACH piece is generated AND passes its own QC, upload it right away** — don't batch
 the uploads to the end:
 \`media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
@@ -1457,7 +1463,10 @@ content_type } }\` → PUT the bytes to \`upload.url\` with \`upload.required_he
 \`media_confirm\` for a \`path\` upload). Kind: \`audio\` (VO), \`music\`, \`image\` (a still),
 \`video\` (a clip), \`endcard\`, \`document\` (captions / a JSON sidecar), \`render\` (the master),
 \`thumbnail\`. Re-uploading the same key is fine — the newest wins. A piece that FAILED QC is never
-uploaded under its key.
+uploaded under its key. **Save a piece's sidecars with it** under \`<key>.<name>\` — e.g. the VO's
+char-level timestamps as \`vo/scene-03.timestamps\` (\`kind: "document"\`, same digest). Captions are
+built from them; without them a resumed run has to fall back to Whisper timings, which mis-case
+brand names.
 
 **4. Record it in the ingredients list.** Put the piece's \`media_id\` (\`media.id\`), \`path\`
 and \`ingredient_key\` on its entry in \`script_drafts.ingredients\` and mirror with
@@ -1695,6 +1704,10 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - **Visual + structure** — always: run the \`watch\` skill on the master — beat/scene order + SFX,
      the brand's product (not the source's) is shown, the end card has the real wordmark + code, no
      deformation/artifact, duration within ~20% of the source.
+   - **Output size** — always: ffprobe the master's width × height. It must be the recipe's output
+     size (9:16 = **1080×1920** unless the recipe says otherwise). Lipsync / video models often
+     return 720p or odd sizes — scale (and pad if the aspect differs) every clip to the output size
+     BEFORE the concat, never ship the model's native size.
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
    and re-review — only a clean pass proceeds to pinning. **This gate is universal: it runs from
    this skill for every format, so a recipe never has to opt in.**
