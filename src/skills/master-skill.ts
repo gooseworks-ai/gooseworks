@@ -836,7 +836,7 @@ MCP tools; the work happens in the app.
 
 - \`brand_list\`: brand NAME → \`brand_id\`. Pass \`query\` when they named one.
 - \`brand_create { name, website_url }\`: only when the customer asks to add a brand that isn't there. Free.
-- \`video_catalog_list { kind: "formats", brand_id }\`: what can be ordered. Each format has \`card.description\`, \`card.best_for\`, \`card.needs\`, \`ask[]\`, \`brand_requirements[]\`, \`default_credits\` and \`examples[]\` (demo videos: a curated sample first, then real runs). The response also carries \`brief_fields\`: the intent fields every format's \`brief\` accepts on top of its \`ask[]\` (\`prompt\`, \`audience\`, \`must_mention\`, \`avoid\`, \`notes\`). In a terminal host it may also carry \`client_formats[]\` (+ \`client_formats_note\`): formats that run on the customer's own machine (see step 3b). Each has \`template_id\`, \`card\` and a demo in \`examples[]\`; no \`ask[]\`, no quote.
+- \`video_catalog_list { kind: "formats", brand_id }\`: what can be ordered. Each format has \`card.description\`, \`card.best_for\`, \`card.needs\`, \`ask[]\`, \`brand_requirements[]\`, \`default_credits\` and \`examples[]\` (demo videos: a curated sample first, then real runs). The response also carries \`brief_fields\`: the intent fields every format's \`brief\` accepts on top of its \`ask[]\` (\`prompt\`, \`audience\`, \`must_mention\`, \`avoid\`, \`notes\`). Some rows have \`execution: "client"\` (and the response a \`client_formats_note\`): formats that run on the customer's own machine (see step 3b). They carry \`template_id\`, \`card\`, a demo in \`examples[]\`, an empty \`ask[]\` and no quote.
 - \`video_catalog_list { kind: "voices" }\`: voices with playable \`preview_url\`s, for formats that speak.
 - \`video_project_upsert\`: the free draft. Returns \`project_id\`, \`quote\`, \`ready\`, \`missing\` and \`questions\` (0–2 things worth asking before the script is written; usually none).
 - \`video_project_upsert { project_id, patch: { brief } }\`: changes the brief, checked the same way as when it was created. A key replaces its value, \`null\` removes it. Free. Once ordered, only the brief fields change (never the format's own answers), and they reach the script on the next \`redraft\`. A brief change never moves the quote.
@@ -903,7 +903,7 @@ Order the rows by how well each format fits their answer. Judge fit from \`card.
 - **Say which formats won't take their words.** A format whose \`edits.script\` is empty writes its own copy and accepts no hand edit; the only lever is a redraft, which rewrites everything. Put "writes its own words" in that row's "What it looks like" cell. A customer who arrives with a script already written needs to know this **before** they pick, not after they hand it over.
 - **Formats the brand may not be able to run** go last, with \`card.needs\` in plain words, e.g. "needs real before/after photos". Don't hide them; don't suggest them. Judge logo and product photos from the \`brand_list\` row. For anything else (before/after photos, say) you can't see, treat it as missing rather than make extra calls. \`video_project_upsert\` returns \`ready\`/\`missing\`, which is the real check.
 
-- **Client-side formats.** When the response has \`client_formats\` (terminal hosts only), add them to the same table with "runs on your machine" in the Format cell, \`card.description\` quoted, "billed per step" in the Price cell and \`examples[0].output_url\` as the demo. Judge fit the same way. Their \`card.needs\` is usually the brand's own footage: say so in the row. Never list them in a hosted connector (they are absent there anyway).
+- **Client-side formats.** Rows with \`execution: "client"\` go in the same table with "runs on your machine" in the Format cell, \`card.description\` quoted, "billed per step" in the Price cell and \`examples[0].output_url\` as the demo. Judge fit the same way. Their \`card.needs\` is usually the brand's own footage: say so in the row. In a host with no shell (ChatGPT, claude.ai, Cowork) still list them, and say they need Claude Code, Codex or Cursor on the customer's machine.
 
 **Print the table in your message, THEN ask which one** ("Want the suggested one, or another?"). Never put the formats only inside a structured question control: it renders plain option labels, not links, so the customer would be picking a format they were never able to watch. That happened on the first real run: the picker appeared, the demos didn't, and the customer had to ask where they were. A question control may follow the table to capture the answer; it never replaces it.
 
@@ -1256,11 +1256,26 @@ command -v gooseworks >/dev/null && echo cli || echo no-cli
 |---|---|---|---|
 | **GooseWorks sandbox** | \`GW_MEDIA_PROXY_TOKEN\` is set | \`catalog_fetch { type: "skill" }\` | env: \`GW_MEDIA_PROXY_TOKEN\` + \`GW_*_PROXY_URL\` |
 | **Local, CLI installed** | \`gooseworks\` on PATH | \`gooseworks fetch <slug>\` or \`catalog_fetch\` | \`~/.gooseworks/credentials.json\` |
-| **Local, no CLI** (cowork / headless desktop) | neither | \`catalog_fetch { type: "skill" }\` | \`~/.gooseworks/credentials.json\` if present, else stop and ask the user to log in |
+| **Local, no CLI** (Claude desktop app / Codex without login) | neither | \`catalog_fetch { type: "skill" }\` | \`~/.gooseworks/credentials.json\` if present, else **the MCP relay** (below) |
 
 The \`gooseworks\` CLI and \`~/.gooseworks/credentials.json\` are **optional**. Everything this skill
 needs from the app goes through the GooseWorks MCP tools below; the atoms' \`media_proxy.py\` reads
 credentials.json when it exists and falls back to the \`GW_MEDIA_PROXY_TOKEN\` env otherwise.
+
+### No credentials at all: the MCP relay
+
+With neither \`GW_MEDIA_PROXY_TOKEN\` nor \`~/.gooseworks/credentials.json\`, the atoms'
+\`media_proxy.py\` RELAYS each paid call through you instead of calling the proxies over HTTP.
+Before running any atom, \`export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>\` (every call
+is billed to that project). When a script **exits with code 3** it wrote a request file under
+\`working/mcp-requests/\`: make exactly that MCP call — fal:
+\`data_post_provider { provider: "fal", path, body, project_id }\` then \`job_get { job_id }\` until
+\`complete\`, saving \`result.output\`; ElevenLabs: \`data_post_provider { provider: "elevenlabs", … }\`,
+saving the reply; a local file: \`media_upload\` with its bytes, saving \`{"url": …}\`. Write that JSON
+to the request's \`save_result_to\` and **re-run the same command**; repeat until the script
+finishes. Same server proxy and price as the CLI path. If the CLI is logged in to a DIFFERENT
+environment than this MCP connector (prod vs staging), set \`GW_MEDIA_VIA=mcp\` so the spend lands
+where the project lives.
 
 ## MCP tools — canonical names (use these)
 

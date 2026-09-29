@@ -71,11 +71,26 @@ command -v gooseworks >/dev/null && echo cli || echo no-cli
 |---|---|---|---|
 | **GooseWorks sandbox** | `GW_MEDIA_PROXY_TOKEN` is set | `catalog_fetch { type: "skill" }` | env: `GW_MEDIA_PROXY_TOKEN` + `GW_*_PROXY_URL` |
 | **Local, CLI installed** | `gooseworks` on PATH | `gooseworks fetch <slug>` or `catalog_fetch` | `~/.gooseworks/credentials.json` |
-| **Local, no CLI** (cowork / headless desktop) | neither | `catalog_fetch { type: "skill" }` | `~/.gooseworks/credentials.json` if present, else stop and ask the user to log in |
+| **Local, no CLI** (Claude desktop app / Codex without login) | neither | `catalog_fetch { type: "skill" }` | `~/.gooseworks/credentials.json` if present, else **the MCP relay** (below) |
 
 The `gooseworks` CLI and `~/.gooseworks/credentials.json` are **optional**. Everything this skill
 needs from the app goes through the GooseWorks MCP tools below; the atoms' `media_proxy.py` reads
 credentials.json when it exists and falls back to the `GW_MEDIA_PROXY_TOKEN` env otherwise.
+
+### No credentials at all: the MCP relay
+
+With neither `GW_MEDIA_PROXY_TOKEN` nor `~/.gooseworks/credentials.json`, the atoms'
+`media_proxy.py` RELAYS each paid call through you instead of calling the proxies over HTTP.
+Before running any atom, `export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>` (every call
+is billed to that project). When a script **exits with code 3** it wrote a request file under
+`working/mcp-requests/`: make exactly that MCP call — fal:
+`data_post_provider { provider: "fal", path, body, project_id }` then `job_get { job_id }` until
+`complete`, saving `result.output`; ElevenLabs: `data_post_provider { provider: "elevenlabs", … }`,
+saving the reply; a local file: `media_upload` with its bytes, saving `{"url": …}`. Write that JSON
+to the request's `save_result_to` and **re-run the same command**; repeat until the script
+finishes. Same server proxy and price as the CLI path. If the CLI is logged in to a DIFFERENT
+environment than this MCP connector (prod vs staging), set `GW_MEDIA_VIA=mcp` so the spend lands
+where the project lives.
 
 ## MCP tools — canonical names (use these)
 
