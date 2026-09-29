@@ -13,8 +13,9 @@
  *     `gooseworks install --with goose-graphics` or fetched on demand.
  *
  * Video (vendored here, GOOSE-3677):
- *   - `goose-video`       — order a video ad in chat; renders on the GooseWorks
- *     server (getGooseVideoSkillContent). The only full copy of that body.
+ *   - `goose-video`       — the front door for a new video ad: brand → goal →
+ *     format table → machine check → project → hand off to goose-video-local
+ *     (getGooseVideoSkillContent). The only full copy of that body.
  *   - `goose-video-local` — render an existing app project/batch LOCALLY
  *     (Playwright + ffmpeg + media proxies) (getGooseVideoLocalSkillContent).
  *
@@ -701,13 +702,13 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
 /**
  * Returns the goose-video entry SKILL.md content (GOOSE-3677).
  *
- * The server-rendered ORDERING flow: "make me a video ad for <brand>" → brand →
- * what it's for → format table with demos → the format's questions → a free
- * draft and a server quote → a script preview before the expensive work → the
- * finished video in the chat. Works in hosted connectors (nothing runs locally).
- * A terminal host (Claude Code / Codex / Cursor) may choose local captions
- * assembly after `gooseworks doctor` passes (GOOSE-3718, step 5b).
- * It routes existing app projects/batches to `goose-video-local` first.
+ * The front door for a NEW video ad: "make me a video ad for <brand>" → brand →
+ * what it's for → a table of every format with demos → a machine check
+ * (`gooseworks doctor`) → the project → `goose-video-local` in the same session.
+ * Server-rendered video orders are paused on the public MCP (gooseworks-app
+ * server-video-orders.ts): the catalogue lists only client-side formats, so this
+ * skill no longer carries the quote / gate / CreativeSpec server flow. If server
+ * orders come back, restore it from git history (before goose-video 2.0.0).
  *
  * This is the ONLY full copy of the body. goose-lab's `order-video` is a stub
  * that points here; edit the ordering flow in this function.
@@ -717,140 +718,90 @@ export function getGooseVideoSkillContent(): string {
 name: goose-video
 slug: goose-video
 description: >
-  Order a finished video ad without leaving the chat. Use it when the user says "make me a video
-  ad for <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer video. One
-  sentence is enough: it picks the brand, asks what the ad is for, suggests formats in a table
-  with demo links, asks that format's questions, shows the current plan and quote, and walks
-  each required approval artifact before expensive generation. It renders on the GooseWorks
-  server and returns the video in the chat, including in hosted connectors. In Claude Code,
-  Codex or Cursor the customer may instead choose local assembly (captions on their machine;
-  paid generation still on the server) once \`gooseworks doctor\` passes. Existing
-  CreativeSpec orders stay on this gated server path; only verified legacy template-remix
-  projects and batches hand off to goose-video-local.
+  Start a video ad without leaving the chat. Use it when the user says "make me a video ad for
+  <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer / product-demo video.
+  One sentence is enough: it picks the brand, asks what the ad is for, shows every video format in
+  a table with demo links, checks this machine can render, creates the project and hands it to
+  goose-video-local, which makes the video here and saves it back to the app. Every format runs on
+  the customer's own machine (Claude Code, Codex or Cursor); a hosted connector (ChatGPT,
+  claude.ai, Cowork) can show the formats but cannot render one.
 category: ads
-version: 1.2.0
+version: 2.0.0
 author: GooseWorks
-tags: [gooseworks, ads, video, order, server-render, local-assembly]
+tags: [gooseworks, ads, video, client-side, local-render]
 ---
 
-# GooseWorks Video Ads — order a video in chat
+# GooseWorks Video Ads — pick a format, then make it here
 
 ## Purpose
 
-Produces one finished vertical video ad, rendered on the GooseWorks server and billed in credits. Examples: an animated iMessage, ChatGPT or Notes thread that ends on the brand's product, or a kinetic-type explainer. The live catalogue decides what can be ordered.
+Gets a customer from one sentence ("make me a video ad for Bioma") to a video project with the
+right format, then hands that project to **\`goose-video-local\`**, which makes the video on this
+machine and saves it back to the app.
 
-**The customer starts with one sentence.** "Make me a video ad for Bioma" is the normal opening, not an edge case. They will not name a format, a tool or a step. Getting from that sentence to a good choice is this skill's job.
+**Every video format runs on the customer's machine.** The GooseWorks server does not render
+videos right now. It lists the formats, stores the project, bills each paid step through its media
+proxy and keeps the finished video. There is no server quote, no server script preview and no
+server render to order: \`video_catalog_list\` returns only client-side formats
+(\`execution: "client"\`), and a server-format project is refused with \`format_unavailable\`.
 
-**The whole job happens in the chat.** The customer is in Claude Code, ChatGPT or a terminal. They will not open a browser to review a script, compare voices or watch a result. Choosing, previewing, approving and receiving all happen here, as text and links they can click. The app is for **payment and nothing else**.
+**The whole job happens in the chat.** Choosing, approving and receiving the video all happen here,
+as text and links the customer can click. The app is for **payment and nothing else**.
 
-**This is not the Video Ads Lab.** The lab is internal, admin-only and free. This spends a customer's money.
+## Route first: is this a new video?
 
+Hand off to **\`goose-video-local\`** now, and stop following this skill, for:
 
-## Route first: is this a new order?
-
-This skill orders a new video **and continues existing CreativeSpec orders**. For any existing
-\`project_id\` (including one inside a copy-for-Claude command), first call
-\`video_project_read { brand_id, project_id }\`. If the response has \`creative_plan\`,
-\`project.creative_spec_revision_id\`, \`order.creative_spec_revision_id\`, or a planning
-\`lifecycle\` for a recipe project, keep the same project here and follow the **CreativeSpec
-server path** below. A planning project is not a legacy remix just because its revision is not
-ready yet. If the response is unclear, read again or ask; never infer that it is safe to render
-locally. The app's copy-for-Claude label is not authority to bypass this check.
-
-Only after that check, hand off to **\`goose-video-local\`** and stop following this skill for a
-legacy template-remix project or batch, including:
-
-- a **video batch** id ("for video batch <id>");
-- the app's copy-for-Claude command (it names \`goose-video-local\`) for a verified legacy remix;
+- an existing **project** id or a **video batch** id;
+- the app's copy-for-Claude command (it names \`goose-video-local\`);
 - "remix this video ad template" for a specific app template.
 
-Those render on the customer's own machine or, for podcast/UGC formats, inside a GooseWorks workspace sandbox. Use \`goose-video-local\` if it is installed; otherwise load it with \`catalog_fetch { type: "skill", slug: "goose-video-local" }\` on the GooseWorks MCP (older clients: \`fetch_skill("goose-video-local")\`).
-
-A bare **project** id: after the read above, also stay here when it returns an \`order\` or the
-project's \`script_drafts.recipe\` is set. **Only a verified legacy template remix** goes to
-\`goose-video-local\`.
+Use \`goose-video-local\` if it is installed; otherwise load it with
+\`catalog_fetch { type: "skill", slug: "goose-video-local" }\` on the GooseWorks MCP (older clients:
+\`fetch_skill("goose-video-local")\`). It reads the project first and says what to do with it.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
-
-## CreativeSpec server path — three customer gates
-
-CreativeSpec is the typed \`creative_plan\` returned by \`video_project_read\`; it is **not** the
-legacy template recipe. Every CreativeSpec order runs through the GooseWorks **server**
-\`video_project_read\` / \`video_render_run\` flow, on any machine. The one local option is
-\`execution_mode: "local"\` (step 5b): captions assembly on the customer's machine through the
-CLI worker, offered only to terminal hosts after a toolchain check, with paid generation still on
-the server. Do not fetch template atoms, call media proxies directly, render with BYOA, mirror a
-review-once panel, or call \`submit_render\` / \`update_render_status\` / \`set_final_render\`
-for this order. The legacy workflow later in this skill does not override this section.
-
-First inspect the current \`order.status\`. If an order already exists, resume at its present
-\`preview\`, \`pending_quote\`, or \`final_review\`; do not issue a new \`partial\`, create
-another project, or replay an earlier approval.
-
-1. **Plan and quote gate:** Poll \`video_project_read\` on the same project until
-   \`creative_plan.revision_id\` is present. Planning/needs-answers is not approval-ready.
-   Show the script **and full decision sheet** from the current plan in this chat: scenes,
-   cast/setting, actual selected image thumbnails and their uses, voice/sound direction, CTA,
-   end card, open decisions and copy warnings. Get the current server quote with
-   \`video_render_run { brand_id, project_id, dry_run: true }\`; show its line items and hold
-   terms. Resolve required decisions and ask for explicit approval of this revision **and**
-   exact quote before the first paid call. Start only with the current
-   \`estimate.quote_digest\` as \`approved_quote_digest\` on \`kind: "partial"\`. If the
-   plan/quote changed, read and ask again. Then poll \`video_project_read\` for the parked
-   \`preview.gate.kind: "script"\`. Show its current plan/script subject and copy warnings,
-   and seek explicit approval of that exact subject. Approve it with \`kind: "full"\` and
-   \`preview.gate.step_idx\`, \`revision_id\`, and \`subject_digest\` from that read. Do not
-   demand generated ingredient media at this first script/plan gate.
-2. **Actual ingredient gate(s):** Poll \`video_project_read\` for the later parked
-   \`preview\` gates. Show each gate's actual preview media **in this chat**, alongside the
-   current subject and actual metered spend; do not approve a prompt in place of media. After
-   the customer explicitly approves that exact subject, call \`video_render_run\` with
-   \`kind: "full"\` and the read's \`preview.gate.step_idx\`, \`revision_id\`, and
-   \`subject_digest\`. Read again for every later gate; never reuse prior tokens. If
-   \`order.pending_quote\` appears, show the revised cap and line items and obtain fresh
-   approval before passing its \`quote_digest\` as \`approved_quote_digest\`.
-3. **Final video gate:** When \`order.final_review\` appears, play
-   \`final_review.output_url\` here, report \`captured_credits\` already spent, and ask for
-   explicit acceptance, rejection, or a targeted edit. Only acceptance of this exact
-   provisional MP4 permits \`kind: "full"\` with the final review's \`revision_id\` and
-   \`subject_digest\`. Rejection is \`job_cancel\`; it does not undo metered provider spend.
-   Never call a provisional MP4 delivered. After acceptance, read the project and provide the
-   completed output in this chat.
-
-The server response is the source of truth for the next gate and its tokens. If tokens or actual
-preview media are absent, poll/read again rather than skipping the gate. The older single-script
-approval steps below apply only to non-CreativeSpec recipe orders.
 
 ## Inputs
 
 - A brand, usually named in the opening sentence. Resolved to \`brand_id\`; with one brand in the org it needs no input.
-- What the ad is for, in the customer's words (optional; asked once, never forced). **It is sent with the order** as \`brief.prompt\` and reaches the script. It is not only for sorting the table.
-- Anything else they volunteer about the ad: who it's for, names or terms it must say, things to stay away from. These are never asked for; they're kept when the customer offers them.
-- The picked format's own answers (voice, music, angle…). The catalogue says which apply; some formats ask nothing.
-
-Never an input: a reference video (these formats don't use one), or a promo code (it comes from the brand).
+- What the ad is for, in the customer's words (optional; asked once, never forced). It becomes the brief \`goose-video-local\` works from.
+- Anything else they volunteer: who it's for, names or terms it must say, things to stay away from. Never asked for; kept when offered.
+- What the picked format needs from the brand (\`card.needs\`): usually a clean product photo, a screen recording or their own footage.
 
 ## Composed Atoms
 
-MCP tools; the work happens in the app.
+MCP tools; \`goose-video-local\` does the making.
 
 - \`brand_list\`: brand NAME → \`brand_id\`. Pass \`query\` when they named one.
 - \`brand_create { name, website_url }\`: only when the customer asks to add a brand that isn't there. Free.
-- \`video_catalog_list { kind: "formats", brand_id }\`: what can be ordered. Each format has \`card.description\`, \`card.best_for\`, \`card.needs\`, \`ask[]\`, \`brand_requirements[]\`, \`default_credits\` and \`examples[]\` (demo videos: a curated sample first, then real runs). The response also carries \`brief_fields\`: the intent fields every format's \`brief\` accepts on top of its \`ask[]\` (\`prompt\`, \`audience\`, \`must_mention\`, \`avoid\`, \`notes\`). Some rows have \`execution: "client"\` (and the response a \`client_formats_note\`): formats that run on the customer's own machine (see step 3b). They carry \`template_id\`, \`card\`, a demo in \`examples[]\`, an empty \`ask[]\` and no quote.
-- \`video_catalog_list { kind: "voices" }\`: voices with playable \`preview_url\`s, for formats that speak.
-- \`video_project_upsert\`: the free draft. Returns \`project_id\`, \`quote\`, \`ready\`, \`missing\` and \`questions\` (0–2 things worth asking before the script is written; usually none).
-- \`video_project_upsert { project_id, patch: { brief } }\`: changes the brief, checked the same way as when it was created. A key replaces its value, \`null\` removes it. Free. Once ordered, only the brief fields change (never the format's own answers), and they reach the script on the next \`redraft\`. A brief change never moves the quote.
-- \`video_render_run { dry_run: true }\`: re-reads the price. Free.
-- \`video_render_run { kind: "partial" }\`: **writes the script and stops.** Reserves the quote and shows the script before the expensive work. Works for every orderable format, chat or voiceover.
-- \`video_render_run { kind: "full", gate_step_idx }\`: approves exactly the gate the customer just saw and advances to the next required review; only the final approval starts the costly render.
-- \`video_render_run { kind: "edit", edit: { script } }\`: puts the customer's OWN words into the draft, verbatim, through the format's own guards. Free before approval, and the **only** route that keeps their copy. Offered where the format's \`edits.script\` is non-empty; refused as \`script_not_editable\` elsewhere.
-- \`video_render_run { kind: "redraft", reason }\`: another draft, before approval, written from why they turned this one down, or with no \`reason\` after a brief change (the change is the reason). It **re-runs the writer** either way, so every word (and the picture on a character format) is replaced — it does not keep copy the customer supplied. Same order, **no new hold**, but **not free**: it adds a few credits of model spend inside the hold already placed. Up to 3, and refused if it would pass the hold. \`dry_run: true\` says what it would add.
-- \`video_project_read { brand_id, project_id }\`: status, the drafted script while previewing, and the finished video. Returns an \`order\` object for recipe projects.
-- \`job_cancel { job_id }\`: declines a preview. \`job_id\` is the order id (the project id also works). Releases the whole hold.
+- \`brand_get_context { brand_id }\`: research status, logo, product photos.
+- \`video_catalog_list { kind: "formats", brand_id }\`: every format that can be made. Each row has \`template_id\`, \`card.description\`, \`card.best_for\`, \`card.needs\` and \`examples[]\` (demo videos). The response carries a \`client_formats_note\` with the machine checks.
+- \`video_project_upsert { brand_id, name, format: <template_id> }\`: creates the project. Free.
+- \`catalog_fetch { type: "skill", slug: "goose-video-local" }\`: the skill that makes it.
+
+## Paid media: images, clips, voice
+
+Every paid generation — a creator still, a product cutout, a screen-recording frame placed in a
+laptop, an animated clip, a voiceover, a music bed — goes through the GooseWorks media proxy and is
+billed per call to the project. **No FAL_KEY, ElevenLabs key or \`fal_client\` is ever needed.**
+A recipe, atom or open-source skill that says "needs FAL_KEY" is satisfied by the proxy; it is
+never a blocker. With the GooseWorks MCP alone:
+
+- **Image or clip, any fal model** (Nano Banana, GPT-image, Seedream, Seedance, Kling):
+  \`data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }\`,
+  then poll \`job_get { job_id }\` until \`complete\`; the \`*.fal.media\` URLs are in \`result\`.
+- **Voice or music:** \`data_post_provider { provider: "elevenlabs", … , project_id }\`.
+- **A local file as an input** (a frame, a screenshot): \`media_upload\` it first and pass the returned public URL.
+
+\`photos_generate\` is **not** a general image tool: it only photographs a physical catalog product
+(apparel, beauty, CPG). A software screenshot or app mockup is a fal image edit. \`goose-video-local\`
+has the full rules (atoms, the relay, saving each piece as it passes QC).
 
 ## Workflow
 
-The opening is fixed: **brand → what it's for → suggested formats → first question.** Do each step without waiting for the customer to ask for it.
+The opening is fixed: **brand → what it's for → format table → machine check → project → hand off.**
+Do each step without waiting for the customer to ask for it.
 
 ### 1. Resolve the brand, quietly when you can
 
@@ -858,8 +809,8 @@ Call \`brand_list\`, with \`query\` when they named a brand. \`query\` is a case
 
 - **The org has exactly one brand** → use it. Say which in one line ("Making this for **Bioma**.") and move on. Don't ask.
 - **The name they said matches exactly one brand** → use it. Say which.
-- **Several match, or they named none and the org has several** → show a table (name, website) and ask. The wrong brand is a wasted order.
-- **Nothing matches** → say so, list the brands they do have in a table, and offer to add the new one here: "Or send me its website and I'll add it." With a website, call \`brand_create { name, website_url }\` (free). It starts brand research, which fills in the logo and colours in a few minutes. Say so, then carry on from step 2 while it runs. Before step 5, check \`brand_get_context\` shows \`research_status: complete\`; until then drafts are blocked. Adding a brand is not a trip to the app. Never create a brand they didn't ask for, and never guess the website.
+- **Several match, or they named none and the org has several** → show a table (name, website) and ask.
+- **Nothing matches** → say so, list the brands they do have in a table, and offer to add the new one here: "Or send me its website and I'll add it." With a website, call \`brand_create { name, website_url }\` (free). It starts brand research, which fills in the logo and colours in a few minutes. Carry on from step 2 while it runs. Never create a brand they didn't ask for, and never guess the website.
 
 If the GooseWorks MCP's own instructions have you check onboarding first and it turns out unfinished, finish it, then come back here with the customer's original sentence.
 
@@ -869,290 +820,82 @@ Unless the opening sentence already said it, ask **one** plain question and wait
 
 > What's this ad for? For example: launching something, a sale, explaining how it works, or showing real results. Anything you tell me helps me pick the right format.
 
-This is a free-text question: **no menu, no table, no list of formats yet.** Take whatever they say, even "not sure" or "just something good". Never ask it twice, and never block on it: a vague answer is an answer.
+This is a free-text question: **no menu, no table, no list of formats yet.** Take whatever they say, even "not sure". Never ask it twice, and never block on it.
 
-**Keep the answer. It goes into the order in step 5**, not just into the table's order. Write it down as they said it; that becomes \`brief.prompt\`. If their words (here or in the opening) also say who the ad is for, a name or term the ad must say, or something to stay away from, note those too:
+**Keep the answer, as they said it.** It is the brief \`goose-video-local\` works from in step 5. If their words also say who the ad is for, a name or term the ad must say, or something to stay away from, note those too. Never ask for those and never fill them with a guess.
 
-| They said | Goes in | Example |
-|---|---|---|
-| What the ad is for (the whole answer) | \`prompt\` | "creative is the bottleneck for small teams, make it a problem-solver" |
-| Who it's for | \`audience\` | "heads of growth at seed-stage startups" |
-| A name or term it must say | \`must_mention\` (a list) | \`["Claude", "ChatGPT"]\` |
-| Something to keep out | \`avoid\` (a list) | \`["no villain", "don't talk down to marketers"]\` |
+Skip the question when the opening already names a goal ("…a video ad for our summer sale") or a format ("…an iMessage video ad"). With a format named, go to the table with that format first and marked.
 
-Never ask for the last three and never fill them with a guess. A \`must_mention\` term the customer didn't say is a claim we made for them.
+### 3. Show every format in a table, best fit first
 
-Skip the question when the opening already names a goal ("…a video ad for our summer sale") or a format ("…an iMessage video ad"). With a format named, go to the table with that format first and marked, then step 4.
+\`video_catalog_list { kind: "formats", brand_id }\`, then **always a markdown table in your message**, with **every row** the tool returned.
 
-### 3. Suggest formats in a table, best fit first
+Order the rows by how well each format fits their answer. Judge fit from \`card.description\` and \`card.best_for\` against what they said. **A format whose card contradicts what they asked for is never Suggested**, however well its keywords match. When nothing fits, say so before the table ("None of our formats does X; the closest is Y, which gives up Z") and still show the table. Mark **exactly one** row **Suggested** with a few words on why; a close second can be **Also good**.
 
-\`video_catalog_list { kind: "formats", brand_id }\`, then **always a markdown table in your message**.
-
-Order the rows by how well each format fits their answer. Judge fit from \`card.description\`, \`card.best_for\` **and the format's \`ask[]\` options** against what they said. An option can make a format fit: a cartoon explainer whose \`ask[]\` offers \`arc: hero-helper\` fits "a friendly hero mascot, no villain"; one without that option does not, because its card says the character is the problem and loses. **A format whose card contradicts what they asked for is never Suggested**, however well its keywords match. When nothing fits, say so before the table ("None of our formats does X; the closest is Y, which gives up Z") and still show the table. Mark **exactly one** row **Suggested** with a few words on why ("real results → before/after"); a close second can be **Also good**. One suggestion keeps "the suggested one" unambiguous. With no goal given, put the formats that have demos first.
-
-| | Format | What it looks like | Price | Demo |
+| | Format | What it looks like | Needs | Demo |
 |---|---|---|---|---|
-| **Suggested** | iMessage chat reveal | Two friends texting; ends on your product | ~60 credits | [watch](https://…) |
-| **Also good** | Apple Notes reveal | A diary-style note typed out; ends on your product | ~15 credits | [watch](https://…) |
-| | Kinetic type explainer | Bold on-brand text timed to a voiceover | ~80 credits | [watch](https://…) |
+| **Suggested** | Split-screen creator demo | A creator reacts on top while your app plays below | a screen recording of your product | [watch](https://…) |
+| **Also good** | Creator product review | An AI creator reviews your product to camera, holding it | a clean photo of the real product | [watch](https://…) |
 
-- **Demo** is \`examples[].output_url\`. When a format has none, write "no demo yet" in the cell; never leave it blank.
-- **"What it looks like" is \`card.description\`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief. \`card.best_for\` often carries a dollar figure; never copy it into the table.
-- **When the pick depends on an option, say which.** "Cartoon explainer (as a friendly helper)" in the Format cell, and pre-fill that answer in step 4.
-- **Price** is \`default_credits\`, written approximately ("~60 credits"). It is a guide for choosing. The price they agree to is the server's quote in step 5.
-- **Say which formats won't take their words.** A format whose \`edits.script\` is empty writes its own copy and accepts no hand edit; the only lever is a redraft, which rewrites everything. Put "writes its own words" in that row's "What it looks like" cell. A customer who arrives with a script already written needs to know this **before** they pick, not after they hand it over.
-- **Formats the brand may not be able to run** go last, with \`card.needs\` in plain words, e.g. "needs real before/after photos". Don't hide them; don't suggest them. Judge logo and product photos from the \`brand_list\` row. For anything else (before/after photos, say) you can't see, treat it as missing rather than make extra calls. \`video_project_upsert\` returns \`ready\`/\`missing\`, which is the real check.
+- **"What it looks like" is \`card.description\`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief.
+- **Needs** is \`card.needs\` in plain words. Judge logo and product photos from the \`brand_list\` row; treat anything you can't see as missing rather than make extra calls. A format that needs something the brand lacks goes last; don't hide it, don't suggest it.
+- **Match the product to the format.** A format built around a creator HOLDING a physical product is a poor fit for a software product; one built on a screen recording is a poor fit for a physical one. Say so in the row.
+- **Demo** is \`examples[0].output_url\`. When a format has none, write "no demo yet"; never leave it blank.
+- **Price:** say once, under the table, that each paid step (a creator still, a clip, a voice) is billed per call and approved before it runs. There is no single up-front quote.
 
-- **Client-side formats.** Rows with \`execution: "client"\` go in the same table with "runs on your machine" in the Format cell, \`card.description\` quoted, "billed per step" in the Price cell and \`examples[0].output_url\` as the demo. Judge fit the same way. Their \`card.needs\` is usually the brand's own footage: say so in the row. In a host with no shell (ChatGPT, claude.ai, Cowork) still list them, and say they need Claude Code, Codex or Cursor on the customer's machine.
+**Print the table in your message, THEN ask which one.** Never put the formats only inside a structured question control: it renders plain option labels, not links, so the customer would be picking a format they were never able to watch.
 
-**Print the table in your message, THEN ask which one** ("Want the suggested one, or another?"). Never put the formats only inside a structured question control: it renders plain option labels, not links, so the customer would be picking a format they were never able to watch. That happened on the first real run: the picker appeared, the demos didn't, and the customer had to ask where they were. A question control may follow the table to capture the answer; it never replaces it.
+### 4. Check this machine can render it
 
-### 3b. A client-side format was picked
+- **Hosted connector** (ChatGPT, claude.ai, Cowork: no shell) → say plainly that the video is made on their own machine and needs Claude Code, Codex or Cursor. Stop there; do not create a project you cannot finish.
+- **Terminal host** → run \`gooseworks doctor\` (or, with no CLI, the manual checks in \`client_formats_note\`). It checks Node 18+, ffmpeg with libx264 + libass, ffprobe, and that Playwright's Chromium is actually downloaded. Anything fails → show the exact fix command and ask them to run it, then check again. Never start on a machine that failed the check.
 
-Everything from here is \`goose-video-local\`'s job, on this machine, in this session. Steps 4-8 below do not apply (no \`ask[]\`, no server quote, no \`video_render_run\`).
+Then say plainly, in one short paragraph: it renders on this machine; paid steps are billed per call and each is approved before it runs; it needs what \`card.needs\` says.
 
-1. Check the toolchain first: \`gooseworks doctor\` (or the manual checks in \`client_formats_note\`). If it fails, say what is missing and offer a server format instead.
-2. Say plainly: it renders on their machine; paid steps (a creator video, a voice) are billed per call and each is approved before it runs; it needs what \`card.needs\` says (usually their own screen recording or product footage in the brand library).
-3. Create the project: \`video_project_upsert { brand_id, name, format: <template_id> }\` with **no \`brief\`** (a brief makes a concept batch). Pass what they told you in step 2 later, as the project brief the local skill reads.
-4. \`fetch_skill("goose-video-local")\` if it is not installed, and follow it on that \`project_id\` now. Do not hand the customer a command to paste somewhere else.
+### 5. Create the project and hand it off, in this session
 
-### 4. Ask the picked format's questions (only these)
+1. \`video_project_upsert { brand_id, name, format: <template_id> }\` with **no \`brief\`** (a brief makes a concept batch).
+2. Load \`goose-video-local\` (installed, or \`catalog_fetch { type: "skill", slug: "goose-video-local" }\`) and follow it on that \`project_id\` now. Their step-2 answer and anything they volunteered is the brief for its Step 1.5: use it, don't ask again.
 
-Its \`ask[]\` list is the whole question set. Anything with \`source: "recipe"\` is the recipe's call, never the customer's. **An empty \`ask[]\` means no questions**: say so ("This one needs nothing else from you") and go straight to step 5.
-
-Ask them all in **one message**, the choice tables first. Put yes/no questions that have a default at the end as a statement they can override ("Music on and a selfie in the thread; say if you want either off"). Every question with an optional answer gets a "leave it to the writer" option.
-
-**The rule most easily got wrong:** anything the customer should *see or hear before choosing* goes in a **markdown table in your message**. The structured question control only captures the answer afterwards; it cannot render a link, so a demo or a voice sample placed only in the widget is a choice nobody can actually evaluate. Table first, question second. Yes/no questions need no table, and a choice with no sample (an angle list) is still a table, just without that column.
-
-| Angle | The thread | Demo |
-|---|---|---|
-| friend-asks-friend | A friend notices something and asks | [watch](…) |
-| setup-flex | You send a photo, the friend reacts | [watch](…) |
-| swap-moment | You quit something worse for this | [watch](…) |
-| feature-as-punchline | The product's own mechanic is the reveal | [watch](…) |
-
-Same for voices: \`video_catalog_list { kind: "voices" }\` gives name, gender, accent and a \`preview_url\`. Put the name in a link so it plays. This was the clearest moment of the first real run: a voice table with playable samples. Do the same for any avatar or style choice a format exposes.
-
-A choice with an \`enum\` and no samples (the cartoon explainer's \`style\`, say) is still a table: one row per value, described in the words of the field's own \`description\`, with "no demo yet" in the sample column. Don't invent what a style looks like.
-
-Never ask for a promo code.
-
-### 5. Draft and price
-
-\`video_project_upsert { brand_id, name, format, brief: { …answers, prompt, audience?, must_mention?, avoid? } }\` is free. \`brief\` holds the picked format's \`ask[]\` answers **plus** the step-2 intent. Leave out any intent field the customer never gave. If \`ready\` is false, **stop** and relay \`missing\` in plain words.
-
-The server refuses any other key with \`invalid_brief\` and names every key it accepts. Fix the brief from that message; never drop the customer's intent to make the error go away.
-
-**If \`questions\` is not empty, ask them now, in one message, before showing the price.** Each one says which brief field its answer fills (\`fills\`). Save the answers with \`video_project_upsert { project_id, patch: { brief: { <fills>: <their answer> } } }\`. The bounds:
-- **One round.** Never ask a follow-up, and never ask the same thing twice.
-- **Never required.** If they skip them or say "just make it", carry on with the draft as it is.
-- **Empty \`questions\` means ask nothing.** The server skips it when the brief already says what the ad is for and who it's for, and never asks what the brand record already knows. "Make me a video ad for X" stays a complete request.
-
-Show the price the draft returned (the \`quote\`), **never a number from this page or the catalogue**. If it differs from the table's "~N", the quote is right. Convert at **100 credits = $1**.
-
-### 5b. Where to assemble: only in a terminal host, only once
-
-The quote (\`video_render_run { dry_run: true }\`) and \`video_project_read\` carry
-\`execution_choice\`. **Go by that field, never by guessing the host.**
-
-- \`offer_choice: false\` → say nothing about it. Hosted connectors (ChatGPT, cowork, Claude
-  Desktop, claude.ai) have no shell and cannot run a worker; the server does everything.
-- \`offer_choice: true\` (Claude Code, Codex, Cursor with a ready creative plan) → ask the
-  customer **once**, with the host's native question control (AskUserQuestion in Claude Code),
-  before the first \`kind: "partial"\`. Two options, server first and recommended:
-  1. **On the GooseWorks server** (default): nothing to install, works the same everywhere.
-  2. **On this machine**: read \`execution_choice.local.scope\` to them in plain words. Today
-     that means the captions are burned in here with their ffmpeg; the paid image, audio and
-     clip generation, every approval and the bill stay on the server. Do not sell it as a free
-     or fully local render.
-
-If they pick this machine, **check the toolchain before you commit to it**:
-
-- CLI present → run \`gooseworks doctor\` (\`--json\` if you want to parse it). It checks Node 18+,
-  ffmpeg with libx264 + libass, ffprobe, and that Playwright's Chromium is actually downloaded.
-- No CLI → run each \`execution_choice.local.prerequisites[].check\` yourself.
-- Anything fails → show the exact \`fix\` for each failing item and ask: fix it now, or use the
-  server? Never start a local order on a machine that failed the check.
-
-Then pass the answer on the order: \`video_render_run { …, kind: "partial", execution_mode:
-"local" }\` (or \`"server"\`, or leave it out). **The mode is fixed once the order exists**
-(\`execution_mode_stale\`), so ask before the partial, not after. \`local_creative_only\` means
-the creative plan was not ready yet: read the project again and ask when it is.
-
-### 6. Write the script and show it, before the expensive work
-
-\`video_render_run { brand_id, project_id, kind: "partial" }\`. Add \`execution_mode: "local"\` to
-that same call when they chose their machine in 5b.
-
-This reserves the credits and writes the script only: **no video is rendered.** It returns immediately with \`status: "previewing"\` and no script yet; the writing happens in the background. Poll \`video_project_read\` every 20 seconds (it lands in about 40) and read \`order.preview\`. Calling \`kind: "full"\` while it is still \`previewing\` is refused with \`preview_in_progress\`.
-
-#### Gate loop (authoritative)
-
-Recipes can require more than a script. Treat \`order.preview.gate\` as the one current, server-authoritative approval and \`order.preview.gates\` as its complete ordered timeline. A gate is one of \`script\`, \`look\`, \`voice\`, \`sound\`, \`storyboard\`, or \`end_card\`. The older single-script wording below describes how to present its artifact; this loop controls when a render may advance.
-
-Show the current artifact before asking for approval:
-
-| Gate | Required review |
-|---|---|
-| \`script\` | Exact thread, beats, spoken words and CTA; include a chat selfie if present. |
-| \`look\` | Every \`anchor_images\` URL and \`preview.design\` in words: identity, setting, wardrobe. Show every podcast host. |
-| \`voice\` | \`preview.voice_sample.url\`, its exact \`text\`, selected voice, and the identity it will speak for. |
-| \`sound\` | \`preview.music.audio_url\`, duration and prompt. |
-| \`storyboard\` | \`preview.storyboard_sheet_url\`, or every \`preview.keyframes\` image when no contact sheet is available. |
-| \`end_card\` | \`preview.end_card\`: logo, packshot, headline/CTA and URL. |
-
-On an explicit yes, call \`video_render_run { brand_id, project_id, kind: "full", gate_step_idx: order.preview.gate.step_idx }\`. The index is a compare-and-set: a double approval is safe, and a stale approval is refused rather than clearing a different gate. Poll again; if another \`preview.gate\` appears, repeat the review. **Never call \`full\` without the current gate's step index and never generate clips until no gate remains.**
-
-An edit or redraft before final approval changes the draft or ingredient but does not approve anything. Read the project again, show the regenerated current artifact, and get a fresh yes. This rule supersedes any earlier wording that makes an edit sound like approval.
-
-\`order.preview\` is shaped by the format, and **every** orderable format has one. A preview was chat-only until 2026-09-25, and a kinetic-type customer approved a price and first saw the copy in the finished video.
-
-**A chat format** (iMessage / ChatGPT / Notes) fills \`thread\` (the message list), \`angle\`, \`cta_text\` and \`selfie_url\`. Show it as a readable transcript, not JSON:
-
-> **them:** wait why do you look so into your phone rn 😭
-> **me:** I literally just chose to betray the duke
-> **them:** omg is this a game or a book
-
-**\`selfie_url\` is a generated face — show it as a link.** These formats draw the selfie INSIDE the script step, so it never appears in \`anchor_images\` and \`stage\` stays \`"script"\`. It is still a face that will be in the ad, so it still needs their yes.
-
-**Any preview with \`order.preview.stage: "image"\`** stopped after the **picture**, not just the words, so they judge the face before paying for the video. Go by that field, never by a list of format names — it follows what the recipe's steps produce, so a format joins this branch without a skill edit. Today: the animated character, the reaction selfie, the podcast hosts, the UGC creator, and the voiceless dance story (four to six stills, and no spoken script at all — its stills and \`detail\` ARE the draft, so say that rather than reporting an empty script).
-
-Show every URL in \`order.preview.anchor_images\` as a link (the podcast format has two, one per host), alongside the script. Then say plainly, in this order: what they are looking at; that **nothing has been rendered yet and the pause is deliberate**, because the video is generated FROM this picture and changing the face now is cheap; that **approving starts the render and commits the credits already held**; and that cancelling instead releases the whole hold, so the picture costs them nothing. A pause with no reason given reads as a broken order.
-
-**A voiceover format** (kinetic type) fills \`beats\` instead, and \`thread\` is null. Each beat has \`vo_lines\` (what is spoken) and a \`beat\` label. \`detail.hyperframe.plan.slates[].props\` holds the words that go **on screen**, which for this format is most of the ad. Show both columns, in order:
-
-| # | On screen | Voiceover |
-|---|---|---|
-| 1 | Sunscreen that pills | Most sunscreens pill under makeup. |
-| 2 | Myth: all SPF is greasy → Fact: not a fluid one | This one is a fluid. It sinks in. |
-
-Read the spoken lines out as one paragraph underneath, so they can hear the pacing.
-
-Whatever the format, **quote it back verbatim.** Do not paraphrase, tidy or shorten the copy; they are approving the exact words that will be rendered.
-
-If \`order.preview.brief_check\` is present, read it before asking for approval:
-- \`missing_mentions\`: terms they asked for that the script never says. Tell them which, plainly ("It doesn't mention ChatGPT yet").
-- \`endorsement_flags\`: lines that make another brand sound like it endorses, partners with or ranks theirs. Show the line and say it has to change: a listed name may appear as "works with", never as "recommends" or "#1 for".
-
-If \`order.brief_changed_since_draft\` is present, the brief was changed after this draft was written. **Approving renders the draft as shown**, so redraft first (no reason needed), or tell them the change won't be in this video.
-
-Then ask: **use this, change it, or stop?**
-
-**One question decides how to change it: did they give you the actual WORDS, or did they tell you what is wrong?** Only the first route below keeps their words. The other two write new ones — which is right when the customer wants something different, and is a silent rewrite when they wanted what they wrote.
-
-- **They gave you the words** ("use these lines", "the end card must say Meet Goose", "keep this but change the second bubble") → \`video_render_run { kind: "edit", edit: { script: { … } } }\`. **This is the only route that keeps copy verbatim.** It puts their text through the format's own guards and costs nothing extra before approval. Send the shape the preview handed you: \`script.thread\` for a chat format, \`script.beats[i].vo_lines\` (one entry per beat, \`{}\` for a beat you are not changing) for a voiceover format, \`script.slates[{ beat_idx, props }]\` for on-screen words, \`script.cta_text\` for the end card, \`ingredient: "character"\` + \`script.character.description\` for the character itself.
-  - **An edit before approval IS the approval**: it applies the copy and starts the render at once (status → \`running\`). So show the exact words you are about to send, get a yes, and only then send it. An unapproved fix stays a proposal in the chat.
-  - Refused with \`script_not_editable\` → this format writes its own copy and takes no hand edit. **Say so, and do not paraphrase their lines into a redraft** — that hands them a video that is not what they wrote. Their real options are a redraft (new words, not theirs), a re-order with different answers, or cancel.
-  - Refused with \`script_rejected\` → a line makes a claim the brand's facts don't support. Relay the reason and offer a rewrite; never argue it through.
-- **They changed the BRIEF, not the copy** — the problem it shows, who it's for, a name to say, something to avoid, a note like "keep it dry" → save it with \`video_project_upsert { project_id, patch: { brief } }\` (use \`notes\` for anything that isn't one of the other fields; keep their original \`prompt\`), then \`video_render_run { kind: "redraft" }\` with no \`reason\`. The new draft is written from the updated brief, so **the words will be new** — this changes the instructions, not the script. Same cost wording as below: no new order, no new hold, a few credits inside the hold.
-- **They only said what's wrong** ("too salesy", "the character looks like a mug") → ask **why** in one line, then \`video_render_run { kind: "redraft", reason: <their words> }\`. **A redraft RE-RUNS the writer: every word, and the picture on a character format, is replaced.** Their reason steers the next draft; it is not copied into it. Never put exact lines in \`reason\` expecting them back. Say what it costs, precisely: "no new order and no new hold; it adds about N credits to what this video costs, inside the hold" (N from the response's \`redraft.credits_estimate\`). **Never call it free.** Poll \`video_project_read\` until \`preview\` again and show the new draft plus \`order.spend\` (what each draft added, how much of the hold is left). A \`redraft_exceeds_hold\` or \`redraft_limit\` refusal means: approve a draft or cancel.
-- Different answers altogether (another format, another angle) → a fresh project, and cancel this one.
-- Stop → \`job_cancel { job_id: <order id> }\`. The whole hold is released and they pay nothing. Cancel only works while the order is \`queued\`, \`previewing\` or \`preview\`; once they approve and it is \`running\`, it is being made and cannot be refunded.
-
-This is the review. It happens here, not in the app.
-
-**If the server answers \`preview_not_available\`,** that is a bug: every sold format has a script preview. Say plainly "I can't show you the script for this one before it's made", and stop. Do not quietly skip the step and charge as if the gate had passed.
-
-### 7. Finish it
-
-After the **final** current gate has been approved with its \`gate_step_idx\`, the worker starts the expensive clips and assembly. Do not make a second bare \`kind: "full"\` call; poll the order instead.
-
-**If they chose their machine (5b):** while polling, watch \`order.local_assembly\`. When its
-\`status\` is \`offered\`, run \`gooseworks video-local captions --project-id <project_id>\` (the
-CLI claims the step, burns the captions with the local ffmpeg, uploads the result and verifies it;
-nothing is generated or charged by that command). Tell the customer it is running here. Then keep
-polling: \`completed\` means it was accepted, \`fallback\` means the server took the step back
-(it does so after about 30 minutes unclaimed, or if the local output failed verification) — say so,
-it is not an error in their video. Without the CLI there is no local worker; if you reach this
-point without it, tell them the server will assemble the captions instead.
-
-Poll \`video_project_read { brand_id, project_id }\` **every 30 seconds.** Done means \`order.status\` is \`done\`; the same response then carries \`video_url\` (the project page) and \`mp4_url\` (the file).
-
-**How long depends on the format.** One number is wrong by 2x across the catalogue, and a customer told "about 5 minutes" at minute 9 thinks it has failed:
-
-| Format | Typical | Give up after | Why |
-|---|---|---|---|
-| iMessage / ChatGPT / Notes chat reveal | ~5 min | 10 min | No video is generated; a browser renders the phone UI, then ffmpeg cuts it |
-| Kinetic type explainer | **~10 min** | 20 min | Two AI b-roll clips, a voiceover, a music bed, HTML slides and a stitch |
-
-An unlisted or new format: assume the longer budget. Say the number you are working to up front ("this takes about ten minutes; I'll keep checking"), and say something at the halfway mark rather than going silent. Waiting is not failing; silence feels like it.
-
-### 8. Deliver in the chat
-
-**Lead with \`video_url\`** — the project page, where the video plays and they can come back to it. Give \`mp4_url\` second and name it as the file ("and the raw MP4, if you want to download or upload it"). Never hand over the CloudFront \`.mp4\` on its own: it is a file, not a place — nothing to return to, nothing to edit from, and it reads like a debug artifact rather than a delivery. If \`video_url\` is missing, poll once more; never substitute the mp4 for it silently.
-
-Say what the video is: length, ratio, what's in it. This is delivery **in the chat** — the link is the video, not an instruction to go to the app. If they want a change, offer to make another with different answers. That is a new order and a new charge; say so.
-
-The only reason to send someone to the app is **payment**: not enough credits, or a plan without video.
+Do not hand the customer a command to paste somewhere else.
 
 ## Decision Rules
 
 - **One sentence is a complete request.** Never answer "make me a video ad for X" by asking which format, which tool or what to do next. Run steps 1–3 and let the table do the asking.
 - **One brand in the org → never ask which brand.** State the one you used.
-- **Open question first, table second.** Don't lead with the whole catalogue. The goal question comes before any list, and the table comes ordered, with one suggestion.
-- **No approval of the CURRENT artifact → do not call \`kind: "full"\`.** The price gate is not an artifact gate. Show every declared stage and pass the current \`preview.gate.step_idx\`; script, look, voice, sound, storyboard and end card each need their own yes when present.
-- **More than two options → table in the message.** Every time. Options with a sample or demo the customer can't hear or see are not really choices. A question control may capture the answer after the table, never instead of it.
-- **\`ready: false\` → stop.** Ordering anyway fails and wastes their time.
-- **Unsure whether an order went through → read \`video_project_read\` first.** Never use the charging tool as a status probe. Only if the project shows nothing at all, re-call \`video_render_run\` on the SAME \`project_id\` (idempotent per project). Never create a second project; that is a second charge.
-- **Quote cards, never paraphrase them.** The card is the server's promise about the format. A reworded card can promise something the format cannot do.
-- **A contradiction with the card outranks every keyword match.** Check what they asked for against what the card and the \`ask[]\` options say the format does; a format that can't do the ask is never Suggested.
-- **They asked for a format that isn't in the catalogue** → it isn't available yet. Say so, show the table, and don't improvise a lab recipe.
-- **Run failed → say so plainly.** The credits are released automatically. Offer a retry; never retry unasked.
-- **Their words go in an \`edit\`, never in a \`redraft\` reason.** A \`reason\` steers the next draft; it is not copied into it. The moment a customer gives you actual copy, the only honest routes are \`kind: "edit"\` or telling them this format will not take it.
-- **Deliver the page, not the file.** \`video_url\` leads, \`mp4_url\` follows. A bare CloudFront link is not a delivery.
-- **The brief is the customer's words, not yours.** \`prompt\` is their answer, verbatim or close to it. \`audience\`, \`must_mention\` and \`avoid\` hold only what they said. Another brand in \`must_mention\` means they asked for it; it can be named as "works with", never as an endorsement or ranking.
+- **Open question first, table second.** The goal question comes before any list, and the table comes ordered, with one suggestion.
+- **More than two options → table in the message.** A question control may capture the answer after the table, never instead of it.
+- **Quote cards, never paraphrase them.** A reworded card can promise something the format cannot do.
+- **A contradiction with the card outranks every keyword match.**
+- **They asked for a format that isn't in the catalogue** → it isn't available yet. Say so, show the table, and don't improvise one.
+- **A missing key is never a blocker.** Paid media goes through \`data_post_provider\` (see "Paid media"); never ask anyone to set FAL_KEY.
+- **Never order a server render.** There is none right now; every format is made here by \`goose-video-local\`.
 
 ## Output
 
-The finished video in the chat: \`video_url\` (the project page) first, \`mp4_url\` (the file) second, with its length and ratio.
-
-The credits leave the balance when the order is placed (a hold). They are **captured** on success or **released** on failure or cancellation. A balance that dropped does not prove a charge, so don't describe it to the customer that way.
+A created video project on the picked format, handed to \`goose-video-local\` in the same session, which delivers the finished video in the chat.
 
 ## Quality Checks
 
-- A one-sentence opening got: the brand resolved (unasked when there is one), one open goal question, then a format table with demo links and one suggestion.
-- The table was ordered by the customer's goal, not the catalogue's order.
-- Every "What it looks like" cell is the card's own words. No Suggested format's card contradicts what the customer asked for; when nothing fit, you said so and named the closest with its trade-off.
-- Every multi-option question was a table in the message, with a demo or sample column wherever one exists.
-- Only the picked format's \`ask[]\` questions were asked.
-- The step-2 answer went into the order as \`brief.prompt\`, and no intent field held anything the customer didn't say.
-- They approved every declared artifact, not just the price, before expensive clips ran: script, look, voice, sound, storyboard and end card where the recipe uses them.
-- You told them how long the render would take **for the format they picked**, and said something at the halfway mark instead of going quiet.
-- The quote you showed came from the server, never from memory or the catalogue.
-- Every line of copy the customer wrote is in the finished video word for word — it went through \`kind: "edit"\`, or you told them plainly that this format would not take it. No supplied copy was ever paraphrased into a \`redraft\` reason.
-- The video was delivered in the chat as \`video_url\` first and \`mp4_url\` second. You did not send them to the app for anything but payment.
-- You asked for no promo code or reference video, and made no product claim the brand's own facts don't support.
+- A one-sentence opening got: the brand resolved (unasked when there is one), one open goal question, then a table of every format with demo links and one suggestion.
+- Every "What it looks like" cell is the card's own words; no Suggested format's card contradicts what they asked for.
+- The machine check ran and passed before the project was created; a hosted connector was told it needs Claude Code, Codex or Cursor.
+- The project was created with no brief, and \`goose-video-local\` ran on it in the same session with the customer's step-2 answer as its brief.
+- No one was asked for a FAL_KEY or any provider key.
 
 ## Failure Modes
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| "Make me a video ad for X" got back "which format / what would you like?" | Treated the one-liner as incomplete | Run steps 1–3 unprompted: resolve the brand, ask the goal, show the table |
+| "Make me a video ad for X" got back "which format / what would you like?" | Treated the one-liner as incomplete | Run steps 1–3 unprompted |
 | Asked which brand in a one-brand org | Skipped the count check in step 1 | Use the only brand and say which |
-| Opened with the full format list | Skipped the goal question | Ask what the ad is for first; order the table by the answer |
 | Demo links invisible to the customer | The choices went only into the structured question control | Table in the message first; the control only takes the answer |
-| \`format_not_available\` | Not an orderable format | Re-read the catalogue; offer what's in it |
-| \`brand_not_ready\` | Brand has no product photos or logo | Relay \`missing\` in plain words; stop |
-| \`invalid_brief\` | The brief carried a key this format doesn't accept (e.g. another format's question, or a made-up field like \`tone\`) | The message lists what is accepted. Move the customer's words into \`prompt\`/\`audience\`/\`must_mention\`/\`avoid\`; never drop them |
-| The script ignores what they asked for | The step-2 answer wasn't sent (it only sorted the table), or they added something later that never reached the brief | Send it as \`brief.prompt\` in step 5. Anything they add later goes in with \`patch.brief\` (\`notes\`) and then a redraft. The preview's \`brief_check\` shows missing must-mention terms |
+| \`format_unavailable\` | A server-rendered format, paused right now | Re-read the catalogue; offer what's in it |
+| "I can't generate the image: FAL_KEY isn't set / fal_client isn't installed" | Read an atom's or open-source skill's environment line as a requirement | Use \`data_post_provider { provider: "fal", … }\` + \`job_get\`; no key is needed |
+| "The only image tool is photos_generate and it wants a product_id" | \`photos_generate\` is for physical catalog products only | Any other image is a fal call through \`data_post_provider\` |
+| \`gooseworks doctor\` fails | A missing toolchain piece | Show its fix command, re-check; never start anyway |
 | Video not on this plan | Lite and trial have no video entitlement | Say so and point at the upgrade; this is the one app trip that's allowed |
-| Insufficient credits | Wallet short | Nothing was created or charged; report the shortfall |
-| Preview looks wrong | The script or the picture isn't what they wanted | They gave you the words → \`kind: "edit"\`. They changed the brief → \`patch.brief\` then a redraft with no reason. They only said what's wrong → \`kind: "redraft"\` with their reason. Same order, no new hold, a few credits inside it; never "free". Or \`job_cancel\` this one |
-| **The customer wrote the script and the finished video says something else** | Their lines went into a \`redraft\` \`reason\`. A redraft re-runs the writer: the reason steers the next draft, it is never copied into it. Seen on staging — "Keep this exact draft, use these lines: …" came back paraphrased, twice, and was paid for both times | Copy goes in \`kind: "edit"\`. If the format refuses it (\`script_not_editable\`), say so and let them choose a redraft, a re-order or cancel — knowing the words will be new |
-| Video started rendering before the customer approved | \`kind: "edit"\` on a preview applies the copy **and** starts the full render (status → \`running\`) | Show the exact words you're about to send, get a yes, then send the edit. An unapproved fix stays a proposal in the chat |
-| \`draft_is_your_copy\` on a redraft | The current draft is the customer's own edited copy; another draft would replace their words | Correct behaviour. Edit their copy again with \`kind: "edit"\`, approve it, or cancel |
-| \`script_rejected\` on an edit | A line makes a claim the brand's facts don't support | Relay the reason verbatim and offer a rewrite; nothing was charged |
-| The customer was sent a raw \`cloudfront.net/….mp4\` | Delivered \`mp4_url\` (or \`order.output_url\`) instead of \`video_url\` | \`video_url\` leads and \`mp4_url\` follows. Both come back from \`video_project_read\` once \`order.status\` is \`done\` |
-| \`recipe_brief_locked\` | You patched \`script_drafts\` raw on a format project, which would have skipped the brief's checks | Send the change as \`patch.brief\` instead |
-| \`format_answers_locked\` | After ordering, you tried to change the format's own answer (voice, angle, selfie) through the brief | Those change what the run costs. Use \`kind: "edit"\` where the format lists it, or start a new project |
-| Asked the customer three rounds of questions before anything was made | Treated \`questions\` as a form, or asked your own follow-ups | Ask what \`questions\` holds, once, in one message. Nothing else. Skipping is fine |
-| \`preview_in_progress\` | You called \`full\` while the script was still being written | Keep polling \`video_project_read\` until \`order.preview\` appears |
-| Cancel refused | The order is already \`running\`; they approved it | Say it's being made; a refund isn't possible now |
-| No render after the format's budget (10 min chat, 20 min kinetic) | The worker didn't pick the run up | Credits are held, not spent. Say it's queued and you'll follow up; don't re-order |
-| \`preview_not_available\` on an orderable format | A bug; every sold format has a script preview | Say so and stop. Do not order without showing the script |
-| An edited script is refused (\`script_not_editable\`) | This format's writer takes no hand edit (its \`edits.script\` is empty). Only some formats do | Should have been said at the table. Their words cannot be rendered verbatim here: offer a redraft (new words), a re-order with different answers, or cancel — and never quietly paraphrase their copy into the redraft reason |
-| A "hero, no villain" brief got the villain cartoon | The card was paraphrased ("narrates the fix") and the fit check never read what the format can't do | Quote \`card.description\`; check the ask against the card and \`ask[]\`; never Suggest a contradiction |
-| Two videos, two charges | A second project was created instead of continuing the first | Continue on the SAME \`project_id\` |
+| Two projects for one video | A second project was created instead of continuing the first | Continue on the SAME \`project_id\` |
 
 `;
 }
@@ -1191,10 +934,10 @@ description: >
   phone-mockup formats) and the GooseWorks media proxies, then save the finished MP4 back to the
   project over MCP. Runs on the user's own machine (Claude Code / desktop app, with or without the
   gooseworks CLI) OR inside a GooseWorks workspace sandbox (canonical MCP tools + Bash, no CLI).
-  Use for a verified legacy template-remix project or video batch. A copy-for-Claude command or
-  project id must first be checked with video_project_read; CreativeSpec orders stay on the
-  server flow in goose-video. Not for a hosted connector with no shell. To order a NEW video ad
-  in chat, use goose-video instead.
+  Use for a client-side format project (created by goose-video), a template-remix project or a
+  video batch. A copy-for-Claude command or project id must first be checked with
+  video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
+  use goose-video first.
 category: ads
 version: 0.4.0
 author: GooseWorks
@@ -1207,32 +950,31 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 
 For every existing \`project_id\` (including one supplied by the app's copy-for-Claude command),
 call \`video_project_read { brand_id, project_id }\` **before** template lookup, toolchain setup,
-BYOA authorization, media-proxy calls, or a review-set upload. If the response contains
-\`creative_plan\`, \`project.creative_spec_revision_id\`, \`order.creative_spec_revision_id\`,
-or a planning \`lifecycle\` for a recipe project, **stop this local workflow** and follow the
-\`goose-video\` CreativeSpec server path on the SAME project. Fetch that skill if necessary with
-\`catalog_fetch { type: "skill", slug: "goose-video" }\` (older clients: \`fetch_skill("goose-video")\`).
-This applies even when a copy prompt names this local skill;
-it is not proof that the project is a legacy template remix. If classification is unclear,
-read again or ask; do not guess and generate locally. For a batch, inspect each child project
-before running its local recipe. An \`order\` or \`script_drafts.recipe\` without CreativeSpec
-also belongs to \`goose-video\`, using that skill's non-CreativeSpec order path. Continue below
-only for a verified legacy template remix.
+media-proxy calls, or a review-set upload. For a batch, inspect each child project.
 
-CreativeSpec has **no vetted local node-execution API** yet. The supported fallback is the
-server's \`video_project_read\` / \`video_render_run\` three-gate flow, with plan/quote,
-actual ingredient previews, and provisional final MP4 shown and approved **in chat**. Do not
-collapse those gates into review-once, use BYOA media proxies, or call the local render-row
-actions or legacy \`update_ad_project_script\` / \`submit_render\` / \`set_final_render\` for CreativeSpec.
-The steps below are only for legacy template remixes.
+- **A server-rendered order** — the response has \`creative_plan\`,
+  \`project.creative_spec_revision_id\`, \`order.creative_spec_revision_id\`, a planning
+  \`lifecycle\`, or an \`order\` / \`script_drafts.recipe\` on a server format → **stop.**
+  Server video orders are paused, and there is **no vetted local node-execution API** for them:
+  do not rebuild one locally. Tell the customer this project was made for the server flow, which
+  is paused; offer to start the same ad on a client-side format (\`goose-video\`, fetched with
+  \`catalog_fetch { type: "skill", slug: "goose-video" }\`, older clients:
+  \`fetch_skill("goose-video")\`). An order already holding credits can be released with
+  \`job_cancel\`.
+- **A client-side format or template remix** (a \`source_sample_id\` / \`template_id\` and none of
+  the above) → continue below.
+- **Unclear** → read again or ask; never guess and generate. A copy prompt that names this skill
+  is not proof of which kind the project is.
 
-For legacy template remixes, you produce **video** ad creative wherever THIS agent runs and sync
+Continue below only for a verified client-side format or template remix.
+
+For client-side formats and template remixes, you produce **video** ad creative wherever THIS agent runs and sync
 the result back to the GooseWorks app over MCP. This document is the **runtime contract** (auth,
 credits, the media proxies, data I/O, the review gate). A separate **recipe** — the template's
 \`recipe\`, plus the capability skills it names — tells you *what to make* (the pieces, prompts,
 models, order of assembly).
 
-**Legacy remixes only — division of authority: read both, but when they disagree THIS doc wins on the environment AND the
+**Division of authority: read both, but when they disagree THIS doc wins on the environment AND the
 review/approval flow.** The recipe governs WHAT to make; this doc governs WHEN you pause, generate,
 and spend. In particular: a recipe may spell out a **multi-phase, multi-gate** flow — "generate the
 still [GATE] → approve → author the prompt [GATE] → approve → render [GATE] → approve", several
@@ -1256,18 +998,45 @@ command -v gooseworks >/dev/null && echo cli || echo no-cli
 |---|---|---|---|
 | **GooseWorks sandbox** | \`GW_MEDIA_PROXY_TOKEN\` is set | \`catalog_fetch { type: "skill" }\` | env: \`GW_MEDIA_PROXY_TOKEN\` + \`GW_*_PROXY_URL\` |
 | **Local, CLI installed** | \`gooseworks\` on PATH | \`gooseworks fetch <slug>\` or \`catalog_fetch\` | \`~/.gooseworks/credentials.json\` |
-| **Local, no CLI** (Claude desktop app / Codex without login) | neither | \`catalog_fetch { type: "skill" }\` | \`~/.gooseworks/credentials.json\` if present, else **the MCP relay** (below) |
+| **Local, no CLI** (Claude desktop app / Codex without login) | neither | \`catalog_fetch { type: "skill" }\` | \`~/.gooseworks/credentials.json\` if present, else **paid media over the MCP** (below) |
 
 The \`gooseworks\` CLI and \`~/.gooseworks/credentials.json\` are **optional**. Everything this skill
 needs from the app goes through the GooseWorks MCP tools below; the atoms' \`media_proxy.py\` reads
 credentials.json when it exists and falls back to the \`GW_MEDIA_PROXY_TOKEN\` env otherwise.
 
-### No credentials at all: the MCP relay
+### Paid media over the MCP: no key, no CLI needed
 
-With neither \`GW_MEDIA_PROXY_TOKEN\` nor \`~/.gooseworks/credentials.json\`, the atoms'
-\`media_proxy.py\` RELAYS each paid call through you instead of calling the proxies over HTTP.
-Before running any atom, \`export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>\` (every call
-is billed to that project). When a script **exits with code 3** it wrote a request file under
+Every paid generation goes through the GooseWorks media proxy and is billed to the project. **You
+never need FAL_KEY, an ElevenLabs key or \`fal_client\`.** An atom, a recipe or an open-source
+skill that lists \`FAL_KEY\` in its environment is describing a standalone setup; here the proxy
+satisfies it. Never stop, and never ask anyone to set a key, because one is missing.
+
+**A one-off image or clip — call the MCP directly.** A frame placed in a laptop, a product cutout,
+a creator still, a restyle, an animated shot, with any fal model (Nano Banana, GPT-image, Seedream,
+Seedance, Kling). No atom script is needed:
+
+1. A local input (a frame pulled from a screen recording, a screenshot) must be a public URL first:
+   \`media_upload { brand_id, scope: "video_project", scope_id: project_id, source: { type: "file" | "bytes", … } }\`
+   (no \`path\`) and use the returned \`media.url\`.
+2. \`data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }\`
+   returns \`{ job_id: "fal:<request_id>" }\`. Pass an \`idempotency_key\` so a retry isn't billed twice.
+3. Poll \`job_get { job_id }\` every few seconds until \`complete\`; the \`*.fal.media\` URLs are in
+   \`result\`. Download each and QC it (open the image) before using it.
+
+For a set that must match (every laptop shot, every creator still), use ONE prompt and the same
+model for all of them and change only the input image. Voice and music:
+\`data_post_provider { provider: "elevenlabs", path: "/v1/text-to-speech/{voice_id}" | "/v1/music", body, project_id }\`
+(synchronous; the audio lands in the project folder).
+
+\`photos_generate\` is **not** a general image tool: it only photographs a physical catalog
+product (apparel, beauty, CPG) and needs a \`product_id\`. A software screenshot or app mockup is a
+fal image edit, above.
+
+**Atom scripts — the MCP relay.** With neither \`GW_MEDIA_PROXY_TOKEN\` nor
+\`~/.gooseworks/credentials.json\`, the atoms' \`media_proxy.py\` RELAYS each paid call through you
+instead of calling the proxies over HTTP. Before running any atom,
+\`export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>\` (every call is billed to that
+project). When a script **exits with code 3** it wrote a request file under
 \`working/mcp-requests/\`: make exactly that MCP call — fal:
 \`data_post_provider { provider: "fal", path, body, project_id }\` then \`job_get { job_id }\` until
 \`complete\`, saving \`result.output\`; ElevenLabs: \`data_post_provider { provider: "elevenlabs", … }\`,
@@ -1831,6 +1600,9 @@ FAL storage proxy. Never pass a \`render-file\` URL to a provider — it needs a
 - **Canonical MCP tools first** (\`video_project_read\`, \`video_project_upsert\`, \`catalog_fetch\`,
   \`media_upload\` + \`media_confirm\`, the \`video_render_run\` render-row actions, \`account_whoami\`);
   legacy names only when the client lacks the canonical tool.
+- **A missing key is never a blocker.** Paid media goes through the proxy: a one-off image or clip
+  is \`data_post_provider { provider: "fal", … }\` + \`job_get\` (see "Paid media over the MCP");
+  never ask for FAL_KEY, never use \`photos_generate\` for anything but a physical product.
 - **The CLI and credentials.json are optional.** In a GooseWorks sandbox (\`GW_MEDIA_PROXY_TOKEN\`
   set) use the env proxies and \`catalog_fetch\`; never call a provider with a raw key.
 - **No Chromium in a sandbox** — a browser-rendered format stops there, before any spend, and says so.

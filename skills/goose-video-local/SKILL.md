@@ -6,10 +6,10 @@ description: >
   phone-mockup formats) and the GooseWorks media proxies, then save the finished MP4 back to the
   project over MCP. Runs on the user's own machine (Claude Code / desktop app, with or without the
   gooseworks CLI) OR inside a GooseWorks workspace sandbox (canonical MCP tools + Bash, no CLI).
-  Use for a verified legacy template-remix project or video batch. A copy-for-Claude command or
-  project id must first be checked with video_project_read; CreativeSpec orders stay on the
-  server flow in goose-video. Not for a hosted connector with no shell. To order a NEW video ad
-  in chat, use goose-video instead.
+  Use for a client-side format project (created by goose-video), a template-remix project or a
+  video batch. A copy-for-Claude command or project id must first be checked with
+  video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
+  use goose-video first.
 category: ads
 version: 0.4.0
 author: GooseWorks
@@ -22,32 +22,31 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 
 For every existing `project_id` (including one supplied by the app's copy-for-Claude command),
 call `video_project_read { brand_id, project_id }` **before** template lookup, toolchain setup,
-BYOA authorization, media-proxy calls, or a review-set upload. If the response contains
-`creative_plan`, `project.creative_spec_revision_id`, `order.creative_spec_revision_id`,
-or a planning `lifecycle` for a recipe project, **stop this local workflow** and follow the
-`goose-video` CreativeSpec server path on the SAME project. Fetch that skill if necessary with
-`catalog_fetch { type: "skill", slug: "goose-video" }` (older clients: `fetch_skill("goose-video")`).
-This applies even when a copy prompt names this local skill;
-it is not proof that the project is a legacy template remix. If classification is unclear,
-read again or ask; do not guess and generate locally. For a batch, inspect each child project
-before running its local recipe. An `order` or `script_drafts.recipe` without CreativeSpec
-also belongs to `goose-video`, using that skill's non-CreativeSpec order path. Continue below
-only for a verified legacy template remix.
+media-proxy calls, or a review-set upload. For a batch, inspect each child project.
 
-CreativeSpec has **no vetted local node-execution API** yet. The supported fallback is the
-server's `video_project_read` / `video_render_run` three-gate flow, with plan/quote,
-actual ingredient previews, and provisional final MP4 shown and approved **in chat**. Do not
-collapse those gates into review-once, use BYOA media proxies, or call the local render-row
-actions or legacy `update_ad_project_script` / `submit_render` / `set_final_render` for CreativeSpec.
-The steps below are only for legacy template remixes.
+- **A server-rendered order** — the response has `creative_plan`,
+  `project.creative_spec_revision_id`, `order.creative_spec_revision_id`, a planning
+  `lifecycle`, or an `order` / `script_drafts.recipe` on a server format → **stop.**
+  Server video orders are paused, and there is **no vetted local node-execution API** for them:
+  do not rebuild one locally. Tell the customer this project was made for the server flow, which
+  is paused; offer to start the same ad on a client-side format (`goose-video`, fetched with
+  `catalog_fetch { type: "skill", slug: "goose-video" }`, older clients:
+  `fetch_skill("goose-video")`). An order already holding credits can be released with
+  `job_cancel`.
+- **A client-side format or template remix** (a `source_sample_id` / `template_id` and none of
+  the above) → continue below.
+- **Unclear** → read again or ask; never guess and generate. A copy prompt that names this skill
+  is not proof of which kind the project is.
 
-For legacy template remixes, you produce **video** ad creative wherever THIS agent runs and sync
+Continue below only for a verified client-side format or template remix.
+
+For client-side formats and template remixes, you produce **video** ad creative wherever THIS agent runs and sync
 the result back to the GooseWorks app over MCP. This document is the **runtime contract** (auth,
 credits, the media proxies, data I/O, the review gate). A separate **recipe** — the template's
 `recipe`, plus the capability skills it names — tells you *what to make* (the pieces, prompts,
 models, order of assembly).
 
-**Legacy remixes only — division of authority: read both, but when they disagree THIS doc wins on the environment AND the
+**Division of authority: read both, but when they disagree THIS doc wins on the environment AND the
 review/approval flow.** The recipe governs WHAT to make; this doc governs WHEN you pause, generate,
 and spend. In particular: a recipe may spell out a **multi-phase, multi-gate** flow — "generate the
 still [GATE] → approve → author the prompt [GATE] → approve → render [GATE] → approve", several
@@ -71,18 +70,45 @@ command -v gooseworks >/dev/null && echo cli || echo no-cli
 |---|---|---|---|
 | **GooseWorks sandbox** | `GW_MEDIA_PROXY_TOKEN` is set | `catalog_fetch { type: "skill" }` | env: `GW_MEDIA_PROXY_TOKEN` + `GW_*_PROXY_URL` |
 | **Local, CLI installed** | `gooseworks` on PATH | `gooseworks fetch <slug>` or `catalog_fetch` | `~/.gooseworks/credentials.json` |
-| **Local, no CLI** (Claude desktop app / Codex without login) | neither | `catalog_fetch { type: "skill" }` | `~/.gooseworks/credentials.json` if present, else **the MCP relay** (below) |
+| **Local, no CLI** (Claude desktop app / Codex without login) | neither | `catalog_fetch { type: "skill" }` | `~/.gooseworks/credentials.json` if present, else **paid media over the MCP** (below) |
 
 The `gooseworks` CLI and `~/.gooseworks/credentials.json` are **optional**. Everything this skill
 needs from the app goes through the GooseWorks MCP tools below; the atoms' `media_proxy.py` reads
 credentials.json when it exists and falls back to the `GW_MEDIA_PROXY_TOKEN` env otherwise.
 
-### No credentials at all: the MCP relay
+### Paid media over the MCP: no key, no CLI needed
 
-With neither `GW_MEDIA_PROXY_TOKEN` nor `~/.gooseworks/credentials.json`, the atoms'
-`media_proxy.py` RELAYS each paid call through you instead of calling the proxies over HTTP.
-Before running any atom, `export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>` (every call
-is billed to that project). When a script **exits with code 3** it wrote a request file under
+Every paid generation goes through the GooseWorks media proxy and is billed to the project. **You
+never need FAL_KEY, an ElevenLabs key or `fal_client`.** An atom, a recipe or an open-source
+skill that lists `FAL_KEY` in its environment is describing a standalone setup; here the proxy
+satisfies it. Never stop, and never ask anyone to set a key, because one is missing.
+
+**A one-off image or clip — call the MCP directly.** A frame placed in a laptop, a product cutout,
+a creator still, a restyle, an animated shot, with any fal model (Nano Banana, GPT-image, Seedream,
+Seedance, Kling). No atom script is needed:
+
+1. A local input (a frame pulled from a screen recording, a screenshot) must be a public URL first:
+   `media_upload { brand_id, scope: "video_project", scope_id: project_id, source: { type: "file" | "bytes", … } }`
+   (no `path`) and use the returned `media.url`.
+2. `data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }`
+   returns `{ job_id: "fal:<request_id>" }`. Pass an `idempotency_key` so a retry isn't billed twice.
+3. Poll `job_get { job_id }` every few seconds until `complete`; the `*.fal.media` URLs are in
+   `result`. Download each and QC it (open the image) before using it.
+
+For a set that must match (every laptop shot, every creator still), use ONE prompt and the same
+model for all of them and change only the input image. Voice and music:
+`data_post_provider { provider: "elevenlabs", path: "/v1/text-to-speech/{voice_id}" | "/v1/music", body, project_id }`
+(synchronous; the audio lands in the project folder).
+
+`photos_generate` is **not** a general image tool: it only photographs a physical catalog
+product (apparel, beauty, CPG) and needs a `product_id`. A software screenshot or app mockup is a
+fal image edit, above.
+
+**Atom scripts — the MCP relay.** With neither `GW_MEDIA_PROXY_TOKEN` nor
+`~/.gooseworks/credentials.json`, the atoms' `media_proxy.py` RELAYS each paid call through you
+instead of calling the proxies over HTTP. Before running any atom,
+`export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>` (every call is billed to that
+project). When a script **exits with code 3** it wrote a request file under
 `working/mcp-requests/`: make exactly that MCP call — fal:
 `data_post_provider { provider: "fal", path, body, project_id }` then `job_get { job_id }` until
 `complete`, saving `result.output`; ElevenLabs: `data_post_provider { provider: "elevenlabs", … }`,
@@ -646,6 +672,9 @@ FAL storage proxy. Never pass a `render-file` URL to a provider — it needs app
 - **Canonical MCP tools first** (`video_project_read`, `video_project_upsert`, `catalog_fetch`,
   `media_upload` + `media_confirm`, the `video_render_run` render-row actions, `account_whoami`);
   legacy names only when the client lacks the canonical tool.
+- **A missing key is never a blocker.** Paid media goes through the proxy: a one-off image or clip
+  is `data_post_provider { provider: "fal", … }` + `job_get` (see "Paid media over the MCP");
+  never ask for FAL_KEY, never use `photos_generate` for anything but a physical product.
 - **The CLI and credentials.json are optional.** In a GooseWorks sandbox (`GW_MEDIA_PROXY_TOKEN`
   set) use the env proxies and `catalog_fetch`; never call a provider with a raw key.
 - **No Chromium in a sandbox** — a browser-rendered format stops there, before any spend, and says so.
