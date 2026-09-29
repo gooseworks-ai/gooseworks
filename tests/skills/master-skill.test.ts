@@ -6,6 +6,9 @@ import {
   getGooseVideoLocalSkillContent,
   getEntrySkills,
   getEntrySkillNames,
+  RENDER_ROW_TOOL,
+  RENDER_OPEN_ARGS,
+  RENDER_UPDATE_KEY,
 } from '../../src/skills/master-skill';
 
 describe('skills/master-skill', () => {
@@ -299,6 +302,29 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
 describe('skills/getGooseVideoLocalSkillContent', () => {
   const local = getGooseVideoLocalSkillContent();
 
+  // GOOSE-3731: a dead sandbox must not lose paid work — save each piece as it
+  // passes QC, and every run starts by reusing what is already saved.
+  it('saves every piece as it goes and resumes from saved ingredients', () => {
+    expect(local).toContain('## Save as you go — and resume (never pay twice for a piece)');
+    // Save: upload right after QC, tagged with key + digest, into working/<role>/.
+    expect(local).toContain('After EACH piece is generated AND passes its own QC, upload it right away');
+    expect(local).toContain('path:\n"working/<role>/<file>", ingredient_key, input_digest');
+    expect(local).toContain('from media_proxy import input_digest');
+    // Record media_id + path in the ingredients list, batching the script patch.
+    expect(local).toContain('Put the piece\'s `media_id` (`media.id`), `path`');
+    expect(local).toMatch(/Batch this\s+script patch every 3–5 pieces/);
+    // Resume: one media_list at start, reuse only on a matching digest.
+    expect(local).toContain('ingredient_key_prefix: "",\nlimit: 100 }');
+    expect(local).toContain('AND the same `input_digest`, **download it instead of\ngenerating**');
+    // Download via the presigned url, never the session-auth render-file route.
+    expect(local).toContain('curl -fsSL "$URL"');
+    expect(local).toMatch(/Never fetch the\s+`\/api\/ads\/projects\/<id>\/render-file\?path=…` route from the sandbox/);
+    // Working files on local /tmp, not the s3fs mount.
+    expect(local).toContain('never the s3fs workspace mount');
+    // The final master is an ingredient too.
+    expect(local).toContain('ingredient_key: "final", input_digest');
+  });
+
   it('is named/slugged goose-video-local, with exactly one frontmatter block', () => {
     expect(local).toMatch(/^---\nname: goose-video-local\nslug: goose-video-local\n/);
     expect(local).not.toContain('name: goose-video\n');
@@ -312,13 +338,15 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     // The classic false pass: the package resolves, the browser was never downloaded.
     expect(local).toMatch(/Chromium is actually DOWNLOADED/);
     expect(local).toContain('node --version');
-    expect(local).toContain('submit_render');
-    expect(local).toContain('update_render_status');
-    expect(local).toContain('update_ad_project_script');
-    expect(local).toContain('set_final_render');
-    // DB-driven: reads the template's recipe (get_ad_template → recipe.atoms /
-    // recipe.instructions) instead of mapping format → a hardcoded recipe slug.
-    expect(local).toContain('get_ad_template');
+    // GOOSE-3726: canonical tools drive every step.
+    expect(local).toContain('video_project_upsert { brand_id, project_id,\n   patch: { script: { script_drafts, script } } }');
+    expect(local).toContain('patch: { final_render_id: render_id }');
+    expect(local).toContain(`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }`);
+    expect(local).toContain(`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "complete", output_url, thumbnail_url } }`);
+    expect(local).toContain('quality_status: "passed"');
+    // DB-driven: reads the template's recipe (catalog_fetch type template →
+    // recipe.atoms / recipe.instructions) instead of mapping format → a slug.
+    expect(local).toContain('catalog_fetch { type: "template", slug: <source_sample_id> }');
     expect(local).toContain('recipe.atoms');
     expect(local).not.toContain('remix-imessage-ad-from-sample');
     // Single review-once gate over the full ingredient set (script + visuals),
@@ -331,6 +359,39 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('render-file?path=');
     // It is NOT the static backend-batch wrapper.
     expect(local).not.toContain('submit_remix_batch');
+  });
+
+  it('uses canonical MCP tools, keeping legacy names only as a fallback column (GOOSE-3726)', () => {
+    for (const tool of ['video_project_read', 'video_project_upsert', 'catalog_fetch', 'media_upload', 'media_confirm', 'account_whoami', 'brand_get_context']) {
+      expect(local).toContain(tool);
+    }
+    // Every legacy name appears only in the fallback table / the CreativeSpec
+    // prohibition, never as an instruction to call it.
+    for (const legacy of ['get_upload_url', 'get_download_url', 'get_ad_credits', 'get_brand_kit', 'append_project_message']) {
+      const lines = local.split('\n').filter((l) => l.includes(legacy));
+      for (const line of lines) expect(line.startsWith('|')).toBe(true);
+    }
+    expect(local).not.toContain('list_accessible_scopes →');
+    expect(local).toContain('`scope: "video_project"`');
+    expect(local).toContain('upload.render_file_url');
+  });
+
+  it('works in a GooseWorks sandbox without the CLI or credentials.json (GOOSE-3726)', () => {
+    const sandbox = local.indexOf('## Running in a GooseWorks sandbox');
+    expect(sandbox).toBeGreaterThan(-1);
+    expect(sandbox).toBeLessThan(local.indexOf('## Prerequisite — MCP + a render toolchain'));
+    expect(local).toContain('[ -n "$GW_MEDIA_PROXY_TOKEN" ]');
+    expect(local).toContain('pip install --quiet pillow');
+    expect(local).toContain('export GW_PROJECT_ID=<project_id>');
+    expect(local).toMatch(/Never call a provider with a raw key/);
+    expect(local).toMatch(/no Chromium/i);
+    expect(local).toMatch(/stop before any spend/);
+    expect(local).toMatch(/true taste call/);
+    expect(local).toContain('/tmp/gooseworks-scripts/<slug>/scripts/<name>');
+    expect(local).toMatch(/CLI and credentials\.json are optional/);
+    // The proxy helper falls back to the sandbox env before credentials.json.
+    const helper = local.slice(local.indexOf('tok = os.environ.get("GW_MEDIA_PROXY_TOKEN")'));
+    expect(helper.indexOf('GW_MEDIA_PROXY_TOKEN')).toBeLessThan(helper.indexOf('credentials.json'));
   });
 
   it('forbids assembling the full video before approval (GOOSE-2542)', () => {
@@ -351,6 +412,7 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('video_project_read { brand_id, project_id }');
     expect(local).toContain('creative_plan');
     expect(local).toContain('creative_spec_revision_id');
+    expect(local).toContain('catalog_fetch { type: "skill", slug: "goose-video" }');
     expect(local).toContain('fetch_skill("goose-video")');
     expect(local).toContain('script_drafts.recipe');
     expect(local).toMatch(/Do not\s+collapse those gates into review-once, use BYOA media proxies/);
@@ -397,6 +459,7 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
     const route = video.indexOf('## Route first');
     expect(route).toBeGreaterThan(-1);
     expect(route).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
+    expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
     expect(video).toContain('fetch_skill("goose-video-local")');
     expect(video).toContain('script_drafts.recipe');
     expect(video).toContain('video_project_read { brand_id, project_id }');
