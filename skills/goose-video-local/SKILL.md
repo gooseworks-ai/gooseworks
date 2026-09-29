@@ -399,6 +399,9 @@ read and execute. **Do NOT map `format` to a hardcoded recipe slug** (there is n
   `instructions.doc_url` (an S3 markdown doc — fetch it).
 - `recipe.config` — every param (prompts, layout, timings, palette, model choices).
 - `recipe.inputs` — the brand-asset contract (which product / logo / offer this template needs).
+- `recipe.choices` — the creative calls the USER makes (who is on screen, narrator, tone, setting,
+  art style, music). Ask every unanswered one in ONE round before any paid step, with its options plus
+  "you pick". Its `reference` is what the demo used: an example, never the default.
 - `recipe.assets` — reference material as S3 links (reference render, style guide, example frames) —
   fetch as needed.
 
