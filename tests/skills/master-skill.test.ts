@@ -405,7 +405,7 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('GOOSE-2542');
   });
 
-  it('checks project type before local BYOA work and redirects CreativeSpec to the server', () => {
+  it('checks project type before any local work and stops on a paused server order', () => {
     const guard = local.indexOf('## Mandatory route check before any local work or spend');
     const preflight = local.indexOf('## Prerequisite — MCP + a render toolchain');
     expect(guard).toBeGreaterThan(-1);
@@ -413,16 +413,36 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('video_project_read { brand_id, project_id }');
     expect(local).toContain('creative_plan');
     expect(local).toContain('creative_spec_revision_id');
+    expect(local).toContain('script_drafts.recipe');
+    expect(local).toContain('Server video orders are paused');
+    expect(local).toContain('no vetted local node-execution API');
     expect(local).toContain('catalog_fetch { type: "skill", slug: "goose-video" }');
     expect(local).toContain('fetch_skill("goose-video")');
-    expect(local).toContain('script_drafts.recipe');
-    expect(local).toMatch(/Do not\s+collapse those gates into review-once, use BYOA media proxies/);
-    expect(local).toContain('no vetted local node-execution API');
-    expect(local).toMatch(/Continue below\s+only for a verified legacy template remix/);
+    expect(local).toMatch(/Continue below only for a verified client-side format or template remix/);
+    // The server three-gate flow is gone from the local skill too.
+    expect(local).not.toContain('three-gate flow');
+  });
+
+  // A client-side agent with no memory said it could not make a laptop mockup:
+  // an atom asked for FAL_KEY, and photos_generate was the only tool named like
+  // an image generator. The MCP route was documented only as the exit-3 relay.
+  it('makes the direct MCP call the default for a one-off image, and no key a blocker', () => {
+    const media = local.indexOf('### Paid media over the MCP: no key, no CLI needed');
+    expect(media).toBeGreaterThan(-1);
+    expect(media).toBeLessThan(local.indexOf('## MCP tools — canonical names'));
+    expect(local).toContain('You\nnever need FAL_KEY, an ElevenLabs key or `fal_client`.');
+    expect(local).toContain('**A one-off image or clip — call the MCP directly.**');
+    expect(local).toContain('data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">');
+    expect(local).toContain('job_get { job_id }');
+    expect(local).toMatch(/`photos_generate` is \*\*not\*\* a general image tool/);
+    // The direct call comes before the relay, which stays for atom scripts.
+    expect(local.indexOf('**A one-off image or clip')).toBeLessThan(local.indexOf('**Atom scripts — the MCP relay.**'));
+    expect(local).toContain('exits with code 3');
+    expect(local).toContain('**A missing key is never a blocker.**');
   });
 });
 
-describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
+describe('skills/getGooseVideoSkillContent (the front door)', () => {
   const video = getGooseVideoSkillContent();
 
   it('is named/slugged goose-video, with exactly one frontmatter block', () => {
@@ -430,200 +450,57 @@ describe('skills/getGooseVideoSkillContent (the ordering flow)', () => {
     expect(video.match(/^---$/gm)).toHaveLength(2);
   });
 
-  it('orders on the server through the video_* tools and renders nothing locally', () => {
-    for (const tool of ['brand_list', 'video_catalog_list', 'video_project_upsert', 'video_render_run', 'video_project_read', 'job_cancel']) {
-      expect(video).toContain(tool);
+  // Server video orders are paused on the public MCP (gooseworks-app #1549):
+  // the skill must not teach the quote / gate / CreativeSpec server flow.
+  it('carries no server-render ordering flow', () => {
+    for (const gone of ['kind: "partial"', 'gate_step_idx', 'CreativeSpec', 'approved_quote_digest',
+      'execution_choice', 'kind: "redraft"', 'Do not fetch template atoms, call media']) {
+      expect(video).not.toContain(gone);
     }
-    expect(video).toMatch(/Do not fetch template atoms, call media\s+proxies directly, render with BYOA/);
-    expect(video).toMatch(/or call\s+`submit_render` \/ `update_render_status` \/ `set_final_render`/);
+    expect(video).toContain('The GooseWorks server does not render\nvideos right now.');
+    expect(video).toContain('**Never order a server render.**');
   });
 
-  // Terminal hosts get a real choice about WHERE the video assembles, but only
-  // after the machine passes the toolchain check, and never in a hosted connector.
-  it('offers local assembly only from execution_choice, after gooseworks doctor, before the partial', () => {
-    expect(video).toContain('### 5b. Where to assemble');
-    expect(video).toContain('execution_choice');
-    expect(video).toContain('offer_choice: false');
-    expect(video).toContain('offer_choice: true');
+  it('runs brand → goal → every format in a table → machine check → project → goose-video-local', () => {
+    const order = ['### 1. Resolve the brand', '### 2. Ask what the ad is for', '### 3. Show every format in a table',
+      '### 4. Check this machine can render it', '### 5. Create the project and hand it off'].map((h) => video.indexOf(h));
+    for (let i = 0; i < order.length; i++) {
+      expect(order[i]).toBeGreaterThan(-1);
+      if (i) expect(order[i]).toBeGreaterThan(order[i - 1]);
+    }
+    expect(video).toContain('video_catalog_list { kind: "formats", brand_id }');
     expect(video).toMatch(/gooseworks doctor/);
-    expect(video).toContain('execution_mode:\n"local"');
-    expect(video).toContain('execution_mode_stale');
-    expect(video).toContain('gooseworks video-local captions --project-id <project_id>');
-    expect(video).toMatch(/paid image, audio and\s+clip generation, every approval and the bill stay on the server/);
-    const choice = video.indexOf('### 5b. Where to assemble');
-    const partial = video.indexOf('kind: "partial" }`.');
-    expect(choice).toBeGreaterThan(-1);
-    expect(partial).toBeGreaterThan(choice);
+    expect(video).toContain('video_project_upsert { brand_id, name, format: <template_id> }');
+    expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
+    expect(video).toMatch(/needs Claude Code, Codex or Cursor/);
   });
 
-  it('reads existing projects before routing CreativeSpec versus legacy remixes', () => {
+  it('routes existing projects and batches to goose-video-local first', () => {
     const route = video.indexOf('## Route first');
     expect(route).toBeGreaterThan(-1);
     expect(route).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
-    expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
     expect(video).toContain('fetch_skill("goose-video-local")');
-    expect(video).toContain('script_drafts.recipe');
-    expect(video).toContain('video_project_read { brand_id, project_id }');
-    expect(video).toContain('project.creative_spec_revision_id');
-    expect(video).toContain('order.creative_spec_revision_id');
-    expect(video).toContain('Only a verified legacy template remix');
-    expect(video).toContain('CreativeSpec server path — three customer gates');
-    expect(video).toContain('plan/quote');
-    expect(video).toContain('Actual ingredient');
-    expect(video).toContain('Final video gate');
-    expect(video).toContain('subject_digest');
-    expect(video).toContain('approved_quote_digest');
-    expect(video).toContain('preview.gate.kind: "script"');
-    expect(video).toContain('Do not\n   demand generated ingredient media at this first script/plan gate');
-    expect(video).toContain('provisional MP4');
+  });
+
+  it('keeps the table rules: every row, quoted cards, demo links, table before the question', () => {
+    expect(video).toContain('with **every row** the tool returned');
+    expect(video).toContain('**"What it looks like" is `card.description`, quoted.**');
+    expect(video).toContain('A format whose card contradicts what they asked for is never Suggested');
+    expect(video).toContain('**Print the table in your message, THEN ask which one.**');
+    expect(video).toContain('"no demo yet"');
+  });
+
+  it('names the keyless fal route and scopes photos_generate', () => {
+    expect(video).toContain('**No FAL_KEY, ElevenLabs key or `fal_client` is ever needed.**');
+    expect(video).toContain('data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">');
+    expect(video).toContain('job_get { job_id }');
+    expect(video).toMatch(/`photos_generate` is \*\*not\*\* a general image tool/);
+    expect(video).toContain('**A missing key is never a blocker.**');
   });
 
   it('carries no goose-lab-only syntax (wikilinks, ticket ids, lab frontmatter)', () => {
     expect(video).not.toMatch(/\[\[/);
     expect(video).not.toMatch(/GOOSE-\d+/);
     expect(video).not.toMatch(/^owner:|^level:|^variant-of:/m);
-  });
-
-  // THE invariants. goose-lab keeps only a stub, so this test is what stops the
-  // ordering flow drifting into spending a customer's money on the wrong terms.
-  describe('never-drift rules', () => {
-    it('each declared artifact is approved before the expensive render', () => {
-      expect(video).toContain('No approval of the CURRENT artifact → do not call `kind: "full"`');
-      const preview = video.indexOf('kind: "partial" }`.');
-      const gateLoop = video.indexOf('#### Gate loop (authoritative)');
-      const full = video.indexOf('kind: "full", gate_step_idx: order.preview.gate.step_idx');
-      expect(preview).toBeGreaterThan(-1);
-      expect(gateLoop).toBeGreaterThan(preview);
-      expect(full).toBeGreaterThan(preview);
-    });
-
-    it('the price shown is the server quote, never a number from the page or catalogue', () => {
-      expect(video).toContain('Show the price the draft returned (the `quote`), **never a number from this page or the catalogue**');
-      expect(video).toContain('The quote you showed came from the server');
-    });
-
-    it('one project is one order: never a second project, never the charging tool as a status probe', () => {
-      expect(video).toContain('Never create a second project; that is a second charge.');
-      expect(video).toContain('Never use the charging tool as a status probe.');
-    });
-
-    // Staging shipped videos whose copy the customer had written out line by
-    // line. The skill routed EVERY change through `kind: "redraft"` and never
-    // mentioned `kind: "edit"`, so their lines went into the redraft `reason` —
-    // where they steer the writer instead of being the script. A redraft re-runs
-    // the writer by design, so the words were replaced, and charged for. This is
-    // the same class as the three rules above: the customer paid for something
-    // they did not agree to.
-    it('verbatim customer copy goes to `edit`, never to a `redraft` reason', () => {
-      // NOT a bare `toContain('kind: "edit"')`: the name already appears in a
-      // failure-mode row ("use `kind: "edit"` where the format lists it"), so
-      // that assertion passes on a body that never tells the agent to reach for
-      // it. What has to hold is that step 6 ROUTES to it.
-      expect(video).toContain('→ \`video_render_run { kind: "edit", edit: { script: { … } } }\`');
-      // The choice is made on ONE question, before any tool is named, and the
-      // stakes of getting it wrong are stated.
-      expect(video).toContain('did they give you the actual WORDS, or did they tell you what is wrong?');
-      expect(video).toContain('Only the first route below keeps their words.');
-      expect(video).toContain('is a silent rewrite when they wanted what they wrote');
-      // `edit` is the only word-preserving route…
-      expect(video).toContain('**This is the only route that keeps copy verbatim.**');
-      // …and every route that replaces the words says so IN ITS OWN BRANCH.
-      // The brief-patch route is the easiest to mistake for word-preserving:
-      // the customer is handing over text either way.
-      expect(video).toContain('**A redraft RE-RUNS the writer: every word, and the picture on a character format, is replaced.**');
-      expect(video).toContain('so **the words will be new** — this changes the instructions, not the script');
-      expect(video).toContain('Their reason steers the next draft; it is not copied into it.');
-      expect(video).toMatch(/Never put exact lines in `reason` expecting them back/);
-      // A hard rule too, so it survives a future rewrite of step 6's prose.
-      expect(video).toContain('**Their words go in an \`edit\`, never in a \`redraft\` reason.**');
-
-      // ORDERING IS LOAD-BEARING. An agent reads step 6 in sequence and takes the
-      // first branch that matches; routing verbatim copy through `redraft` is what
-      // rewrote a customer's script. So the word-preserving branch must come
-      // before BOTH branches that replace the words.
-      const edit = video.indexOf('**They gave you the words**');
-      const brief = video.indexOf('**They changed the BRIEF, not the copy**');
-      const redraft = video.indexOf('**They only said what is wrong**') >= 0
-        ? video.indexOf('**They only said what is wrong**')
-        : video.indexOf('**They only said what\'s wrong**');
-      expect(edit).toBeGreaterThan(-1);
-      expect(brief).toBeGreaterThan(edit);
-      expect(redraft).toBeGreaterThan(edit);
-
-      // A format that cannot take copy must be declared at the table, not
-      // discovered after the customer has handed their script over.
-      expect(video).toContain('**Say which formats won\'t take their words.**');
-      // And the refusal must never be answered by paraphrasing into a redraft.
-      expect(video).toContain('do not paraphrase their lines into a redraft');
-    });
-
-    it('delivers the project page first and the raw mp4 second', () => {
-      // The raw CloudFront mp4 was the only link a customer got: a file, not a
-      // place — nothing to come back to and nothing to edit from.
-      expect(video).toContain('**Lead with `video_url`**');
-      expect(video).toContain('**Deliver the page, not the file.** `video_url` leads, `mp4_url` follows.');
-      expect(video).toContain('`video_url` (the project page) first, `mp4_url` (the file) second');
-      // Never invented: both come from the poll, once the order is done.
-      expect(video).toContain('`order.status` is `done`');
-    });
-
-    // There was no never-drift case for the picture gate, which is how nobody
-    // noticed customers were approving a generated face they had never been shown:
-    // the backend returned `anchor_images` and the chat showed only text.
-    //
-    // NOT assertions on `order.preview.anchor_images` or `stage: "image"` alone —
-    // both of those strings already existed in the paragraph this change rewrote,
-    // so they pass on a body that still hardcodes a stale list of format names and
-    // still never says what approving costs. Same trap as the bare
-    // `toContain('kind: "edit"')` above. What has to hold is the BRANCH KEY, the
-    // show instruction, and the three things said around it.
-    it('keys the picture branch on `stage`, not on a list of format names', () => {
-      // The branch header itself: resolved by the field the backend sets, so a new
-      // image-anchored format joins without a skill edit.
-      expect(video).toContain('**Any preview with \`order.preview.stage: "image"\`**');
-      expect(video).toContain('never by a list of format names');
-      expect(video).toContain('it follows what the recipe\'s steps produce');
-      // The instruction is to show the URLs, not to describe the picture.
-      expect(video).toContain('Show every URL in \`order.preview.anchor_images\` as a link');
-      // The voiceless format reaches this branch with no spoken script at all, so
-      // an agent reading it must be told not to report an empty script. Pinned
-      // INSIDE the branch, not merely present somewhere in the body — a render-time
-      // table row naming the format would otherwise satisfy this.
-      const branch = video.indexOf('**Any preview with \`order.preview.stage: "image"\`**');
-      const dance = video.indexOf('voiceless dance story');
-      expect(dance).toBeGreaterThan(branch);
-      expect(dance).toBeLessThan(branch + 700);
-      expect(video).toContain('its stills and \`detail\` ARE the draft');
-    });
-
-    it('says what approving the picture COSTS, not only that cancelling is free', () => {
-      // The old paragraph said cancelling releases the hold and stopped there. A
-      // pause with no reason given reads as a broken order, and "approve" read as
-      // the only way forward.
-      expect(video).toContain('nothing has been rendered yet and the pause is deliberate');
-      expect(video).toContain('approving starts the render and commits the credits already held');
-      expect(video).toContain('cancelling instead releases the whole hold');
-      expect(video).toMatch(/A pause with no reason given reads as a broken order/);
-
-      // ORDERING IS LOAD-BEARING, for the same reason as the edit/redraft routing
-      // above: an agent works step 6 in sequence. The picture has to be SHOWN
-      // before it is offered any way to change or approve the draft, or the
-      // customer is choosing about something they were never shown.
-      const show = video.indexOf('Show every URL in \`order.preview.anchor_images\` as a link');
-      const change = video.indexOf('did they give you the actual WORDS, or did they tell you what is wrong?');
-      expect(show).toBeGreaterThan(-1);
-      expect(change).toBeGreaterThan(show);
-    });
-
-    it('never lets a generated face go unapproved, anchor image or not', () => {
-      // The chat formats draw their selfie inside the script step, so it has no
-      // anchor image and the stage stays `script`. The old line ("show the
-      // generated selfie or avatar as a link too, if the format made one") named
-      // no field and was trivially skipped.
-      expect(video).toContain('\`selfie_url\` is a generated face — show it as a link.');
-      expect(video).toContain('it never appears in \`anchor_images\`');
-      expect(video).toContain('It is still a face that will be in the ad, so it still needs their yes.');
-      expect(video).not.toContain('Show the generated selfie or avatar as a link too, if the format made one.');
-    });
   });
 });
