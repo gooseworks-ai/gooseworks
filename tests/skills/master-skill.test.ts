@@ -302,6 +302,21 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
 describe('skills/getGooseVideoLocalSkillContent', () => {
   const local = getGooseVideoLocalSkillContent();
 
+  it('remakes a Community remix from its remix block and finished reference video', () => {
+    expect(local).toContain('Step 1.6 — a remix of a FINISHED video');
+    expect(local).toMatch(/top-level `remix` block/);
+    expect(local).toMatch(/Watch the reference video first/);
+    expect(local).toMatch(/never write them, and never reuse their claims/);
+  });
+
+  it('saves the final review set before pinning, so post-approval changes are kept', () => {
+    const save = local.indexOf('Save the final review set BEFORE pinning');
+    const pin = local.indexOf('Pin it: `video_project_upsert { brand_id, project_id, patch: { final_render_id');
+    expect(save).toBeGreaterThan(-1);
+    expect(pin).toBeGreaterThan(save);
+    expect(local).toMatch(/ANY change the user asked for in this chat/);
+  });
+
   // GOOSE-3731: a dead sandbox must not lose paid work — save each piece as it
   // passes QC, and every run starts by reusing what is already saved.
   it('saves every piece as it goes and resumes from saved ingredients', () => {

@@ -1338,6 +1338,26 @@ for a field the brief leaves empty. Map the fields you WILL honor:
    first (\`catalog_fetch { type: "skill", slug: "brand-research" }\`, follow it, then
    \`brand_update { brand_id, patch: { kit_patch, finalize_research: true } }\`) before continuing.
 
+### Step 1.6 — a remix of a FINISHED video (the project read has a \`remix\` block)
+
+A project made from **Community videos** remakes another customer's finished video for THIS brand.
+Its \`video_project_read\` returns a top-level \`remix\` block
+(\`{ remix_of_project_id, instruction, direction }\`), and \`reference_video_url\` is that finished video.
+
+- **Watch the reference video first** (download \`reference_video_url\`, pull frames + the transcript).
+  It is the target: match its structure, beat order, pacing, framing, look, voice and tone.
+- **\`remix.direction\` is its approved review set** (scenes and lines, set/look notes, take prompts,
+  captions, music, voice). Start your review set from it instead of the template's defaults; it
+  already carries every change that customer made to the template.
+- **Rewrite everything for THIS brand.** "[source brand]", "[source product]", "[link]", "[email]"
+  and "[code]" mark the other customer's details: never write them, and never reuse their claims,
+  numbers, URLs, offers or CTA. Every product, claim, name, image and CTA comes from this brand's
+  kit, products and media. Their footage (screen recordings, product shots) and their creator face
+  are NOT carried over: use this brand's own assets and make a new creator from the description.
+- Precedence: this project's own \`creative_brief\` and assets (Step 1.5) > \`remix.direction\` >
+  the template recipe's defaults.
+- In the Step 3 review, say it is a remix of that video and list what you kept vs. changed.
+
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
 The ad format is a **template (data) in the ad_sample DB**, not a per-format skill.
@@ -1524,7 +1544,15 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    (\`upload.render_file_url\`, i.e. \`/api/ads/projects/<project_id>/render-file?path=working/final.mp4\`
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for \`thumbnail_url\`.
-5. Pin it: \`video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }\`,
+5. **Save the final review set BEFORE pinning** — it must describe the video you actually rendered.
+   If anything changed after the Step 3 approval (a line reworded, a clip or take swapped, a look,
+   timing, caption or music change, a QC repair, or ANY change the user asked for in this chat),
+   upsert the review set again: \`video_project_upsert { brand_id, project_id, patch: { script: {
+   script_drafts, script } } }\` with the final lines, final pieces (mark generated takes as done, not
+   "not generated yet") and the settings you used. The project keeps this, not your chat: it is
+   what the app shows, and what a Community remix of this video copies. Instructions that live only
+   in this conversation are lost when it ends.
+6. Pin it: \`video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }\`,
    then return the \`app_url\` + \`brand_url\` (from the project) verbatim. Never end on just "done" or
    a file path.
 
