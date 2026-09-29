@@ -348,6 +348,7 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     // recipe.atoms / recipe.instructions) instead of mapping format → a slug.
     expect(local).toContain('catalog_fetch { type: "template", slug: <source_sample_id> }');
     expect(local).toContain('recipe.atoms');
+    expect(local).toContain('recipe.choices');
     expect(local).not.toContain('remix-imessage-ad-from-sample');
     // Single review-once gate over the full ingredient set (script + visuals),
     // mirrored as container-tagged ingredients.
