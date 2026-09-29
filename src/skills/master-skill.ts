@@ -1238,6 +1238,18 @@ says to shell out, use the MCP equivalent:
   files/dependencySkills). \`gooseworks search <q>\` → **\`search_skills\`**.
 - \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
 - \`gooseworks doctor\` → do the manual toolchain check in the preflight below.
+- **Paid media with no CLI login (the MCP relay).** Without \`~/.gooseworks/credentials.json\` the
+  media scripts cannot reach the proxies over HTTP, so they RELAY each paid call through you.
+  Before running any script, \`export GW_PROJECT_ID=<project_id> GW_BRAND_ID=<brand_id>\` (every
+  call is billed to that project). When a script **exits with code 3** it printed a request file
+  under \`working/mcp-requests/\`: make exactly that MCP call — fal:
+  \`data_post_provider { provider: "fal", path, body, project_id }\` then \`job_get { job_id }\`
+  until \`complete\`, saving \`result.output\`; ElevenLabs: \`data_post_provider { provider:
+  "elevenlabs", … }\`, saving the reply; a local file: \`media_upload\` with its bytes, saving
+  \`{"url": …}\` — write the JSON to the file's \`save_result_to\`, then **re-run the same
+  command**. Repeat until the script finishes. It is the same server proxy and the same price as
+  the CLI path. If the CLI is logged in to a DIFFERENT environment than this MCP connector (e.g.
+  prod vs staging), set \`GW_MEDIA_VIA=mcp\` so spend lands where the project lives.
 
 ## Report problems so we can fix them (telemetry — do this, don't skip it)
 
