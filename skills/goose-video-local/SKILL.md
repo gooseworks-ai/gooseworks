@@ -455,17 +455,26 @@ not your memory of the chat:
 - **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
   `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
   `Pronounce "<term>" as "<say_as>"` → `pronunciations`. Add `kit.instructions` (free-text
-  standing rules) to `must_say` / `never_say` as they read. `products` come from the brand's
-  product rows (name, description, variant, price, images): the ONLY source of product facts.
+  standing rules) to `must_say` / `never_say` as they read.
+- **Which product.** The one the brief names (`creative_brief.productName`); with none, the row
+  whose name matches the product the user asked for, or the brand itself for a one-product
+  brand. Product lists often hold other brands' items or old ads saved as products: if more than
+  one row could be it, ask in the choices round. Never mix facts across rows.
+- **Product facts** come from that row (name, description, variant, price) and, when the row is
+  empty, from the kit (`valueProps`, `description`, `tagline`): nothing else. Write them to
+  `products[].facts`; the script may only state what is there.
 - **Logo.** Download the kit's logo FILE (`kit.logoUrl`, else `kit.logos[0]`) to
   `working/brand/logo.png`. It is used as-is on every scene and end card that shows a logo:
   **never generate, redraw, re-letter or restyle a logo with an image model.** If the kit's
   `logoConfidence` says favicon-grade, or the file's short side is under 256 px, it is a site
   favicon, not a logo: do not upscale it. Ask the user for a real logo (or offer the brand name
   set as text in the brand font) in the SAME question round as the recipe's `choices`.
-- **Font.** Download the kit's brand font file to `working/brand/` when the kit has one, and use
-  it for every on-screen line. With no font file, use the closest free font to `kit.fonts[0]`
-  and say so in the review.
+- **Font.** `kit.typography.heading` when its `source` is `user` (the user chose it), else
+  `kit.fonts.heading`. Download the font file (the kit's own, or the same family from Google
+  Fonts) to `working/brand/` and use it for every on-screen line. With no match, use the closest
+  free font and say so in the review.
+- **No wordmark file.** When a recipe wants a wordmark SVG and the kit has only a logo image, set
+  the brand name as text in the brand font beside the logo file. Never generate one.
 - **Product images.** Download this product's own images to `working/brand/`. Use only images of
   THIS product: never a catalogue image of another product, a mascot, a lifestyle photo of a
   person, or a stand-in. If the product has no usable image, ask in the choices round.
@@ -626,6 +635,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    `GW_PROJECT_ID` exported. **Save as you go** (section above): skip any piece already saved
    with the same `input_digest` (download it), and upload each new piece with its
    `ingredient_key` + `input_digest` the moment it passes QC.
+   A voiceover made with `data_post_provider` (ElevenLabs `…/with-timestamps`) returns its
+   `alignment` only in the reply: write it to `working/vo/<scene>.timestamps.json` at once
+   (captions are timed from it) and record the returned `media_id` on the ingredient.
    **Brand pronunciations in every voiceover:** the text sent to the voice has each
    `pronunciations[].term` replaced by its `say_as` (`create-vo-elevenlabs`:
    `gen_vo.py … --rules working/brand-rules.json`; when a render atom calls the voice itself,
