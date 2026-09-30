@@ -519,3 +519,17 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video).not.toMatch(/^owner:|^level:|^variant-of:/m);
   });
 });
+
+// GOOSE-3743: idea requests go to goose-skills' ad-angle-miner (video output).
+describe('skills/goose-video → ad-angle-miner', () => {
+  const video = getGooseVideoSkillContent();
+
+  it('routes "what should I make?" to ad-angle-miner with the video output', () => {
+    expect(video).toContain('catalog_fetch { type: "skill", slug: "ad-angle-miner" }');
+    expect(video).toMatch(/run it with the \*\*video\*\* output/);
+  });
+
+  it('offers it once when the goal answer is "not sure"', () => {
+    expect(video).toMatch(/find ideas first\s+with `ad-angle-miner`/);
+  });
+});
