@@ -18,6 +18,35 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 
 # GooseWorks Video Ads — local remix runtime
 
+## How to talk to the customer (applies to every message you send them)
+
+The customer is a marketer or founder, not an engineer. Everything in this skill about tools,
+fields, files, polling, models and pipeline steps is for YOU. Never pass it on to them.
+
+- **Say what they get and what they need to decide, never how it's made.**
+  Bad: "Checking the media-proxy helpers for voiceover timestamps and lipsync." / "Generated with
+  gpt-image-2 at high quality, mouth closed, passes QC."
+  Good: "Recording the voices now." / "Here are your two hosts."
+- **Never mention** tool, file or field names, ids, JSON, commands, scripts, installed software,
+  uploads, model or vendor names, timings in seconds or frames, retries, polling, internal statuses
+  or your own quality checks. Fix what you can quietly. If they ask how something works, explain it
+  simply.
+- **Update them only at milestones they care about**: choices confirmed, script and voices done,
+  visuals done, ready to review, finished. One short line each, then stay quiet until the next
+  milestone. No update for setup, downloads, uploads or saving.
+- **Money is in credits, with a number**: "the full video uses about N credits". Never "the cheap
+  pieces" or "the expensive render".
+- **Problems:** say what it means for them and what they can do, in one or two sentences. No error
+  codes or stack traces. Only raise a problem that changes something for them.
+- **Use their words**: script, voice, hook, scene, host, ending, logo, the product shot.
+- **No filler**: no "Great question!", "Certainly!", "I hope this helps!", no restating what they
+  just said at length.
+
+Example. Instead of a dozen lines about render tools, scripts, uploads and portraits, send:
+"Got it: warm tone, home podcast studio, Brielle as the skeptic and Mark as the believer." then
+"Script and voices are done (about 34 seconds)." then "Ready for you to review: the script, voices,
+both hosts and the ending. The full video uses about N credits once you approve: <link>".
+
 ## Mandatory route check before any local work or spend
 
 For every existing `project_id` (including one supplied by the app's copy-for-Claude command),
@@ -620,8 +649,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    writes no render and costs no credits — it just populates the review panel.
 3. **STOP for ONE approval.** Hand the user the project's `app_url` and tell them to review the
    pieces there and hit **"Approve & render"** (that button gives them a short message to paste
-   back). In a **GooseWorks sandbox** the chat you are in is the app: post a short summary (pieces,
-   total credits, the expensive prompt) plus `app_url`, and accept approval from this chat or from
+   back). In a **GooseWorks sandbox** the chat you are in is the app: post a short summary in
+   plain words (what's ready to review, total credits, what the full video will show) plus `app_url`, and accept approval from this chat or from
    the button. Do NOT render until that approval arrives. If they want changes, regenerate the
    affected ingredient, upsert the review set again, say it's refreshed, and wait for a fresh
    approval. Only AFTER the approval do Step 4. A single approval authorises the WHOLE remaining
@@ -656,12 +685,13 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    Playwright record only where the format needs it and the host has Chromium → `mix-master` audio).
    **Report progress at each milestone** — about one update per milestone, never per poll:
    `video_render_run { brand_id, project_id, render: { render_id, status: "running", workflow_stage, progress_note, progress_percent } }`
-   (`progress_note` = plain words, ≤200 chars):
-   - voiceovers done → `"preparing"`, `"voiceovers done"`, 20
-   - stills done → `"preparing"`, `"stills done"`, 35
-   - each lipsync / video clip → `"rendering"`, e.g. `"lipsync 5/8"`, 35–75
-   - assembly → `"rendering"`, `"assembling the cut"`, 85
-   - QC (4.3) → `"checking"`, `"watching the final"`, 95
+   (`progress_note` = plain words the customer reads in the app, ≤200 chars; no model, tool or
+   step names):
+   - voiceovers done → `"preparing"`, `"voices recorded"`, 20
+   - stills done → `"preparing"`, `"scenes designed"`, 35
+   - each lipsync / video clip → `"rendering"`, e.g. `"filming scene 5 of 8"`, 35–75
+   - assembly → `"rendering"`, `"putting the video together"`, 85
+   - QC (4.3) → `"final check"`, 95
    **Hard stop that needs the user** → `{ render_id, status: "running", workflow_stage: "blocked",
    error_message: "<what's wrong + what you need>" }`; an unrecoverable failure → `status: "failed"`
    + `error_message`. Completing (4.4) sets the bar to 100.
@@ -763,7 +793,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    a file path.
 
 Narrate each long step in one line via `video_project_upsert { brand_id, project_id, patch:
-{ message: { role: "agent", content } } }` — never sit silent on a queue > 90s.
+{ message: { role: "agent", content } } }` — never sit silent on a queue > 90s. Write it for the
+customer ("Filming the scenes, about 5 more minutes"), per "How to talk to the customer" above.
 
 ## Media generation — the GooseWorks proxies (queue loop)
 
