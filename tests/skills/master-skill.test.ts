@@ -311,10 +311,49 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
 
   it('saves the final review set before pinning, so post-approval changes are kept', () => {
     const save = local.indexOf('Save the final review set BEFORE pinning');
-    const pin = local.indexOf('Pin it: `video_project_upsert { brand_id, project_id, patch: { final_render_id');
+    const pin = local.indexOf('6. Pin it');
     expect(save).toBeGreaterThan(-1);
     expect(pin).toBeGreaterThan(save);
     expect(local).toMatch(/ANY change the user asked for in this chat/);
+  });
+
+  // GOOSE-3758: the brand's saved rules reach the video, and corrections are saved back.
+  it('loads kit, products and learnings, and builds the brand rules file before writing', () => {
+    expect(local).toMatch(/brand_read \{ brand_id, sections: \["summary", "kit", "products", "learnings"\] \}/);
+    expect(local).toContain('Step 1.7 — the brand rules file and the brand assets');
+    expect(local).toContain('working/brand-rules.json');
+    expect(local).toMatch(/Pronounce "<term>" as "<say_as>"/);
+    expect(local.indexOf('Step 1.7')).toBeLessThan(local.indexOf('## Step 3'));
+  });
+
+  it('checks the script against the brand rules and swaps pronunciations in the voiceover only', () => {
+    expect(local).toMatch(/Nothing in `never_say` appears, in words or\s+in meaning/);
+    expect(local).toMatch(/comes from `products\[\]` or the kit/);
+    expect(local).toMatch(/gen_vo\.py … --rules working\/brand-rules\.json/);
+    expect(local).toMatch(/Captions, on-screen text and the review keep the\s+written name/);
+  });
+
+  it('saves a brand correction with brand_update facts in the same turn', () => {
+    expect(local).toContain('Brand corrections stick');
+    expect(local).toMatch(/brand_update \{ brand_id, patch: \{ facts: \[\{ kind, text \}\] \} \}/);
+    expect(local).toMatch(/is NOT a\s+brand rule: don't save it/);
+  });
+
+  // GOOSE-3761 + GOOSE-3762: brand fidelity and the finished-ad gate in the final QC gate.
+  it('never regenerates the logo and refuses a favicon-grade logo', () => {
+    expect(local).toMatch(/never generate, redraw, re-letter or restyle a logo/);
+    expect(local).toMatch(/favicon-grade, or the file's short side is under 256 px/);
+  });
+
+  it('runs review-finished-ad on every master, caps repairs at 2, and warns instead of passing off a failure', () => {
+    const gate = local.slice(local.indexOf('MANDATORY final-video QC gate'), local.indexOf('4. Publish'));
+    expect(gate).toContain('review_finished_ad.py --video');
+    expect(gate).toMatch(/judge every line of its `judge_on_sheet`/);
+    expect(gate).toMatch(/always \*\*1080×1920 \(9:16\)\*\*/);
+    expect(gate).not.toMatch(/unless the recipe says otherwise/);
+    expect(gate).toMatch(/At most 2 repair rounds/);
+    expect(gate).toMatch(/`quality_status: "blocked"`/);
+    expect(local).toMatch(/Pin it — only a `passed` render/);
   });
 
   // GOOSE-3731: a dead sandbox must not lose paid work — save each piece as it

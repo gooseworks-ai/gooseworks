@@ -11,7 +11,7 @@ description: >
   video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.4.0
+version: 0.5.0
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -128,7 +128,8 @@ client that does not expose the canonical tool; never mix both for one step.
 | Read a project / batch | `video_project_read { brand_id, project_id }` / `video_project_read { brand_id, batch_id }` | `get_ad_project` / `get_ad_video_batch` |
 | Template recipe | `catalog_fetch { type: "template", slug: <source_sample_id> }` | `get_ad_template` |
 | Capability skill (atom) + its scripts | `catalog_fetch { type: "skill", slug }` | `gooseworks fetch <slug>` / `fetch_skill` |
-| Brand kit / research status | `brand_get_context { brand_id }` | `get_brand_kit` |
+| Brand kit, products, rules | `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` | `brand_get_context` / `get_brand_kit` |
+| Save a brand rule (a correction) | `brand_update { brand_id, patch: { facts: [{ id?, kind, text }] } }` | none |
 | Mirror the review set | `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts, script } } }` | `update_ad_project_script` |
 | Project assets | `video_project_upsert { …, patch: { assets: [...] } }` | `update_ad_project_asset` |
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
@@ -405,10 +406,13 @@ for a field the brief leaves empty. Map the fields you WILL honor:
 
 2. `catalog_fetch { type: "template", slug: <source_sample_id> }` → the source video: `media_url`,
    `recipe`, `format` (e.g. "podcast-skit", "imessage"), `extracted_script`, `how_to`, `remix_spec`.
-3. Brand gate: `brand_get_context { brand_id }`. If the kit's `researchStatus` (or the brand's
-   `research_status`) is `complete`, REUSE it — never re-research. If not, run brand research
-   first (`catalog_fetch { type: "skill", slug: "brand-research" }`, follow it, then
-   `brand_update { brand_id, patch: { kit_patch, finalize_research: true } }`) before continuing.
+3. Brand gate: `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }`
+   (older clients: `brand_get_context` with the same sections). Ask for all four: the default
+   leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
+   If the kit's `researchStatus` (or the brand's `research_status`) is `complete`, REUSE it —
+   never re-research. If not, run brand research first (`catalog_fetch { type: "skill", slug:
+   "brand-research" }`, follow it, then `brand_update { brand_id, patch: { kit_patch,
+   finalize_research: true } }`) before continuing. Then do Step 1.7.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a `remix` block)
 
@@ -429,6 +433,65 @@ Its `video_project_read` returns a top-level `remix` block
 - Precedence: this project's own `creative_brief` and assets (Step 1.5) > `remix.direction` >
   the template recipe's defaults.
 - In the Step 3 review, say it is a remix of that video and list what you kept vs. changed.
+
+### Step 1.7 — the brand rules file and the brand assets (every run, before any writing)
+
+Write `working/brand-rules.json` from the Step 1 brand read. Every later step reads THIS file,
+not your memory of the chat:
+
+```json
+{
+  "name": "Acme",
+  "pronunciations": [{ "term": "Acme", "say_as": "ak-mee", "learning_id": "…" }],
+  "must_say": [{ "text": "…", "learning_id": "…" }],
+  "never_say": [{ "text": "Never claim it cures insomnia", "learning_id": "…" }],
+  "products": [{ "id": "…", "name": "…", "facts": ["size, flavour, price, ingredients as stored"], "images": ["…"] }],
+  "logo": { "url": "…", "confidence": "<kit.logoConfidence>" },
+  "fonts": ["…"],
+  "palette": ["#…"]
+}
+```
+
+- **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
+  `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
+  `Pronounce "<term>" as "<say_as>"` → `pronunciations`. Add `kit.instructions` (free-text
+  standing rules) to `must_say` / `never_say` as they read. `products` come from the brand's
+  product rows (name, description, variant, price, images): the ONLY source of product facts.
+- **Logo.** Download the kit's logo FILE (`kit.logoUrl`, else `kit.logos[0]`) to
+  `working/brand/logo.png`. It is used as-is on every scene and end card that shows a logo:
+  **never generate, redraw, re-letter or restyle a logo with an image model.** If the kit's
+  `logoConfidence` says favicon-grade, or the file's short side is under 256 px, it is a site
+  favicon, not a logo: do not upscale it. Ask the user for a real logo (or offer the brand name
+  set as text in the brand font) in the SAME question round as the recipe's `choices`.
+- **Font.** Download the kit's brand font file to `working/brand/` when the kit has one, and use
+  it for every on-screen line. With no font file, use the closest free font to `kit.fonts[0]`
+  and say so in the review.
+- **Product images.** Download this product's own images to `working/brand/`. Use only images of
+  THIS product: never a catalogue image of another product, a mascot, a lifestyle photo of a
+  person, or a stand-in. If the product has no usable image, ask in the choices round.
+
+### Brand corrections stick — save them to the brand the moment they are made
+
+When the user corrects something about the BRAND in chat — how a name is said, a claim that may
+not be made, a product fact, a visual rule ("never use red", "the logo goes top-left") — save it
+in the SAME turn, before anything else:
+
+`brand_update { brand_id, patch: { facts: [{ kind, text }] } }`
+
+| Correction | `kind` | `text` |
+|---|---|---|
+| Pronunciation | `must` | `Pronounce "Acme" as "ak-mee"` (exactly this form) |
+| A claim or word to avoid | `dont` | `Never say or imply: <the claim>` |
+| Something that must be said | `must` | `<the rule>` |
+| A product fact | `must` | `<product name>: <the fact>` |
+| A visual rule | `do` / `dont` | `<the rule>` |
+
+- If it changes an EXISTING rule (a new pronunciation for the same term), update that rule by id
+  (`facts: [{ id: <learning_id>, text }]`) instead of adding a second one.
+- Then tell the user in one line: "Saved to your brand: every future video will use it." Update
+  `working/brand-rules.json` and apply the rule to THIS video too.
+- A one-off note about this video ("make it shorter", "use the blue background here") is NOT a
+  brand rule: don't save it.
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
@@ -514,7 +577,14 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      in the tile's `text` / `subtitle` so the user reviews what will be spent on. No `path` yet —
      it's generated in Step 4.
    Include the **estimated cost in CREDITS** (never dollars) of the cheap pieces already generated +
-   the pending render, so the user approves knowing the total spend. **Answer clarifying questions
+   the pending render, so the user approves knowing the total spend.
+   **Brand check of the script, before it goes in the panel:** every line, caption and on-screen
+   text is checked against `working/brand-rules.json`. Nothing in `never_say` appears, in words or
+   in meaning (a paraphrase of a banned claim is still banned). Every product detail (name,
+   flavour, size, price, ingredient, result) comes from `products[]` or the kit: anything else is
+   cut, not invented. Add a `note` ingredient labelled "Brand rules applied" that lists the
+   pronunciations used and the rules the script respects, so the user sees them.
+   **Answer clarifying questions
    from the project brief FIRST (Step 1.5)** — only ask the user for a field (angle, which product,
    offer/code) the `creative_brief` leaves empty AND the recipe can't default. Do not re-ask for
    anything the composer already captured.
@@ -555,7 +625,15 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    clips, voice, music — through the media proxies (below), each from its approved prompt, with
    `GW_PROJECT_ID` exported. **Save as you go** (section above): skip any piece already saved
    with the same `input_digest` (download it), and upload each new piece with its
-   `ingredient_key` + `input_digest` the moment it passes QC. Then assemble per the recipe (ffmpeg stitch; PIL captions / end card;
+   `ingredient_key` + `input_digest` the moment it passes QC.
+   **Brand pronunciations in every voiceover:** the text sent to the voice has each
+   `pronunciations[].term` replaced by its `say_as` (`create-vo-elevenlabs`:
+   `gen_vo.py … --rules working/brand-rules.json`; when a render atom calls the voice itself,
+   swap the terms in the text you hand it). Captions, on-screen text and the review keep the
+   written name. Write `working/approved-script.txt` (the Step 4.3 audio check) with the SPOKEN
+   form. **Logo, font, product:** every logo is the file from Step 1.7 composited as-is; every
+   product shot uses the Step 1.7 product images as its reference.
+   Then assemble per the recipe (ffmpeg stitch; PIL captions / end card;
    Playwright record only where the format needs it and the host has Chromium → `mix-master` audio).
    **Report progress at each milestone** — about one update per milestone, never per poll:
    `video_render_run { brand_id, project_id, render: { render_id, status: "running", workflow_stage, progress_note, progress_percent } }`
@@ -594,25 +672,50 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - **Visual + structure** — always: run the `watch` skill on the master — beat/scene order + SFX,
      the brand's product (not the source's) is shown, the end card has the real wordmark + code, no
      deformation/artifact, duration within ~20% of the source.
-   - **Output size** — always: ffprobe the master's width × height. It must be the recipe's output
-     size (9:16 = **1080×1920** unless the recipe says otherwise). Lipsync / video models often
-     return 720p or odd sizes — scale (and pad if the aspect differs) every clip to the output size
-     BEFORE the concat, never ship the model's native size.
-   If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, rebuild captions)
-   and re-review — only a clean pass proceeds to pinning. **This gate is universal: it runs from
-   this skill for every format, so a recipe never has to opt in.**
+   - **Finished ad + brand fidelity** — always: fetch `review-finished-ad` (`catalog_fetch`,
+     `pip install --quiet numpy pillow` if needed) and run
+     `review_finished_ad.py --video <master>.mp4 --json working/review/finished-ad.json
+     --sheet working/review/finished-ad-sheet.png --logo working/brand/logo.png
+     --palette "<kit palette, comma-separated>" --product-images <the Step 1.7 images>
+     --font <brand font file> --brand-name "<name>"` (add `--no-speech` for a format with no
+     VO or dialogue; `--logo-at <s>` for each mid-video logo). Exit 0 PASS / 2 FAIL / 3 ERROR. It
+     checks size, hook, pacing, dead air, black frames, the kit logo on the end card
+     (a wrong, redrawn or favicon logo fails) and the palette. **Then open the sheet it writes
+     and judge every line of its `judge_on_sheet`:** captions/CTA/logo outside the red safe
+     zones, the brand font, every product shot matching the product images, the product the same
+     in every scene, the logo unaltered. A failed eye check is a FAIL like any other.
+   - **Output size** — always **1080×1920 (9:16)**. Video ads are only ever 9:16. Lipsync / video
+     models often return 720p or odd sizes — scale (and pad if the aspect differs) every clip to
+     1080×1920 BEFORE the concat, never ship the model's native size.
+   If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, re-composite the
+   end card from the real logo file, rebuild captions) and re-run the passes — only a clean pass
+   proceeds to pinning. **At most 2 repair rounds.** If a pass still fails after them, do NOT pin
+   and do NOT present the video as finished: publish it (4.4) with `quality_status: "blocked"` and
+   the failing checks in the report, set `workflow_stage: "blocked"`, and tell the user plainly in
+   chat which checks failed, what you tried, and the choices (fix a specific thing, re-roll, or
+   use it anyway). Pin it only if they say to use it anyway. The app shows a blocked render as
+   "Needs attention". **This gate is universal: it runs from this skill for every format, so a
+   recipe never has to opt in.**
 4. Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
    path: "working/final.mp4", ingredient_key: "final", input_digest, source: { type: "file", filename: "final.mp4", content_type:
    "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` (no
    `media_confirm` — path uploads don't take one). Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
    Keep each `upload.render_file_url`. Verify the PUT returned 2xx and the file you uploaded is a
    real, non-empty MP4 (ffprobe it) BEFORE marking the render complete.
-   Then `video_render_run { brand_id, project_id, render: { render_id, status: "complete", output_url, thumbnail_url } }` (attach the Step 4.3 verdict as `quality_status: "passed"` +
-   `quality_report` — a batch concept cannot complete without it; exact shape, strict (no extra keys):
+   Then `video_render_run { brand_id, project_id, render: { render_id, status: "complete", output_url, thumbnail_url } }` (attach the Step 4.3 verdict as `quality_status: "passed"` (or
+   `"blocked"` when the gate still fails after 2 repair rounds) + `quality_report` — ALWAYS
+   attach it; a batch concept cannot complete without a passing one; exact shape, strict (no extra keys):
    `{ version: 1, summary: string, checks: { source, brand, product, hook_and_scene_order,
    voice_and_script, captions, endcard_and_cta, duration_and_ratio, visual_artifacts }, detected_issues?:
    string[], repair_actions?: string[] }` where EVERY check is `{ status: "pass"|"fail"|"not_applicable",
-   note?: string }`) where **output_url MUST be the durable render-file URL**
+   note?: string }`). Fill each check from the Step 4.3 passes: `brand` ← logo_asset + logo +
+   palette + font + logo unaltered; `product` ← product likeness + product consistency;
+   `hook_and_scene_order` ← hook + pacing + the `watch` beat order; `voice_and_script` ← the
+   Whisper diff (pronunciations included) + no `never_say` line; `captions` ← the caption diff +
+   safe zones; `duration_and_ratio` ← ratio + duration; `visual_artifacts` ← black frames +
+   frozen stretches + the `watch` pass; `endcard_and_cta` ← the end card holds the real logo +
+   CTA. Put each failing check's note in `detected_issues` and each fix in `repair_actions`.
+   **output_url MUST be the durable render-file URL**
    (`upload.render_file_url`, i.e. `/api/ads/projects/<project_id>/render-file?path=working/final.mp4`
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for `thumbnail_url`.
@@ -624,7 +727,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    "not generated yet") and the settings you used. The project keeps this, not your chat: it is
    what the app shows, and what a Community remix of this video copies. Instructions that live only
    in this conversation are lost when it ends.
-6. Pin it: `video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }`,
+6. Pin it — only a `passed` render (or a `blocked` one the user said to use anyway):
+   `video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }`,
    then return the `app_url` + `brand_url` (from the project) verbatim. Never end on just "done" or
    a file path.
 
@@ -731,6 +835,14 @@ FAL storage proxy. Never pass a `render-file` URL to a provider — it needs app
   credits attribute to this ad project.
 - **Verify a real, non-empty MP4** (watch it) before marking the render complete.
 - **Reuse the brand** when its research is complete; never re-research.
+- **Brand rules first:** load kit + products + learnings (Step 1), write `working/brand-rules.json`
+  (Step 1.7), and follow it: pronunciations in every voiceover, nothing from `never_say`, product
+  facts only from the product rows, the kit's logo FILE (never a generated or favicon logo), the
+  brand font, this product's own images.
+- **Save brand corrections** from chat with `brand_update patch.facts` in the same turn, and say so.
+- **Finished-ad gate on every master** (`review-finished-ad` + the sheet); at most 2 repair
+  rounds, then publish as `blocked` with the report and warn the user — never pass off a failing
+  video as finished.
 - On a hard error (auth/quota/model/timeout) set the render `failed` with a short
   `error_message` (`video_render_run { …, render: { render_id, status: "failed", error_message } }`) and stop — don't ship the source unchanged. **Also log
   it** (see "Report problems") so we can see + fix it.
