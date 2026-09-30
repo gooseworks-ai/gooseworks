@@ -577,3 +577,13 @@ describe('skills/goose-video → ad-angle-miner', () => {
     expect(video).toMatch(/find ideas first\s+with `ad-angle-miner`/);
   });
 });
+
+describe('every entry skill tells the agent how to talk to the customer', () => {
+  // A local run narrated render tools, media proxies, model names and uploads to
+  // a non-technical customer. The shared rule must reach every entry skill.
+  it.each(getEntrySkills().map((s) => [s.name, s.content]))('%s', (_name, body) => {
+    expect(body).toContain('## How to talk to the customer');
+    expect(body).toMatch(/Update them only at milestones/);
+    expect(body).toMatch(/Never "the cheap\s+pieces" or "the expensive render"/);
+  });
+});
