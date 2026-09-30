@@ -4,7 +4,6 @@ import {
   getGooseVideoSkillContent,
   getGooseProductPhotosSkillContent,
   getGooseVideoLocalSkillContent,
-  getGooseVideoAnglesSkillContent,
   getEntrySkills,
   getEntrySkillNames,
   RENDER_ROW_TOOL,
@@ -245,9 +244,9 @@ describe('skills/goose-ads entry skill', () => {
 describe('skills/getEntrySkills', () => {
   // GOOSE-3190: the registry is the ONE source — goose-product-photos used to be
   // a hand-maintained SKILL.md on disk that this list never emitted or refreshed.
-  it('vendors all six entry skills (not ads-remix)', () => {
+  it('vendors all five entry skills (not ads-remix)', () => {
     const names = getEntrySkills().map(s => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-angles', 'goose-video-local', 'goose-product-photos']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos']);
     expect(getEntrySkillNames()).toEqual(names);
   });
 
@@ -518,64 +517,5 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video).not.toMatch(/\[\[/);
     expect(video).not.toMatch(/GOOSE-\d+/);
     expect(video).not.toMatch(/^owner:|^level:|^variant-of:/m);
-  });
-});
-
-// GOOSE-3743: "what should I make?" — ranked video ideas, each mapped to a
-// catalogue format with paid/earned-labelled references, handed to goose-video-local.
-describe('skills/getGooseVideoAnglesSkillContent', () => {
-  const angles = getGooseVideoAnglesSkillContent();
-  const video = getGooseVideoSkillContent();
-
-  it('is named/slugged goose-video-angles, with exactly one frontmatter block', () => {
-    expect(angles).toMatch(/^---\nname: goose-video-angles\nslug: goose-video-angles\n/);
-    expect(angles.match(/^---$/gm)).toHaveLength(2);
-  });
-
-  it('chains all four inputs: brand, competitor ads, social listening, the user\'s terms', () => {
-    expect(angles).toContain('brand_read { brand_id, sections:');
-    expect(angles).toContain('ads_template_read { brand_id, mode: "competitor", filters: { format: "video" } }');
-    expect(angles).toContain('competitor_search_mentions');
-    expect(angles).toContain('/v1/tiktok/search/keyword');
-    expect(angles).toContain('/v2/instagram/reels/search');
-    expect(angles).toMatch(/customer's own terms first/);
-  });
-
-  it('asks once before any paid listening', () => {
-    expect(angles).toContain('### 3. Paid social listening — ask once, then run');
-    expect(angles).toContain('**Ask once before paid listening.**');
-  });
-
-  it('keeps paid boosts apart from earned reach', () => {
-    expect(angles).toContain('### 4. Label every reference paid or earned');
-    expect(angles).toContain("**Never treat a paid post's view count as proof.**");
-    expect(angles).toMatch(/caps at 6/);
-  });
-
-  it('maps every idea to a catalogue format and cites real links', () => {
-    expect(angles).toContain('video_catalog_list { kind: "formats", brand_id }');
-    expect(angles).toContain('**Every idea cites at least one real link you actually retrieved.**');
-    expect(angles).toContain('At least 10 ideas');
-  });
-
-  it('hands picked ideas to goose-video-local with no manual step', () => {
-    const table = angles.indexOf('### 7. Show the ideas as one table');
-    const handoff = angles.indexOf('### 8. "Make these"');
-    expect(table).toBeGreaterThan(-1);
-    expect(handoff).toBeGreaterThan(table);
-    expect(angles).toContain('video_project_upsert { brand_id, name: "<hook, short>", format: <template_id> }');
-    expect(angles).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
-    expect(angles).toContain('gooseworks doctor');
-  });
-
-  it('goose-video offers it when the customer is not sure what to make', () => {
-    expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-angles" }');
-    expect(video).toMatch(/find ideas first\s+with `goose-video-angles`/);
-  });
-
-  it('carries no goose-lab-only syntax (wikilinks, ticket ids, lab frontmatter)', () => {
-    expect(angles).not.toMatch(/\[\[/);
-    expect(angles).not.toMatch(/GOOSE-\d+/);
-    expect(angles).not.toMatch(/^owner:|^level:|^variant-of:/m);
   });
 });

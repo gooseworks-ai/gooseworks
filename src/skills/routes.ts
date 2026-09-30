@@ -66,12 +66,6 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
     delivery: 'entry',
   },
   {
-    skill: 'goose-video-angles',
-    when: 'Decide **what video ads to make** — "give me video ad ideas / angles / hooks", "what\'s working for my competitors?", "not sure what to make"; ranked ideas mapped to formats, with the real posts/ads behind them',
-    how: 'Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.',
-    delivery: 'entry',
-  },
-  {
     skill: 'goose-video-local',
     when: 'Render an EXISTING app video project or batch on this machine — the app\'s "copy for Claude" command names it',
     how: 'Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.',

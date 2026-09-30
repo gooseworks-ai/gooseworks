@@ -44,10 +44,6 @@ Use `goose-video-local` if it is installed; otherwise load it with
 `catalog_fetch { type: "skill", slug: "goose-video-local" }` on the GooseWorks MCP (older clients:
 `fetch_skill("goose-video-local")`). It reads the project first and says what to do with it.
 
-Hand off to **`goose-video-angles`** (installed, or `catalog_fetch { type: "skill", slug: "goose-video-angles" }`)
-when they ask **what** to make: "give me video ad ideas", "what angles should I use?", "what's
-working for my competitors?". It ends by handing the picked ideas to `goose-video-local`.
-
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
 
 ## Inputs
@@ -109,10 +105,6 @@ Unless the opening sentence already said it, ask **one** plain question and wait
 > What's this ad for? For example: launching something, a sale, explaining how it works, or showing real results. Anything you tell me helps me pick the right format.
 
 This is a free-text question: **no menu, no table, no list of formats yet.** Take whatever they say, even "not sure". Never ask it twice, and never block on it.
-
-If the answer is "not sure" or "what should I make?", offer once, in one line, to find ideas first
-with `goose-video-angles` (it researches competitors and what's getting reach, then suggests ranked
-ideas with formats). If they say yes, switch to it; otherwise carry on to the table.
 
 **Keep the answer, as they said it.** It is the brief `goose-video-local` works from in step 5. If their words also say who the ad is for, a name or term the ad must say, or something to stay away from, note those too. Never ask for those and never fill them with a guess.
 
