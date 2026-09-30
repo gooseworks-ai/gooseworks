@@ -1598,7 +1598,10 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      a deterministic Whisper transcript-vs-script diff: persist the approved spoken lines to
      \`working/approved-script.txt\`, fetch \`review-ugc-render\` (\`catalog_fetch\`) and run
      \`review_render.py --video <master>.mp4 --script-file working/approved-script.txt --json
-     working/review-verdict.json\` (exit 0 PASS / 2 FAIL / 3 ERROR). It blocks a mis-voiced word
+     working/review-verdict.json\` (exit 0 PASS / 2 FAIL / 3 ERROR). For each brand pronunciation add
+     \`--brand-term "<term>" --brand-term "<say_as>"\`: Whisper spells a respelled name back as the
+     brand word ("Goose Works" heard as "Gooseworks"), so the diff must accept both. The proof of
+     HOW it was said is the text you sent to the voice (keep it in the review), not the transcript. It blocks a mis-voiced word
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when \`OPENAI_BASE_URL\` is set (sandbox:
      \`$GW_WHISPER_PROXY_URL/v1\`); with no backend at all, run \`fal-ai/whisper\` via the FAL proxy
