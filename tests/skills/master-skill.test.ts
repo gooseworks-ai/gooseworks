@@ -342,7 +342,8 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
   // GOOSE-3761 + GOOSE-3762: brand fidelity and the finished-ad gate in the final QC gate.
   it('never regenerates the logo and refuses a favicon-grade logo', () => {
     expect(local).toMatch(/never generate, redraw, re-letter or restyle a logo/);
-    expect(local).toMatch(/favicon-grade, or the file's short side is under 256 px/);
+    expect(local).toMatch(/favicon-grade, or the file's long side is under\s+256 px/);
+    expect(local).toMatch(/omit `--logo`, and judge the\s+text on the sheet/);
   });
 
   it('runs review-finished-ad on every master, caps repairs at 2, and warns instead of passing off a failure', () => {
@@ -352,8 +353,12 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(gate).toMatch(/always \*\*1080×1920 \(9:16\)\*\*/);
     expect(gate).not.toMatch(/unless the recipe says otherwise/);
     expect(gate).toMatch(/At most 2 repair rounds/);
-    expect(gate).toMatch(/`quality_status: "blocked"`/);
+    expect(gate).toMatch(/workflow_stage: "blocked", quality_status: "blocked", repair_pass_count: 2/);
     expect(local).toMatch(/Pin it — only a `passed` render/);
+    // A blocked batch concept can't be pinned, so the batch ends blocked, not "complete".
+    expect(local).toMatch(/set the batch to `blocked`, and tell the user which\s+concepts passed/);
+    // The brief's ratio never produces a non-9:16 export.
+    expect(local).toMatch(/video ads are ALWAYS 9:16 \(1080×1920\)/);
   });
 
   // GOOSE-3731: a dead sandbox must not lose paid work — save each piece as it

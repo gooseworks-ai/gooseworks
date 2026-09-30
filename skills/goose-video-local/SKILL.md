@@ -360,14 +360,18 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
 **Loop shape (one agent, sequential, ONE approval for the whole batch):**
 1. Run **Step 1 + Step 1.5 + Step 2 + Step 3-assemble** for EACH concept project (each has its own
    `project_id`, brief, `GW_PROJECT_ID` and `working/` folder — never cross-write between concepts).
+   The brand read (Step 1 item 3) and `brand-rules.json` (Step 1.7) are per BRAND: do them once for
+   the batch and copy the file into each concept's `working/`. The read is ~90K characters.
 2. Mirror EVERY concept's review set (Step 3's `video_project_upsert patch.script` per project),
    then stop for **ONE** approval that covers all concepts — show the per-concept credit estimate
    and the batch total. Set the batch to `review` (`video_project_upsert { brand_id, batch_id,
    patch: { batch: { status: "review" } } }`).
 3. On approval, set the batch to `rendering` and run **Step 4 (the expensive render)** for each
    concept **sequentially** (finish Concept 1's master before starting Concept 2 — one machine can't
-   render them in parallel). Deliver each (Step 5). When all concepts are pinned, set the batch to
-   `complete`.
+   render them in parallel). Deliver each (Step 5). When every concept is pinned, set the batch to
+   `complete`. A concept the Step 4.3 gate leaves `blocked` cannot be pinned (a batch concept
+   needs `passed`): finish the others, set the batch to `blocked`, and tell the user which
+   concepts passed and which are blocked, with each one's failing checks.
 
 If a single concept fails, keep going with the rest, mark that concept blocked, and report which
 ones shipped — never abort the whole batch on one bad concept. Everything below (Steps 1–5) is
@@ -398,10 +402,10 @@ for a field the brief leaves empty. Map the fields you WILL honor:
   assets.
 - `character_id` → the avatar/creator to use. `default_voice_id` → the voice for any VO (put its
   NAME in the review `subtitle`). Use these instead of picking your own.
-- `creative_brief.ratio` / `.durationSeconds` → target aspect ratio + length. Honor when the
-  format's render pipeline supports it; if the format physically can't (e.g. a fixed phone-mockup
-  aspect), keep the format's native value and note the constraint in the review rather than silently
-  ignoring the request.
+- `creative_brief.durationSeconds` → target length; honor it when the format allows.
+  `creative_brief.ratio` → video ads are ALWAYS 9:16 (1080×1920). If the brief asks for another
+  ratio, make 9:16 anyway and say so in the review; never export another size (a recipe's
+  "also 1:1" option included).
 - `polish_policy` (`standard` | `extra`) → `extra` means spend the extra pass on QC/polish.
 
 2. `catalog_fetch { type: "template", slug: <source_sample_id> }` → the source video: `media_url`,
@@ -454,7 +458,7 @@ not your memory of the chat:
 
 - **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
   `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
-  `Pronounce "<term>" as "<say_as>"` → `pronunciations`. Add `kit.instructions` (free-text
+  `Pronounce "<term>" as "<say_as>"` (straight or curly quotes) → `pronunciations`. Add `kit.instructions` (free-text
   standing rules) to `must_say` / `never_say` as they read.
 - **Which product.** The one the brief names (`creative_brief.productName`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
@@ -463,11 +467,12 @@ not your memory of the chat:
 - **Product facts** come from that row (name, description, variant, price) and, when the row is
   empty, from the kit (`valueProps`, `description`, `tagline`): nothing else. Write them to
   `products[].facts`; the script may only state what is there.
-- **Logo.** Download the kit's logo FILE (`kit.logoUrl`, else `kit.logos[0]`) to
-  `working/brand/logo.png`. It is used as-is on every scene and end card that shows a logo:
-  **never generate, redraw, re-letter or restyle a logo with an image model.** If the kit's
-  `logoConfidence` says favicon-grade, or the file's short side is under 256 px, it is a site
-  favicon, not a logo: do not upscale it. Ask the user for a real logo (or offer the brand name
+- **Logo.** Download the kit's logo FILE (`kit.logoUrl`, else `kit.logos[0]`) to `working/brand/`,
+  keeping its real extension (an SVG stays `.svg`; rasterise it to a 1024px-wide PNG with
+  `rsvg-convert` or `cairosvg` when a renderer needs pixels). It is used as-is on every scene and
+  end card that shows a logo: **never generate, redraw, re-letter or restyle a logo with an image
+  model.** If the kit's `logoConfidence` says favicon-grade, or the file's long side is under
+  256 px (or it is under 40,000 px²), it is a site favicon, not a logo: do not upscale it. Ask the user for a real logo (or offer the brand name
   set as text in the brand font) in the SAME question round as the recipe's `choices`.
 - **Font.** `kit.typography.heading` when its `source` is `user` (the user chose it), else
   `kit.fonts.heading`. Download the font file (the kit's own, or the same family from Google
@@ -475,6 +480,8 @@ not your memory of the chat:
   free font and say so in the review.
 - **No wordmark file.** When a recipe wants a wordmark SVG and the kit has only a logo image, set
   the brand name as text in the brand font beside the logo file. Never generate one.
+- Record in `brand-rules.json` which logo the video will actually composite (`logo.file`), or
+  `"logo": { "mode": "text" }` when it will show only the brand name set in the brand font.
 - **Product images.** Download this product's own images to `working/brand/`. Use only images of
   THIS product: never a catalogue image of another product, a mascot, a lifestyle photo of a
   person, or a stand-in. If the product has no usable image, ask in the choices round.
@@ -671,8 +678,10 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      `working/approved-script.txt`, fetch `review-ugc-render` (`catalog_fetch`) and run
      `review_render.py --video <master>.mp4 --script-file working/approved-script.txt --json
      working/review-verdict.json` (exit 0 PASS / 2 FAIL / 3 ERROR). For each brand pronunciation add
-     `--brand-term "<term>" --brand-term "<say_as>"`: Whisper spells a respelled name back as the
-     brand word ("Goose Works" heard as "Gooseworks"), so the diff must accept both. The proof of
+     `--brand-term "<term>"`, plus `--brand-term` for each word of `say_as` that is not an
+     everyday word (the flag strips those tokens from the WHOLE diff, so never pass "a", "one",
+     "works" alone): Whisper spells a respelled name back as the brand word ("Goose Works" heard
+     as "Gooseworks"), so the diff must accept it. The proof of
      HOW it was said is the text you sent to the voice (keep it in the review), not the transcript. It blocks a mis-voiced word
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when `OPENAI_BASE_URL` is set (sandbox:
@@ -685,15 +694,19 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      visual pass below, read the burned caption off 4–5 sampled frames to confirm it's on screen at
      that time and not colliding with the end card. Mismatched text or >0.3s drift fails the gate.
    - **Visual + structure** — always: run the `watch` skill on the master — beat/scene order + SFX,
-     the brand's product (not the source's) is shown, the end card has the real wordmark + code, no
+     the brand's product (not the source's) is shown, the end card has the brand's logo file (or its name set in the brand font) + code, no
      deformation/artifact, duration within ~20% of the source.
    - **Finished ad + brand fidelity** — always: fetch `review-finished-ad` (`catalog_fetch`,
      `pip install --quiet numpy pillow` if needed) and run
      `review_finished_ad.py --video <master>.mp4 --json working/review/finished-ad.json
-     --sheet working/review/finished-ad-sheet.png --logo working/brand/logo.png
+     --sheet working/review/finished-ad-sheet.png --logo <the logo file the video composites>
      --palette "<kit palette, comma-separated>" --product-images <the Step 1.7 images>
-     --font <brand font file> --brand-name "<name>"` (add `--no-speech` for a format with no
-     VO or dialogue; `--logo-at <s>` for each mid-video logo). Exit 0 PASS / 2 FAIL / 3 ERROR. It
+     --font <brand font file> --brand-name "<name>" --endcard-s <end card length>`. Pass the
+     file that is ACTUALLY on screen (the kit logo, or the recipe's wordmark file). When the video
+     shows only the brand name as text (`"logo": {"mode": "text"}`), omit `--logo` and judge the
+     text on the sheet. Add `--no-speech` for a format with no VO or dialogue, `--logo-at <s>` for
+     each mid-video logo, and any gate flags the recipe's instructions name (a chat format's
+     reading holds need a longer `--max-freeze-s`). Exit 0 PASS / 2 FAIL / 3 ERROR. It
      checks size, hook, pacing, dead air, black frames, the kit logo on the end card
      (a wrong, redrawn or favicon logo fails) and the palette. **Then open the sheet it writes
      and judge every line of its `judge_on_sheet`:** captions/CTA/logo outside the red safe
@@ -705,8 +718,10 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, re-composite the
    end card from the real logo file, rebuild captions) and re-run the passes — only a clean pass
    proceeds to pinning. **At most 2 repair rounds.** If a pass still fails after them, do NOT pin
-   and do NOT present the video as finished: publish it (4.4) with `quality_status: "blocked"` and
-   the failing checks in the report, set `workflow_stage: "blocked"`, and tell the user plainly in
+   and do NOT present the video as finished: upload it (4.4) and close the row with exactly
+   `video_render_run { brand_id, project_id, render: { render_id, status: "complete",
+   workflow_stage: "blocked", quality_status: "blocked", repair_pass_count: 2, output_url,
+   thumbnail_url, quality_report } }` (the failing checks as `fail` in the report), and tell the user plainly in
    chat which checks failed, what you tried, and the choices (fix a specific thing, re-roll, or
    use it anyway). Pin it only if they say to use it anyway. The app shows a blocked render as
    "Needs attention". **This gate is universal: it runs from this skill for every format, so a
