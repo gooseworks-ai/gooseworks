@@ -343,7 +343,7 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
   it('never regenerates the logo and refuses a favicon-grade logo', () => {
     expect(local).toMatch(/never generate, redraw, re-letter or restyle a logo/);
     expect(local).toMatch(/favicon-grade, or the file's long side is under\s+256 px/);
-    expect(local).toMatch(/omit `--logo`, and judge the\s+text on the sheet/);
+    expect(local).toMatch(/omit `--logo` and judge the\s+text on the sheet/);
   });
 
   it('runs review-finished-ad on every master, caps repairs at 2, and warns instead of passing off a failure', () => {
