@@ -13,7 +13,7 @@ import { getEntrySkillNames } from './master-skill';
  *
  * The rule now, in order of authority:
  *
- *   1. **Known entry-skill slugs** (`gooseworks`, `goose-ads`, `goose-video`,
+ *   1. **Known entry-skill slugs** (`gooseworks`, `goose-ads`, `goose-video`, `goose-video-angles`,
  *      `goose-product-photos`, plus the legacy `ads-remix` name) are ours by
  *      definition — they are the dirs the CLI itself writes on every install, so
  *      we delete them regardless of whether they carry a stamp. This is what
