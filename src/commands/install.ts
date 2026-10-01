@@ -163,8 +163,8 @@ Examples:
       }
     }
 
-    // GOOSE-3718: say up front whether THIS machine can assemble a video ad
-    // locally, so the choice the goose-video skill offers is a real one.
+    // GOOSE-3718: every video ad is made on this machine, so say up front
+    // whether this one can make them.
     reportLocalVideoToolchain();
 
     const agentNames = targetAgents.map((a) =>
@@ -213,10 +213,10 @@ function reportLocalVideoToolchain(): void {
     return; // a broken probe must never fail the install
   }
   if (missing.length === 0) {
-    logger.success('Local video toolchain ready (ffmpeg, ffprobe, Playwright Chromium, Node): you can choose local assembly when ordering a video ad.');
+    logger.success('Local video toolchain ready (ffmpeg, ffprobe, Playwright Chromium, Node): this machine can make video ads.');
     return;
   }
-  logger.info('Local video assembly is optional. Video ads render on the GooseWorks server unless you enable it. To enable it here:');
+  logger.info('Video ads are made on this machine and need these tools. To make them here, install:');
   for (const c of missing) {
     logger.warn(`  ${c.label}  →  ${c.fix}`);
   }

@@ -39,6 +39,7 @@ program.addCommand(stylesCommand);
 program.addCommand(formatsCommand);
 program.addCommand(doctorCommand);
 program.addCommand(logCommand);
-program.addCommand(videoLocalCommand);
+// Hidden: serves only paused server video orders (see commands/video-local.ts).
+program.addCommand(videoLocalCommand, { hidden: true });
 
 program.parse();

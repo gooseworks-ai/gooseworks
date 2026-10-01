@@ -16,7 +16,7 @@
     },
     {
       "skill": "goose-video",
-      "when": "Order a **video** ad in chat — \"make me a video ad for <brand>\", a UGC / iMessage / explainer video; renders on the GooseWorks server",
+      "when": "Make a **video** ad — \"make me a video ad for <brand>\", a UGC / iMessage / explainer video; made on this machine (Claude Code, Codex, Cursor). A hosted chat can show formats but not make the video",
       "how": "Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.",
       "delivery": "entry"
     },
