@@ -57,7 +57,8 @@ fields, files, polling, models and pipeline steps is for YOU. Never pass it on t
 Example. Instead of a dozen lines about render tools, scripts, uploads and portraits, send:
 "Got it: warm tone, home podcast studio, Brielle as the skeptic and Mark as the believer." then
 "Script and voices are done (about 34 seconds)." then "Ready for you to review: the script, voices,
-both hosts and the ending. The full video uses about N credits once you approve: <link>".
+both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
+here and I'll make the full video (about N credits)."
 
 ## Prerequisite — the GooseWorks MCP server is REQUIRED
 
