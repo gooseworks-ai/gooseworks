@@ -1415,6 +1415,11 @@ Its \`video_project_read\` returns a top-level \`remix\` block
 - **\`remix.direction\` is its approved review set** (scenes and lines, set/look notes, take prompts,
   captions, music, voice). Start your review set from it instead of the template's defaults; it
   already carries every change that customer made to the template.
+- **\`remix.direction.implementation\`, when present, is HOW it was made**: the pipeline and the model
+  each step used, the style and negative prompts, the character and per-scene still/motion prompts
+  with their guards, voice and music settings, the mix, and \`fixes\` (what went wrong and how it was
+  fixed). Reuse the same models, style/negative prompts and guards, rewrite the prompts' subjects for
+  this brand, and apply every \`fix\` up front so you don't repeat the same mistake.
 - **Rewrite everything for THIS brand.** "[source brand]", "[source product]", "[link]", "[email]"
   and "[code]" mark the other customer's details: never write them, and never reuse their claims,
   numbers, URLs, offers or CTA. Every product, claim, name, image and CTA comes from this brand's
@@ -1753,8 +1758,17 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    script_drafts, script } } }\` with the final lines, final pieces (mark generated takes as done, not
    "not generated yet") and the settings you used. The project keeps this, not your chat: it is
    what the app shows, and what a Community remix of this video copies. Instructions that live only
-   in this conversation are lost when it ends.
-6. Pin it — only a \`passed\` render (or a \`blocked\` one the user said to use anyway):
+   in this conversation are lost when it ends. **Keep the approved detail**: never shorten a piece to a
+   summary (e.g. per-scene prompts or their "no shake / no letterbox" guards). Only update what changed.
+6. **Save the production manifest** — HOW you made it, so the next run (or a remix) starts from what
+   worked instead of rediscovering it: \`video_project_upsert { brand_id, project_id, patch: { production:
+   { version: 1, pipeline: [{ step, model, purpose?, settings? }], style: { prompt, negative, notes? },
+   characters: [{ name, prompt }], scenes: [{ id, line, still_prompt, motion_prompt, duration_s }],
+   voice: { voice_id, name, model, settings }, music: { prompt, model, length_s }, assembly: { … },
+   fixes: [{ problem, fix }], notes? } } }\`. Use the exact models and prompts you sent (full text, guards
+   included), and list every fix you had to make (e.g. "VO ran 47s → tightened four lines, voice 1.08x";
+   "hair drifted → restated the hair colour"). No URLs, keys or raw logs; it must stay under 48 KB.
+7. Pin it — only a \`passed\` render (or a \`blocked\` one the user said to use anyway):
    \`video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }\`,
    then return the \`app_url\` + \`brand_url\` (from the project) verbatim. Never end on just "done" or
    a file path.
