@@ -65,7 +65,8 @@ fields, files, polling, models and pipeline steps is for YOU. Never pass it on t
 Example. Instead of a dozen lines about render tools, scripts, uploads and portraits, send:
 "Got it: warm tone, home podcast studio, Brielle as the skeptic and Mark as the believer." then
 "Script and voices are done (about 34 seconds)." then "Ready for you to review: the script, voices,
-both hosts and the ending. The full video uses about N credits once you approve: <link>".`;
+both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
+here and I'll make the full video (about N credits)."`;
 
 /**
  * THE registry of entry skills (GOOSE-3190) — one list, four consumers:
@@ -1161,8 +1162,8 @@ and usually \`GW_PROJECT_ID\`.
   defaults yourself from the project brief and the recipe, and record them in the review set.
   Ask in the chat **only for a true taste call** (a creative choice the brief and recipe leave
   open and that changes the ad), never for a mechanical or recoverable decision. The Step 3
-  approval still applies: the approval may arrive in this chat or from the app's
-  "Approve & render" button.
+  approval still applies: ask for it in this chat and record the yes with
+  \`video_project_upsert patch.approve\`.
 - **Outputs:** keep working files under \`/tmp/gooseworks-video/<project_id>/\` (local disk — never
   the s3fs workspace mount, which is slow and can drop writes); anything the user must see goes to
   the project via \`media_upload\` (never leave the result only in the sandbox). Every paid piece is
@@ -1344,10 +1345,14 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
    The brand read (Step 1 item 3) and \`brand-rules.json\` (Step 1.7) are per BRAND: do them once for
    the batch and copy the file into each concept's \`working/\`. The read is ~90K characters.
 2. Mirror EVERY concept's review set (Step 3's \`video_project_upsert patch.script\` per project),
-   then stop for **ONE** approval that covers all concepts — show the per-concept credit estimate
-   and the batch total. Set the batch to \`review\` (\`video_project_upsert { brand_id, batch_id,
-   patch: { batch: { status: "review" } } }\`).
-3. On approval, set the batch to \`rendering\` and run **Step 4 (the expensive render)** for each
+   then stop for **ONE** approval in this chat that covers all concepts — show the per-concept
+   credit estimate and the batch total. Set the batch to \`review\` (\`video_project_upsert
+   { brand_id, batch_id, patch: { batch: { status: "review" } } }\`).
+3. On an explicit yes, record it ONCE for the whole batch: \`video_project_upsert { brand_id, batch_id,
+   patch: { approve: { user_quote: "<their exact words>" } } }\`. Check its \`not_ready\` list is
+   empty (a concept listed there has no saved review set: save it, show it, ask again). If they
+   approve only some concepts ("1 and 3 are good, redo 2"), record each approved one with its
+   \`project_id\` instead, and redo the rest. Then set the batch to \`rendering\` and run **Step 4 (the expensive render)** for each
    concept **sequentially** (finish Concept 1's master before starting Concept 2 — one machine can't
    render them in parallel). Deliver each (Step 5). When every concept is pinned, set the batch to
    \`complete\`. A concept the Step 4.3 gate leaves \`blocked\` cannot be pinned (a batch concept
@@ -1526,7 +1531,8 @@ recorder's \`NODE_PATH\` at it — local machines only; in a sandbox that format
 
 ## Step 3 — assemble the review set, then get ONE approval (before the expensive render)
 
-This is a **review-once** flow: put the whole review set in the app, get ONE approval, then run the
+This is a **review-once** flow: save the whole review set to the project, get ONE approval in this
+chat, then run the
 expensive render + any remaining paid work end-to-end. Never spend on the expensive render before
 approval, and don't drip pieces out one at a time and re-pause.
 
@@ -1599,19 +1605,28 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
      for the podcast shape, or pass the readable \`script\` string).
    **Label every ingredient** ("Hook image", "End card", "Voiceover", "Host A", "HER"). The upsert
    writes no render and costs no credits — it just populates the review panel.
-3. **STOP for ONE approval.** Hand the user the project's \`app_url\` and tell them to review the
-   pieces there and hit **"Approve & render"** (that button gives them a short message to paste
-   back). In a **GooseWorks sandbox** the chat you are in is the app: post a short summary in
-   plain words (what's ready to review, total credits, what the full video will show) plus \`app_url\`, and accept approval from this chat or from
-   the button. Do NOT render until that approval arrives. If they want changes, regenerate the
-   affected ingredient, upsert the review set again, say it's refreshed, and wait for a fresh
-   approval. Only AFTER the approval do Step 4. A single approval authorises the WHOLE remaining
+3. **STOP for ONE approval, in this chat.** Post the review set here in plain words: the script,
+   each piece and what it costs, the total credits, and what the full video will show. Add one
+   line with the project's \`app_url\` (in a batch, the batch's link): "You can also review your
+   recipe ingredients in the app: <app_url>" (skip it in a GooseWorks sandbox, where this chat is
+   the app). The app is only a place to look. Never tell the user to approve in the app or to
+   press a button there; approval happens in this chat. Then ask whether to go ahead.
+   On an explicit yes ("approved", "go", "looks good, render it"), record it before anything else:
+   \`video_project_upsert { brand_id, project_id, patch: { approve: { user_quote: "<their exact
+   words>" } } }\` (a batch: Batch mode, step 3). A single project outside a batch returns
+   \`approval_not_required: true\`: their yes is enough, go on. Never record an approval they did
+   not give.
+   Do NOT render until it is recorded. If they want changes, regenerate the affected ingredient,
+   upsert the review set again (this clears that concept's earlier approval), say it's refreshed,
+   and ask again. Only AFTER the approval is recorded do Step 4. A single approval authorises the WHOLE remaining
    chain — generate every paid piece, render, self-QC, publish — with NO further pauses (that is
    exactly why every paid prompt must already be in the panel).
 
 ## Step 4 — render, report stages, publish
 
-1. **Open the render row FIRST** — right after the Step 3 approval, before any paid generation:
+1. **Open the render row FIRST** — right after recording the Step 3 approval, before any paid
+   generation (if this returns \`approval_required\`, the approval is missing or was cleared: go
+   back to Step 3 and ask in this chat, don't retry):
    \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }\` (no \`dry_run\`; returns
    \`render_id\`) → keep \`render_id\`, then mark it running:
    \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "running",
@@ -1826,7 +1841,8 @@ FAL storage proxy. Never pass a \`render-file\` URL to a provider — it needs a
 - **Toolchain before spend** — \`gooseworks doctor\` (CLI) or the manual check; stop with the exact
   fix if anything is missing.
 - **Assemble the whole review set first**, mirror it with \`video_project_upsert patch.script\`, and
-  get ONE approval BEFORE the expensive render (review-once).
+  get ONE approval in this chat, recorded with \`patch.approve\`, BEFORE the expensive render
+  (review-once). Never send the user to the app to approve; the app is only for reviewing.
 - **Show the REAL cheap pieces; PROMPT only the expensive render.** Generate the FREE + CHEAP-paid
   pieces (≤ ~100 credits — stills, creator frame, end card, short VO/music) and mirror the real
   assets; put ONLY the expensive video take/render in the panel as its exact prompt. That prompt
