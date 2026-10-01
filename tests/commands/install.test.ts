@@ -349,8 +349,8 @@ describe('install command', () => {
     expect(help).toContain('gooseworks install --claude --with goose-graphics');
   });
 
-  // GOOSE-3718: the choice goose-video offers is only real if the customer
-  // knows whether their machine can take it.
+  // GOOSE-3718: every video ad is made on the customer's machine, so the
+  // install says up front whether this one can make them.
   describe('local video toolchain summary', () => {
     const { runDoctorChecks } = jest.requireMock('../../src/commands/doctor') as { runDoctorChecks: jest.Mock };
 

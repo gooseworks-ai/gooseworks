@@ -7,7 +7,12 @@ import { executeNextCaptionClaim } from '../lib/video-local-captions';
 import { createCaptionRuntime, createCaptionTransport } from '../lib/video-local-runtime';
 import * as logger from '../utils/logger';
 
-/** Narrow local worker. goose-video runs it after a terminal-host customer picks local assembly (GOOSE-3718). */
+/**
+ * Narrow local worker for server-rendered video orders (GOOSE-3718). Those
+ * orders are paused (gooseworks-app server-video-orders.ts) and goose-video no
+ * longer runs this, so the command is hidden from --help. Kept so it works again
+ * if server orders are turned back on; client formats never use it.
+ */
 export const videoLocalCommand = new Command('video-local')
   .description('Run a server-vetted local video node (experimental)');
 

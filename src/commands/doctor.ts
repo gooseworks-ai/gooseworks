@@ -21,9 +21,9 @@ function onPath(bin: string): boolean {
 }
 
 /**
- * The local captions worker (`gooseworks video-local captions`) burns subtitles
- * with libass and encodes with libx264. An ffmpeg without either passes a bare
- * `which ffmpeg` and then fails mid-render, so check the build, not the path.
+ * Local video renders burn subtitles with libass and encode with libx264. An
+ * ffmpeg without either passes a bare `which ffmpeg` and then fails mid-render,
+ * so check the build, not the path.
  */
 function ffmpegBuild(): { ok: boolean; detail: string } {
   if (!onPath('ffmpeg')) return { ok: false, detail: 'ffmpeg is not on PATH' };
@@ -78,7 +78,7 @@ export interface DoctorCheck {
 
 /**
  * The checks behind `gooseworks doctor`, reusable by `install` and by anything
- * that wants to know whether THIS machine can assemble a video locally
+ * that wants to know whether THIS machine can make a video ad
  * (GOOSE-3718). Pure process probes: no network, nothing written.
  */
 export function runDoctorChecks(opts: { includeAuth?: boolean } = {}): DoctorCheck[] {
@@ -121,11 +121,12 @@ export function runDoctorChecks(opts: { includeAuth?: boolean } = {}): DoctorChe
 
 /**
  * `gooseworks doctor` — verify the local prerequisites for making VIDEO ads on
- * this machine: the goose-video-local renderer (Playwright records the mockup,
- * ffmpeg stitches/mixes) and the goose-video local captions worker. Also
- * checks auth + that the GooseWorks MCP server is wired, since both read/write
- * the project over MCP. Exits non-zero if anything is missing so the agent's
- * preflight can relay the fix and stop, or offer the server instead.
+ * this machine with goose-video-local (Playwright records the mockup, ffmpeg
+ * stitches/mixes/burns captions). Also checks auth + that the GooseWorks MCP
+ * server is wired, since the renderer reads/writes the project over MCP. Every
+ * video ad is made locally now (server orders are paused), so this exits
+ * non-zero if anything is missing: the agent's preflight relays the fix and
+ * stops before creating a project.
  */
 export const doctorCommand = new Command('doctor')
   .description('Check local prerequisites for video ad rendering (ffmpeg, Playwright Chromium, Node) + auth/MCP')
@@ -150,10 +151,10 @@ export const doctorCommand = new Command('doctor')
     }
     logger.info('');
     if (allOk) {
-      logger.success('All set — this machine can render video ads locally (goose-video-local) and assemble captions for server orders (goose-video, execution_mode: local).');
+      logger.success('All set — this machine can make video ads (goose-video-local).');
     } else {
       logger.warn(
-        'Some prerequisites are missing. Fix the items above, then re-run: gooseworks doctor. Video ads still render on the GooseWorks server without them.',
+        'Some prerequisites are missing. Video ads are made on this machine, so fix the items above before starting one, then re-run: gooseworks doctor.',
       );
       process.exitCode = 1;
     }

@@ -91,7 +91,7 @@ describe('skills/master-skill', () => {
       expect(content).toContain('goose-graphics');
     });
 
-    it('routes video orders to goose-video and existing app projects to goose-video-local', () => {
+    it('routes new video ads to goose-video and existing app projects to goose-video-local', () => {
       expect(content).toContain('goose-video');
       expect(content).toContain('goose-video-local');
     });
@@ -297,8 +297,9 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
   });
 });
 
-// GOOSE-3677: goose-video is the server-rendered ORDERING flow; the local-render
-// runtime lives on, under its own name, for the app's existing projects/batches.
+// GOOSE-3677: goose-video is the client-side format picker (server ordering is
+// paused); the local-render runtime makes the video, for new projects and the
+// app's existing projects/batches.
 describe('skills/getGooseVideoLocalSkillContent', () => {
   const local = getGooseVideoLocalSkillContent();
 
