@@ -388,10 +388,13 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
   MUST process every concept, not just the first** — dropping concepts 2..N is the #1 batch bug.
 
 **Loop shape (one agent, sequential, ONE approval for the whole batch):**
-1. Run **Step 1 + Step 1.5 + Step 2 + Step 3-assemble** for EACH concept project (each has its own
-   `project_id`, brief, `GW_PROJECT_ID` and `working/` folder — never cross-write between concepts).
-   The brand read (Step 1 item 3) and `brand-rules.json` (Step 1.7) are per BRAND: do them once for
-   the batch and copy the file into each concept's `working/`. The read is ~90K characters.
+1. Run **Step 1 + Step 1.5 + Step 2 + Step 2.5 + Step 3-assemble** for EACH concept project (each
+   has its own `project_id`, brief, `GW_PROJECT_ID` and `working/` folder — never cross-write
+   between concepts). The brand read (Step 1 item 3) and `brand-rules.json` (Step 1.7) are per
+   BRAND: do them once for the batch and copy the file into each concept's `working/`. The read is
+   ~90K characters. Step 2.5's buyer quotes and angle list are per brand too: build them once, and
+   give every concept whose angle is `auto` a DIFFERENT angle from that list, so the batch is N
+   different ads, not one ad N times.
 2. Mirror EVERY concept's review set (Step 3's `video_project_upsert patch.script` per project),
    then stop for **ONE** approval in this chat that covers all concepts — show the per-concept
    credit estimate and the batch total. Set the batch to `review` (`video_project_upsert
@@ -581,6 +584,40 @@ recorder's `NODE_PATH` at it — local machines only; in a sandbox that format s
 > **Migration note:** older phone-mockup formats (`imessage` / `chatgpt` / `apple-notes`) whose DB
 > recipe does not yet carry `atoms` / `instructions` still hold the legacy `recipe.thread` payload;
 > migrate them to this shape (capabilities + instructions in the DB) — do not reintroduce a CLI map.
+
+## Step 2.5 — write the words with `write-video-ad-script` (before any paid step)
+
+A script written straight from the brief sounds like every other ad. Every format whose ad has
+words (voiceover, dialogue, a chat thread, on-screen lines, lyrics) gets its script from
+**`write-video-ad-script`**: `catalog_fetch { type: "skill", slug: "write-video-ad-script" }`
+(or `gooseworks fetch write-video-ad-script`), then follow it now. It builds three different
+concepts from what the brand's buyers actually say and the beat sheet of an ad that already
+works, filters them (a rule check, then a second opinion from a non-Claude model: about 2
+credits, no need to ask), and takes the strongest into Step 3. The other two go into the Step 3
+review as one-line alternatives the user can swap to. **No extra pause:** the Step 3 approval
+stays the one approval.
+
+- **The skill can't be fetched** (not in the catalog yet, or the fetch fails): write the script
+  from the recipe and the brief as before and carry on; Step 3's brand check still applies.
+  Don't mention it to the user.
+- **The recipe still owns the shape** (beats, speakers, timings, word limits, on-screen rules);
+  the skill owns how the words get written. Where the recipe's instructions say how a line must
+  be written, follow them inside the skill's method.
+- **Already decided is the frame, never asked twice:** a recipe choice whose answer sets the
+  script (`script_angle`, `angle`, `story`, `hook_angle`, `story_shape`… any choice whose
+  `sets` includes the script), `creative_brief.angle` or `.hook`, a batch concept's angle, an idea
+  picked from `ad-angle-miner`, a remix's direction. The three concepts all work inside it
+  (different person, pain or proof); when it fixes the whole angle, write one concept and vary the
+  hooks.
+- **Its one question rides in Step 2's choices round.** When the brand has no saved buyer quotes
+  (the skill says where they are saved), the skill needs paid buyer research: add that single yes/no
+  ("read your buyers' reviews and comments first, about N credits?") to the choices round. Never a
+  separate round.
+- **The user's own lines** (in the brief or the chat) are kept verbatim: run only its rule check
+  in report-only mode, and raise only what changes something for them.
+- **They ask to choose** ("show me a few scripts"): show the three concepts (angle and hook, one
+  line each) and let them pick before Step 3.
+- **No words** in the format apart from the end card: skip this step.
 
 ## Step 3 — assemble the review set, then get ONE approval (before the expensive render)
 
