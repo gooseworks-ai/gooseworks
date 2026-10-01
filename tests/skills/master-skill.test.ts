@@ -311,10 +311,28 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
 
   it('saves the final review set before pinning, so post-approval changes are kept', () => {
     const save = local.indexOf('Save the final review set BEFORE pinning');
-    const pin = local.indexOf('6. Pin it');
+    const pin = local.indexOf('7. Pin it');
     expect(save).toBeGreaterThan(-1);
     expect(pin).toBeGreaterThan(save);
     expect(local).toMatch(/ANY change the user asked for in this chat/);
+    // GOOSE-3851: the final save keeps the approved detail instead of summarising it.
+    expect(local).toMatch(/Keep the approved detail\*\*: never shorten a piece to a\s+summary/);
+  });
+
+  // GOOSE-3851: HOW the video was made is saved with the project, and a remix reuses it.
+  it('saves the production manifest before pinning, with models, full prompts and fixes', () => {
+    const manifest = local.indexOf('Save the production manifest');
+    const pin = local.indexOf('7. Pin it');
+    expect(manifest).toBeGreaterThan(local.indexOf('Save the final review set BEFORE pinning'));
+    expect(pin).toBeGreaterThan(manifest);
+    expect(local).toMatch(/patch: \{ production:\s+\{ version: 1, pipeline: \[\{ step, model/);
+    expect(local).toMatch(/exact models and prompts you sent \(full text, guards\s+included\)/);
+    expect(local).toMatch(/list every fix you had to make/);
+  });
+
+  it('starts a remix from the source implementation and applies its fixes', () => {
+    expect(local).toMatch(/`remix\.direction\.implementation`, when present, is HOW it was made/);
+    expect(local).toMatch(/apply every `fix` up front/);
   });
 
   // GOOSE-3758: the brand's saved rules reach the video, and corrections are saved back.
