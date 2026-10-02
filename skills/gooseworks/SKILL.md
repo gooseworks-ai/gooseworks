@@ -212,7 +212,9 @@ tool or silently relabel research or your inference as something the user said.
 The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
 instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
 schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
-`patch.facts`. Preserve unrelated instructions when proposing a merged replacement.
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
 
 | User answer | Canonical write |
 | --- | --- |
@@ -274,7 +276,9 @@ scope writes there. The tags and metadata above record purpose and provenance; *
 grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
 footage, face, product, testimonial or claims in a new ad without independently verified permission.
 
-Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
 formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
 Pass it with the brand rules into the existing video workflow. A one-video request overrides a
 default for that project; it does not silently rewrite the brand's standing preference.

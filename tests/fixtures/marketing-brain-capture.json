@@ -69,6 +69,38 @@
       "reject": ["Registers kind=reference at brand scope", "Treats tags as enforceable rights", "Copies the competitor's footage or claims", "Asks what they like despite the supplied explanation"]
     },
     {
+      "name": "accepted taste proposals remain production direction",
+      "skill": "goose-video-local",
+      "request": "Make our next ad with the video taste proposal I accepted in the app.",
+      "initial_state": {
+        "brand_id": "brand-a",
+        "kit": {
+          "instructions": "Keep the logo visible.\nVideo preference: prefer slow cuts and quiet voices.\nAlways say Made for busy parents."
+        },
+        "learnings": [
+          {
+            "kind": "dont",
+            "text": "Never claim it cures insomnia.",
+            "source": "user"
+          }
+        ],
+        "accepted_proposal": {
+          "field_path": "instructions",
+          "status": "accepted"
+        }
+      },
+      "acceptance": [
+        "Reads the accepted Video preference entry from kit.instructions into the taste brief, even without a matching learning row.",
+        "Uses slow cuts and quiet voices in scene and voice direction, preserving the logo instruction as production direction.",
+        "Only Made for busy parents enters must_say; the prohibited cure claim enters never_say. No production direction is spoken."
+      ],
+      "reject": [
+        "Copies slow cuts or quiet voices into spoken dialogue",
+        "Requires the narrator to say Keep the logo visible",
+        "Ignores accepted kit.instructions preferences because no learning exists"
+      ]
+    },
+    {
       "name": "resume, duplicate and failed-readback handling",
       "skill": "goose-video-local",
       "request": "Remember that pronunciation we discussed: pronounce Acme as ak-mee. Also keep the video example already saved. Make only this current video shorter.",

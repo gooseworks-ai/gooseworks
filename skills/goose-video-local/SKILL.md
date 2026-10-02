@@ -504,15 +504,17 @@ not your memory of the chat:
 }
 ```
 
+- **Video taste is direction, not dialogue.** Before mapping brand rules, extract entries
+  prefixed `Video preference:` from both `learnings` and `kit.instructions` into the verified
+  taste brief, including accepted proposals. They govern pacing, voices, captions, visuals and
+  format choice; do not copy them into `must_say` / `never_say` or read them aloud. Carry the
+  brief into the choices, scene planning and review.
 - **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
   `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
   `Pronounce "<term>" as "<say_as>"` (straight or curly quotes) → `pronunciations`. Add `kit.instructions` (free-text
-  standing rules) to `must_say` / `never_say` as they read.
-- **Video taste is direction, not dialogue.** Extract learnings prefixed `Video preference:`
-  into the verified taste brief before the mapping above. They govern pacing, voices, captions,
-  visuals and format choice; do not copy them into `must_say` / `never_say` or read them
-  aloud. Carry the brief into the choices, scene planning and review. A required spoken line or
-  prohibited claim remains its own ordinary `must` / `dont` rule.
+  standing rules) only when they require actual spoken wording or prohibit a claim. Production
+  directions stay in the brief. A required spoken line or prohibited claim remains its own
+  ordinary `must` / `dont` rule.
 - **Which product.** The one the brief names (`creative_brief.productName`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
   brand. Product lists often hold other brands' items or old ads saved as products: if more than
@@ -588,7 +590,9 @@ tool or silently relabel research or your inference as something the user said.
 The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
 instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
 schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
-`patch.facts`. Preserve unrelated instructions when proposing a merged replacement.
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
 
 | User answer | Canonical write |
 | --- | --- |
@@ -650,7 +654,9 @@ scope writes there. The tags and metadata above record purpose and provenance; *
 grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
 footage, face, product, testimonial or claims in a new ad without independently verified permission.
 
-Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
 formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
 Pass it with the brand rules into the existing video workflow. A one-video request overrides a
 default for that project; it does not silently rewrite the brand's standing preference.

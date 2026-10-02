@@ -227,7 +227,9 @@ tool or silently relabel research or your inference as something the user said.
 The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
 instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
 schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
-`patch.facts`. Preserve unrelated instructions when proposing a merged replacement.
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
 
 | User answer | Canonical write |
 | --- | --- |
