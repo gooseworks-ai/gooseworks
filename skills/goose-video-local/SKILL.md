@@ -160,7 +160,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Template recipe | `catalog_fetch { type: "template", slug: <source_sample_id> }` | `get_ad_template` |
 | Capability skill (atom) + its scripts | `catalog_fetch { type: "skill", slug }` | `gooseworks fetch <slug>` / `fetch_skill` |
 | Brand kit, products, rules | `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` | `brand_get_context` / `get_brand_kit` |
-| Save a brand rule (a correction) | `brand_update { brand_id, patch: { facts: [{ id?, kind, text }] } }` | none |
+| Save a brand rule (a correction) | `brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact words>, patch: { facts: [{ id?, kind, text }] } }` | none |
 | Mirror the review set | `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts, script } } }` | `update_ad_project_script` |
 | Project assets | `video_project_upsert { …, patch: { assets: [...] } }` | `update_ad_project_asset` |
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
@@ -453,8 +453,13 @@ for a field the brief leaves empty. Map the fields you WILL honor:
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's `researchStatus` (or the brand's `research_status`) is `complete`, REUSE it —
    never re-research. If not, run brand research first (`catalog_fetch { type: "skill", slug:
-   "brand-research" }`, follow it, then `brand_update { brand_id, patch: { kit_patch,
-   finalize_research: true } }`) before continuing. Then do Step 1.7.
+   "brand-research" }`) and follow its stored-pack workflow. Only when that verified pack is
+   saved in the supported research workspace, finalize with
+   `brand_update { brand_id, patch: { finalize_research: true } }`, then read the brand back.
+   Never send raw research JSON through `kit_patch`: the public tool accepts only the existing
+   `video_lab` asset slot there. If there is no verified stored pack, submit researched facts
+   through typed `patch.knowledge` / `patch.kit` as pending agent proposals; do not pretend
+   research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a `remix` block)
 
@@ -571,7 +576,8 @@ do not ask for approval again. A direction for this one video stays in its brief
 is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
 
 Use the **live registered schema**. Where supported, call `brand_update` with
-`knowledge_intent: "user_correction"` and `user_statement` containing the user's own answer.
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
 For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
 before/after change from your prior read and proposed value; retain the returned proposal IDs
 and say the user must accept it in the app. Link only a review surface actually returned by a

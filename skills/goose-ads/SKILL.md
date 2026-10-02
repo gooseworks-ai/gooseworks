@@ -214,7 +214,8 @@ do not ask for approval again. A direction for this one video stays in its brief
 is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
 
 Use the **live registered schema**. Where supported, call `brand_update` with
-`knowledge_intent: "user_correction"` and `user_statement` containing the user's own answer.
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
 For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
 before/after change from your prior read and proposed value; retain the returned proposal IDs
 and say the user must accept it in the app. Link only a review surface actually returned by a

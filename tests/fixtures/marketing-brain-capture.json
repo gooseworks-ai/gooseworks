@@ -1,6 +1,25 @@
 {
   "summary": "Forward-test scenarios for existing entry skills. These fixtures describe observable acceptance; automated package parity does not prove conversational execution.",
+  "public_brand_update_contract": {
+    "source": "app-mcp-server/mcp-tools/brand/schemas.ts and brand-update.tool.ts, GOOSE-3878 final public contract",
+    "default_intent": "agent_proposal",
+    "correction_only_patches": ["facts", "onboarding"],
+    "required_correction_arguments": ["knowledge_intent", "user_statement"],
+    "raw_patch_fields": ["video_lab"]
+  },
   "scenarios": [
+    {
+      "name": "research finalizes its stored pack without a raw fact patch",
+      "skill": "goose-video-local",
+      "request": "Make the next video for this brand; its research is not complete yet.",
+      "initial_state": { "brand_id": "brand-a", "research_status": "running", "verified_stored_research_pack": true },
+      "acceptance": [
+        "Uses the existing research stored-pack workflow and finalizes with patch.finalize_research only; reads the finalized brand back.",
+        "Does not send positioning, audience, products or proofPoints through kit_patch; that public field accepts video_lab only.",
+        "If a verified pack is unavailable, uses typed agent proposals and does not claim they are approved or that research is complete."
+      ],
+      "reject": ["Sends a raw kit_patch with finalize_research", "Claims pending research facts are canonical without acceptance", "Claims finalization without readback"]
+    },
     {
       "name": "known answers before a gap-only interview",
       "skill": "gooseworks",
