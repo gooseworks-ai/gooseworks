@@ -196,8 +196,9 @@ ad and forget it:
      an inferred structured field uses agent-proposal intent instead. Follow the live schema.
    - `media_upload` / `media_update` — the user's own product and reference photos.
    Inspect each live schema and send only the fields needed for the confirmed change.
-5. **Read back what changed** before saying saved, then continue the task. (Logo, colors, and fonts are owned by the
-   backend research pass — prefer `update_ad_brand` / the research flow for those, not free text.)
+5. **Read back what changed** before saying saved, then continue the task. (Use the research
+   workflow for researched logo/colors/fonts; explicit user edits use only fields supported by
+   the canonical tool schema and the correction policy below.)
 
 This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
 able to flow back into the kit — with their ok — instead of being lost.
@@ -414,9 +415,10 @@ run through the `gooseworks` CLI (`gooseworks fetch` / `gooseworks call`), like 
 - **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
   copy a competitor's distinctive expression.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
-  mid-task, check it against `get_brand_kit` and, with their ok, persist it via `update_brand_kit`
-  / `upsert_brand_product` / `add_brand_product_image` so it sticks for future ads. Ask first;
-  never silently mutate the kit.
+  mid-task, compare it with `brand_read`. Save explicitly authorized corrections through
+  `brand_update` with correction intent and the user's exact statement, or the user's own
+  images through `media_upload`; read back before saying saved. Proposed improvements stay
+  pending. Ask only when it is unclear whether a one-ad direction should apply to future ads.
 - **Record feedback** — when the user reacts to a generated image, inspect and call
   `set_creative_feedback` so the quality loop learns.
 - **Plan mode is opt-in** — only use the live approval option, then `list_ad_approvals` and

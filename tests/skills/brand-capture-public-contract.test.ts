@@ -13,6 +13,7 @@ const contract = fixture.public_brand_update_contract as {
   correction_only_patches: string[];
   required_correction_arguments: string[];
   raw_patch_fields: string[];
+  legacy_mutations_without_correction_arguments: string[];
 };
 
 function brandUpdateExamples(content: string): string[] {
@@ -91,6 +92,13 @@ describe('brand capture public call examples', () => {
   it.each(getEntrySkills())('$name has no brand_update example that violates the public contract', ({ content }) => {
     for (const example of brandUpdateExamples(content)) {
       expect({ example, errors: contractErrors(example) }).toEqual({ example, errors: [] });
+    }
+  });
+
+  it.each(getEntrySkills())('$name uses canonical mutations that can carry the required correction evidence', ({ content }) => {
+    const inlineCode = Array.from(content.matchAll(/`([^`]+)`/g), (match) => match[1]);
+    for (const alias of contract.legacy_mutations_without_correction_arguments) {
+      expect(inlineCode.some((example) => new RegExp(`\\b${alias}\\b`).test(example))).toBe(false);
     }
   });
 

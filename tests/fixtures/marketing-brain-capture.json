@@ -5,7 +5,8 @@
     "default_intent": "agent_proposal",
     "correction_only_patches": ["facts", "onboarding"],
     "required_correction_arguments": ["knowledge_intent", "user_statement"],
-    "raw_patch_fields": ["video_lab"]
+    "raw_patch_fields": ["video_lab"],
+    "legacy_mutations_without_correction_arguments": ["update_brand_kit", "upsert_brand_product", "delete_brand_product", "update_ad_brand", "update_brand_onboarding"]
   },
   "scenarios": [
     {

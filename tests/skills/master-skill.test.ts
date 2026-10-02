@@ -234,12 +234,13 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('set_creative_feedback');
   });
 
-  it('reconciles brand facts back into the kit — ask first, then update', () => {
+  it('reconciles authorized user corrections and leaves inferred improvements pending', () => {
     expect(ads).toContain('Keep the brand kit in sync');
-    expect(ads).toContain('update_brand_kit');
-    expect(ads).toContain('upsert_brand_product');
-    // Must ask permission, not silently mutate the kit.
-    expect(ads).toMatch(/ASK first|Ask first|ASK before writing|never silently mutate/i);
+    expect(ads).toContain('knowledge_intent: "user_correction"');
+    expect(ads).toContain('knowledge_intent: "agent_proposal"');
+    expect(ads).toContain('read back before saying saved');
+    expect(ads).not.toContain('update_brand_kit');
+    expect(ads).not.toContain('upsert_brand_product');
   });
 });
 
