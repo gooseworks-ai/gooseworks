@@ -277,8 +277,9 @@ the GooseWorks catalog; direct MCP clients do not need a local CLI.
 
 Production instructions are maintained in Goose Studio's existing control-plane
 harness. Tested Studio changes publish a generated package to `goose-skills`.
-Each run saves its fetched package and content hash; resuming uses that saved package
-instead of changing instructions during production. An unavailable package blocks
+Each run saves its fetched package in its durable workspace. Project metadata keeps
+only the version, hash and package location; resuming uses the saved package instead
+of changing instructions during production. An unavailable package blocks
 generation. New runs use the currently published catalog version.
 
 ### Keeping skills up to date
