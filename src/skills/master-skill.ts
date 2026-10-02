@@ -24,6 +24,7 @@
  * demand via `gooseworks fetch <slug>`, so they're always current.
  */
 import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
+import { CUSTOM_VIDEO_SKILL_CONTENT } from './custom-video-skill';
 
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
@@ -85,6 +86,7 @@ export function getEntrySkills(): EntrySkill[] {
     { name: 'goose-ads', content: getGooseAdsSkillContent() },
     { name: 'goose-video', content: getGooseVideoSkillContent() },
     { name: 'goose-video-local', content: getGooseVideoLocalSkillContent() },
+    { name: 'make-custom-video', content: getMakeCustomVideoSkillContent() },
     { name: 'goose-product-photos', content: getGooseProductPhotosSkillContent() },
   ];
 }
@@ -789,7 +791,11 @@ server render to order: \`video_catalog_list\` returns only client-side formats
 (\`execution: "client"\`), and a server-format project is refused with \`format_unavailable\`.
 
 **The whole job happens in the chat.** Choosing, approving and receiving the video all happen here,
-as text and links the customer can click. The app is for **payment and nothing else**.
+as text and links the customer can click. Template-remix work uses this chat. Custom videos use Studio for script and ingredient approval, preview replacement and saved feedback, then return to the same Growth conversation.
+
+## Custom videos: route before formats
+
+For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch \`catalog_fetch { type: "skill", slug: "make-custom-video" }\` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in Studio before paid production. Do not force a template choice or import the reference as a finished video.
 
 ## Route first: is this a new video?
 
@@ -1017,6 +1023,7 @@ media-proxy calls, or a review-set upload. For a batch, inspect each child proje
   \`job_cancel\`.
 - **A client-side format or template remix** (a \`source_sample_id\` / \`template_id\` and none of
   the above) → continue below.
+- **Generated custom video** (\`project.custom_video_state.mode === "generate"\`) → fetch \`catalog_fetch { type: "skill", slug: "make-custom-video" }\`, follow it on this same project and stop following the template flow. Studio records independent authenticated script/ingredient approvals and a budget; do not report approval_not_required.
 - **Unclear** → read again or ask; never guess and generate. A copy prompt that names this skill
   is not proof of which kind the project is.
 
@@ -2074,4 +2081,9 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - **Approval is the hand-off to ads.** Remind the user that only **approved** photos reach the brand
   kit / ad workflow; archived ones never do.
 `;
+}
+
+/** Studio production phases, adapted to persisted GooseWorks reviews and billing. */
+export function getMakeCustomVideoSkillContent(): string {
+  return CUSTOM_VIDEO_SKILL_CONTENT.replace("\n# Make Custom Video", `\n${CUSTOMER_TALK}\n\n# Make Custom Video`);
 }

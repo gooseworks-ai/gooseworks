@@ -246,7 +246,7 @@ describe('skills/getEntrySkills', () => {
   // a hand-maintained SKILL.md on disk that this list never emitted or refreshed.
   it('vendors all five entry skills (not ads-remix)', () => {
     const names = getEntrySkills().map(s => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'make-custom-video', 'goose-product-photos']);
     expect(getEntrySkillNames()).toEqual(names);
   });
 
@@ -604,5 +604,26 @@ describe('every entry skill tells the agent how to talk to the customer', () => 
     expect(body).toContain('## How to talk to the customer');
     expect(body).toMatch(/Update them only at milestones/);
     expect(body).toMatch(/Never "the cheap\s+pieces" or "the expensive render"/);
+  });
+});
+
+describe('make-custom-video production package', () => {
+  it('ships the adapter, independent gates and real assembly helper in the entry body', () => {
+    const { getMakeCustomVideoSkillContent } = require('../../src/skills/master-skill');
+    const body = getMakeCustomVideoSkillContent();
+    expect(body).toContain('expected_plan_revision');
+    expect(body).toContain('preview_estimate');
+    expect(body).toContain('custom_review.ingredients_approved');
+    expect(body).toContain('claim');
+    expect(body).toContain('def assemble(plan, output)');
+    expect(body).toContain('shorter than its reviewed timeline');
+    expect(body).toContain('confirmed');
+    expect(body).not.toContain('/Users/');
+  });
+  it('routes original briefs and references before template-only execution', () => {
+    const { getGooseVideoSkillContent, getGooseVideoLocalSkillContent } = require('../../src/skills/master-skill');
+    expect(getGooseVideoSkillContent()).toContain('make-custom-video');
+    expect(getGooseVideoLocalSkillContent()).toContain('make-custom-video');
+    expect(getGooseVideoLocalSkillContent()).toContain('custom_video_state');
   });
 });
