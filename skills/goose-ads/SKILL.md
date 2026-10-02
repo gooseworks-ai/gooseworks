@@ -177,7 +177,7 @@ immediately.
   competitor ad or an image found online.
 - `get_ad_project` / `append_project_message` — inspect a creative / leave a note on its thread.
 
-## Keep the brand kit in sync — reconcile, then update (ASK first)
+## Keep the brand kit in sync — reconcile, then save or propose
 
 The brand kit is the source of truth every generation reads. During ANY task, when the user
 **tells you something about the brand or asks to change something brand-level** — a different
@@ -185,23 +185,78 @@ tagline, audience, voice, a product's name/price/description, "our logo is X", "
 anymore", a new product photo — treat it as a possible kit update, don't just use it for this one
 ad and forget it:
 
-1. **Check it against the kit.** Call `get_brand_kit` for the active brand and see whether what the user said
+1. **Check it against the kit.** Call `brand_read` with `kit` and `learnings` for the active brand and see whether what the user said
    matches, is missing from, or contradicts the kit.
 2. **If it's already in the kit and matches** — nothing to do; proceed.
-3. **If it's new or different — ASK before writing.** Confirm in one line: *"Want me to update
-   the brand kit so this sticks for future ads?"* Only persist on a yes (or when the user clearly
-   asked you to change the brand). Don't silently mutate the kit, and don't nag on trivia.
-4. **Persist with the write tools** (partial — only the fields you pass are touched; each edit is
-   recorded as a user override that later re-research won't clobber):
-   - `update_brand_kit` — structured brand fields.
-   - `upsert_brand_product` / `delete_brand_product` — products.
-   - `add_brand_product_image` / `remove_brand_reference_image` — product and reference photos.
+3. **If it's new or different**, persist an explicit request to correct or remember the brand
+   through the policy below; that request is already authorization. For an ambiguous one-ad
+   direction, ask once whether it should stick. Agent-derived suggestions become proposals.
+4. **Persist with the canonical write tools** (send only changed fields):
+   - `brand_update` with explicit user-correction intent — structured brand fields or products;
+     an inferred structured field uses agent-proposal intent instead. Follow the live schema.
+   - `media_upload` / `media_update` — the user's own product and reference photos.
    Inspect each live schema and send only the fields needed for the confirmed change.
-5. **Confirm what changed** and continue the task. (Logo, colors, and fonts are owned by the
-   backend research pass — prefer `update_ad_brand` / the research flow for those, not free text.)
+5. **Read back what changed** before saying saved, then continue the task. (Use the research
+   workflow for researched logo/colors/fonts; explicit user edits use only fields supported by
+   the canonical tool schema and the correction policy below.)
 
 This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
 able to flow back into the kit — with their ok — instead of being lost.
+
+## Save durable brand answers, then verify them
+
+Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
+(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call `brand_update` with
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact `knowledge_updates` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
+schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | `patch.knowledge: { audience/positioning/voice: <answer> }` (one actual key). During onboarding, `brand_onboarding { action: "review_research", review: { action: "correct", field, value } }` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | `patch.facts: [{ kind: "insight", text }]`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | `patch.facts: [{ kind: "must", text }]`; pronunciation is exactly `Pronounce "<term>" as "<say_as>"`. |
+| Forbidden claim, word or visual | `patch.facts: [{ kind: "dont", text }]`. |
+| Durable visual, voice or pacing preference | `patch.facts: [{ kind: "do", text }]` for a preference; `dont` for an avoidance; `template_hint` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing `ad_brand_learning` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned `id` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use `brand_read` with `kit`, `learnings`
+or `onboarding` as appropriate, or `brand_onboarding { action: "status", brand_id }` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.
 
 ## Picking source ads — use approved sources, not the retired catalog
 
@@ -362,9 +417,10 @@ run through the `gooseworks` CLI (`gooseworks fetch` / `gooseworks call`), like 
 - **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
   copy a competitor's distinctive expression.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
-  mid-task, check it against `get_brand_kit` and, with their ok, persist it via `update_brand_kit`
-  / `upsert_brand_product` / `add_brand_product_image` so it sticks for future ads. Ask first;
-  never silently mutate the kit.
+  mid-task, compare it with `brand_read`. Save explicitly authorized corrections through
+  `brand_update` with correction intent and the user's exact statement, or the user's own
+  images through `media_upload`; read back before saying saved. Proposed improvements stay
+  pending. Ask only when it is unclear whether a one-ad direction should apply to future ads.
 - **Record feedback** — when the user reacts to a generated image, inspect and call
   `set_creative_feedback` so the quality loop learns.
 - **Plan mode is opt-in** — only use the live approval option, then `list_ad_approvals` and

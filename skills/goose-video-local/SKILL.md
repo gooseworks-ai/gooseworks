@@ -160,7 +160,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Template recipe | `catalog_fetch { type: "template", slug: <source_sample_id> }` | `get_ad_template` |
 | Capability skill (atom) + its scripts | `catalog_fetch { type: "skill", slug }` | `gooseworks fetch <slug>` / `fetch_skill` |
 | Brand kit, products, rules | `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` | `brand_get_context` / `get_brand_kit` |
-| Save a brand rule (a correction) | `brand_update { brand_id, patch: { facts: [{ id?, kind, text }] } }` | none |
+| Save a brand rule (a correction) | `brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact words>, patch: { facts: [{ id?, kind, text }] } }` | none |
 | Mirror the review set | `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts, script } } }` | `update_ad_project_script` |
 | Project assets | `video_project_upsert { …, patch: { assets: [...] } }` | `update_ad_project_asset` |
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
@@ -453,8 +453,13 @@ for a field the brief leaves empty. Map the fields you WILL honor:
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's `researchStatus` (or the brand's `research_status`) is `complete`, REUSE it —
    never re-research. If not, run brand research first (`catalog_fetch { type: "skill", slug:
-   "brand-research" }`, follow it, then `brand_update { brand_id, patch: { kit_patch,
-   finalize_research: true } }`) before continuing. Then do Step 1.7.
+   "brand-research" }`) and follow its stored-pack workflow. Only when that verified pack is
+   saved in the supported research workspace, finalize with
+   `brand_update { brand_id, patch: { finalize_research: true } }`, then read the brand back.
+   Never send raw research JSON through `kit_patch`: the public tool accepts only the existing
+   `video_lab` asset slot there. If there is no verified stored pack, submit researched facts
+   through typed `patch.knowledge` / `patch.kit` as pending agent proposals; do not pretend
+   research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a `remix` block)
 
@@ -499,10 +504,17 @@ not your memory of the chat:
 }
 ```
 
+- **Video taste is direction, not dialogue.** Before mapping brand rules, extract entries
+  prefixed `Video preference:` from both `learnings` and `kit.instructions` into the verified
+  taste brief, including accepted proposals. They govern pacing, voices, captions, visuals and
+  format choice; do not copy them into `must_say` / `never_say` or read them aloud. Carry the
+  brief into the choices, scene planning and review.
 - **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
   `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
   `Pronounce "<term>" as "<say_as>"` (straight or curly quotes) → `pronunciations`. Add `kit.instructions` (free-text
-  standing rules) to `must_say` / `never_say` as they read.
+  standing rules) only when they require actual spoken wording or prohibit a claim. Production
+  directions stay in the brief. A required spoken line or prohibited claim remains its own
+  ordinary `must` / `dont` rule.
 - **Which product.** The one the brief names (`creative_brief.productName`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
   brand. Product lists often hold other brands' items or old ads saved as products: if more than
@@ -535,7 +547,7 @@ When the user corrects something about the BRAND in chat — how a name is said,
 not be made, a product fact, a visual rule ("never use red", "the logo goes top-left") — save it
 in the SAME turn, before anything else:
 
-`brand_update { brand_id, patch: { facts: [{ kind, text }] } }`
+`brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact correction>, patch: { facts: [{ kind, text }] } }`
 
 | Correction | `kind` | `text` |
 |---|---|---|
@@ -547,10 +559,107 @@ in the SAME turn, before anything else:
 
 - If it changes an EXISTING rule (a new pronunciation for the same term), update that rule by id
   (`facts: [{ id: <learning_id>, text }]`) instead of adding a second one.
-- Then tell the user in one line: "Saved to your brand: every future video will use it." Update
+- Use the correction intent and user's statement when supported, as described below. Read
+  `brand_read` learnings back and verify the rule and source before claiming it was saved.
+- Then tell the user in one line: "Saved to your brand for future videos." Update
   `working/brand-rules.json` and apply the rule to THIS video too.
 - A one-off note about this video ("make it shorter", "use the blue background here") is NOT a
   brand rule: don't save it.
+
+## Save durable brand answers, then verify them
+
+Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
+(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call `brand_update` with
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact `knowledge_updates` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
+schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | `patch.knowledge: { audience/positioning/voice: <answer> }` (one actual key). During onboarding, `brand_onboarding { action: "review_research", review: { action: "correct", field, value } }` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | `patch.facts: [{ kind: "insight", text }]`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | `patch.facts: [{ kind: "must", text }]`; pronunciation is exactly `Pronounce "<term>" as "<say_as>"`. |
+| Forbidden claim, word or visual | `patch.facts: [{ kind: "dont", text }]`. |
+| Durable visual, voice or pacing preference | `patch.facts: [{ kind: "do", text }]` for a preference; `dont` for an avoidance; `template_hint` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing `ad_brand_learning` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned `id` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use `brand_read` with `kit`, `learnings`
+or `onboarding` as appropriate, or `brand_onboarding { action: "status", brand_id }` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.
+
+## Video taste — reuse examples and preferences
+
+When asked to capture video taste, or when the user volunteers a durable video preference,
+first read the saved learnings and `media_list { brand_id, scope: "brand", scope_id: brand_id,
+tags: ["video-taste"], limit: 100 }`. Follow `next_cursor` before deciding an example is absent.
+Do not force a taste interview before an unrelated task or ask again for an existing preference.
+
+Save what the user has already supplied first. Then ask only the missing useful question, for
+example: "What do you like about this video—its pace, voice, captions, or look?" An inaccessible
+link can still be saved as a link with the user's explanation; do not pretend you watched it.
+
+- **Direct clip or video file:** register with `media_upload { brand_id, scope: "brand",
+  scope_id: brand_id, kind: "video", source: { type: "url", url }, tags: ["video-taste", "reference-only"],
+  metadata: { purpose: "video_taste", source_url: url, provenance: "user", captured_at: <ISO timestamp>,
+  preference: <the user's explanation> } }`. For a file use the live file/bytes upload flow and
+  `media_confirm` after a presigned upload. Registration of a URL does not copy or inspect it.
+- **Instagram/post/page link:** the same registration with `kind: "document"`; it is a link
+  bookmark, not downloadable footage or an indexed transcript. Do not fabricate a direct clip URL.
+- **Preferences:** save the user's reasons, likes and dislikes through the facts mapping above.
+  Read and preserve existing facts before updating one. Do not invent `video_preferences` or
+  new `video_lab` keys; the live kit patch accepts only its documented asset fields.
+- **Deduplicate:** reuse a matching returned media row, then `media_update` its title/tags/metadata
+  if needed; preserve existing metadata and tags. Do not create another row for the same example.
+  Read back with `media_list` and `brand_read` learnings before claiming it was saved.
+  Check the returned row belongs to this brand: URL deduplication may return another brand's
+  existing row. Do not relabel that row or claim success unless the current brand's scoped read
+  actually returns it. Report an unsaved association if no supported attach path is available.
+
+Never put third-party taste examples into kit reference images: `kind: "reference"` at brand
+scope writes there. The tags and metadata above record purpose and provenance; **they do not
+grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
+footage, face, product, testimonial or claims in a new ad without independently verified permission.
+
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
+Pass it with the brand rules into the existing video workflow. A one-video request overrides a
+default for that project; it does not silently rewrite the brand's standing preference.
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
