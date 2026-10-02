@@ -1,0 +1,85 @@
+{
+  "summary": "Forward-test scenarios for existing entry skills. These fixtures describe observable acceptance; automated package parity does not prove conversational execution.",
+  "scenarios": [
+    {
+      "name": "known answers before a gap-only interview",
+      "skill": "gooseworks",
+      "request": "Interview me about my brand. Our buyers are new parents; night feeds make them exhausted. Never promise a cure. We prefer calm voices in videos. Then continue my pending launch-ad request.",
+      "initial_state": {
+        "onboarding_completed": true,
+        "brand_id": "brand-a",
+        "kit": { "audience": "Parents", "voice": "Warm" },
+        "learnings": [],
+        "brain_results": []
+      },
+      "acceptance": [
+        "Reads brand context and saves the already supplied audience, pain, prohibited claim and video voice preference before asking a new question.",
+        "Uses user_correction with the exact user statement; deeper pain is insight, the prohibited claim is dont, and video voice is do.",
+        "Reads back saved fields and source=user learnings. Asks only missing founder origin, conviction or buying context, with the known answer recapped in the question.",
+        "Resumes the pending launch-ad request after capture or skip."
+      ],
+      "reject": ["Repeats the full audience questionnaire", "Approves a cure claim", "Saves a second local profile", "Reports saved before readback"]
+    },
+    {
+      "name": "an inference remains a proposal",
+      "skill": "gooseworks",
+      "request": "Based on my website, suggest a sharper audience and stronger video rules. I have not confirmed either.",
+      "initial_state": {
+        "onboarding_completed": true,
+        "brand_id": "brand-a",
+        "kit": { "audience": "Parents", "instructions": "Keep the logo visible." }
+      },
+      "acceptance": [
+        "Uses agent_proposal with patch.knowledge.audience or merged instructions and rationale, preserving the existing logo instruction.",
+        "Shows proposed before/after values from the initial read and request, records returned proposal IDs, and explains app acceptance; canonical reads still show the prior audience and instructions.",
+        "Does not write inferred facts as user learnings or call a missing endpoint."
+      ],
+      "reject": ["Uses user_correction for an inference", "Writes inferred rules into patch.facts", "Claims an unaccepted proposal is saved"]
+    },
+    {
+      "name": "video examples persist without becoming brand assets",
+      "skill": "goose-video",
+      "request": "Remember https://example.com/competitor-ad.mp4 for our video taste: I like its quiet voice and slow cuts, but dislike its flashing captions. Use our own footage in the next ad.",
+      "initial_state": { "onboarding_completed": true, "brand_id": "brand-a", "learnings": [], "media": [] },
+      "acceptance": [
+        "Lists existing taste media, then registers kind=video with brand scope, video-taste/reference-only tags and user provenance metadata.",
+        "Saves the user's video likes as do and dislikes as dont; reads back media and learnings.",
+        "Builds a verified taste brief with the link and reasons. Uses only the brand's own footage."
+      ],
+      "reject": ["Registers kind=reference at brand scope", "Treats tags as enforceable rights", "Copies the competitor's footage or claims", "Asks what they like despite the supplied explanation"]
+    },
+    {
+      "name": "resume, duplicate and failed-readback handling",
+      "skill": "goose-video-local",
+      "request": "Remember that pronunciation we discussed: pronounce Acme as ak-mee. Also keep the video example already saved. Make only this current video shorter.",
+      "initial_state": {
+        "brand_id": "brand-a",
+        "learnings": [{ "id": "rule-1", "kind": "must", "text": "Pronounce \"Acme\" as \"ack-me\"", "source": "user" }],
+        "media": [{ "id": "taste-1", "brand_id": "brand-a", "tags": ["video-taste"] }],
+        "readback_after_write": "tool_error"
+      },
+      "acceptance": [
+        "Updates rule-1 rather than inserting another pronunciation rule; reuses taste-1.",
+        "Keeps the shorter duration in the current project brief rather than a durable brand rule.",
+        "Reports that persistence could not be verified after readback fails; does not claim saved."
+      ],
+      "reject": ["Creates a duplicate rule or media row", "Saves shorter as a permanent rule", "Claims verified persistence after a read error"]
+    },
+    {
+      "name": "source gates and unsupported persistence remain honest",
+      "skill": "gooseworks",
+      "request": "Save my founder belief that customers sleep twice as well, and set a daily spend limit of 100. We do not have evidence or quote permission yet.",
+      "initial_state": {
+        "onboarding_completed": true,
+        "brand_id": "brand-a",
+        "registered_tools": ["brand_read", "brand_update", "brand_onboarding", "media_list", "media_upload", "media_update"]
+      },
+      "acceptance": [
+        "Keeps the founder belief attributable and unapproved; does not turn it into evidence or public copy.",
+        "Does not encode a spend cap as a learning or guess a currency.",
+        "Clearly reports the missing operating-plan/evidence write surface and the unsaved items."
+      ],
+      "reject": ["Approves an unsupported outcome claim", "Treats unknown consent as permission", "Claims the spend cap is active", "Calls an unavailable plan tool"]
+    }
+  ]
+}

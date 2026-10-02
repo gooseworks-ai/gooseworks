@@ -139,12 +139,14 @@ describe('skills/master-skill', () => {
       expect(content).toContain('Do not print, enumerate, or summarize');
       expect(content).toMatch(/After `done`[\s\S]*brand_onboarding \{ action: "status" \}/i);
       expect(content).toContain('First campaign');
-      expect(content).toContain('Where you are');
+      expect(content).not.toContain('**Where you are** — Ask');
       expect(content).toContain('Review');
       expect(content).toContain('Channels');
-      expect(content).toContain('under_1k');
-      expect(content).toContain('revenue');
-      expect(content).toContain('90-day goal');
+      expect(content).toContain('under_10k');
+      expect(content).toContain('not_sure');
+      expect(content).toContain('revenue / 90-day-goal / `save_progress` screen is retired');
+      expect(content).toContain('taste: { hearted_ids, skipped_ids, complete }');
+      expect(content).toContain('review: { action: "correct", field, value }');
       expect(content).not.toContain('Who makes your ad creatives right now?');
       expect(content).not.toContain('Where did you find GooseWorks?');
       expect(content).not.toContain('connect_tools');
@@ -354,7 +356,8 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
 
   it('saves a brand correction with brand_update facts in the same turn', () => {
     expect(local).toContain('Brand corrections stick');
-    expect(local).toMatch(/brand_update \{ brand_id, patch: \{ facts: \[\{ kind, text \}\] \} \}/);
+    expect(local).toMatch(/brand_update \{ brand_id, knowledge_intent: "user_correction", user_statement:[^\n]+patch: \{ facts: \[\{ kind, text \}\] \} \}/);
+    expect(local).toMatch(/Read\s+`brand_read` learnings back and verify/);
     expect(local).toMatch(/is NOT a\s+brand rule: don't save it/);
   });
 
