@@ -141,7 +141,7 @@ Examples — all of these route to \`goose-ads\`, not the data flow: "remix this
 
 ## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
 
-**Call \`brand_get_context\` before the first substantive step of ANY task**, and before you route to a specialist skill. It is a cheap, read-only call that returns the brand's canonical facts:
+**Call \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` before the first substantive step of ANY task**, and before you route to a specialist skill. It is a cheap, read-only call that returns the brand's canonical facts:
 
 | It returns | Use it for |
 | --- | --- |
@@ -156,7 +156,7 @@ Then:
 1. **Pass what it returned INTO the routed skill.** When you hand off to \`goose-ads\`, \`goose-video\`, \`goose-product-photos\`, \`goose-graphics\`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
 2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
-4. **If \`brand_get_context\` is unavailable** (no MCP connection), fall back to \`get_brand_kit\` for the selected brand and treat its fields the same way. If neither is available, tell the user the GooseWorks MCP connection is needed rather than guessing brand facts.
+4. **If \`brand_read\` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose \`brand_get_context\` / \`get_brand_kit\`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
 5. **Treat it as read-only.** Writing brand facts back is the reconciliation flow in \`goose-ads\` (ask first, then \`update_brand_kit\`) — not something this router does.
 
 Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
@@ -232,7 +232,7 @@ Brand Growth is a collection inside the normal skill catalog, not a command or i
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch the named public skill before following it. You already called \`brand_get_context\` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as \`scrapecreators-api\` and \`transcript-intelligence\` are dependencies, not user-facing results.
+Fetch the named public skill before following it. You already called \`brand_read\` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as \`scrapecreators-api\` and \`transcript-intelligence\` are dependencies, not user-facing results.
 
 For a multi-part request, repeat this routing check before each new job. Fetch and follow the
 closest outcome skill first (for example, \`comment-mining\`, \`creator-profile-teardown\`, or
@@ -362,7 +362,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 
 ## Rules
 
-0. **Call \`brand_get_context\` before anything else**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
+0. **Call \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` before anything else**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost
 3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
@@ -432,7 +432,7 @@ no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reje
 ## Start from the brand context — don't re-ask what it already answers
 
 If the \`gooseworks\` router handed you brand context, USE IT. If you were invoked directly, call
-\`brand_get_context\` first (falling back to \`get_brand_kit\` for the selected brand). It already
+\`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` first. It already
 answers most of what the flows below would otherwise ask the user:
 
 - **Which product to feature** → \`products[]\`. Offer the real catalog entries; never guess a
@@ -829,7 +829,7 @@ MCP tools; \`goose-video-local\` does the making.
 
 - \`brand_list\`: brand NAME → \`brand_id\`. Pass \`query\` when they named one.
 - \`brand_create { name, website_url }\`: only when the customer asks to add a brand that isn't there. Free.
-- \`brand_get_context { brand_id }\`: research status, logo, product photos.
+- \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\`: research status, logo, product photos.
 - \`video_catalog_list { kind: "formats", brand_id }\`: every format that can be made. Each row has \`template_id\`, \`card.description\`, \`card.best_for\`, \`card.needs\` and \`examples[]\` (demo videos). The response carries a \`client_formats_note\` with the machine checks.
 - \`video_project_upsert { brand_id, name, format: <template_id> }\`: creates the project. Free.
 - \`catalog_fetch { type: "skill", slug: "goose-video-local" }\`: the skill that makes it.
@@ -1988,7 +1988,7 @@ HTTP/file fallback.
 ## Start from the brand context — don't re-ask what it already answers
 
 If the \`gooseworks\` router handed you brand context, USE IT. If you were invoked directly, call
-\`brand_get_context\` yourself first. It answers most of the setup questions below, so **do not ask
+\`brand_read\` yourself first. It answers most of the setup questions below, so **do not ask
 the user for them**:
 
 - **Which product?** — the context's \`products[]\` are the real catalog entries. Offer them; never
@@ -2052,7 +2052,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 ## Workflow — shoot a product
 
-1. **Load the brand context** (\`brand_get_context\`, or reuse what the router passed you) and
+1. **Load the brand context** (\`brand_read\`, or reuse what the router passed you) and
    **resolve the brand + product.** \`list_ad_brands\` → \`brand_id\`. \`list_brand_products\` → pick a
    \`product_id\` from the catalog you already know about. If the product genuinely isn't there,
    \`import_product\` (poll \`get_product_import\`).
@@ -2070,7 +2070,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - **Never invent product facts.** The backend grounds the shot on the product's real images; don't
   describe a product you can't see.
 - **Use the brand context instead of interviewing the user.** Product, audience, voice, positioning,
-  logo/colors/fonts all come from \`brand_get_context\` / the brand kit. Ask only for the shot
+  logo/colors/fonts all come from \`brand_read\` / the brand kit. Ask only for the shot
   category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm \`count\` / \`quality\` before
   \`generate_product_photos\` — it reserves credits.

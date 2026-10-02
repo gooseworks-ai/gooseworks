@@ -65,7 +65,7 @@ HTTP/file fallback.
 ## Start from the brand context — don't re-ask what it already answers
 
 If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
-`brand_get_context` yourself first. It answers most of the setup questions below, so **do not ask
+`brand_read` yourself first. It answers most of the setup questions below, so **do not ask
 the user for them**:
 
 - **Which product?** — the context's `products[]` are the real catalog entries. Offer them; never
@@ -129,7 +129,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 ## Workflow — shoot a product
 
-1. **Load the brand context** (`brand_get_context`, or reuse what the router passed you) and
+1. **Load the brand context** (`brand_read`, or reuse what the router passed you) and
    **resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
    `product_id` from the catalog you already know about. If the product genuinely isn't there,
    `import_product` (poll `get_product_import`).
@@ -147,7 +147,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - **Never invent product facts.** The backend grounds the shot on the product's real images; don't
   describe a product you can't see.
 - **Use the brand context instead of interviewing the user.** Product, audience, voice, positioning,
-  logo/colors/fonts all come from `brand_get_context` / the brand kit. Ask only for the shot
+  logo/colors/fonts all come from `brand_read` / the brand kit. Ask only for the shot
   category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm `count` / `quality` before
   `generate_product_photos` — it reserves credits.
