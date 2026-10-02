@@ -11,6 +11,9 @@ interface CatalogSkillResponse {
     description?: string | null;
     category?: string | null;
     content: string;
+    version?: string;
+    contentHash?: string | null;
+    metadata?: Record<string, unknown>;
     scripts?: Record<string, string>;
     files?: Record<string, string>;
     requiresSkills?: string[];
@@ -18,6 +21,9 @@ interface CatalogSkillResponse {
       slug: string;
       name: string;
       content: string;
+      version?: string;
+      contentHash?: string | null;
+      metadata?: Record<string, unknown>;
       scripts?: Record<string, string>;
       files?: Record<string, string>;
     }>;
