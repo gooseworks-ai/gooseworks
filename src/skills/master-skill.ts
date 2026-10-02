@@ -24,7 +24,7 @@
  * demand via `gooseworks fetch <slug>`, so they're always current.
  */
 import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
-import { CUSTOM_VIDEO_SKILL_CONTENT } from './custom-video-skill';
+import { CUSTOM_VIDEO_ADAPTER_CONTENT } from './custom-video-skill';
 
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
@@ -2244,7 +2244,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 `;
 }
 
-/** Studio production phases, adapted to persisted GooseWorks reviews and billing. */
+/** Thin GooseWorks connection to the catalog-published Studio harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_SKILL_CONTENT.replace("\n# Make Custom Video", `\n${CUSTOMER_TALK}\n\n# Make Custom Video`);
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n`);
 }

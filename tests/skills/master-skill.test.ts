@@ -611,16 +611,22 @@ describe('every entry skill tells the agent how to talk to the customer', () => 
   });
 });
 
-describe('make-custom-video production package', () => {
-  it('ships the adapter, independent gates and real assembly helper in the entry body', () => {
+describe('make-custom-video shared harness connection', () => {
+  it('fetches shared production while keeping the GooseWorks approval and storage contract', () => {
     const { getMakeCustomVideoSkillContent } = require('../../src/skills/master-skill');
     const body = getMakeCustomVideoSkillContent();
     expect(body).toContain('expected_plan_revision');
     expect(body).toContain('preview_estimate');
     expect(body).toContain('custom_review.ingredients_approved');
     expect(body).toContain('claim');
-    expect(body).toContain('def assemble(plan, output)');
-    expect(body).toContain('shorter than its reviewed timeline');
+    expect(body).toContain('requires_skills: [video-production-harness]');
+    expect(body).toContain('slug:"video-production-harness"');
+    expect(body).toContain('script_drafts.harness.content_hash');
+    expect(body).toContain('never fall back to a vendored playbook');
+    expect(body).toContain('every detailed step invoked by the orchestrator');
+    expect(body).not.toContain('def assemble(');
+    expect(body).not.toContain('### State 0');
+    expect(body).not.toContain('Canonical content SHA256');
     expect(body).toContain('confirmed');
     expect(body).not.toContain('/Users/');
   });
