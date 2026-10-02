@@ -181,6 +181,7 @@ known answer in that same question. "Skip" or "not sure" is valid. Examples, **o
 | Proof | "What evidence supports that result, and do we have permission to quote the customer?" Keep unsupported claims pending. |
 | Video taste | "Share a video you like and what you would keep or avoid: pace, voice, captions, or look." |
 
+Keep skipped or uncertain answers as gaps in the brief; do not save them as confirmed facts.
 Save each answered group and read it back before the next group. Stop when the requested capture
 is covered or the user skips; resume from canonical saved answers after interruption. Present a
 short brief containing verified answers, attribution, pending proposals and remaining gaps, then

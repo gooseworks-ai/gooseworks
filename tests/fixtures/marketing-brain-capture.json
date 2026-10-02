@@ -44,7 +44,7 @@
       "acceptance": [
         "Lists existing taste media, then registers kind=video with brand scope, video-taste/reference-only tags and user provenance metadata.",
         "Saves the user's video likes as do and dislikes as dont; reads back media and learnings.",
-        "Builds a verified taste brief with the link and reasons. Uses only the brand's own footage."
+        "Builds a verified taste brief with the link and reasons. Keeps Video preference learnings out of required or forbidden dialogue. Uses only the brand's own footage."
       ],
       "reject": ["Registers kind=reference at brand scope", "Treats tags as enforceable rights", "Copies the competitor's footage or claims", "Asks what they like despite the supplied explanation"]
     },

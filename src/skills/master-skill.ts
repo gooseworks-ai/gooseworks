@@ -347,6 +347,7 @@ known answer in that same question. "Skip" or "not sure" is valid. Examples, **o
 | Proof | "What evidence supports that result, and do we have permission to quote the customer?" Keep unsupported claims pending. |
 | Video taste | "Share a video you like and what you would keep or avoid: pace, voice, captions, or look." |
 
+Keep skipped or uncertain answers as gaps in the brief; do not save them as confirmed facts.
 Save each answered group and read it back before the next group. Stop when the requested capture
 is covered or the user skips; resume from canonical saved answers after interruption. Present a
 short brief containing verified answers, attribution, pending proposals and remaining gaps, then
@@ -1602,6 +1603,11 @@ not your memory of the chat:
   \`must\` / \`do\` → \`must_say\`, \`dont\` → \`never_say\`, and a \`must\` whose text reads
   \`Pronounce "<term>" as "<say_as>"\` (straight or curly quotes) → \`pronunciations\`. Add \`kit.instructions\` (free-text
   standing rules) to \`must_say\` / \`never_say\` as they read.
+- **Video taste is direction, not dialogue.** Extract learnings prefixed \`Video preference:\`
+  into the verified taste brief before the mapping above. They govern pacing, voices, captions,
+  visuals and format choice; do not copy them into \`must_say\` / \`never_say\` or read them
+  aloud. Carry the brief into the choices, scene planning and review. A required spoken line or
+  prohibited claim remains its own ordinary \`must\` / \`dont\` rule.
 - **Which product.** The one the brief names (\`creative_brief.productName\`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
   brand. Product lists often hold other brands' items or old ads saved as products: if more than
