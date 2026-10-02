@@ -606,3 +606,25 @@ describe('every entry skill tells the agent how to talk to the customer', () => 
     expect(body).toMatch(/Never "the cheap\s+pieces" or "the expensive render"/);
   });
 });
+
+
+describe('local video script research handoff', () => {
+  const content = getGooseVideoLocalSkillContent();
+  const strategy = content.slice(content.indexOf('## Step 2.5'), content.indexOf('## Step 3 —'));
+
+  it('carries the miner bank, selection and full recipe into strict script checks', () => {
+    expect(strategy).toContain('ad-angle-miner');
+    expect(strategy).toContain('video-angle-bank.v1');
+    expect(strategy).toContain('angle-context.json');
+    expect(strategy).toContain('strict rule check');
+    expect(strategy).toContain('selected angle id');
+    expect(strategy).toContain('available assets');
+  });
+
+  it('includes silent strategy and rejects silent quality degradation', () => {
+    expect(strategy).toContain('Skip speech writing and spoken checks, not the strategy step');
+    expect(strategy).toContain('Never report a failed check as a pass');
+    expect(strategy).not.toContain("Don't mention it to the user");
+    expect(strategy).not.toContain('skip this step');
+  });
+});
