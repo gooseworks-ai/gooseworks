@@ -267,6 +267,20 @@ Generation is billed to your GooseWorks credits **server-side**: `submit_remix_b
 the estimated cost up front and bills only the images that complete. There's no separate
 ad-credit balance. Use `estimate_remix_batch` (cost preview) and `gooseworks credits` (balance).
 
+### Original videos and the shared harness
+
+The installed `make-custom-video` entry connects GooseWorks projects, authenticated
+script and ingredient approvals, budgets, media storage and delivery to the shared
+`video-production-harness` catalog skill. It contains no production playbook or
+assembly code. CLI, direct MCP and Growth fetch the same production package through
+the GooseWorks catalog; direct MCP clients do not need a local CLI.
+
+Production instructions are maintained in Goose Studio's existing control-plane
+harness. Tested Studio changes publish a generated package to `goose-skills`.
+Each run saves its fetched package and content hash; resuming uses that saved package
+instead of changing instructions during production. An unavailable package blocks
+generation. New runs use the currently published catalog version.
+
 ### Keeping skills up to date
 
 - **Entry skills** (`gooseworks`, `goose-ads`) are vendored in the CLI. They're (re)installed
