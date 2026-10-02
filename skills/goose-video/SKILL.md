@@ -60,7 +60,11 @@ server render to order: `video_catalog_list` returns only client-side formats
 (`execution: "client"`), and a server-format project is refused with `format_unavailable`.
 
 **The whole job happens in the chat.** Choosing, approving and receiving the video all happen here,
-as text and links the customer can click. The app is for **payment and nothing else**.
+as text and links the customer can click. Template-remix work uses this chat. Custom videos use Studio for script and ingredient approval, preview replacement and saved feedback, then return to the same Growth conversation.
+
+## Custom videos: route before formats
+
+For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in Studio before paid production. Do not force a template choice or import the reference as a finished video.
 
 ## Route first: is this a new video?
 

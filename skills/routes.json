@@ -16,8 +16,14 @@
     },
     {
       "skill": "goose-video",
-      "when": "Make a **video** ad — \"make me a video ad for <brand>\", a UGC / iMessage / explainer video; made on this machine (Claude Code, Codex, Cursor). A hosted chat can show formats but not make the video",
+      "when": "Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain.",
       "how": "Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.",
+      "delivery": "entry"
+    },
+    {
+      "skill": "make-custom-video",
+      "when": "Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate Studio script and ingredient approvals are required",
+      "how": "Use the installed entry skill, or fetch make-custom-video through the catalog. Growth uses its sandbox and connected agents use their local tools.",
       "delivery": "entry"
     },
     {
@@ -151,6 +157,7 @@
     "goose-video",
     "goose-video-local",
     "influencer-prospecting",
+    "make-custom-video",
     "meta-ad-policy-checker",
     "meta-ads-analyzer",
     "outlier-post-finder",
