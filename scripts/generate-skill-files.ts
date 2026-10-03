@@ -16,10 +16,11 @@
  *
  *   npm run generate:skills
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getEntrySkills } from "../src/skills/master-skill";
+import { skillContentHash } from "../src/skills/releases";
 import { getRouteManifest } from "../src/skills/routes";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,3 +42,7 @@ const routesJson = `${JSON.stringify(getRouteManifest(), null, 2)}\n`;
 mkdirSync(skillsRoot, { recursive: true });
 writeFileSync(routesPath, routesJson, "utf-8");
 console.log(`wrote ${routesPath} (${routesJson.length} bytes)`);
+
+// Compare published release bytes, rather than trusting the running CLI stamp.
+const packageVersion = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")).version;
+writeFileSync(join(skillsRoot, "manifest.json"), JSON.stringify({package: "gooseworks", version: packageVersion, entries: Object.fromEntries(getEntrySkills().map(skill => [skill.name, skillContentHash(skill.content)]))}, null, 2) + "\n", "utf8");

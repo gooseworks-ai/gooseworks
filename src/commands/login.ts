@@ -9,6 +9,7 @@ import { isAgentInstalled } from '../agents/detect';
 import * as logger from '../utils/logger';
 import { API_BASE } from '../config';
 import { recordAttributionRef } from '../auth/attribution';
+import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 
 /**
  * Refresh vendored entry skills on login for users who have already set up
@@ -17,8 +18,11 @@ import { recordAttributionRef } from '../auth/attribution';
  * rewriting unchanged ones, then re-symlinks Claude so the new skill is visible.
  * Bootstrapping a first-time install stays the job of `gooseworks install`.
  */
-function refreshEntrySkillsOnLogin(): void {
+async function refreshEntrySkillsOnLogin(): Promise<void> {
   if (!getInstalledSkills().includes('gooseworks')) return;
+  const freshness = await readEntryFreshnessReport();
+  await reportEntrySkillFreshness(freshness);
+  if (freshness.cli === 'outdated') return;
   const changed = installManagedEntrySkills(getEntrySkills())
     .filter((r) => r.action === 'installed')
     .map((r) => r.name);
@@ -58,7 +62,7 @@ export const loginCommand = new Command('login')
     if (existing) {
       logger.success(`Already logged in as ${existing.email}`);
       await recordAttributionRef(existing.api_base || opts.apiBase, opts.ref, existing.api_key);
-      refreshEntrySkillsOnLogin();
+      await refreshEntrySkillsOnLogin();
       syncMcpRegistration();
       logger.info('Run "gooseworks logout" first to switch accounts.');
       return;
@@ -68,7 +72,7 @@ export const loginCommand = new Command('login')
       const result = await runOAuthFlow(opts.apiBase, opts.ref);
       await recordAttributionRef(opts.apiBase, opts.ref, result.api_key);
       logger.success(`Logged in as ${result.email}`);
-      refreshEntrySkillsOnLogin();
+      await refreshEntrySkillsOnLogin();
       syncMcpRegistration();
       showNextSteps();
     } catch (err: unknown) {
