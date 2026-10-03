@@ -85,6 +85,43 @@ video ideas mapped to formats and hands the picked ones to `goose-video-local`.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
 
+## Keep the selected connection for the whole run
+
+Call `account_whoami` on the connection that owns the brand/project before the first write.
+Keep `environment.name` and the public `environment.api_origin` with this run. Respect the
+user's selected production or staging connection. If multiple connections are available and
+none was selected, resolve that once. Missing or unknown identity is uncertainty, not
+permission to switch. Never infer the environment from credits, billing links or Node mode.
+
+Reads, project creation, uploads, generation, polling and final updates all use that same
+connection. If a production request fails, resume or report the failure on production;
+never retry it on staging or recreate the project there. Before retrying a timed-out write,
+read back the existing project or paid request on the selected connection.
+
+Local/CLI proxy origin must match `environment.api_origin`. If it differs, use the MCP
+relay on the selected connection (`GW_MEDIA_VIA=mcp`) before paid calls. Do not change
+credentials or API origins to recover a failed write. An explicit user-requested move is
+a separate operation, with the existing project and paid requests reconciled first.
+
+## Check assets for the selected format before spending
+
+For a template, read its structured `asset_readiness` from
+`video_catalog_list { kind: "formats", brand_id }`. `missing` names gaps;
+`needs_review` means suitability is unverified, including older recipes without
+structured requirements. `ready` describes assets only, not script or budget approval.
+For a custom video, derive requirements from its actual approved scenes.
+
+Inspect candidate files for the chosen product and format. A catalog photo can contain
+a pouch and stick, multiple products or a person; its existence or approved status does
+not make it a standalone packshot. Check object count, framing, readable print and real
+image bytes. A service conversation has no automatic packshot requirement.
+
+Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
+original, inspect the result and include it in the normal ingredient review. When no
+usable input exists, explain the gap before generation. Estimate any paid preparation
+separately before spending. Record the selected asset and inspection in the project
+review set; do not add a separate approval round.
+
 ## Inputs
 
 - A brand, usually named in the opening sentence. Resolved to `brand_id`; with one brand in the org it needs no input.
@@ -165,7 +202,7 @@ Order the rows by how well each format fits their answer. Judge fit from `card.d
 | **Also good** | Creator product review | An AI creator reviews your product to camera, holding it | a clean photo of the real product | [watch](https://…) |
 
 - **"What it looks like" is `card.description`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief.
-- **Needs** is `card.needs` in plain words. Judge logo and product photos from the `brand_list` row; treat anything you can't see as missing rather than make extra calls. A format that needs something the brand lacks goes last; don't hide it, don't suggest it.
+- **Needs** is `card.needs` in plain words, with the row's `asset_readiness` gaps or pending inspection. A format with missing required assets goes last; don't hide it, don't suggest it. Unknown suitability is “needs review,” not proof that a file is missing or usable. Inspect the selected format's candidates before spending.
 - **Match the product to the format.** A format built around a creator HOLDING a physical product is a poor fit for a software product; one built on a screen recording is a poor fit for a physical one. Say so in the row.
 - **Demo** is `examples[0].output_url`. When a format has none, write "no demo yet"; never leave it blank.
 - **Price:** say once, under the table, that each paid step (a creator still, a clip, a voice) is billed per call and approved before it runs. There is no single up-front quote.
