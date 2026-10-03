@@ -18,6 +18,7 @@ import { logCommand } from './commands/log';
 import { videoLocalCommand } from './commands/video-local';
 import { videoSaveCommand } from './commands/video-save';
 import { getVersion } from './version';
+import { skillsCommand } from './commands/skills';
 
 const program = new Command();
 program
@@ -30,6 +31,7 @@ program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 program.addCommand(whoamiCommand);
 program.addCommand(updateCommand);
+program.addCommand(skillsCommand);
 program.addCommand(creditsCommand);
 program.addCommand(searchCommand);
 program.addCommand(fetchCommand);

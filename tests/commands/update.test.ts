@@ -1,3 +1,8 @@
+jest.mock('../../src/commands/skills', () => ({
+  readEntryFreshnessReport: jest.fn().mockResolvedValue({cli: 'current'}),
+  reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../src/auth/credentials', () => ({
   getCredentials: jest.fn(),
 }));
@@ -59,6 +64,8 @@ import { configureCodex, configureCodexMcp } from '../../src/agents/codex';
 import { configureCursor, hasExistingCursorMcpEntry } from '../../src/agents/cursor';
 import { isAgentInstalled } from '../../src/agents/detect';
 import * as loggerModule from '../../src/utils/logger';
+import { readEntryFreshnessReport } from '../../src/commands/skills';
+import { installManagedEntrySkills, removeAllSkills } from '../../src/skills/installer';
 import { updateCommand } from '../../src/commands/update';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
@@ -202,4 +209,19 @@ describe('update command', () => {
 
     expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
   });
+  it('refuses to reinstall an outdated CLI bundle before any file or agent mutation', async () => {
+    mockGetCredentials.mockReturnValue(baseCreds);
+    (readEntryFreshnessReport as jest.Mock).mockResolvedValueOnce({cli: 'outdated'});
+    await expect(updateCommand.parseAsync(['node','test'])).rejects.toThrow('process.exit called');
+    expect(installManagedEntrySkills).not.toHaveBeenCalled();
+    expect(removeAllSkills).not.toHaveBeenCalled();
+    expect(mockConfigureClaude).not.toHaveBeenCalled();
+  });
+  it('preserves saved standalone recipes during a bundled entry refresh', async () => {
+    mockGetCredentials.mockReturnValue(baseCreds);
+    await updateCommand.parseAsync(['node','test']);
+    expect(removeAllSkills).not.toHaveBeenCalled();
+    expect(installManagedEntrySkills).toHaveBeenCalledWith(expect.any(Array),{overwriteModified:undefined});
+  });
+
 });
