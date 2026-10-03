@@ -417,8 +417,9 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
   it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
     // Local render lifecycle + the free in-app review tool.
     expect(local).toContain('Playwright');
-    // The classic false pass: the package resolves, the browser was never downloaded.
-    expect(local).toMatch(/Chromium is actually DOWNLOADED/);
+    // Readiness belongs to the fetched renderer, not the calling project's package/cache.
+    expect(local).toContain('gooseworks doctor --no-browser');
+    expect(local).toContain('gooseworks doctor --renderer-script');
     expect(local).toContain('node --version');
     // GOOSE-3726: canonical tools drive every step.
     expect(local).toContain('video_project_upsert { brand_id, project_id,\n   patch: { script: { script_drafts, script } } }');
@@ -442,6 +443,23 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('render-file?path=');
     // It is NOT the static backend-batch wrapper.
     expect(local).not.toContain('submit_remix_batch');
+  });
+
+  it('checks the selected fetched browser before script review or any paid ingredient', () => {
+    const fetched = local.indexOf('Save each fetched capability');
+    const selected = local.indexOf('**Selected browser readiness');
+    const script = local.indexOf('## Step 2.5');
+    expect(selected).toBeGreaterThan(fetched);
+    expect(selected).toBeLessThan(script);
+    expect(local).toContain('before ANY paid ingredient');
+    expect(local).toContain('including an HTML end-card renderer if used');
+    expect(local).toContain('NODE_PATH');
+    expect(local).toContain('PLAYWRIGHT_BROWSERS_PATH');
+    expect(local).toContain("createRequire(require('node:path').resolve(actualRendererScript))");
+    expect(local).toContain('chromium.launch({ timeout: 15000 })');
+    expect(local).toContain('stop its own process tree on failure or timeout');
+    expect(local).toContain('never combine `--no-browser` with `--renderer-script`');
+    expect(local).not.toContain('--dry-run chromium');
   });
 
   it('uses canonical MCP tools, keeping legacy names only as a fallback column (GOOSE-3726)', () => {
@@ -555,6 +573,17 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video).toContain('video_project_upsert { brand_id, name, format: <template_id> }');
     expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
     expect(video).toMatch(/needs Claude Code, Codex or Cursor/);
+  });
+
+  it('fetches and checks the selected renderer before creating a project or spending', () => {
+    const setup = video.slice(video.indexOf('### 4. Check this machine'), video.indexOf('### 5. Create the project'));
+    expect(setup).toContain('gooseworks doctor --no-browser');
+    expect(setup).toContain('fetch the selected template and its capabilities');
+    expect(setup).toContain('gooseworks doctor --renderer-script');
+    expect(setup).toContain('Do not guess a renderer from a format name');
+    expect(setup).toContain('Non-browser capabilities need only their documented runtime checks');
+    expect(setup).toContain('Never create paid ingredients before the selected renderer passes');
+    expect(setup).not.toContain('Chromium is actually downloaded');
   });
 
   it('routes existing projects and batches to goose-video-local first', () => {

@@ -163,8 +163,7 @@ Examples:
       }
     }
 
-    // GOOSE-3718: every video ad is made on this machine, so say up front
-    // whether this one can make them.
+    // General setup only; selected renderers are checked after they are fetched.
     reportLocalVideoToolchain();
 
     const agentNames = targetAgents.map((a) =>
@@ -213,14 +212,14 @@ function reportLocalVideoToolchain(): void {
     return; // a broken probe must never fail the install
   }
   if (missing.length === 0) {
-    logger.success('Local video toolchain ready (ffmpeg, ffprobe, Playwright Chromium, Node): this machine can make video ads.');
+    logger.success('Local video toolchain ready for general setup (ffmpeg, ffprobe, Playwright Chromium, Node). Check the selected renderer with `gooseworks doctor --renderer-script <path>` before paid work.');
     return;
   }
   logger.info('Video ads are made on this machine and need these tools. To make them here, install:');
   for (const c of missing) {
     logger.warn(`  ${c.label}  →  ${c.fix}`);
   }
-  logger.info('Then run `gooseworks doctor` to confirm.');
+  logger.info('Then run `gooseworks doctor` for general setup; check the selected browser renderer with `--renderer-script <path>` before paid work.');
 }
 
 function collectSkillSlug(value: string, previous: string[]): string[] {

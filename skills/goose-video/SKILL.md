@@ -10,7 +10,7 @@ description: >
   the customer's own machine (Claude Code, Codex or Cursor); a hosted connector (ChatGPT,
   claude.ai, Cowork) can show the formats but cannot render one.
 category: ads
-version: 2.0.0
+version: 2.0.1
 author: GooseWorks
 tags: [gooseworks, ads, video, client-side, local-render]
 ---
@@ -310,7 +310,7 @@ Order the rows by how well each format fits their answer. Judge fit from `card.d
 ### 4. Check this machine can render it
 
 - **Hosted connector** (ChatGPT, claude.ai, Cowork: no shell) → say plainly that the video is made on their own machine and needs Claude Code, Codex or Cursor. Stop there; do not create a project you cannot finish.
-- **Terminal host** → run `gooseworks doctor` (or, with no CLI, the manual checks in `client_formats_note`). It checks Node 18+, ffmpeg with libx264 + libass, ffprobe, and that Playwright's Chromium is actually downloaded. Anything fails → show the exact fix command and ask them to run it, then check again. Never start on a machine that failed the check.
+- **Terminal host** → run `gooseworks doctor --no-browser` for common setup (auth/MCP, Node 18+, ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities, as described in `goose-video-local` Step 2, and install the selected renderer's documented dependencies in its fetched folder. Do not guess a renderer from a format name. For each Node renderer using Playwright's default Chromium launch, run `gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"` with the same environment (including `NODE_PATH` and `PLAYWRIGHT_BROWSERS_PATH`) used for rendering. Use the actual script path, never the example filename. Other browser runtimes or custom launch settings need the capability's equivalent exact-runtime launch check; a default Playwright probe cannot certify them. Non-browser capabilities need only their documented runtime checks. With no CLI, follow the equivalent checks in `goose-video-local` Phase 0 and Step 2. Any check fails → show the folder-specific repair, fix it under existing setup permissions, and recheck. The probe downloads nothing. Never create paid ingredients before the selected renderer passes.
 
 Then say plainly, in one short paragraph: it renders on this machine; paid steps are billed per call and each is approved before it runs; it needs what `card.needs` says.
 
@@ -341,7 +341,7 @@ A created video project on the picked format, handed to `goose-video-local` in t
 
 - A one-sentence opening got: the brand resolved (unasked when there is one), one open goal question, then a table of every format with demo links and one suggestion.
 - Every "What it looks like" cell is the card's own words; no Suggested format's card contradicts what they asked for.
-- The machine check ran and passed before the project was created; a hosted connector was told it needs Claude Code, Codex or Cursor.
+- Common setup and the selected renderer's actual launch check passed before the project was created or any paid ingredients; a hosted connector was told it needs Claude Code, Codex or Cursor.
 - The project was created with no brief, and `goose-video-local` ran on it in the same session with the customer's step-2 answer as its brief.
 - No one was asked for a FAL_KEY or any provider key.
 
