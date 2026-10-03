@@ -198,7 +198,7 @@ treeTest('bounds a hung close and cleans up its browser process tree', async () 
   await waitForExit(Number(fs.readFileSync(pidFile, 'utf8')));
 });
 
-for (const mode of ['hung-launch', 'failed-close', 'hung-close']) {
+for (const mode of ['hung-launch', 'failed-close', 'hung-close', 'abrupt-exit']) {
   treeTest(`cleans separate detached browser/renderer groups after ${mode} without killing unrelated processes`, async () => {
     const script = renderer(path.join(root, 'fetched/scripts'));
     const pidFile = path.join(root, 'detached-browser.json');
@@ -215,12 +215,13 @@ for (const mode of ['hung-launch', 'failed-close', 'hung-close']) {
       // Wait for its renderer child before reporting a close failure.
       for (let n=0; n<100 && !require('fs').existsSync(${JSON.stringify(pidFile)}); n++) await new Promise(resolve=>setTimeout(resolve,5));
       ${mode === 'hung-launch' ? 'await new Promise(() => {});' : ''}
+      ${mode === 'abrupt-exit' ? 'process.exit(23);' : ''}
     `, mode === 'failed-close' ? 'throw Error("close failed");' : 'await new Promise(() => {});');
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
     const started = Date.now();
     try {
       const result = probe(script);
-      expect(result).toMatchObject({ ok: false, code: mode === 'hung-launch' ? 'timeout' : 'close_failed', cleanup: { ok: true, remainingPids: [] } });
+      expect(result).toMatchObject({ ok: false, code: mode === 'hung-launch' ? 'timeout' : mode === 'abrupt-exit' ? 'probe_failed' : 'close_failed', cleanup: { ok: true, remainingPids: [] } });
       expect(Date.now() - started).toBeLessThan(4000);
       const pids: number[] = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
       for (const pid of pids) await waitForExit(pid);

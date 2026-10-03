@@ -27,6 +27,27 @@ const PROBE = String.raw`
 const fs = require('fs');
 const path = require('path');
 const { createRequire } = require('module');
+// Register each native child synchronously at creation. A probe can crash/exit
+// before the supervisor's inventory poll; Chromium must remain owned then too.
+const childProcess = require('child_process');
+const nativeSpawn = childProcess.spawn;
+if (process.platform !== 'win32') {
+  childProcess.spawn = function(...args) {
+    const child = Reflect.apply(nativeSpawn, this, args);
+    if (child.pid) {
+      const inventory = childProcess.spawnSync('/bin/ps', ['-p', String(child.pid), '-o', 'pid=', '-o', 'ppid=', '-o', 'pgid=', '-o', 'stat=', '-o', 'lstart='], {
+        encoding: 'utf8', timeout: 250, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const row = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(inventory.stdout || '');
+      fs.writeSync(1, 'GOOSE_BROWSER_CHILD=' + JSON.stringify({
+        pid: child.pid, parent: process.pid,
+        born: row && Number(row[2]) === process.pid ? row[5] : null,
+      }) + '\n');
+    }
+    return child; // Preserve arguments, launch flags and the native ChildProcess.
+  };
+  require('module').syncBuiltinESMExports();
+}
 let [anchor, selected, launchMs, closeMs] = process.argv.slice(1);
 const meta = {};
 let browser;
@@ -113,9 +134,11 @@ let meta = {};
 let finished = false;
 const owned = new Map();
 let rootBorn;
+let ownershipUncertain = false;
+const registrations = new Set();
 function processTable() {
   const result = spawnSync('/bin/ps', ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'pgid=', '-o', 'stat=', '-o', 'lstart='], {
-    encoding: 'utf8', timeout: 150, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    encoding: 'utf8', timeout: 250, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
   });
   if (result.status !== 0) return null;
   const rows = new Map();
@@ -176,7 +199,7 @@ function cleanup() {
   // SIGSTOP. This stops further forks without changing browser launch options.
   for (let round = 0; round < 8 && Date.now() < until; round++) {
     const rows = processTable();
-    if (!rows) break;
+    if (!rows) continue; // Retry a transient inventory timeout within the same budget.
     active = discover(rows);
     const fresh = active.filter(row => !frozen.has(row.pid));
     for (const row of fresh) { signal(row, 'SIGSTOP'); frozen.add(row.pid); }
@@ -187,11 +210,12 @@ function cleanup() {
   for (const row of active.filter(row => row.pid !== child.pid).reverse()) signal(row, 'SIGKILL');
   const root = active.find(row => row.pid === child.pid);
   if (root) signal(root, 'SIGKILL');
+  else if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   while (Date.now() < until) {
     const rows = processTable();
-    if (!rows) return { ok: false, remainingPids: active.map(row => row.pid) };
+    if (!rows) continue;
     active = discover(rows);
-    if (!active.length) return { ok: stable, remainingPids: [] };
+    if (!active.length) return { ok: stable && !ownershipUncertain, remainingPids: [] };
     for (const row of active) signal(row, 'SIGKILL');
   }
   return { ok: false, remainingPids: active.map(row => row.pid) };
@@ -215,6 +239,19 @@ const deadline = setTimeout(() => finish(1, {
 child.stdout.on('data', chunk => {
   output += chunk;
   if (Buffer.byteLength(output) > 60000) finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe exceeded its diagnostic output limit' });
+  // Consume creation records before processing a terminal result. writeSync in
+  // the probe and the close (not exit) handler preserve records on abrupt exit.
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.startsWith('GOOSE_BROWSER_CHILD=') || !output.includes(line + '\n') || registrations.has(line)) continue;
+    registrations.add(line);
+    try {
+      const registration = JSON.parse(line.slice('GOOSE_BROWSER_CHILD='.length));
+      if (!registration.born || registration.parent !== child.pid) { ownershipUncertain = true; continue; }
+      // The creation record has the native parent's verified start identity.
+      // Seed discovery even if that parent has already exited and reparented it.
+      owned.set(registration.pid, registration);
+    } catch { ownershipUncertain = true; }
+  }
   const metadata = output.split(/\r?\n/).find(line => line.startsWith('GOOSE_BROWSER_PREFLIGHT_META=') && output.includes(line + '\n'));
   if (metadata) {
     try { meta = JSON.parse(metadata.slice('GOOSE_BROWSER_PREFLIGHT_META='.length)); } catch {}
@@ -226,7 +263,6 @@ child.stdout.on('data', chunk => {
   }
 });
 child.on('error', error => finish(1, { ok: false, code: 'probe_failed', detail: error.message }));
-child.on('exit', () => finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe exited without a result' }));
 child.on('close', () => finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe closed without a result' }));
 `;
 
