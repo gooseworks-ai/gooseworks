@@ -172,7 +172,7 @@ function inspectProject(state: Obj, ids: Pick<SaveManifest, 'brand_id' | 'projec
       !object(render) || render.project_id !== ids.project_id) fail('Project/render identity mismatch or missing render; no new render was opened');
   if (state.order || state.creative_plan || project.custom_video_state?.mode === 'generate') fail('This is not a client-side recipe render; use its existing order workflow');
   if (!['queued', 'running', 'complete'].includes(render.status) || render.stop_requested_at ||
-      project.stop_requested_at || ['stopped', 'capped'].includes(project.status) ||
+      project.stop_requested_at || project.plan_status === 'stopped' || ['stopped', 'capped'].includes(project.status) ||
       render.workflow_stage === 'blocked' || render.quality_status === 'blocked') fail('Render is stopped, capped, failed or blocked; save-only recovery cannot reopen it');
   return { project, render };
 }
@@ -320,7 +320,17 @@ export async function resumeSave(target: string, transport: SaveTransport): Prom
     checkpoint.progress.completion = 'complete'; await writeCheckpoint(target, checkpoint);
     if (state.project.final_render_id !== b.render_id) {
       checkpoint.progress.selection = 'unknown'; await writeCheckpoint(target, checkpoint);
-      await transport.call('video_project_upsert', { brand_id: b.brand_id, project_id: b.project_id, patch: { final_render_id: b.render_id } });
+      try {
+        await transport.call('video_project_upsert', { brand_id: b.brand_id, project_id: b.project_id,
+          patch: { final_render_id: b.render_id, final_selection_guard: {
+            expected_final_render_id: state.project.final_render_id ?? null, expected_review_digest: b.review_digest,
+          } } });
+      } catch (error) {
+        if (error instanceof SaveToolError && error.code === 'final_selection_conflict') {
+          fail('Another version was selected or the saved review changed; recovery stopped without overwriting that choice. Read the current project before continuing.');
+        }
+        throw error;
+      }
       state = await read();
     }
     if (state.project.final_render_id !== b.render_id) fail('Final selection was not saved; reconnect and resume the same checkpoint');

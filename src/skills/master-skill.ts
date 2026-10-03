@@ -1596,7 +1596,15 @@ signed URLs or auth headers**. On reconnect call \`account_whoami\`,
 on the original connection. Compare identities, local/evidence hashes and saved review; verify
 confirmed remote bytes too. Treat a lost reply as unknown and read back before retrying. Use only
 the missing \`media_upload\` → PUT → \`media_confirm\`, same-render \`video_render_run { render: … }\`
-callback and \`video_project_upsert patch.final_render_id\`; never a render-open call. Retain the
+callback and \`video_project_upsert\` with only \`patch.final_render_id\` and
+\`patch.final_selection_guard: { expected_final_render_id, expected_review_digest }\`; never a
+render-open call. The expected final is the last read's pin, including explicit \`null\`; the
+review digest is SHA-256 of recursively sorted-key JSON
+\`{script: project.script ?? null, script_drafts: project.script_drafts ?? null}\` saved at checkpoint
+creation. First confirm the selected server advertises this guard in \`tools/list\`. If absent,
+stop and request the normal server update/reconnect; an unguarded pin is unsafe. A
+\`final_selection_conflict\` means the choice or review changed: keep the checkpoint and explain
+that saving stopped without overwriting it. Retain the
 strict Step 4.3/4.4 report and Step 4.5 review-set requirements.
 
 If authorization expired, reconnect/sign in through the normal host/CLI flow on the original
@@ -2139,7 +2147,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    "hair drifted → restated the hair colour"). No URLs, keys or raw logs; it must stay under 48 KB.
    In the checkpoint flow, save this before Step 4.4 too and skip the duplicate write afterward.
 7. Pin it — only a \`passed\` render (or a \`blocked\` one the user said to use anyway):
-   If the checkpoint helper already verified selection of this render, skip this duplicate write.
+   If checkpoint recovery already verified selection of this render, skip this duplicate write.
+   An unfinished checkpoint must use the guarded selection protocol above; never replace it
+   with an unguarded pin.
    \`video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }\`,
    then return the \`app_url\` + \`brand_url\` (from the project) verbatim. Never end on just "done" or
    a file path.

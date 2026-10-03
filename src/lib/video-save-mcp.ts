@@ -67,12 +67,33 @@ export async function createSaveTransport(creds: Credentials): Promise<SaveTrans
     clientInfo: { name: 'gooseworks-video-save', version: '1' } });
   if (typeof initialized.protocolVersion === 'string') protocol = initialized.protocolVersion;
   await rpc('notifications/initialized', {}, true);
+  // Old servers can strip unknown optional patch fields. Never send a guarded
+  // write until the selected server advertises the atomic contract itself.
+  let cursor: string | undefined; let guardedSelection = false;
+  const seen = new Set<string>();
+  do {
+    const listed = await rpc('tools/list', cursor ? { cursor } : {});
+    const tool = listed.tools?.find((tool: any) => tool.name === 'video_project_upsert');
+    const guard = tool?.inputSchema?.properties?.patch?.properties?.final_selection_guard;
+    if (guard?.properties?.expected_final_render_id && guard?.properties?.expected_review_digest &&
+        ['expected_final_render_id', 'expected_review_digest'].every(key => guard.required?.includes(key))) guardedSelection = true;
+    const next = listed.nextCursor;
+    if (next !== undefined && (typeof next !== 'string' || seen.has(next) || seen.size >= 100)) throw new Error('Uncertain save tool contracts; reconnect normally');
+    if (next) seen.add(next);
+    cursor = next;
+  } while (cursor && !guardedSelection);
+  if (!guardedSelection) throw new Error('This GooseWorks connection does not advertise atomic final selection. Update/reconnect the server before saving; retain finished files and the checkpoint.');
   return {
     async call(name, args) {
       if (!ALLOWED.has(name) || (name === 'video_render_run' &&
           (!args.render?.render_id || args.render.status !== 'complete' || Object.keys(args).some(k => !['brand_id', 'project_id', 'render'].includes(k)))) ||
           (name === 'video_project_upsert' && (Object.keys(args).some(k => !['brand_id', 'project_id', 'patch'].includes(k)) ||
-            Object.keys(args.patch ?? {}).length !== 1 || !args.patch.final_render_id))) throw new Error('Save-only transport refused a generation or unrelated write');
+            Object.keys(args.patch ?? {}).some(k => !['final_render_id', 'final_selection_guard'].includes(k)) ||
+            !args.patch.final_render_id || !args.patch.final_selection_guard ||
+            Object.keys(args.patch.final_selection_guard).sort().join(',') !== 'expected_final_render_id,expected_review_digest' ||
+            !(args.patch.final_selection_guard.expected_final_render_id === null ||
+              typeof args.patch.final_selection_guard.expected_final_render_id === 'string') ||
+            !/^[a-f0-9]{64}$/.test(args.patch.final_selection_guard.expected_review_digest)))) throw new Error('Save-only transport refused a generation or unrelated write');
       const result = await rpc('tools/call', { name, arguments: args });
       const text = result.content?.find((block: any) => block.type === 'text')?.text;
       if (typeof text !== 'string') throw new Error('Incomplete MCP save reply');

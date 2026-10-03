@@ -20,6 +20,7 @@ class Fixture implements SaveTransport {
   render: any = { id: 'render-1', project_id: 'project-1', status: 'running', quality_status: 'pending' };
   media: any[] = []; objects = new Map<string, Buffer>(); puts = 0; completions = 0; baseFees = 0; selections = 0;
   lost?: string; before?: string; nextId = 0;
+  interleave?: 'selection' | 'review';
   async call(name: any, args: any) {
     this.calls.push({ name, args: JSON.parse(JSON.stringify(args)) });
     if (this.before === name) { this.before = undefined; throw new Error('injected before side effect'); }
@@ -46,7 +47,15 @@ class Fixture implements SaveTransport {
       this.render = { ...this.render, ...args.render };
       result = this.render;
     } else if (name === 'video_project_upsert') {
-      expect(args.patch).toEqual({ final_render_id: 'render-1' });
+      expect(Object.keys(args.patch).sort()).toEqual(['final_render_id', 'final_selection_guard']);
+      if (this.interleave === 'selection') this.project.final_render_id = 'customer-choice';
+      if (this.interleave === 'review') this.project.script = 'new approved words';
+      this.interleave = undefined;
+      const guard = args.patch.final_selection_guard;
+      if ((this.project.final_render_id !== guard.expected_final_render_id && this.project.final_render_id !== args.patch.final_render_id) ||
+          digest({ script: this.project.script ?? null, script_drafts: this.project.script_drafts ?? null }) !== guard.expected_review_digest) {
+        throw new SaveToolError('final_selection_conflict');
+      }
       this.project.final_render_id = args.patch.final_render_id; this.selections++;
       result = { project: this.project };
     } else throw new Error(`Unexpected provider/render-open call: ${name}`);
@@ -103,6 +112,22 @@ describe('finished-video checkpoint and save-only recovery', () => {
     await prepare(); fixture.before = 'video_render_run';
     await expect(resumeSave(target, fixture)).rejects.toThrow('injected');
     await resumeSave(target, fixture); expect(fixture.puts).toBe(2); expect(fixture.completions).toBe(1);
+  });
+  test.each(['selection', 'review'] as const)('a concurrent %s after the last read is atomically preserved', async change => {
+    await prepare(); fixture.interleave = change;
+    await expect(resumeSave(target, fixture)).rejects.toThrow('without overwriting');
+    expect(fixture.selections).toBe(0); expect(fixture.baseFees).toBe(1);
+    expect((await loadCheckpoint(target)).progress.selection).toBe('unknown');
+    if (change === 'selection') expect(fixture.project.final_render_id).toBe('customer-choice');
+    else expect(fixture.project.script).toBe('new approved words');
+    await expect(resumeSave(target, fixture)).rejects.toThrow(/selected|review/);
+    expect(fixture.completions).toBe(1);
+  });
+  test('guard uses an explicit old selection and a lost reply retry does not select again', async () => {
+    fixture.project.final_render_id = 'old-final'; await prepare(); fixture.lost = 'video_project_upsert';
+    await expect(resumeSave(target, fixture)).rejects.toThrow('injected');
+    expect(fixture.calls.find(c => c.name === 'video_project_upsert')!.args.patch.final_selection_guard.expected_final_render_id).toBe('old-final');
+    await resumeSave(target, fixture); expect(fixture.selections).toBe(1); expect(fixture.baseFees).toBe(1);
   });
   test('a finished checkpoint rereads success, with no writes or duplicate fee', async () => {
     await prepare(); await resumeSave(target, fixture); const callCount = fixture.calls.length;
