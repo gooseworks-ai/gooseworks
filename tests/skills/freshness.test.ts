@@ -120,6 +120,28 @@ describe('real local entry preservation', () => {
     expect(() => installer.installManagedEntrySkills([{ name: 'gooseworks', content: '# new' }], { overwriteModified: true })).toThrow('Linked gooseworks entry preserved');
     expect(fs.readFileSync(path.join(external, 'SKILL.md'), 'utf8')).toBe('# external');
   });
+  test.each(['directory', 'SKILL.md', '.gooseworks-version'].flatMap((entry) => [
+    [entry, 'live'], [entry, 'dangling'],
+  ]))('preserves a %s %s link, including with explicit overwrite', (entry, kind) => {
+    const old = { name: 'gooseworks', content: '# old' }, next = { ...old, content: '# new' };
+    installer.installManagedEntrySkills([old]);
+    const dir = path.join(installer.getSkillsBasePath(), old.name);
+    const link = entry === 'directory' ? dir : path.join(dir, entry);
+    const external = path.join(home, 'external');
+    const before = entry === '.gooseworks-version' ? skillContentHash(old.content).slice(0, 16) : old.content;
+    if (entry === 'directory' && kind === 'live') fs.renameSync(dir, external);
+    else {
+      fs.rmSync(link, { recursive: true, force: true });
+      if (kind === 'live') fs.writeFileSync(external, before);
+    }
+    fs.symlinkSync(external, link, entry === 'directory' ? 'dir' : 'file');
+    expect(installer.inspectEntrySkill(old.name).modified).toBe(true);
+    expect(installer.installManagedEntrySkills([next])[0].action).toBe('preserved');
+    expect(() => installer.installManagedEntrySkills([next], { overwriteModified: true })).toThrow('Linked gooseworks entry preserved');
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    if (kind === 'dangling') expect(fs.existsSync(external)).toBe(false);
+    else expect(fs.readFileSync(entry === 'directory' ? path.join(external, 'SKILL.md') : external, 'utf8')).toBe(before);
+  });
 });
 
 describe('saved connected-catalog packages', () => {
@@ -130,5 +152,11 @@ describe('saved connected-catalog packages', () => {
     expect(compareSavedPackage(current, { ...current, contentHash: null }).status).toBe('unknown');
     expect(compareSavedPackage(current).status).toBe('not_compared');
     expect(() => compareSavedPackage(current, { slug: 'wrong' })).toThrow('slug');
+  });
+  test('a matching root cannot certify an unavailable declared dependency as current', () => {
+    const incomplete = { slug: 'recipe', contentHash: 'root', requiresSkills: ['helper'], dependencySkills: [] };
+    expect(compareSavedPackage(incomplete, { slug: 'recipe', contentHash: 'root', dependencySkills: [] }).status).toBe('unknown');
+    expect(compareSavedPackage(incomplete).status).toBe('not_compared');
+    expect(compareSavedPackage({ ...incomplete, dependencySkills: current.dependencySkills }, current).status).toBe('current');
   });
 });

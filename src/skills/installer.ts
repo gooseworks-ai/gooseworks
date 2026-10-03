@@ -50,11 +50,16 @@ function entryContentHash(content: string): string {
   return skillContentHash(content).slice(0, 16);
 }
 
+function hasLinkedEntryPath(dir: string): boolean {
+  return [dir, path.join(dir, 'SKILL.md'), path.join(dir, STAMP_FILE)]
+    .some((file) => fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink());
+}
+
 export function inspectEntrySkill(name: string): { hash?: string; modified: boolean; missing: boolean } {
   const dir = path.join(SKILLS_BASE, name);
-  if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return { modified: fs.existsSync(dir), missing: true };
   try {
-    if (fs.lstatSync(dir)?.isSymbolicLink() || fs.lstatSync(path.join(dir, 'SKILL.md'))?.isSymbolicLink()) return { modified: true, missing: false };
+    if (hasLinkedEntryPath(dir)) return { modified: true, missing: !fs.existsSync(path.join(dir, 'SKILL.md')) };
+    if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return { modified: fs.existsSync(dir), missing: true };
     const hash = skillContentHash(fs.readFileSync(path.join(dir, 'SKILL.md')));
     let stamp = '';
     try { stamp = fs.readFileSync(path.join(dir, STAMP_FILE), 'utf-8').trim(); } catch { /* provenance unknown */ }
@@ -72,7 +77,7 @@ export function isEntrySkillFresh(name: string, content: string): boolean {
 /** Write one entry skill + its freshness stamp. */
 export function installEntrySkill(skill: EntrySkill): void {
   const dir = path.join(SKILLS_BASE, skill.name);
-  if ((fs.existsSync(dir) && fs.lstatSync(dir)?.isSymbolicLink()) || (fs.existsSync(path.join(dir, 'SKILL.md')) && fs.lstatSync(path.join(dir, 'SKILL.md'))?.isSymbolicLink())) throw new Error(`Linked ${skill.name} entry preserved; replace the link yourself before installing.`);
+  if (hasLinkedEntryPath(dir)) throw new Error(`Linked ${skill.name} entry preserved; replace the link yourself before installing.`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), skill.content, 'utf-8');
   fs.writeFileSync(path.join(dir, STAMP_FILE), entryContentHash(skill.content), 'utf-8');

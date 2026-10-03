@@ -1,6 +1,7 @@
 export interface SkillPackageIdentity {
   slug: string;
   contentHash?: string | null;
+  requiresSkills?: string[];
   dependencySkills?: Array<{ slug: string; contentHash?: string | null }>;
 }
 
@@ -20,6 +21,7 @@ export function compareSavedPackage(current: SkillPackageIdentity, saved?: Skill
     else if (previous.get(skill.slug) !== skill.contentHash) changes.push(skill.slug);
   }
   for (const slug of previous.keys()) if (!present.has(slug)) changes.push(slug);
+  if ((current.requiresSkills || []).some((slug) => !present.has(slug))) unknown = true;
   return {
     status: changes.length ? 'stale' : unknown ? 'unknown' : 'current',
     basis: 'client_saved_hashes',
