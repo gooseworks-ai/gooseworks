@@ -748,7 +748,7 @@ On failure, stop before spending, show its folder-specific repair and recheck af
 For non-browser formats use `doctor --no-browser` plus their documented runtime checks;
 never combine `--no-browser` with `--renderer-script` or use it to bypass a browser renderer.
 
-**No CLI:** run an equivalent free probe in a separate Node process: use
+**No CLI or CLI without these flags:** run an equivalent free probe in a separate Node process: use
 `require('node:module').createRequire(require('node:path').resolve(actualRendererScript))`
 to load `playwright`; keep the render's cwd, environment and default launch settings. Await
 `chromium.launch({ timeout: 15000 })`, then await `browser.close()` (bound close to 3 seconds).

@@ -10,6 +10,7 @@ export interface BrowserPreflightResult {
   detail: string;
   fix: string;
   rendererScript?: string;
+  resolvedScript?: string;
   modulePath?: string;
   version?: string;
   executablePath?: string;
@@ -53,6 +54,7 @@ async function closeBrowser() {
       if (!fs.statSync(anchor).isFile()) throw new Error('not a file');
       // Node resolves its main script's symlink unless explicitly told otherwise.
       if (!/--preserve-symlinks-main\b/.test(process.env.NODE_OPTIONS || '')) anchor = fs.realpathSync(anchor);
+      meta.resolvedScript = anchor;
     }
     catch { return finish('invalid_script', 'Renderer script is not an existing file: ' + anchor); }
   }
@@ -197,6 +199,6 @@ export function checkBrowserPreflight(opts: {
     ...result,
     ...(selected ? { rendererScript: anchor } : {}),
     detail: `${selected ? `Renderer ${anchor}` : `General browser setup in ${cwd}`}: ${result.detail}${location}${executable}`,
-    fix: repair(result.code, folder, result.cliPath),
+    fix: repair(result.code, result.resolvedScript ? path.dirname(result.resolvedScript) : folder, result.cliPath),
   };
 }

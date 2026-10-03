@@ -127,6 +127,18 @@ it('matches Node main-script symlink resolution', () => {
   expect(probe(linked)).toMatchObject({ ok: true, modulePath: fs.realpathSync(modulePath) });
 });
 
+it('repairs the real script folder when a symlinked renderer has no package', () => {
+  const script = renderer(path.join(root, 'actual/scripts'));
+  const linkFolder = path.join(root, 'linked');
+  fs.mkdirSync(linkFolder);
+  const linked = path.join(linkFolder, 'record.js');
+  fs.symlinkSync(script, linked);
+  const result = probe(linked);
+  expect(result).toMatchObject({ ok: false, code: 'missing_module', resolvedScript: fs.realpathSync(script) });
+  expect(result.fix).toContain(path.dirname(fs.realpathSync(script)));
+  expect(result.fix).not.toContain(linkFolder);
+});
+
 it('preserves NODE_PATH, browser-cache environment and cwd used for rendering', () => {
   const script = renderer(path.join(root, 'fetched/scripts'));
   const deps = path.join(root, 'documented-runtime');
@@ -169,7 +181,7 @@ treeTest('bounds a hung launch and cleans up its browser process tree', async ()
     await new Promise(() => {});
   `);
   const started = Date.now();
-  expect(probe(script)).toMatchObject({ ok: false, code: 'timeout' });
+  expect(probe(script)).toMatchObject({ ok: false, code: 'timeout', version: '1.50.0' });
   expect(Date.now() - started).toBeLessThan(3000);
   await waitForExit(Number(fs.readFileSync(pidFile, 'utf8')));
 });
