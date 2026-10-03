@@ -15,6 +15,7 @@ export interface BrowserPreflightResult {
   version?: string;
   executablePath?: string;
   cliPath?: string;
+  cleanup?: { ok: boolean; remainingPids: number[] };
 }
 
 const MARKER = 'GOOSE_BROWSER_PREFLIGHT=';
@@ -26,6 +27,27 @@ const PROBE = String.raw`
 const fs = require('fs');
 const path = require('path');
 const { createRequire } = require('module');
+// Register each native child synchronously at creation. A probe can crash/exit
+// before the supervisor's inventory poll; Chromium must remain owned then too.
+const childProcess = require('child_process');
+const nativeSpawn = childProcess.spawn;
+if (process.platform !== 'win32') {
+  childProcess.spawn = function(...args) {
+    const child = Reflect.apply(nativeSpawn, this, args);
+    if (child.pid) {
+      const inventory = childProcess.spawnSync('/bin/ps', ['-p', String(child.pid), '-o', 'pid=', '-o', 'ppid=', '-o', 'pgid=', '-o', 'stat=', '-o', 'lstart='], {
+        encoding: 'utf8', timeout: 250, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const row = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(inventory.stdout || '');
+      fs.writeSync(1, 'GOOSE_BROWSER_CHILD=' + JSON.stringify({
+        pid: child.pid, parent: process.pid,
+        born: row && Number(row[2]) === process.pid ? row[5] : null,
+      }) + '\n');
+    }
+    return child; // Preserve arguments, launch flags and the native ChildProcess.
+  };
+  require('module').syncBuiltinESMExports();
+}
 let [anchor, selected, launchMs, closeMs] = process.argv.slice(1);
 const meta = {};
 let browser;
@@ -101,51 +123,147 @@ function repair(code: BrowserProbeCode, folder: string, cliPath?: string): strin
 }
 
 // spawnSync has no detached/process-group option. This supervisor uses spawn()
-// to own a separate probe group and can kill its entire tree even if launch or
-// close hangs. The existing synchronous doctor/install API stays compatible.
+// to own the probe. Chromium creates another detached Unix group, so cleanup
+// tracks descendants by parentage, freezes them, and kills owned PIDs before
+// the probe. The existing synchronous doctor/install API stays compatible.
 const SUPERVISOR = String.raw`
 const { spawn, spawnSync } = require('child_process');
 const [probe, ...args] = process.argv.slice(1);
 let output = '';
 let meta = {};
 let finished = false;
+const owned = new Map();
+let rootBorn;
+let ownershipUncertain = false;
+const registrations = new Set();
+function processTable() {
+  const result = spawnSync('/bin/ps', ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'pgid=', '-o', 'stat=', '-o', 'lstart='], {
+    encoding: 'utf8', timeout: 250, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (result.status !== 0) return null;
+  const rows = new Map();
+  for (const line of result.stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(line);
+    if (match) rows.set(Number(match[1]), { pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), state: match[4], born: match[5] });
+  }
+  return rows.size ? rows : null;
+}
+// Without a process inventory we cannot safely clean up a detached browser.
+// Fail before launching it; never use a broad browser-name or user-wide kill.
+if (process.platform !== 'win32' && !processTable()) {
+  process.stdout.write('GOOSE_BROWSER_PREFLIGHT=' + JSON.stringify({ ok: false, code: 'probe_failed', detail: 'Cannot inspect owned browser processes with /bin/ps; browser was not launched' }) + '\n');
+  process.exit(1);
+}
 const child = spawn(process.execPath, ['-e', probe, ...args], {
   detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'ignore'], env: process.env,
 });
+function discover(rows) {
+  // Retain observed children after reparenting, but reject reused PID identities.
+  for (const [pid, row] of owned) if (rows.get(pid)?.born !== row.born) owned.delete(pid);
+  const root = rows.get(child.pid);
+  if (root && (!rootBorn || root.born === rootBorn)) {
+    rootBorn = root.born;
+    owned.set(child.pid, root);
+  }
+  let changed;
+  do {
+    changed = false;
+    for (const row of rows.values()) {
+      if (!owned.has(row.pid) && owned.has(row.parent)) {
+        owned.set(row.pid, row);
+        changed = true;
+      }
+    }
+  } while (changed);
+  return [...owned.keys()].map(pid => rows.get(pid)).filter(row => row && !row.state.startsWith('Z'));
+}
+function signal(row, name) {
+  try { process.kill(row.pid, name); } catch {} // Already gone, or reported by verification below.
+}
+const monitor = process.platform === 'win32' ? null : setInterval(() => {
+  const rows = processTable();
+  if (rows) discover(rows);
+}, 100);
 function cleanup() {
-  if (!child.pid) return;
-  try {
-    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { timeout: 2000, stdio: 'ignore' });
-    else process.kill(-child.pid, 'SIGKILL');
-  } catch {} // The normally closed browser may already be gone.
+  if (monitor) clearInterval(monitor);
+  if (!child.pid) return { ok: true, remainingPids: [] };
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { timeout: 2000, stdio: 'ignore' });
+    return { ok: result.status === 0, remainingPids: result.status === 0 ? [] : [child.pid] };
+  }
+  const until = Date.now() + 1500;
+  const frozen = new Set();
+  let active = [];
+  let stable = false;
+  // Freeze parent processes first, then rescan for children created just before
+  // SIGSTOP. This stops further forks without changing browser launch options.
+  for (let round = 0; round < 8 && Date.now() < until; round++) {
+    const rows = processTable();
+    if (!rows) continue; // Retry a transient inventory timeout within the same budget.
+    active = discover(rows);
+    const fresh = active.filter(row => !frozen.has(row.pid));
+    for (const row of fresh) { signal(row, 'SIGSTOP'); frozen.add(row.pid); }
+    if (!fresh.length) { stable = true; break; }
+  }
+  // Use individual owned PIDs, not a whole group that could contain unrelated
+  // processes. Detached Chromium groups and their renderers are still covered.
+  for (const row of active.filter(row => row.pid !== child.pid).reverse()) signal(row, 'SIGKILL');
+  const root = active.find(row => row.pid === child.pid);
+  if (root) signal(root, 'SIGKILL');
+  else if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  while (Date.now() < until) {
+    const rows = processTable();
+    if (!rows) continue;
+    active = discover(rows);
+    if (!active.length) return { ok: stable && !ownershipUncertain, remainingPids: [] };
+    for (const row of active) signal(row, 'SIGKILL');
+  }
+  return { ok: false, remainingPids: active.map(row => row.pid) };
 }
 function finish(code, override) {
   if (finished) return;
   finished = true;
   clearTimeout(deadline);
-  cleanup();
-  const text = override ? 'GOOSE_BROWSER_PREFLIGHT=' + JSON.stringify({ ...meta, ...override }) + '\n' : output;
+  const stopped = cleanup();
+  let result = { ...meta, ...override, cleanup: stopped };
+  if (!stopped.ok) {
+    result = { ...result, ok: false, code: 'probe_failed', detail: (result.detail || 'Browser probe ended') + '; could not confirm cleanup of owned browser processes' };
+    code = 1;
+  } else if (result.code === 'timeout') result.detail += '; its owned processes were stopped';
+  const text = 'GOOSE_BROWSER_PREFLIGHT=' + JSON.stringify(result) + '\n';
   process.stdout.write(text, () => process.exit(code));
 }
 const deadline = setTimeout(() => finish(1, {
-  ok: false, code: 'timeout', detail: 'Browser launch/close probe timed out; its process tree was stopped',
+  ok: false, code: 'timeout', detail: 'Browser launch/close probe timed out',
 }), Number(args[2]) + Number(args[3]) + 500);
 child.stdout.on('data', chunk => {
   output += chunk;
   if (Buffer.byteLength(output) > 60000) finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe exceeded its diagnostic output limit' });
+  // Consume creation records before processing a terminal result. writeSync in
+  // the probe and the close (not exit) handler preserve records on abrupt exit.
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.startsWith('GOOSE_BROWSER_CHILD=') || !output.includes(line + '\n') || registrations.has(line)) continue;
+    registrations.add(line);
+    try {
+      const registration = JSON.parse(line.slice('GOOSE_BROWSER_CHILD='.length));
+      if (!registration.born || registration.parent !== child.pid) { ownershipUncertain = true; continue; }
+      // The creation record has the native parent's verified start identity.
+      // Seed discovery even if that parent has already exited and reparented it.
+      owned.set(registration.pid, registration);
+    } catch { ownershipUncertain = true; }
+  }
   const metadata = output.split(/\r?\n/).find(line => line.startsWith('GOOSE_BROWSER_PREFLIGHT_META=') && output.includes(line + '\n'));
   if (metadata) {
     try { meta = JSON.parse(metadata.slice('GOOSE_BROWSER_PREFLIGHT_META='.length)); } catch {}
   }
   const line = output.split(/\r?\n/).find(line => line.startsWith('GOOSE_BROWSER_PREFLIGHT=') && output.includes(line + '\n'));
   if (line) {
-    try { finish(JSON.parse(line.slice('GOOSE_BROWSER_PREFLIGHT='.length)).ok ? 0 : 1); }
+    try { const result = JSON.parse(line.slice('GOOSE_BROWSER_PREFLIGHT='.length)); finish(result.ok ? 0 : 1, result); }
     catch { finish(1, { ok: false, code: 'probe_failed', detail: 'Invalid browser probe result' }); }
   }
 });
 child.on('error', error => finish(1, { ok: false, code: 'probe_failed', detail: error.message }));
-child.on('exit', cleanup); // Close inherited pipes even if a failed package left descendants.
-child.on('close', code => finish(code ?? 1));
+child.on('close', () => finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe closed without a result' }));
 `;
 
 /**
