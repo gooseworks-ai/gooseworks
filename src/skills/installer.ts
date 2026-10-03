@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as crypto from 'crypto';
 import { isManagedGooseworksSkill, STAMP_FILE } from './names';
 import type { EntrySkill } from './master-skill';
+import { skillContentHash } from './releases';
 
 const SKILLS_BASE = path.join(os.homedir(), '.agents', 'skills');
 const GOOSE_SKILLS_TREE_URL = 'https://api.github.com/repos/gooseworks-ai/goose-skills/git/trees/main?recursive=1';
@@ -21,6 +21,7 @@ interface GitHubTreeResponse {
 
 export interface InstallStandaloneSkillOptions {
   onProgress?: (progress: { downloaded: number; total: number }) => void;
+  overwriteModified?: boolean;
 }
 
 export function getSkillsBasePath(): string {
@@ -43,26 +44,40 @@ export function installMasterSkill(masterSkillMd: string): void {
 // ~/.agents/skills/<name>/. We stamp each install with a content hash so we can
 // skip rewriting an unchanged skill ("already local → don't call") and rewrite
 // only when the vendored content changed ("updated → call again"). Recipe skills
-// are fetched live via `gooseworks fetch`, so they need no stamping.
+// are fetched from the connected catalog; saved packages carry their reported hashes.
 
 function entryContentHash(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex').slice(0, 16);
+  return skillContentHash(content).slice(0, 16);
 }
 
-/** True when the entry skill is installed AND its stamp matches `content`. */
-export function isEntrySkillFresh(name: string, content: string): boolean {
+function hasLinkedEntryPath(dir: string): boolean {
+  return [dir, path.join(dir, 'SKILL.md'), path.join(dir, STAMP_FILE)]
+    .some((file) => fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink());
+}
+
+export function inspectEntrySkill(name: string): { hash?: string; modified: boolean; missing: boolean } {
   const dir = path.join(SKILLS_BASE, name);
-  if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return false;
   try {
-    return fs.readFileSync(path.join(dir, STAMP_FILE), 'utf-8').trim() === entryContentHash(content);
+    if (hasLinkedEntryPath(dir)) return { modified: true, missing: !fs.existsSync(path.join(dir, 'SKILL.md')) };
+    if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return { modified: fs.existsSync(dir), missing: true };
+    const hash = skillContentHash(fs.readFileSync(path.join(dir, 'SKILL.md')));
+    let stamp = '';
+    try { stamp = fs.readFileSync(path.join(dir, STAMP_FILE), 'utf-8').trim(); } catch { /* provenance unknown */ }
+    return { hash, modified: !/^[a-f0-9]{16}$/.test(stamp) || hash.slice(0, 16) !== stamp, missing: false };
   } catch {
-    return false;
+    return { modified: true, missing: false };
   }
+}
+
+/** Checks the actual file, not just a stamp left behind before a user edit. */
+export function isEntrySkillFresh(name: string, content: string): boolean {
+  return inspectEntrySkill(name).hash === skillContentHash(content);
 }
 
 /** Write one entry skill + its freshness stamp. */
 export function installEntrySkill(skill: EntrySkill): void {
   const dir = path.join(SKILLS_BASE, skill.name);
+  if (hasLinkedEntryPath(dir)) throw new Error(`Linked ${skill.name} entry preserved; replace the link yourself before installing.`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), skill.content, 'utf-8');
   fs.writeFileSync(path.join(dir, STAMP_FILE), entryContentHash(skill.content), 'utf-8');
@@ -70,20 +85,23 @@ export function installEntrySkill(skill: EntrySkill): void {
 
 export interface EntrySkillInstallResult {
   name: string;
-  action: 'installed' | 'skipped';
+  action: 'installed' | 'skipped' | 'preserved';
 }
 
 /**
- * Install all vendored entry skills. With `force` (explicit install/update) each
- * is rewritten unconditionally; without it (e.g. refresh-on-login) only missing
- * or content-changed skills are rewritten — unchanged ones are skipped.
+ * Refresh bundled entry skills. Preserve edited or untracked files unless the
+ * user explicitly allows their replacement. `force` never authorizes data loss.
  */
 export function installManagedEntrySkills(
   skills: EntrySkill[],
-  { force = false }: { force?: boolean } = {}
+  { force = false, overwriteModified = false }: { force?: boolean; overwriteModified?: boolean } = {}
 ): EntrySkillInstallResult[] {
   return skills.map((skill) => {
-    if (!force && isEntrySkillFresh(skill.name, skill.content)) {
+    const installed = inspectEntrySkill(skill.name);
+    if (installed.modified && installed.hash !== skillContentHash(skill.content) && !overwriteModified) {
+      return { name: skill.name, action: 'preserved' };
+    }
+    if (!force && !installed.modified && isEntrySkillFresh(skill.name, skill.content)) {
       return { name: skill.name, action: 'skipped' };
     }
     installEntrySkill(skill);
@@ -98,6 +116,12 @@ export async function installStandaloneSkill(
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
     throw new Error(`invalid skill slug '${slug}'. Use a slug like goose-graphics.`);
   }
+  const targetDir = path.join(SKILLS_BASE, slug);
+  if (fs.lstatSync(targetDir, { throwIfNoEntry: false }) && !options.overwriteModified) {
+    // Legacy standalone stamps contain no file hashes. Do not guess whether a
+    // saved recipe was edited; explicit replacement is required for those too.
+    throw new Error(`Existing ${slug} package preserved. Back it up and pass --overwrite-modified to replace it; approved projects keep their pinned package.`);
+  }
 
   const tree = await fetchGooseSkillsTree();
   const { prefix, files } = findSkillFiles(tree, slug);
@@ -108,7 +132,6 @@ export async function installStandaloneSkill(
     throw new Error(`skill '${slug}' not found.${suffix}`);
   }
 
-  const targetDir = path.join(SKILLS_BASE, slug);
   const stagingDir = path.join(SKILLS_BASE, `.${slug}.installing`);
   fs.rmSync(stagingDir, { recursive: true, force: true });
 

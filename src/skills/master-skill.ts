@@ -21,7 +21,7 @@
  *
  * Recipe skills (remix-graphic-ad-from-reference, brand-research, meta-ads-analyzer,
  * …) are NOT vendored here — they live in goose-skills and are fetched live on
- * demand via `gooseworks fetch <slug>`, so they're always current.
+ * demand from the connected catalog; saved packages retain their recorded hashes.
  */
 import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
 import { CUSTOM_VIDEO_ADAPTER_CONTENT } from './custom-video-skill';
@@ -39,6 +39,28 @@ export interface EntrySkill {
  * and a run that narrated it ("checking the media-proxy helpers for voiceover
  * timestamps and lipsync", "generated with gpt-image-2") read as noise.
  */
+const SKILL_FRESHNESS = `## Use current instructions for new work
+
+Before a new task in a terminal host, run \`gooseworks skills status\` once. It compares the
+installed entry files, running CLI and published npm release. An older CLI needs a package
+upgrade before \`gooseworks update\`; update alone only uses that CLI's bundled instructions.
+Preserve local edits or unknown install provenance. Review/back up before explicitly replacing
+modified files; never quietly reinstall over them. If the release check is unavailable, report
+that freshness is unknown rather than claiming the local copy is latest.
+
+For a new recipe run, fetch its package from the connected catalog. Retain the returned
+\`version\` / \`contentHash\` and every dependency's hash with the saved package. When reusing a
+saved fetch JSON, \`gooseworks fetch <slug> --saved-package <file>\` returns the current package
+and a hash comparison without changing that file. With MCP, if the advertised \`catalog_fetch\`
+schema accepts them, send \`saved_content_hash\` and \`saved_dependency_hashes\`; otherwise fetch
+normally and compare the returned hashes yourself. Missing hashes mean unknown, not current.
+The server cannot inspect a client's saved files; hash metadata does not certify later edits.
+Fetch current packages into a new run directory and report stale saved instructions. Preserve
+an existing approved run's recorded package; changing that harness requires a reviewed change
+and approval before spending. Hosted installed snapshots use the existing Skills Update action.
+Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
+the other. Check the actual advertised tools before using new fields.`;
+
 const CUSTOMER_TALK = `## How to talk to the customer (applies to every message you send them)
 
 The customer is a marketer or founder, not an engineer. Everything in this skill about tools,
@@ -67,7 +89,9 @@ Example. Instead of a dozen lines about render tools, scripts, uploads and portr
 "Got it: warm tone, home podcast studio, Brielle as the skeptic and Mark as the believer." then
 "Script and voices are done (about 34 seconds)." then "Ready for you to review: the script, voices,
 both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
-here and I'll make the full video (about N credits)."`;
+here and I'll make the full video (about N credits)."
+
+${SKILL_FRESHNESS}`;
 
 const ENVIRONMENT_IDENTITY = `## Keep the selected connection for the whole run
 

@@ -1,4 +1,7 @@
 import * as http from 'http';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { AddressInfo } from 'net';
 
 jest.mock('../../src/auth/credentials', () => ({
@@ -19,7 +22,7 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { getCredentials } from '../../src/auth/credentials';
 import * as loggerModule from '../../src/utils/logger';
-import { fetchCommand } from '../../src/commands/fetch';
+import { fetchCommand, createFetchCommand } from '../../src/commands/fetch';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 
@@ -175,4 +178,29 @@ describe('fetch command', () => {
 
     expect(loggerModule.error).toHaveBeenCalledWith('Invalid response from server');
   });
+  it('reports stale saved dependency metadata and leaves the saved package unchanged', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa37-saved-'));
+    const target = path.join(dir, 'package.json');
+    const saved = JSON.stringify({slug: 'recipe', contentHash: 'root', dependencySkills: [{slug: 'helper', contentHash: 'old'}]});
+    fs.writeFileSync(target, saved);
+    try {
+      server = await startServer((_req, res) => {res.writeHead(200, {'Content-Type': 'application/json'});res.end(JSON.stringify({status: 'success',data: {slug: 'recipe', name: 'Recipe', content: '# current', contentHash: 'root', dependencySkills: [{slug: 'helper',contentHash: 'new'}]}}));});
+      mockGetCredentials.mockReturnValue({api_key: 'cal_test',email: 'u@example.com',agent_id: 'agent-1',api_base: server.url});
+      await createFetchCommand().parseAsync(['node','test','recipe','--saved-package',target]);
+      const result = JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]));
+      expect(result.freshness).toMatchObject({status: 'stale',changes: ['helper']});
+      expect(result.content).toBe('# current');
+      expect(fs.readFileSync(target,'utf8')).toBe(saved);
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+
+  it('refuses a non-file saved package before requesting the catalog', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa37-directory-'));
+    mockGetCredentials.mockReturnValue({api_key:'cal_test',email:'u@example.com',agent_id:'agent-1',api_base:'http://127.0.0.1:1'});
+    try {
+      await expect(createFetchCommand().parseAsync(['node','test','recipe','--saved-package',dir])).rejects.toThrow('process.exit called');
+      expect(loggerModule.error).toHaveBeenCalledWith('Saved package must be a regular JSON file');
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+
 });

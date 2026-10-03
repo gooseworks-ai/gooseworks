@@ -152,11 +152,19 @@ Credits: 847 available (500 subscription + 347 purchased)
 
 ### `update`
 
-Re-fetch the latest skill without re-authenticating.
+Refresh the entry instructions bundled in your installed CLI without re-authenticating.
+The command checks the published release first and refuses to reinstall a known older CLI
+bundle. Edited or untracked entry files and standalone recipe packages are preserved.
 
 ```bash
+npx gooseworks skills status
 npx gooseworks update
 ```
+
+Use `gooseworks skills status --json` for release, bundle and actual-file hashes. Upgrade an
+outdated CLI with `npm install -g gooseworks@latest` before updating its entries. Review and
+back up local edits before explicitly using `gooseworks update --overwrite-modified`.
+An unavailable release check means freshness is unknown, not current.
 
 ## How It Works
 
@@ -214,7 +222,7 @@ npx gooseworks call scrapecreators /v1/facebook/adLibrary/search/ads \
 
 We'd rather you know exactly what this CLI does before you run it:
 
-- **Skill scripts are open source and fetched at runtime.** `gooseworks fetch <slug>` (and the skills that call it) download skill content and Python scripts from the GooseWorks catalog on demand, save them under `/tmp/gooseworks-scripts/`, and run them on your machine. Every skill and its scripts live in the public, open-source [goose-skills repo](https://github.com/gooseworks-ai/goose-skills/tree/main/skills) — the catalog is synced from there — so the code is the same maintained, auditable source you can read on GitHub. They're served from the catalog (kept current) rather than pinned to the installed CLI version, so you always get the latest version of a skill.
+- **Skill scripts are open source and fetched at runtime.** `gooseworks fetch <slug>` (and the skills that call it) download skill content and Python scripts from the GooseWorks catalog on demand, save them under `/tmp/gooseworks-scripts/`, and run them on your machine. Every skill and its scripts live in the public, open-source [goose-skills repo](https://github.com/gooseworks-ai/goose-skills/tree/main/skills) — the catalog is synced from there — so the code is the same maintained, auditable source you can read on GitHub. They are served from the connected catalog rather than the installed CLI version. Saved copies retain the version/hash returned when fetched; compare them again for new work.
 - **The MCP server is opt-in.** It's only registered when you pass `--mcp` (or `--all`). When you do, the CLI adds a `gooseworks` entry to `~/.claude.json` (Claude Code) or `~/.codex/config.toml` (Codex) that includes your bearer token in an `Authorization` header — this is how every HTTP MCP server authenticates. Skip `--mcp` if you don't want the server registered as a live tool provider; shared onboarding and ads creation require it.
 - **Credentials are stored locally.** Your API key lives in `~/.gooseworks/credentials.json`, written with `0600` permissions in a `0700` directory. `gooseworks logout` deletes it.
 - **`gooseworks env` exposes your key.** `eval $(gooseworks env)` exports `GOOSEWORKS_API_KEY` into your shell environment, where any process you run can read it. Most commands (e.g. `gooseworks call`) load credentials on their own — only use `env` when a script genuinely needs the environment variable.
@@ -246,8 +254,8 @@ creative fatigue, CAC & lead quality, competitor ad intelligence, ad angles & ho
 `gooseworks` parent router also hands ad requests to it. Claude auto-loads whichever skill
 matches the task; the two are domain-scoped and never merged.
 
-> Renamed from `ads-remix`. Older installs get the stale `ads-remix` skill cleaned up
-> automatically on the next `install`.
+> Renamed from `ads-remix`. Install and update preserve legacy directories. If an
+> older `ads-remix` entry remains, review and back it up before removing it yourself.
 
 ```bash
 gooseworks install --claude --mcp
@@ -284,12 +292,20 @@ generation. New runs use the currently published catalog version.
 
 ### Keeping skills up to date
 
-- **Entry skills** (`gooseworks`, `goose-ads`) are vendored in the CLI. They're (re)installed
-  on `install`/`update`, and **refreshed on `login`** — but only when their content actually
-  changed (a content-hash stamp skips unchanged ones, so re-running is cheap). Bump the CLI
-  (`npx gooseworks@latest …`) to get new entry-skill content.
-- **Recipe skills** (e.g. ad-analytics like `meta-ads-analyzer`) are **fetched live** from
-  goose-skills each time they're used, so they're always current — nothing to update.
+- **Entry skills** are bundled in the CLI. `skills status` compares their actual installed bytes,
+  bundled bytes and the integrity-verified published npm package. Install/update/login warn
+  about an outdated CLI, different instructions, modified files or an unavailable release check.
+  They preserve edited or untracked files by default. A development build ahead of the release
+  is reported as unreleased; it is not silently downgraded.
+- **Saved recipe packages** use the connected catalog's `version` / `contentHash` and dependency
+  hashes. `gooseworks fetch <slug> --saved-package <json-file>` compares a saved fetch response
+  and returns the current package without replacing the file. Canonical MCP `catalog_fetch`
+  supports optional saved hashes when advertised; other hosts compare the returned hashes
+  themselves. The server cannot inspect a client's files, and reported hashes do not certify
+  later manual edits. Missing hashes mean unknown.
+- **Hosted snapshots** use the existing Skills Update action. Approved runs keep their recorded
+  package. Fetch into a new directory for new work; do not replace a running project's harness.
+  Updating skill content does not refresh a host's cached MCP tool schemas.
 
 ## File Layout
 

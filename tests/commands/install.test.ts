@@ -1,3 +1,8 @@
+jest.mock('../../src/commands/skills', () => ({
+  readEntryFreshnessReport: jest.fn().mockResolvedValue({cli: 'current'}),
+  reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
+}));
+
 import * as fs from 'fs';
 import * as os from 'os';
 
