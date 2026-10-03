@@ -97,7 +97,7 @@ function repair(code: BrowserProbeCode, folder: string, cliPath?: string): strin
   if (code === 'missing_module') return `${cd} && npm install playwright && npx --no-install playwright install chromium`;
   if (code === 'missing_browser') return `${cd} && ${cli} install chromium`;
   if (code === 'ready') return '';
-  return `${cd} && ${cli} install --with-deps chromium; then re-run the same check (see the launch error)`;
+  return `${cd} && ${cli} install --with-deps chromium`;
 }
 
 // spawnSync has no detached/process-group option. This supervisor uses spawn()
