@@ -11,7 +11,7 @@ description: >
   video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.5.0
+version: 0.5.1
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -157,7 +157,8 @@ Seedance, Kling). No atom script is needed:
 
 1. A local input (a frame pulled from a screen recording, a screenshot) must be a public URL first:
    `media_upload { brand_id, scope: "video_project", scope_id: project_id, source: { type: "file" | "bytes", … } }`
-   (no `path`) and use the returned `media.url`.
+   (no `path`). For a file, PUT its bytes to `upload.url` with `upload.required_headers`,
+   then call `media_confirm { brand_id, media_id: media.id }`. Use the returned `media.url`.
 2. `data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }`
    returns `{ job_id: "fal:<request_id>" }`. Pass an `idempotency_key` so a retry isn't billed twice.
 3. Poll `job_get { job_id }` every few seconds until `complete`; the `*.fal.media` URLs are in
@@ -202,7 +203,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Project assets | `video_project_upsert { …, patch: { assets: [...] } }` | `update_ad_project_asset` |
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
 | Batch status | `video_project_upsert { brand_id, batch_id, patch: { batch: { status } } }` | `update_ad_video_batch` |
-| Upload a file to the project | `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }` → PUT (no confirm for `path` uploads) | `get_upload_url` / `get_ad_upload_url` |
+| Upload a file to the project | `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }` → PUT → `media_confirm { brand_id, media_id: media.id }` | `get_upload_url` / `get_ad_upload_url` |
 | Save / find a finished piece (resume) | `media_upload { …, path, ingredient_key, input_digest }` / `media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "" }` (see "Save as you go") | none |
 | Open the render row | `video_render_run { brand_id, project_id, kind: "full" }` (no `dry_run`; returns `render_id`) | `submit_render { project_id, kind: "full" }` |
 | Update the render row | `video_render_run { brand_id, project_id, render: { render_id, status, output_url?, thumbnail_url?, error_message?, quality_status?, quality_report? } }` | `update_render_status` |
@@ -320,10 +321,12 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   project-relative path (`working/final.mp4`, `working/review/end-card.png`). The server stores it
   in the project folder of the org-default Ads agent (where the app's render-file route reads) and
   returns `upload.url` (presigned PUT), `upload.required_headers` and
-  `upload.render_file_url`. PUT the bytes with exactly those headers. **Do NOT call
-  `media_confirm` for a `path` upload** — it is a workspace-file upload and the server rejects
-  confirm on it ("not created through a presigned upload"); `media_confirm` is only for a
-  path-less upload. Never hand-build storage paths or agent prefixes; a bare workspace upload is
+  `upload.render_file_url`. PUT the bytes with exactly those headers, check the PUT returned
+  2xx, then call `media_confirm { brand_id, media_id: media.id }` and require success before
+  using the file in ingredients or completing a render. This applies to project-path and
+  path-less file uploads. Confirmation verifies the stored file; Goose performs this tool step
+  without asking the user for another approval. On failure, report or repair the upload before
+  continuing. Never hand-build storage paths or agent prefixes; a bare workspace upload is
   invisible in the app.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   per call as you generate (Step 4). The render row (`video_render_run kind: "full"`) charges the flat
@@ -365,7 +368,9 @@ inputs: {key: digest, …}})`.
 `media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "",
 limit: 100 }`. It returns ONE compact row per `ingredient_key` (the newest):
 `{ id, ingredient_key, input_digest, kind, status, mime, bytes, url, path, created_at }`. Every
-status except archived is included (project-path uploads stay `pending` — that is normal).
+status except archived is included. Project-path uploads remain `pending` until
+`media_confirm` succeeds. Confirm a pending project-path upload before reusing it; if
+confirmation fails, repair the upload before treating it as a verified save.
 Page with `cursor` if `next_cursor` is set (keep the first row you see per key — it is the newest). Also read `script_drafts.ingredients` from
 `video_project_read`: it records which pieces were already approved in the review.
 
@@ -395,8 +400,9 @@ different take of the same inputs.
 the uploads to the end:
 `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
 "working/<role>/<file>", ingredient_key, input_digest, source: { type: "file", filename,
-content_type } }` → PUT the bytes to `upload.url` with `upload.required_headers` (no
-`media_confirm` for a `path` upload). Kind: `audio` (VO), `music`, `image` (a still),
+content_type } }` → PUT the bytes to `upload.url` with `upload.required_headers` →
+`media_confirm { brand_id, media_id: media.id }`. Require a successful confirmation.
+Kind: `audio` (VO), `music`, `image` (a still),
 `video` (a clip), `endcard`, `document` (captions / a JSON sidecar), `render` (the master),
 `thumbnail`. Re-uploading the same key is fine — the newest wins. A piece that FAILED QC is never
 uploaded under its key. **Save a piece's sidecars with it** under `<key>.<name>` — e.g. the VO's
@@ -408,7 +414,7 @@ brand names.
 and `ingredient_key` on its entry in `script_drafts.ingredients` and mirror with
 `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts } } }`. Batch this
 script patch every 3–5 pieces (and always once more when a stage ends) to limit calls — the
-`media_upload` itself is what makes a piece safe, so it is never batched.
+upload and confirmation make the piece safe, so neither is batched.
 
 The `final` master and `final-thumb` poster (Step 4.4) carry `ingredient_key` too, so a
 resumed run that finds a passing `final` with the same digest only needs to publish.
@@ -809,7 +815,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - **FREE or CHEAP paid** (≤ ~100 credits) → generate it now and upload it with
      `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
      "working/review/<name>", ingredient_key, input_digest, source: { type: "file", filename:
-     "<name>", content_type } }` → PUT (no `media_confirm` for a `path` upload); set that
+     "<name>", content_type } }` → PUT → `media_confirm { brand_id, media_id: media.id }`;
+     after confirmation succeeds, set that
      piece's `path` (+ `media_id`, `ingredient_key`) in `script_drafts` to the project-relative
      `working/review/<name>`. First check "Save as you go" — a piece already saved with the same
      digest is downloaded, not regenerated.
@@ -962,10 +969,11 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    recipe never has to opt in.**
 4. Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
    path: "working/final.mp4", ingredient_key: "final", input_digest, source: { type: "file", filename: "final.mp4", content_type:
-   "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` (no
-   `media_confirm` — path uploads don't take one). Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
+   "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` →
+   `media_confirm { brand_id, media_id: media.id }`. Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
    Keep each `upload.render_file_url`. Verify the PUT returned 2xx and the file you uploaded is a
-   real, non-empty MP4 (ffprobe it) BEFORE marking the render complete.
+   real, non-empty MP4 (ffprobe it), and require both confirmations to succeed BEFORE marking
+   the render complete.
    Then `video_render_run { brand_id, project_id, render: { render_id, status: "complete", output_url, thumbnail_url } }` (attach the Step 4.3 verdict as `quality_status: "passed"` (or
    `"blocked"` when the gate still fails after 2 repair rounds) + `quality_report` — ALWAYS
    attach it; a batch concept cannot complete without a passing one; exact shape, strict (no extra keys):
