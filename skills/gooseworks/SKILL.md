@@ -72,7 +72,7 @@ Examples — all of these route to `goose-ads`, not the data flow: "remix this a
 
 ## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
 
-**Call `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use `brand_get_context` with the same sections. It is a read-only call that returns the brand's canonical facts and saved rules:
+**Call `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use `brand_get_context` with the same sections only when that tool is advertised. It is a read-only call that returns the brand's canonical facts and saved rules:
 
 | It returns | Use it for |
 | --- | --- |
@@ -87,7 +87,7 @@ Then:
 1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
 2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
-4. **If the canonical reads are unavailable** (no MCP connection), fall back to `get_brand_kit` for the selected brand and treat its fields the same way. If neither is available, tell the user the GooseWorks MCP connection is needed rather than guessing brand facts.
+4. **If `brand_read` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose `brand_get_context` / `get_brand_kit`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
 5. **A read grants no write permission.** Save explicit durable answers/corrections with the capture policy below. Propose agent-derived changes for review; never overwrite confirmed knowledge with research or a guess.
 
 Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
@@ -304,7 +304,7 @@ Brand Growth is a collection inside the normal skill catalog, not a command or i
 | Written content and repurposing | `content-repurposing` |
 | Graphics and animation | `goose-graphics`, `animate-image` |
 
-Fetch the named public skill before following it. You already called `brand_get_context` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as `scrapecreators-api` and `transcript-intelligence` are dependencies, not user-facing results.
+Fetch the named public skill before following it. You already called `brand_read` — hand the brand's voice, products, audience, and positioning to the fetched skill instead of letting it re-derive or re-ask them. Provider helpers such as `scrapecreators-api` and `transcript-intelligence` are dependencies, not user-facing results.
 
 For a multi-part request, repeat this routing check before each new job. Fetch and follow the
 closest outcome skill first (for example, `comment-mining`, `creator-profile-teardown`, or

@@ -69,7 +69,7 @@ no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reje
 ## Start from the brand context — don't re-ask what it already answers
 
 If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
-`brand_get_context` first (falling back to `get_brand_kit` for the selected brand). It already
+`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` first. It already
 answers most of what the flows below would otherwise ask the user:
 
 - **Which product to feature** → `products[]`. Offer the real catalog entries; never guess a

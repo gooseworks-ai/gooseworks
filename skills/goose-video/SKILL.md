@@ -193,7 +193,7 @@ MCP tools; `goose-video-local` does the making.
 
 - `brand_list`: brand NAME → `brand_id`. Pass `query` when they named one.
 - `brand_create { name, website_url }`: only when the customer asks to add a brand that isn't there. Free.
-- `brand_get_context { brand_id }`: research status, logo, product photos.
+- `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }`: research status, logo, product photos.
 - `video_catalog_list { kind: "formats", brand_id }`: every format that can be made. Each row has `template_id`, `card.description`, `card.best_for`, `card.needs` and `examples[]` (demo videos). The response carries a `client_formats_note` with the machine checks.
 - `video_project_upsert { brand_id, name, format: <template_id> }`: creates the project. Free.
 - `catalog_fetch { type: "skill", slug: "goose-video-local" }`: the skill that makes it.

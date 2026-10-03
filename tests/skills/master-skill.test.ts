@@ -263,9 +263,9 @@ describe('skills/getEntrySkills', () => {
 });
 
 describe('skills/brand-aware router preamble (GOOSE-3193)', () => {
-  it('the router mandates brand_get_context BEFORE routing', () => {
+  it('the router mandates brand_read BEFORE routing', () => {
     const master = getMasterSkillContent();
-    expect(master).toContain('brand_get_context');
+    expect(master).toContain('brand_read');
     expect(master).toContain('Load the brand context FIRST');
     // The five things the preamble must carry into the routed skill.
     for (const field of ['voice', 'products', 'audience', 'positioning', 'research status']) {
@@ -278,7 +278,7 @@ describe('skills/brand-aware router preamble (GOOSE-3193)', () => {
     ['goose-ads', getGooseAdsSkillContent()],
     ['goose-product-photos', getGooseProductPhotosSkillContent()],
   ])('%s tells the agent to use the brand context instead of asking', (_name, skill) => {
-    expect(skill).toContain('brand_get_context');
+    expect(skill).toContain('brand_read');
     expect(skill).toContain("don't re-ask what it already answers");
   });
 });
