@@ -317,6 +317,10 @@ Then say plainly, in one short paragraph: it renders on this machine; paid steps
 ### 5. Create the project and hand it off, in this session
 
 1. `video_project_upsert { brand_id, name, format: <template_id> }` with **no `brief`** (a brief makes a concept batch).
+   If the customer already chose a campaign or campaign concept, include its verified
+   `campaign_id` and optional `campaign_concept_id` on this create (also on a batch create).
+   Use the IDs read from that brand's saved campaign; the concept must belong to that campaign.
+   Omit unknown IDs and never infer a link or create a campaign solely to file a video.
 2. Load `goose-video-local` (installed, or `catalog_fetch { type: "skill", slug: "goose-video-local" }`) and follow it on that `project_id` now. Their step-2 answer and anything they volunteered is the brief for its Step 1.5: use it, don't ask again.
 
 Do not hand the customer a command to paste somewhere else.

@@ -546,6 +546,13 @@ written per-project; a batch just runs it N times with the shared approval gate 
    review in Step 3 and delivery in Step 5), AND the user's **`creative_brief`**, project
    **`assets`**, `character_id`, `default_voice_id` — these are the authoritative inputs the user
    chose in the composer (see Step 1.5). Do NOT discard them. Then `export GW_PROJECT_ID=<project_id>`.
+   Keep its saved `campaign_id` and `campaign_concept_id` too. If the customer explicitly
+   wants to attach this existing video to a known campaign/concept, verify the IDs with the
+   campaign read and use `video_project_upsert { brand_id, project_id, patch: {
+   campaign_association: { campaign_id, campaign_concept_id? } } }` as a separate, sole-field
+   patch. Read back the same project and confirm the saved IDs. Linking never needs a new
+   project, render, generation call or approval. A conflicting saved link stays intact; explain
+   it instead of silently moving the video. Leave unlinked legacy videos alone unless asked.
 
 ### Step 1.5 — the project brief is AUTHORITATIVE (honor it; don't re-ask)
 
