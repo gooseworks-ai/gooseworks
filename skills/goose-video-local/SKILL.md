@@ -88,6 +88,43 @@ and models; ignore its intermediate pauses. This is the exact contradiction that
 
 The app NEVER runs this skill by itself — it is the viewer + review surface; you are the renderer.
 
+## Keep the selected connection for the whole run
+
+Call `account_whoami` on the connection that owns the brand/project before the first write.
+Keep `environment.name` and the public `environment.api_origin` with this run. Respect the
+user's selected production or staging connection. If multiple connections are available and
+none was selected, resolve that once. Missing or unknown identity is uncertainty, not
+permission to switch. Never infer the environment from credits, billing links or Node mode.
+
+Reads, project creation, uploads, generation, polling and final updates all use that same
+connection. If a production request fails, resume or report the failure on production;
+never retry it on staging or recreate the project there. Before retrying a timed-out write,
+read back the existing project or paid request on the selected connection.
+
+Local/CLI proxy origin must match `environment.api_origin`. If it differs, use the MCP
+relay on the selected connection (`GW_MEDIA_VIA=mcp`) before paid calls. Do not change
+credentials or API origins to recover a failed write. An explicit user-requested move is
+a separate operation, with the existing project and paid requests reconciled first.
+
+## Check assets for the selected format before spending
+
+For a template, read its structured `asset_readiness` from
+`video_catalog_list { kind: "formats", brand_id }`. `missing` names gaps;
+`needs_review` means suitability is unverified, including older recipes without
+structured requirements. `ready` describes assets only, not script or budget approval.
+For a custom video, derive requirements from its actual approved scenes.
+
+Inspect candidate files for the chosen product and format. A catalog photo can contain
+multiple objects, other products or a person; its existence or approved status does not
+make it a standalone image of the selected product. Check object count, framing, readable
+print and real image bytes. A service conversation has no automatic packshot requirement.
+
+Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
+original, inspect the result and include it in the normal ingredient review. When no
+usable input exists, explain the gap before generation. Estimate any paid preparation
+separately before spending. Record the selected asset and inspection in the project
+review set; do not add a separate approval round.
+
 ## Where am I running? (decide once, first)
 
 Check in Bash, without printing any secret value:
