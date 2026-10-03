@@ -11,7 +11,7 @@ description: >
   video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.5.1
+version: 0.5.2
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -289,14 +289,16 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   rendering until one is confirmed:
   1. **Sandbox →** see "Running in a GooseWorks sandbox": ffmpeg + ffprobe (+ PIL on demand); no
      Chromium, so browser formats stop there.
-  2. **CLI present →** run `gooseworks doctor` (checks login, MCP, Node 18+, ffmpeg with
-     libx264 + libass, ffprobe, and that Playwright's Chromium is actually DOWNLOADED, in one
-     shot). Fix any ✗ with the command it prints, then continue.
+  2. **CLI present →** run `gooseworks doctor --no-browser` for login, MCP, Node 18+, ffmpeg
+     with libx264 + libass, and ffprobe. This is common setup only. After fetching the selected
+     capabilities in Step 2, check each browser renderer's actual launch before ANY paid
+     ingredient. An unscoped `gooseworks doctor` checks only the calling folder's browser;
+     it cannot certify a different fetched renderer.
   3. **No CLI →** check the toolchain yourself: `node --version` (18+), `ffmpeg -version`,
-     `ffprobe -version`, and the Chromium browser itself — `npx --no-install playwright install
-     --dry-run chromium` prints the install location; if that folder is missing, run
-     `npx playwright install chromium`. A resolvable `playwright` package with no browser
-     downloaded is the classic false pass. The `watch` QC step later needs the same ffmpeg and,
+     `ffprobe -version`, plus `ffmpeg -hide_banner -encoders` (libx264) and
+     `ffmpeg -hide_banner -filters` (ass). After fetching, use the exact-package free launch
+     check in Step 2; resolving a package or finding a cache folder does not prove its browser
+     can launch. The `watch` QC step later needs the same ffmpeg and,
      for transcripts, a Whisper backend — without one it degrades to frames only.
   4. **Docker available →** the most reliable way to get the toolchain on a host that lacks it:
      run the render steps inside the prebuilt image
@@ -731,8 +733,32 @@ there is no `format → recipe-slug` table and no per-format skill to fetch.
 
 Save each fetched capability's content, scripts + files under `/tmp/gooseworks-scripts/<name>/`
 (layout in "Running in a GooseWorks sandbox"). If a capability is a Node package (a phone-mockup
-renderer), `npm install` in its folder so its `generate.js` + Playwright resolve, and point the
-recorder's `NODE_PATH` at it — local machines only; in a sandbox that format stops (no Chromium).
+renderer), install its documented dependencies in the folder containing its `package.json`,
+and preserve the recorder's documented `NODE_PATH` — local machines only; in a sandbox that
+format stops (no Chromium).
+
+**Selected browser readiness — before ANY paid ingredient:** identify the actual browser script
+from the fetched capability's instructions (including an HTML end-card renderer if used).
+For Node scripts using `require('playwright')` with default `chromium.launch()`, run
+`gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"`.
+Substitute the actual script, and keep the same cwd and environment as the render, including
+`NODE_PATH` and `PLAYWRIGHT_BROWSERS_PATH`. It resolves Playwright relative to that script,
+launches and closes Chromium with the default settings and bounded waits, and downloads nothing.
+On failure, stop before spending, show its folder-specific repair and recheck after setup.
+For non-browser formats use `doctor --no-browser` plus their documented runtime checks;
+never combine `--no-browser` with `--renderer-script` or use it to bypass a browser renderer.
+
+**No CLI or CLI without these flags:** run an equivalent free probe in a separate Node process: use
+`require('node:module').createRequire(require('node:path').resolve(actualRendererScript))`
+to load `playwright`; keep the render's cwd, environment and default launch settings. Await
+`chromium.launch({ timeout: 15000 })`, then await `browser.close()` (bound close to 3 seconds).
+Bound the whole process to 20 seconds and stop its own process tree on failure or timeout.
+Report the resolved module path/version and error without credentials. Missing module, executable,
+headless runtime or failed launch is a failed check; a cache folder, executablePath alone or
+another project's browser is not a pass. Other browser packages, Python renderers or custom
+launch settings need the same free launch/close check through their documented runtime and
+actual settings. Do not replace their browser/channel/flags to get a pass. Setup is a separate
+action under existing permissions; this check never silently installs or downloads anything.
 
 > **Migration note:** older phone-mockup formats (`imessage` / `chatgpt` / `apple-notes`) whose DB
 > recipe does not yet carry `atoms` / `instructions` still hold the legacy `recipe.thread` payload;
@@ -1092,8 +1118,9 @@ FAL storage proxy. Never pass a `render-file` URL to a provider — it needs app
 - **The CLI and credentials.json are optional.** In a GooseWorks sandbox (`GW_MEDIA_PROXY_TOKEN`
   set) use the env proxies and `catalog_fetch`; never call a provider with a raw key.
 - **No Chromium in a sandbox** — a browser-rendered format stops there, before any spend, and says so.
-- **Toolchain before spend** — `gooseworks doctor` (CLI) or the manual check; stop with the exact
-  fix if anything is missing.
+- **Toolchain before spend** — common checks use `gooseworks doctor --no-browser`; every selected
+  browser renderer must also pass `--renderer-script` or its equivalent exact-runtime launch
+  check in Step 2. Stop with the folder-specific fix if anything is missing.
 - **Assemble the whole review set first**, mirror it with `video_project_upsert patch.script`, and
   get ONE approval in this chat, recorded with `patch.approve`, BEFORE the expensive render
   (review-once). Never send the user to the app to approve; the app is only for reviewing.
