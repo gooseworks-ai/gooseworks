@@ -16,6 +16,7 @@ import { formatsCommand } from './commands/formats';
 import { doctorCommand } from './commands/doctor';
 import { logCommand } from './commands/log';
 import { videoLocalCommand } from './commands/video-local';
+import { videoSaveCommand } from './commands/video-save';
 import { getVersion } from './version';
 
 const program = new Command();
@@ -41,5 +42,6 @@ program.addCommand(doctorCommand);
 program.addCommand(logCommand);
 // Hidden: serves only paused server video orders (see commands/video-local.ts).
 program.addCommand(videoLocalCommand, { hidden: true });
+program.addCommand(videoSaveCommand);
 
 program.parse();
