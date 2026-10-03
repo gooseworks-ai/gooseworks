@@ -254,8 +254,8 @@ creative fatigue, CAC & lead quality, competitor ad intelligence, ad angles & ho
 `gooseworks` parent router also hands ad requests to it. Claude auto-loads whichever skill
 matches the task; the two are domain-scoped and never merged.
 
-> Renamed from `ads-remix`. Older installs get the stale `ads-remix` skill cleaned up
-> automatically on the next `install`.
+> Renamed from `ads-remix`. Install and update preserve legacy directories. If an
+> older `ads-remix` entry remains, review and back it up before removing it yourself.
 
 ```bash
 gooseworks install --claude --mcp
