@@ -136,6 +136,28 @@ Each estimate requires total_credits (a nonnegative number, at most 3,000), basi
 
 For example, a narrator selection is voices:{narrator:{voice_id:"<actual catalog ID>",name:"<catalog name>"}}. A preview estimate is preview_estimate:{total_credits:100,basis:"One presenter image and two voice auditions",operations:["Presenter image: fixed-price supported model","Two voice auditions: the saved script"]}. These values illustrate the shape; quote the actual supported operations for the run.
 
+Before saving either preview_estimate or render_estimate, quote each remaining paid media operation through data_post_provider with its exact supported path, body and project_id plus query:{quote_only:true}. Before sending this flag, read a fresh data_post_provider tool description from the selected connection. It must explicitly advertise query:{quote_only:true}, maximum_credits and no generation, reservation or debit. Alternatively, require explicit environment-owner evidence that this same selected app-MCP runtime has deployed free quote support. An extensible query schema or a newer fetched skill is not evidence. If the description is old and no verified runtime evidence exists, stop before the call and request the backend rollout and connector refresh; an older server can treat this flag as a paid generation request. The quote requires no approval and generates no media. This mode is MCP-only; do not send quote_only to an HTTP generation proxy.
+
+```json
+{
+  "provider": "fal",
+  "path": "fal-ai/kling-video/v3/standard/image-to-video",
+  "body": {
+    "image_url": "https://example.com/approved-anchor.png",
+    "duration": "5",
+    "generate_audio": false
+  },
+  "project_id": "<this project ID>",
+  "query": {
+    "quote_only": true
+  }
+}
+```
+
+Require quote_only:true, a finite positive maximum_credits and cost.credits:0 in the result. If the server returns a job, audio, a charge or any non-quote result, stop and report the tool/runtime mismatch; never retry it as a quote. Unknown or unbounded prices block planning. Do not substitute public unit prices or guessed billed discounts for maximum_credits: the custom reservation includes conservative quantity, size, audio and preset bounds, while actual settlement can be lower.
+
+Sum maximum_credits for all remaining operations in the phase into that estimate's total_credits, including every concurrently planned job. Keep local free assembly/QC operations at zero. The approved project cap includes custom_review.committed_credits plus the remaining quoted estimate; committed includes both settled spend and outstanding reservations. Read the current review again before approval, avoid counting an already reserved job twice, and quote any changed model/body before seeking revised approval. Quotes are not approval tokens or locked prices; real submission rechecks its current conservative bound and the approved budget.
+
 Before script approval, only plan/save free text. preview_estimate quotes future storyboard images and voice auditions. custom_review.script_approved permits priced image previews on supported fal image endpoints and ElevenLabs text-to-speech auditions. Unknown endpoints require ingredient approval. Use catalog voice previews when possible; do not silently select a paid model outside the preview allowlist.
 
 Upload actual previews with media_upload/media_confirm. Put public/durable URLs on image/avatar/background/endcard/voice/audio/video ingredients. Text containers can carry inline text; a voice or image description cannot replace its preview. Save a render_estimate for remaining clips/assembly and show the complete ingredients. Stop until custom_review.ingredients_approved. Script and ingredient tokens are independent; do not infer approval from project.status.
