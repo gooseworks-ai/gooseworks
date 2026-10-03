@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { checkBrowserPreflight } from '../../src/utils/browser-preflight';
 
 // Real child processes and Node module resolution, with disposable fake packages.
@@ -196,3 +197,40 @@ treeTest('bounds a hung close and cleans up its browser process tree', async () 
   expect(probe(script)).toMatchObject({ ok: false, code: 'close_failed' });
   await waitForExit(Number(fs.readFileSync(pidFile, 'utf8')));
 });
+
+for (const mode of ['hung-launch', 'failed-close', 'hung-close']) {
+  treeTest(`cleans separate detached browser/renderer groups after ${mode} without killing unrelated processes`, async () => {
+    const script = renderer(path.join(root, 'fetched/scripts'));
+    const pidFile = path.join(root, 'detached-browser.json');
+    // Playwright starts Chromium detached on Unix. Chromium may also have
+    // grandchildren; include another detached group to prove parentage matters.
+    const browserCode = `
+      const {spawn} = require('child_process');
+      const renderer = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+      require('fs').writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, renderer.pid]));
+      setInterval(()=>{},1000);
+    `;
+    playwright(path.dirname(script), `
+      const child = require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(browserCode)}], { detached: true, stdio: 'ignore' });
+      // Wait for its renderer child before reporting a close failure.
+      for (let n=0; n<100 && !require('fs').existsSync(${JSON.stringify(pidFile)}); n++) await new Promise(resolve=>setTimeout(resolve,5));
+      ${mode === 'hung-launch' ? 'await new Promise(() => {});' : ''}
+    `, mode === 'failed-close' ? 'throw Error("close failed");' : 'await new Promise(() => {});');
+    const unrelated = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+    const started = Date.now();
+    try {
+      const result = probe(script);
+      expect(result).toMatchObject({ ok: false, code: mode === 'hung-launch' ? 'timeout' : 'close_failed', cleanup: { ok: true, remainingPids: [] } });
+      expect(Date.now() - started).toBeLessThan(4000);
+      const pids: number[] = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+      for (const pid of pids) await waitForExit(pid);
+      expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
+    } finally {
+      // Dispose only explicitly owned fixture processes even when assertions fail.
+      const pids: number[] = fs.existsSync(pidFile) ? JSON.parse(fs.readFileSync(pidFile, 'utf8')) : [];
+      for (const pid of [...pids, unrelated.pid!]) {
+        try { process.kill(-pid, 'SIGKILL'); } catch {}
+      }
+    }
+  });
+}
