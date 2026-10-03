@@ -167,6 +167,12 @@ describe('finished-video checkpoint and save-only recovery', () => {
     const media = fixture.media[0]; fixture.objects.set(media.url, Buffer.alloc(media.bytes, 8));
     await expect(resumeSave(target, fixture)).rejects.toThrow('Stored bytes'); expect(fixture.completions).toBe(0);
   });
+  test('copied authorization or signed-URL material in QC notes is never checkpointed', async () => {
+    const q: any = report(); q.checks.source.note = 'Copied Authorization: Bearer owned-fixture-secret';
+    await writeFile(input.qc.report_path, JSON.stringify(q));
+    await expect(prepare()).rejects.toThrow('no credentials');
+    await expect(stat(target)).rejects.toThrow(); expect(fixture.puts).toBe(0);
+  });
   test('completed remote quality mismatch is not overwritten or pinned', async () => {
     await prepare(); fixture.lost = 'video_render_run'; await expect(resumeSave(target, fixture)).rejects.toThrow();
     fixture.render.quality_report.summary = 'different';

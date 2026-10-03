@@ -107,6 +107,11 @@ function validFile(value: any, saved = false): void {
 }
 function validate(checkpoint: unknown): asserts checkpoint is SaveCheckpoint {
   if (!object(checkpoint)) fail('Malformed save checkpoint');
+  // Report notes are free text. Do not let a copied auth error turn the otherwise
+  // credential-free checkpoint into a token or reusable signed-URL store.
+  if (/\bBearer\s+\S+|\bcal_[A-Za-z0-9_-]{16,}\b|[?&](?:X-Amz-(?:Signature|Credential|Security-Token)|token|api_key)=/i.test(JSON.stringify(checkpoint))) {
+    fail('Remove authorization or signed-URL material from checkpoint inputs; no credentials may be saved');
+  }
   keys(checkpoint, ['version', 'binding', 'binding_sha256', 'progress']);
   const b = checkpoint.binding;
   if (checkpoint.version !== 1 || !object(b) || !object(checkpoint.progress) || digest(b) !== checkpoint.binding_sha256) fail('Malformed or changed save checkpoint');
