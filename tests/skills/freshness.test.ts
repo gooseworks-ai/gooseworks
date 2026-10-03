@@ -100,6 +100,25 @@ describe('real local entry preservation', () => {
     await expect(installer.installStandaloneSkill('recipe')).rejects.toThrow('Existing recipe package preserved');
     expect(fs.readFileSync(path.join(base, 'recipe', 'SKILL.md'), 'utf8')).toBe('# approved run');
   });
+  test.each(['live', 'dangling'])('preserves a %s standalone directory link before downloading', async (kind) => {
+    const external = path.join(home, 'external');
+    if (kind === 'live') {
+      fs.mkdirSync(external);
+      fs.writeFileSync(path.join(external, 'SKILL.md'), '# external');
+    }
+    fs.mkdirSync(installer.getSkillsBasePath(), { recursive: true });
+    const link = path.join(installer.getSkillsBasePath(), 'recipe');
+    fs.symlinkSync(external, link, 'dir');
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => { throw new Error('No download allowed'); });
+    try {
+      await expect(installer.installStandaloneSkill('recipe')).rejects.toThrow('Existing recipe package preserved');
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      if (kind === 'live') expect(fs.readFileSync(path.join(external, 'SKILL.md'), 'utf8')).toBe('# external');
+      else expect(fs.existsSync(external)).toBe(false);
+    } finally { global.fetch = originalFetch; }
+  });
 
   test('reports release vs bundle vs modified content, and offline never means current', async () => {
     const skill = {name:'gooseworks',content:'# local bundle'};

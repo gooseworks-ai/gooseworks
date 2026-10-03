@@ -117,7 +117,7 @@ export async function installStandaloneSkill(
     throw new Error(`invalid skill slug '${slug}'. Use a slug like goose-graphics.`);
   }
   const targetDir = path.join(SKILLS_BASE, slug);
-  if (fs.existsSync(targetDir) && !options.overwriteModified) {
+  if (fs.lstatSync(targetDir, { throwIfNoEntry: false }) && !options.overwriteModified) {
     // Legacy standalone stamps contain no file hashes. Do not guess whether a
     // saved recipe was edited; explicit replacement is required for those too.
     throw new Error(`Existing ${slug} package preserved. Back it up and pass --overwrite-modified to replace it; approved projects keep their pinned package.`);
