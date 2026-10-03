@@ -1,17 +1,21 @@
 ---
 name: make-custom-video
 slug: make-custom-video
-description: Create a complete branded video from a brief and optional reference, with timed script review, ingredient review, controlled generation, clip checks, assembly and final delivery.
-owner: team
-status: experimental
-version: 1
-created: 2026-10-02
-updated: 2026-10-02
-level: orchestrator
-category: video
-variant-of: null
-tags: [video, ads]
+description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
+category: ads
+version: 2.0.0
+author: GooseWorks
+requires_skills: [video-production-harness]
+harness_binding: gooseworks/v2
 ---
+
+# Human version
+
+This adapter connects the production playbook to GooseWorks. Customers review their script, actual ingredients and budget in Studio. The agent continues in the same conversation and saves the checked final video to the project.
+
+---
+
+# Agent version
 
 ## How to talk to the customer (applies to every message you send them)
 
@@ -70,9 +74,9 @@ structured requirements. `ready` describes assets only, not script or budget app
 For a custom video, derive requirements from its actual approved scenes.
 
 Inspect candidate files for the chosen product and format. A catalog photo can contain
-a pouch and stick, multiple products or a person; its existence or approved status does
-not make it a standalone packshot. Check object count, framing, readable print and real
-image bytes. A service conversation has no automatic packshot requirement.
+multiple objects, other products or a person; its existence or approved status does not
+make it a standalone image of the selected product. Check object count, framing, readable
+print and real image bytes. A service conversation has no automatic packshot requirement.
 
 Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
 original, inspect the result and include it in the normal ingredient review. When no
@@ -80,81 +84,33 @@ usable input exists, explain the gap before generation. Estimate any paid prepar
 separately before spending. Record the selected asset and inspection in the project
 review set; do not add a separate approval round.
 
-# Make Custom Video
-
-Create a branded video from a brief, with an optional reference for creative direction. Review the timed script first, then the actual storyboard, character, location and voice previews. Generate only approved work, inspect every clip, assemble and watch the final cut before delivery.
-
-## Purpose
-
-Use this when a video needs an original creative plan rather than a fixed template. The production host supplies saved project state, brand materials, authenticated human approvals, provider access, a budget and an output destination. A reference is inspiration, never the finished deliverable.
-
-## Inputs
-
-- Brand facts, audience, product materials, offer and CTA. Use supplied evidence; do not invent claims.
-- A creative brief and optional accessible reference video.
-- Target duration, aspect ratio and delivery requirements; choose sensible defaults from the brief.
-- Saved script, scenes, ingredients, generation jobs, feedback, approved revision and remaining budget when resuming.
-- A shell with Python, FFmpeg and FFprobe. Browser compositions additionally require an installed browser renderer; check before choosing that approach.
-
-## Workflow
-
-1. **Read and resume.** Load saved state before doing work. Identify the current approval and unaddressed feedback. Reuse valid uploaded assets and completed provider jobs. A restart is not permission to repeat paid work. Check the toolchain and available provider capabilities before promising an approach.
-2. **Study the brand and reference.** Watch accessible reference frames and listen/transcribe its audio. Record its hook, scene order, pacing, visual treatment, voice, captions, music and CTA. Keep those creative mechanisms; replace all names, products and claims with the current brand's evidence. If the reference is inaccessible, disclose that and continue from the brief only when the customer wants that route.
-3. **Plan an original concept.** Pick one coherent idea with a strong opening and one message. Match visuals to the spoken line at the same timestamp. Plan character and location continuity, logo/end card, audio and captions. Split the video into stable scene IDs with numeric start/end seconds, shot direction and exact spoken/on-screen copy. Show a readable concept and timed script. Estimate preview operations separately from final clips and assembly.
-4. **Script gate.** Save the exact script and preview estimate to the host. Stop for a real human approval of that revision and budget. A generated quote, agent message, local file or inferred enthusiasm is not approval. Script edits invalidate this approval and all dependent ingredient approvals.
-5. **Prepare reviewable ingredients.** Within the approved preview budget, make storyboard frames, character/location anchors and voice auditions. Use approved catalog voices; keep separate character and environment references. Show actual images/audio, with labels and provenance. Never substitute descriptions for a promised preview. Use real product and logo assets instead of generating approximations. Save every successful asset immediately, along with its provider job and input fingerprint.
-6. **Ingredient gate.** Save the complete review set and final-generation estimate. The customer can replace/regenerate specific ingredients or leave feedback. Replacement invalidates ingredient approval, while unchanged copy can retain script approval. Stop until the host records approval of the current ingredients and total budget. Native generated speech cannot be auditioned separately: explain that before approval, provide an approved separate voice route when required, and review the actual voice with its clip.
-7. **Generate clips.** Recheck approval and budget before every paid operation. Use a stable fingerprint for retries and retrieve existing jobs instead of resubmitting. Apply locked character/location references and exact approved dialogue. Keep clip duration and scene purpose explicit. Inspect motion, identity/product fidelity, continuity, voice/script agreement, crop and duration immediately. Save a named pass/fail result for each check. Do not assemble a failed clip. Repair at most twice within the approved budget; otherwise save the issue and ask for a focused decision.
-8. **Assemble and caption.** Normalize clips to one frame rate, resolution and audio format. Join them in approved scene order. Align VO to the scene timeline; duck music beneath speech and avoid doubling generated speech with a second voice track. Composite real logos/type. Add captions as the final visual post-production step, using a supported caption provider or local ASS when the provider cannot faithfully spell the brand. Keep text readable inside safe areas. Export H.264/AAC MP4 with fast-start metadata. Use the included assembly helper for a conventional clip sequence; browser-only layouts require a verified browser renderer.
-9. **Final review and bounded polish.** Probe the actual export, sample transition and text frames, watch the full cut and listen/transcribe it. Check source adaptation, brand, product, hook/scene order, voice/script, captions, end card/CTA, duration/ratio and visual artifacts. Record unresolved issues. A status of passed cannot accompany failed checks. Make targeted fixes while preserving approved unaffected assets; stop for new approval if scope, ingredients or budget changes.
-10. **Deliver and preserve.** Upload the real final video, saved production manifest and clip/final quality evidence. Pin a final version only after all gates pass. Keep previous versions and timestamped feedback. State actual media spend, any unresolved issue and the review/delivery location. Never call a placeholder, provider preview or reference copy the completed creative.
-
-## Output
-
-A playable final video, a readable timed script, actual reviewed ingredients, version history, a production manifest with model/settings/asset provenance, clip and final quality reports, and actual spend. The host retains all state required to resume.
-
-## Quality Checks
-
-- Brand claims and product identity come from evidence.
-- Script and ingredient approvals belong to the exact current revisions.
-- Every paid operation is attributed, deduplicated and within its approved budget.
-- Every scene has passing visual, brand, product, voice/script and duration/ratio checks.
-- The actual assembled video has been watched and probed, including captions and transitions.
-- Interrupted runs retrieve existing jobs/assets; failed work stays visible and recoverable.
-
-## Failure Modes
-
-| Symptom | Recovery |
-| --- | --- |
-| Reference is private, expired or unsupported | Save the failure; accept a public file or a brief-only plan. |
-| Provider submission times out | Keep its outstanding budget; retrieve the known job before retrying. |
-| Toolchain lacks a browser renderer | Choose an approved FFmpeg composition before spending, or name the missing capability. |
-| Ingredient or script changes after approval | Save the edit, invalidate the affected gate and obtain current approval. |
-| Budget cannot cover a repair | Save the issue and revised estimate; do not silently exceed consent. |
-| Clip/final QC fails twice | Preserve the candidate and ask for one focused change. Do not pin it as successful. |
-
-## Related
-
-- [[derived-from::video-orchestrator-with-control-plane]]
-- [[references::lock-script]]
-- [[references::create-storyboard]]
-- [[references::create-clips]]
-- [[references::review-video]]
-- [[references::polish]]
-
----
-
-# Human version
-
-This adapter connects the production playbook to GooseWorks. Customers review their script, actual ingredients and budget in Studio. The agent continues in the same conversation and saves the checked final video to the project.
-
----
-
-# Agent version
-
-## GooseWorks custom-video adapter
+## Make Custom Video
 
 The generic production phases run in the Growth sandbox or a connected agent with a shell. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
+
+## Load the shared production harness first
+
+This entry contains only the GooseWorks connection. Production sequencing, creative craft, reviews and repair loops are maintained in video-production-harness, published from the existing Studio harness. Do not invent a shorter local workflow.
+
+For a new run, use the video-production-harness dependency returned by catalog_fetch or fetch_skill. If absent, fetch catalog_fetch {type:"skill",slug:"video-production-harness"}; CLI users can use gooseworks fetch video-production-harness. Require nonempty content, scripts, files, version and contentHash. If unavailable, stop before generation; never fall back to a vendored playbook.
+
+Read the returned content, orchestrator.md, capabilities.md and every detailed step invoked by the orchestrator. Materialize every returned script and file at its package-relative path in a run-specific video-production-harness folder. scripts are relative to its scripts directory; files are relative to the package root. Reject paths outside the package. Save the exact bundle only in the run's persistent workspace. Store only {slug,version,content_hash,package_path} as script_drafts.harness in the saved project; never inline the package content, files or scripts into the review draft. The review payload must stay below its 256,000-character limit. Keep the saved package in this run's durable folder, not a shared mutable installation.
+
+On resume, read video_project_read and use the saved package matching script_drafts.harness.content_hash. Do not refetch latest or overwrite this run's package. If the package is missing, stop and restore that version before continuing; fetching today's release does not restore it. New projects load the current catalog release. This is an agent-held saved package, not a server-enforced immutable registry.
+
+## GooseWorks capability binding
+
+Read capabilities.md to bind shared instructions. GooseWorks is authoritative for project state and approvals; local working artifacts grant no spending permission.
+
+- Brand facts and product assets: brand_get_context plus the saved brief/reference analysis.
+- Durable state, concept/design/script/scene/continuity records and feedback: video_project_read and video_project_upsert. Save shared artifact roles in script_drafts extra fields and production metadata; translate spoken lines, captions and scenes into the review schema below.
+- Human gates: discuss free creative choices in chat. Persist concept/design/script before authenticated script approval. Selected storyboard, playable voice auditions, characters, worlds and end card become actual ingredients. Stop for authenticated ingredient approval before any paid clip or preview video. A chat reply, local artifact or shared auto mode cannot replace either token. Changes require renewed approval.
+- Provider access, bounded pricing and spend: managed fal/ElevenLabs tools and currently supported endpoints only. Do not switch to direct provider keys, Higgsfield or an unpriced fallback. A missing capability blocks its state until a supported equivalent is reviewed and quoted.
+- Storage: media_upload and media_confirm with exact project ownership; use durable previews in ingredients.
+- Assembly, probes, frame extraction, transcript comparison and continuous inspection: shared package scripts, FFmpeg/FFprobe/Python and available media review tools. A thumbnail or text description cannot satisfy video review.
+- Render attempts, QC, history and promotion: video_render_run and video_project_upsert using the backend contract below. Shared QC still applies; the backend checklist is a minimum.
+
+Growth and connected coding agents supply local execution. A terminal-free MCP client can prepare/review with connected tools, but must stop or continue through the project's Growth session when required local capabilities are absent. Never claim a render ran without execution.
 
 ## Start and resume
 
@@ -182,7 +138,7 @@ Save provider request IDs and actual uploaded URLs promptly. Custom operations w
 
 ## Clips, assembly and quality
 
-Fetch the supported model/provider skill when needed. Keep anchors and exact lines fixed. Use the included Python assembly helper for actual existing clips. It needs only Python, FFmpeg and FFprobe; it does not call a provider or require Chromium. Inspect generated clips before assembly, and watch the final export after assembly/captions.
+Fetch the supported model/provider skill when needed. Keep anchors and exact lines fixed. Use the Python assembly helper returned in the shared harness scripts for actual existing clips. It needs only Python, FFmpeg and FFprobe; it does not call a provider or require Chromium. Inspect generated clips before assembly, and watch the final export after assembly/captions.
 
 Open a render with video_render_run {brand_id,project_id,kind:"full"}; executor:"cloud_agent" for Growth when exposed by the current schema. Report live workflow_stage/progress_note/progress_percent while producing it. Upload the final file to scope:"video_project", scope_id:project_id. The tool opens/reports a client-executed render; fixed server orders remain paused.
 
@@ -201,114 +157,3 @@ custom_review returns script_drafts and plan_revision from the same saved snapsh
 A pending/processing/failed reference blocks script approval. The human can explicitly choose Continue from brief without reference in Studio; this saves skipped and fences the older worker. Do not silently replace a requested reference with brief-only production.
 
 Custom provider submits require a conservative request-price bound, including quantity and supported dimensions/audio. Unknown/token/GPU pricing and unsupported parameter combinations are refused before dispatch; choose a supported fixed per-image/megapixel or fixed per-second text/image-to-video model and update the quote. Motion-control and source-duration video routes are refused until the source duration can be bounded reliably. A conservative reservation is released to actual charged spend when the provider result settles. Final output must be a confirmed, stored video_asset in this exact organization/project, and completion binds its media_id to the render. External hotlinks cannot be pinned as generated custom finals. The portable helper checks FFmpeg's libass capability before local captions, rejects clips shorter than their timeline and validates video-stream duration.
-
-
-## Portable assembly helper
-
-Save the following as assemble.py in your temporary production directory. Run it with Python, a saved JSON plan and an output MP4 path. It makes no provider calls and does not mark the result visually approved.
-
-```python
-#!/usr/bin/env python3
-"""Assemble reviewed local clips. No provider calls or automatic quality verdict."""
-import argparse
-import json
-import subprocess
-import tempfile
-from pathlib import Path
-
-
-def run(args):
-    subprocess.run(args, check=True, capture_output=True, text=True, timeout=600)
-
-
-def probe(file):
-    return json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(file)], text=True, timeout=60))
-
-
-def assemble(plan, output):
-    sizes = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080), '4:5': (1080, 1350)}
-    width, height = sizes[plan.get('aspect_ratio', '9:16')]
-    width, height = plan.get('width', width), plan.get('height', height)
-    fps = plan.get('fps', 30)
-    if not isinstance(fps, int) or not 1 <= fps <= 60 or any(not isinstance(v, int) or v <= 0 or v % 2 for v in (width, height)):
-        raise ValueError('Use an integer fps between1 and60 and positive even pixel dimensions')
-    expected_ratio = sizes[plan.get('aspect_ratio', '9:16')][0] / sizes[plan.get('aspect_ratio', '9:16')][1]
-    if abs(width / height - expected_ratio) > 0.01:
-        raise ValueError('Output dimensions must match the reviewed aspect ratio')
-    if plan.get('captions_ass') and ' ass ' not in subprocess.check_output(['ffmpeg', '-hide_banner', '-filters'], text=True, stderr=subprocess.DEVNULL):
-        raise ValueError('Captions need an FFmpeg build with libass; install/use that supported build before assembly')
-    clips = plan['clips']
-    if not clips or len(clips) > 60:
-        raise ValueError('Supply one to sixty reviewed clips')
-    duration = sum(float(clip['duration_s']) for clip in clips)
-    if not 0 < duration <= 180 or any(float(clip['duration_s']) <= 0 for clip in clips):
-        raise ValueError('Clip durations must be positive, totaling at most180 seconds')
-    output = Path(output).resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='video-assembly-') as folder:
-        root = Path(folder)
-        normalized = []
-        for index, clip in enumerate(clips):
-            source = Path(clip['path']).resolve()
-            info = probe(source)
-            if not any(stream['codec_type'] == 'video' for stream in info['streams']):
-                raise ValueError(f'Clip {index + 1} has no video')
-            video_stream = next(stream for stream in info['streams'] if stream['codec_type'] == 'video')
-            visual_duration = float(video_stream.get('duration', 0))
-            if visual_duration + 0.05 < float(clip['duration_s']):
-                raise ValueError(f'Clip {index + 1} is shorter than its reviewed timeline; generate or explicitly revise it first')
-            target = root / f'{index:03d}.mp4'
-            command = ['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(source)]
-            has_audio = any(stream['codec_type'] == 'audio' for stream in info['streams'])
-            if not has_audio:
-                command += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
-            command += ['-map', '0:v:0', '-map', '0:a:0' if has_audio else '1:a:0', '-t', str(clip['duration_s']), '-vf', f'scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps}', '-af', 'aresample=48000', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ac', '2', '-ar', '48000', str(target)]
-            run(command)
-            normalized.append(target)
-        listing = root / 'clips.txt'
-        listing.write_text(''.join(f"file '{file.as_posix()}'\n" for file in normalized))
-        joined = root / 'joined.mp4'
-        run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', str(listing), '-c', 'copy', str(joined)])
-        command = ['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(joined)]
-        voice = plan.get('voice_path')
-        music = plan.get('music_path')
-        if voice:
-            command += ['-i', str(Path(voice).resolve())]
-        if music:
-            command += ['-stream_loop', '-1', '-i', str(Path(music).resolve())]
-        audio_source = '1:a' if voice else '0:a'
-        if music:
-            music_source = '2:a' if voice else '1:a'
-            # Duck the quiet bed under the selected speech; preserve native clip audio otherwise.
-            command += ['-filter_complex', f'[{audio_source}]apad,asplit=2[main][side];[{music_source}]volume=0.12[bed];[bed][side]sidechaincompress=threshold=0.04:ratio=6[ducked];[main][ducked]amix=inputs=2:duration=first:normalize=0[mix]', '-map', '0:v:0', '-map', '[mix]']
-        else:
-            command += ['-map', '0:v:0', '-map', audio_source]
-        captions = plan.get('captions_ass')
-        if captions:
-            path = Path(captions).resolve().as_posix().replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'")
-            command += ['-vf', f"ass=filename='{path}'"]
-        command += ['-t', str(duration), '-c:v', 'libx264' if captions else 'copy', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', str(output)]
-        run(command)
-    info = probe(output)
-    actual = float(info['format']['duration'])
-    visual = next(stream for stream in info['streams'] if stream['codec_type'] == 'video')
-    visual_actual = float(visual.get('duration', 0))
-    if abs(visual_actual - duration) > max(0.15, 2 / fps):
-        raise ValueError(f'Visual duration {visual_actual} differs from reviewed timeline {duration}')
-    if abs(actual - duration) > max(0.15, 2 / fps):
-        raise ValueError(f'Export duration {actual} differs from reviewed timeline {duration}')
-    return {'output': str(output), 'duration_s': actual, 'width': width, 'height': height, 'technical_probe': info, 'quality_status': 'requires_visual_and_audio_review'}
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('plan', help='JSON: aspect_ratio, clips:[{path,duration_s}], optional voice_path/music_path/captions_ass')
-    parser.add_argument('output')
-    args = parser.parse_args()
-    print(json.dumps(assemble(json.loads(Path(args.plan).read_text()), args.output)))
-
-
-if __name__ == '__main__':
-    main()
-
-```

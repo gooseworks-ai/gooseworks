@@ -24,7 +24,7 @@
  * demand via `gooseworks fetch <slug>`, so they're always current.
  */
 import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
-import { CUSTOM_VIDEO_SKILL_CONTENT } from './custom-video-skill';
+import { CUSTOM_VIDEO_ADAPTER_CONTENT } from './custom-video-skill';
 
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
@@ -96,15 +96,112 @@ structured requirements. \`ready\` describes assets only, not script or budget a
 For a custom video, derive requirements from its actual approved scenes.
 
 Inspect candidate files for the chosen product and format. A catalog photo can contain
-a pouch and stick, multiple products or a person; its existence or approved status does
-not make it a standalone packshot. Check object count, framing, readable print and real
-image bytes. A service conversation has no automatic packshot requirement.
+multiple objects, other products or a person; its existence or approved status does not
+make it a standalone image of the selected product. Check object count, framing, readable
+print and real image bytes. A service conversation has no automatic packshot requirement.
 
 Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
 original, inspect the result and include it in the normal ingredient review. When no
 usable input exists, explain the gap before generation. Estimate any paid preparation
 separately before spending. Record the selected asset and inspection in the project
 review set; do not add a separate approval round.`;
+
+/** Same canonical capture policy for the router and both video entrypoints. */
+const DURABLE_BRAND_CAPTURE = `## Save durable brand answers, then verify them
+
+Read the selected brand with \`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }\`
+(fallback: \`brand_get_context\` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call \`brand_update\` with
+\`knowledge_intent: "user_correction"\` and \`user_statement\` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use \`knowledge_intent: "agent_proposal"\`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact \`knowledge_updates\` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is \`patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }\`, using only fields present in the live
+schema. Inferred rules/taste go in an \`instructions\` proposal with a rationale, never in
+\`patch.facts\`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | \`patch.knowledge: { audience/positioning/voice: <answer> }\` (one actual key). During onboarding, \`brand_onboarding { action: "review_research", review: { action: "correct", field, value } }\` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | \`patch.facts: [{ kind: "insight", text }]\`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | \`patch.facts: [{ kind: "must", text }]\`; pronunciation is exactly \`Pronounce "<term>" as "<say_as>"\`. |
+| Forbidden claim, word or visual | \`patch.facts: [{ kind: "dont", text }]\`. |
+| Durable visual, voice or pacing preference | \`patch.facts: [{ kind: "do", text }]\` for a preference; \`dont\` for an avoidance; \`template_hint\` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing \`ad_brand_learning\` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned \`id\` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use \`brand_read\` with \`kit\`, \`learnings\`
+or \`onboarding\` as appropriate, or \`brand_onboarding { action: "status", brand_id }\` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.`;
+
+/** The existing media library and learnings are sufficient for a minimal taste brief. */
+const VIDEO_TASTE_CAPTURE = `## Video taste — reuse examples and preferences
+
+When asked to capture video taste, or when the user volunteers a durable video preference,
+first read the saved learnings and \`media_list { brand_id, scope: "brand", scope_id: brand_id,
+tags: ["video-taste"], limit: 100 }\`. Follow \`next_cursor\` before deciding an example is absent.
+Do not force a taste interview before an unrelated task or ask again for an existing preference.
+
+Save what the user has already supplied first. Then ask only the missing useful question, for
+example: "What do you like about this video—its pace, voice, captions, or look?" An inaccessible
+link can still be saved as a link with the user's explanation; do not pretend you watched it.
+
+- **Direct clip or video file:** register with \`media_upload { brand_id, scope: "brand",
+  scope_id: brand_id, kind: "video", source: { type: "url", url }, tags: ["video-taste", "reference-only"],
+  metadata: { purpose: "video_taste", source_url: url, provenance: "user", captured_at: <ISO timestamp>,
+  preference: <the user's explanation> } }\`. For a file use the live file/bytes upload flow and
+  \`media_confirm\` after a presigned upload. Registration of a URL does not copy or inspect it.
+- **Instagram/post/page link:** the same registration with \`kind: "document"\`; it is a link
+  bookmark, not downloadable footage or an indexed transcript. Do not fabricate a direct clip URL.
+- **Preferences:** save the user's reasons, likes and dislikes through the facts mapping above.
+  Read and preserve existing facts before updating one. Do not invent \`video_preferences\` or
+  new \`video_lab\` keys; the live kit patch accepts only its documented asset fields.
+- **Deduplicate:** reuse a matching returned media row, then \`media_update\` its title/tags/metadata
+  if needed; preserve existing metadata and tags. Do not create another row for the same example.
+  Read back with \`media_list\` and \`brand_read\` learnings before claiming it was saved.
+  Check the returned row belongs to this brand: URL deduplication may return another brand's
+  existing row. Do not relabel that row or claim success unless the current brand's scoped read
+  actually returns it. Report an unsaved association if no supported attach path is available.
+
+Never put third-party taste examples into kit reference images: \`kind: "reference"\` at brand
+scope writes there. The tags and metadata above record purpose and provenance; **they do not
+grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
+footage, face, product, testimonial or claims in a new ad without independently verified permission.
+
+Read video-only entries prefixed \`Video preference:\` from both saved learnings and
+\`kit.instructions\`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
+Pass it with the brand rules into the existing video workflow. A one-video request overrides a
+default for that project; it does not silently rewrite the brand's standing preference.`;
 
 /**
  * THE registry of entry skills (GOOSE-3190) — one list, four consumers:
@@ -150,6 +247,7 @@ description: >
   GooseWorks growth coworker and specialist-skill router. Research brands, customers, competitors,
   creators, markets, and prospects; analyze ads and performance; create ads, product photos,
   graphics, and video; search and scrape public web and social data; find and enrich leads.
+  Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
 version: 1.0.0
@@ -169,6 +267,10 @@ ${CUSTOMER_TALK}
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
 
+For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
+our video taste", stay here and follow **Guided brand capture** below. This extends the current
+brand and onboarding flow; it does not create another onboarding checklist.
+
 | If the user wants… | Route to | How |
 | --- | --- | --- |
 ${renderDomainRouteTable()}
@@ -178,7 +280,7 @@ Examples — all of these route to \`goose-ads\`, not the data flow: "remix this
 
 ## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
 
-**Call \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` before the first substantive step of ANY task**, and before you route to a specialist skill. It is a cheap, read-only call that returns the brand's canonical facts:
+**Call \`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }\` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use \`brand_get_context\` with the same sections only when that tool is advertised. It is a read-only call that returns the brand's canonical facts and saved rules:
 
 | It returns | Use it for |
 | --- | --- |
@@ -194,7 +296,7 @@ Then:
 2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
 4. **If \`brand_read\` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose \`brand_get_context\` / \`get_brand_kit\`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
-5. **Treat it as read-only.** Writing brand facts back is the reconciliation flow in \`goose-ads\` (ask first, then \`update_brand_kit\`) — not something this router does.
+5. **A read grants no write permission.** Save explicit durable answers/corrections with the capture policy below. Propose agent-derived changes for review; never overwrite confirmed knowledge with research or a guess.
 
 Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
 
@@ -251,15 +353,52 @@ When onboarding returns a review link, show that single link and ask the user to
 Use the host's native question controls. Ask one short group at a time and rely on the live tool schema for accepted values.
 
 1. **Start** — If status returns \`start\`, ask for the company website or Apple App Store URL. Also offer the optional hero product URL and “Where do you do your work?” choices: Slack, WhatsApp, iMessage, Claude Code, Claude, Codex, and ChatGPT. Call \`action: "start"\`; server-side research begins immediately. If status returns \`select_brand\`, ask which company/client to use. Otherwise reuse the only brand automatically.
-2. **Your coworker** — Ask what they want to name their Growth Coworker. A text-only client may keep the default avatar; do not block on an image. Save with \`action: "save_coworker"\`.
-3. **Your company** — Use the returned \`company_draft\` as the starting point and ask the user to verify or edit: what they sell (\`marketCategory\`), where people buy (\`appPlatforms\`), primary customer, customer problem, promised outcome, and optional differentiator. Save with \`action: "save_company"\`.
-4. **Your taste** — In a terminal or CLI host, use the returned \`taste_url\`: open it when the host supports opening links and always show one clickable **Choose your taste in GooseWorks** link. Ask the user to heart or skip ads on that page, click **Continue** or **Skip this**, return to the agent, and reply \`done\`. Do not print, enumerate, or summarize \`taste_deck\` in the terminal. After \`done\`, call \`brand_onboarding { action: "status" }\` again and follow the refreshed \`next_step\`. In a chat host that renders images, show only the one image attached by the tool and save each Love/Skip decision with \`action: "save_taste"\`; send \`complete: true\` after three hearts or an explicit skip.
-5. **First campaign** — Ask **“What’s happening right now?”**: launch \`launch\`, promotion \`promo\`, seasonal moment \`seasonal\`, or nothing special \`nothing\`, plus an optional note. Call \`action: "propose_campaign"\`, show the returned editable card (name, objective, offer, audience, 2–3 angles, CTA, and product URL), and save edits with \`action: "save_campaign"\`. Send \`accept: true\` only after approval; acceptance can start the complimentary first creatives.
-6. **Where you are** — Ask monthly ad spend (\`none\`, \`under_1k\`, \`1k_5k\`, \`5k_25k\`, \`25k_plus\`), annual revenue (\`under_1m\`, \`1m_10m\`, \`10m_100m\`, \`100m_plus\`), the 90-day goal, current channels (an empty list is a valid “nothing yet”), and at least one channel they are willing to use. Channel values: \`paid_social\`, \`search_ads\`, \`content\`, \`creators\`, \`seo\`, \`communities\`, \`referrals\`, \`partnerships\`, \`outbound\`, \`app_stores\`, \`other\`. Save with \`action: "save_progress"\`.
-7. **Review** — Show the returned founder, researched, and inferred facts with their provenance. The user may correct positioning, audience, voice, value propositions, proof points, or competitors through \`action: "review_research"\`. Complete the review even when research is still running, failed, or sparse; never trap the user waiting for it.
-8. **Channels** — If \`channel_connected\` is already true, this is complete automatically. Otherwise ask whether they want to connect Slack, WhatsApp, or iMessage later, or skip for now. An explicit skip is valid; call \`action: "complete_channels"\`.
+2. **Your coworker** — The current flow accepts the default coworker automatically. If an older session returns \`coworker\`, refresh \`status\`; do not introduce a naming/avatar question. Rename only when the user asks and the live tool supports it.
+3. **Your company** — Use the returned \`company_draft\` plus the user's existing answers. Ask only to verify missing or ambiguous details: what they sell (\`marketCategory\`), where people buy (\`appPlatforms\`), primary customer, customer problem, promised outcome, and optional differentiator. Monthly Meta ad spend belongs here when absent: \`none\`, \`under_10k\`, \`10k_50k\`, \`50k_150k\`, \`150k_plus\`, or \`not_sure\`. Save the merged required company object with \`action: "save_company", company: { … }\`; read \`status\` back.
+4. **Your taste** — In a terminal or CLI host, use the returned \`taste_url\`: open it when the host supports opening links and always show one clickable **Choose your taste in GooseWorks** link. Ask the user to heart or skip ads on that page, click **Continue** or **Skip this**, return to the agent, and reply \`done\`. Do not print, enumerate, or summarize \`taste_deck\` in the terminal. After \`done\`, call \`brand_onboarding { action: "status" }\` again and follow the refreshed \`next_step\`. In a chat host that renders images, show only the one image attached by the tool and save each Love/Skip decision with \`action: "save_taste", taste: { hearted_ids, skipped_ids, complete }\`; set \`taste.complete: true\` after three hearts or an explicit skip.
+5. **First campaign** — Ask **“What’s happening right now?”**: launch \`launch\`, promotion \`promo\`, seasonal moment \`seasonal\`, or nothing special \`nothing\`, plus an optional note. Call \`action: "propose_campaign"\`, show the returned editable card (name, objective, offer, audience, 2–3 angles, CTA, and product URL), and save edits with \`action: "save_campaign"\`. Send \`campaign.accept: true\` only after approval; acceptance can start the complimentary first creatives.
+6. **Review** — Show the returned founder, researched, and inferred facts with their provenance. The user may correct positioning, audience, voice, value propositions, proof points, or competitors through \`action: "review_research", review: { action: "correct", field, value }\`. A proof-point edit does not approve a claim. Complete with \`review: { action: "complete" }\` even when research is still running, failed, or sparse; never trap the user waiting for it.
+7. **Channels** — If \`channel_connected\` is already true, this is complete automatically. Otherwise ask whether they want to connect Slack, WhatsApp, or iMessage later, or skip for now. An explicit skip is valid; call \`action: "complete_channels"\`.
+
+The former revenue / 90-day-goal / \`save_progress\` screen is retired. Do not insert it into
+onboarding. Ask those human-only questions later only when the user's task needs them.
 
 Do not ask for role, discovery source, who makes creatives, who manages ads, or a separate “what do you want to do first?” menu. Those belonged to the retired CLI questionnaire. The task the user already asked for is their first task.
+
+## Guided brand capture
+
+Use this when the user requests a founder interview, audience/rules capture, or video taste.
+Keep their original task pending. Load the current brand first, compare it with information
+already volunteered in this chat, and **save known information first** using the canonical
+mapping below. Do not run a long questionnaire as a prerequisite for making an ad.
+
+For facts needed by the task but absent from the read, call \`knowledge_search\` first if it is
+registered. Use returned citations and states honestly: an empty, building or failed index is
+not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
+answered by trustworthy saved knowledge.
+
+Ask one short group of missing human-only facts at a time, in plain language, with the relevant
+known answer in that same question. "Skip" or "not sure" is valid. Examples, **only for gaps**:
+
+| Gap | Useful question |
+| --- | --- |
+| Founder origin or conviction | "What made you start this, and what do you believe that alternatives get wrong?" |
+| Audience depth | "Who buys first, what problem pushes them to act, and what nearly stops them?" |
+| Buying trigger or alternatives | "What happens just before they look for you, and what do they use instead?" |
+| Rules | "What must we always say or show, and what must we never say or imply?" |
+| Proof | "What evidence supports that result, and do we have permission to quote the customer?" Keep unsupported claims pending. |
+| Video taste | "Share a video you like and what you would keep or avoid: pace, voice, captions, or look." |
+
+Keep skipped or uncertain answers as gaps in the brief; do not save them as confirmed facts.
+Save each answered group and read it back before the next group. Stop when the requested capture
+is covered or the user skips; resume from canonical saved answers after interruption. Present a
+short brief containing verified answers, attribution, pending proposals and remaining gaps, then
+continue the original task. Review happens in this chat plus any proposal review link returned
+by the tools. Do not promise an unavailable evidence, claims or plan write.
+
+${DURABLE_BRAND_CAPTURE}
+
+${VIDEO_TASTE_CAPTURE}
 
 ## Brand Growth discovery
 
@@ -399,7 +538,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 
 ## Rules
 
-0. **Call \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` before anything else**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
+0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost
 3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
@@ -577,7 +716,7 @@ immediately.
   competitor ad or an image found online.
 - \`get_ad_project\` / \`append_project_message\` — inspect a creative / leave a note on its thread.
 
-## Keep the brand kit in sync — reconcile, then update (ASK first)
+## Keep the brand kit in sync — reconcile, then save or propose
 
 The brand kit is the source of truth every generation reads. During ANY task, when the user
 **tells you something about the brand or asks to change something brand-level** — a different
@@ -585,23 +724,25 @@ tagline, audience, voice, a product's name/price/description, "our logo is X", "
 anymore", a new product photo — treat it as a possible kit update, don't just use it for this one
 ad and forget it:
 
-1. **Check it against the kit.** Call \`get_brand_kit\` for the active brand and see whether what the user said
+1. **Check it against the kit.** Call \`brand_read\` with \`kit\` and \`learnings\` for the active brand and see whether what the user said
    matches, is missing from, or contradicts the kit.
 2. **If it's already in the kit and matches** — nothing to do; proceed.
-3. **If it's new or different — ASK before writing.** Confirm in one line: *"Want me to update
-   the brand kit so this sticks for future ads?"* Only persist on a yes (or when the user clearly
-   asked you to change the brand). Don't silently mutate the kit, and don't nag on trivia.
-4. **Persist with the write tools** (partial — only the fields you pass are touched; each edit is
-   recorded as a user override that later re-research won't clobber):
-   - \`update_brand_kit\` — structured brand fields.
-   - \`upsert_brand_product\` / \`delete_brand_product\` — products.
-   - \`add_brand_product_image\` / \`remove_brand_reference_image\` — product and reference photos.
+3. **If it's new or different**, persist an explicit request to correct or remember the brand
+   through the policy below; that request is already authorization. For an ambiguous one-ad
+   direction, ask once whether it should stick. Agent-derived suggestions become proposals.
+4. **Persist with the canonical write tools** (send only changed fields):
+   - \`brand_update\` with explicit user-correction intent — structured brand fields or products;
+     an inferred structured field uses agent-proposal intent instead. Follow the live schema.
+   - \`media_upload\` / \`media_update\` — the user's own product and reference photos.
    Inspect each live schema and send only the fields needed for the confirmed change.
-5. **Confirm what changed** and continue the task. (Logo, colors, and fonts are owned by the
-   backend research pass — prefer \`update_ad_brand\` / the research flow for those, not free text.)
+5. **Read back what changed** before saying saved, then continue the task. (Use the research
+   workflow for researched logo/colors/fonts; explicit user edits use only fields supported by
+   the canonical tool schema and the correction policy below.)
 
 This is the parity gap the app closes in-product: a brand fact the user gives mid-task should be
 able to flow back into the kit — with their ok — instead of being lost.
+
+${DURABLE_BRAND_CAPTURE}
 
 ## Picking source ads — use approved sources, not the retired catalog
 
@@ -762,9 +903,10 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
 - **Treat competitor ads as inspiration** — never attest rights, imply ownership, or promise to
   copy a competitor's distinctive expression.
 - **Reconcile brand facts into the kit** — when the user states or changes something brand-level
-  mid-task, check it against \`get_brand_kit\` and, with their ok, persist it via \`update_brand_kit\`
-  / \`upsert_brand_product\` / \`add_brand_product_image\` so it sticks for future ads. Ask first;
-  never silently mutate the kit.
+  mid-task, compare it with \`brand_read\`. Save explicitly authorized corrections through
+  \`brand_update\` with correction intent and the user's exact statement, or the user's own
+  images through \`media_upload\`; read back before saying saved. Proposed improvements stay
+  pending. Ask only when it is unclear whether a one-ad direction should apply to future ads.
 - **Record feedback** — when the user reacts to a generated image, inspect and call
   \`set_creative_feedback\` so the quality loop learns.
 - **Plan mode is opt-in** — only use the live approval option, then \`list_ad_approvals\` and
@@ -864,6 +1006,10 @@ ${ASSET_READINESS}
 - Anything else they volunteer: who it's for, names or terms it must say, things to stay away from. Never asked for; kept when offered.
 - What the picked format needs from the brand (\`card.needs\`): usually a clean product photo, a screen recording or their own footage.
 
+${DURABLE_BRAND_CAPTURE}
+
+${VIDEO_TASTE_CAPTURE}
+
 ## Composed Atoms
 
 MCP tools; \`goose-video-local\` does the making.
@@ -908,6 +1054,9 @@ Call \`brand_list\`, with \`query\` when they named a brand. \`query\` is a case
 - **Nothing matches** → say so, list the brands they do have in a table, and offer to add the new one here: "Or send me its website and I'll add it." With a website, call \`brand_create { name, website_url }\` (free). It starts brand research, which fills in the logo and colours in a few minutes. Carry on from step 2 while it runs. Never create a brand they didn't ask for, and never guess the website.
 
 If the GooseWorks MCP's own instructions have you check onboarding first and it turns out unfinished, finish it, then come back here with the customer's original sentence.
+
+Read the resolved brand and saved rules/preferences as described above before asking a goal
+question or choosing a format. Carry the verified taste brief into the project handoff.
 
 ### 2. Ask what the ad is for, in one open question
 
@@ -1163,7 +1312,7 @@ client that does not expose the canonical tool; never mix both for one step.
 | Template recipe | \`catalog_fetch { type: "template", slug: <source_sample_id> }\` | \`get_ad_template\` |
 | Capability skill (atom) + its scripts | \`catalog_fetch { type: "skill", slug }\` | \`gooseworks fetch <slug>\` / \`fetch_skill\` |
 | Brand kit, products, rules | \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` | \`brand_get_context\` / \`get_brand_kit\` |
-| Save a brand rule (a correction) | \`brand_update { brand_id, patch: { facts: [{ id?, kind, text }] } }\` | none |
+| Save a brand rule (a correction) | \`brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact words>, patch: { facts: [{ id?, kind, text }] } }\` | none |
 | Mirror the review set | \`video_project_upsert { brand_id, project_id, patch: { script: { script_drafts, script } } }\` | \`update_ad_project_script\` |
 | Project assets | \`video_project_upsert { …, patch: { assets: [...] } }\` | \`update_ad_project_asset\` |
 | Progress note | \`video_project_upsert { …, patch: { message: { role: "agent", content } } }\` | \`append_project_message\` |
@@ -1456,8 +1605,13 @@ for a field the brief leaves empty. Map the fields you WILL honor:
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's \`researchStatus\` (or the brand's \`research_status\`) is \`complete\`, REUSE it —
    never re-research. If not, run brand research first (\`catalog_fetch { type: "skill", slug:
-   "brand-research" }\`, follow it, then \`brand_update { brand_id, patch: { kit_patch,
-   finalize_research: true } }\`) before continuing. Then do Step 1.7.
+   "brand-research" }\`) and follow its stored-pack workflow. Only when that verified pack is
+   saved in the supported research workspace, finalize with
+   \`brand_update { brand_id, patch: { finalize_research: true } }\`, then read the brand back.
+   Never send raw research JSON through \`kit_patch\`: the public tool accepts only the existing
+   \`video_lab\` asset slot there. If there is no verified stored pack, submit researched facts
+   through typed \`patch.knowledge\` / \`patch.kit\` as pending agent proposals; do not pretend
+   research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a \`remix\` block)
 
@@ -1502,10 +1656,17 @@ not your memory of the chat:
 }
 \`\`\`
 
+- **Video taste is direction, not dialogue.** Before mapping brand rules, extract entries
+  prefixed \`Video preference:\` from both \`learnings\` and \`kit.instructions\` into the verified
+  taste brief, including accepted proposals. They govern pacing, voices, captions, visuals and
+  format choice; do not copy them into \`must_say\` / \`never_say\` or read them aloud. Carry the
+  brief into the choices, scene planning and review.
 - **Sources.** \`learnings\` are the brand's saved rules (the user's past corrections among them):
   \`must\` / \`do\` → \`must_say\`, \`dont\` → \`never_say\`, and a \`must\` whose text reads
   \`Pronounce "<term>" as "<say_as>"\` (straight or curly quotes) → \`pronunciations\`. Add \`kit.instructions\` (free-text
-  standing rules) to \`must_say\` / \`never_say\` as they read.
+  standing rules) only when they require actual spoken wording or prohibit a claim. Production
+  directions stay in the brief. A required spoken line or prohibited claim remains its own
+  ordinary \`must\` / \`dont\` rule.
 - **Which product.** The one the brief names (\`creative_brief.productName\`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
   brand. Product lists often hold other brands' items or old ads saved as products: if more than
@@ -1538,7 +1699,7 @@ When the user corrects something about the BRAND in chat — how a name is said,
 not be made, a product fact, a visual rule ("never use red", "the logo goes top-left") — save it
 in the SAME turn, before anything else:
 
-\`brand_update { brand_id, patch: { facts: [{ kind, text }] } }\`
+\`brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact correction>, patch: { facts: [{ kind, text }] } }\`
 
 | Correction | \`kind\` | \`text\` |
 |---|---|---|
@@ -1550,10 +1711,16 @@ in the SAME turn, before anything else:
 
 - If it changes an EXISTING rule (a new pronunciation for the same term), update that rule by id
   (\`facts: [{ id: <learning_id>, text }]\`) instead of adding a second one.
-- Then tell the user in one line: "Saved to your brand: every future video will use it." Update
+- Use the correction intent and user's statement when supported, as described below. Read
+  \`brand_read\` learnings back and verify the rule and source before claiming it was saved.
+- Then tell the user in one line: "Saved to your brand for future videos." Update
   \`working/brand-rules.json\` and apply the rule to THIS video too.
 - A one-off note about this video ("make it shorter", "use the blue background here") is NOT a
   brand rule: don't save it.
+
+${DURABLE_BRAND_CAPTURE}
+
+${VIDEO_TASTE_CAPTURE}
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
@@ -2128,7 +2295,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 `;
 }
 
-/** Studio production phases, adapted to persisted GooseWorks reviews and billing. */
+/** Thin GooseWorks connection to the catalog-published Studio harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_SKILL_CONTENT.replace("\n# Make Custom Video", `\n${CUSTOMER_TALK}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n\n# Make Custom Video`);
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`);
 }
