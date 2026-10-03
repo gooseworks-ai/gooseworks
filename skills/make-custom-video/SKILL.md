@@ -130,7 +130,7 @@ If reference preparation failed, explain custom_review.reference.error. Continue
 
 ## Saved review schema
 
-Save through video_project_upsert {brand_id,project_id,patch:{script:{script_drafts,script,expected_plan_revision}}}. script_drafts contains format:"custom", title, duration_target_sec (<=180), aspect_ratio, scenes:[{scene:1,time:"0–5s",text,caption,direction}], preview_estimate:{total_credits,basis,operations:["Describe each priced operation as a string"]}, optional render_estimate in the same shape, voices:{narrator:{voice_id,name}} and ingredients:[{container,label,subtitle,url,text,note,pending}]. Use numeric scene IDs consistently. The plain script is joined spoken copy. Read project.plan_revision and pass it as expected_plan_revision on every existing-draft save; a stale write is refused. Store concept, reference_analysis, continuity, planned operations and job/asset provenance as extra draft fields; keep the review set under 256 KB.
+Save through video_project_upsert {brand_id,project_id,patch:{script:{script_drafts,script,expected_plan_revision}}}. script_drafts contains format:"custom", title, duration_target_sec (<=180), aspect_ratio, scenes:[{scene:1,time:"0–5s",text,caption,direction}], preview_estimate:{total_credits,basis,operations:["Describe each priced operation as a string"]}, optional render_estimate in the same shape, voices:{narrator:{voice_id,name}} and ingredients:[{container,label,subtitle,url,text,note,pending}]. script_drafts.scenes[].scene is a positive integer such as 1; production scene IDs use the separate string shape described below. The plain script is joined spoken copy. Read project.plan_revision and pass it as expected_plan_revision on every existing-draft save; a stale write is refused. Store concept, reference_analysis, continuity, planned operations and job/asset provenance as extra draft fields; keep the review set under 256 KB.
 
 Each estimate requires total_credits (a nonnegative number, at most 3,000), basis (a nonempty string) and operations (1–100 nonempty strings, each at most 500 characters). Do not put operation objects in either estimate. Keep detailed model/settings/cost rows in a separate extra field such as planned_operations. voices is an optional object keyed by role, never an array; each selected role is {voice_id, name?}. Keep unselected audition candidates in a separate extra field. Copy actual catalog voice IDs into the selected roles; every selected role later needs a matching playable voice ingredient.
 
@@ -154,9 +154,157 @@ Fetch the supported model/provider skill when needed. Keep anchors and exact lin
 
 Open a render with video_render_run {brand_id,project_id,kind:"full"}; executor:"cloud_agent" for Growth when exposed by the current schema. Report live workflow_stage/progress_note/progress_percent while producing it. Upload the final file to scope:"video_project", scope_id:project_id. The tool opens/reports a client-executed render; fixed server orders remain paused.
 
-Save patch.production with version:1, pipeline:[{step,model,settings}], style, characters, scenes:[{id,line,still_prompt,motion_prompt,duration_s}], voice/music/assembly, fixes and clips:[{scene,url,checks:[{check,status,note}]}]. Each clip must include exactly these five named checks: visual_artifacts, brand, product, voice_and_script, duration_and_ratio. All must pass. Reuse the same numeric scene as script_drafts.scenes.
+Save patch.production as a production manifest with version:1 and a nonempty pipeline array. Each pipeline item requires step and model; purpose and settings are optional. production.characters is an optional array, never a record/object: each entry requires both name and prompt strings. Store anchor media IDs, URLs, actual appearance and other extra provenance in script_drafts; character entries accept name and the full design prompt.
+
+production.scenes[].id is a string containing the corresponding script scene number, for example "1". script_drafts.scenes[].scene and production.clips[].scene remain positive integers, for example 1. Map production scene IDs with String(scriptScene.scene); do not convert clip.scene or script scene IDs to strings. Each scene can also carry line, still_prompt, motion_prompt, duration_s and notes. style is an object; voice and music are objects when present; assembly is an object; fixes is an array of {problem,fix}.
+
+Each clip requires a numeric scene, a stored URL and exactly one of each named check: visual_artifacts, brand, product, voice_and_script, duration_and_ratio. Each clip check is {check,status:"pass"|"fail",note?}; not_applicable is not valid for clip checks. Save exactly one checked clip per approved script scene before final completion, with every check passing. Before clips exist, omit clips from an ingredient-preparation save.
+
+The following is a one-scene JSON shape example. Replace all placeholders with actual saved values. Its failed QC statuses are deliberately unapproved; never copy a passing status without performing the shared review.
+
+```json
+{
+  "patch": {
+    "production": {
+      "version": 1,
+      "pipeline": [
+        {
+          "step": "Scene clips",
+          "model": "<actual supported model>",
+          "settings": {}
+        }
+      ],
+      "style": {
+        "prompt": "<shared visual direction>",
+        "negative": "<shared guards>"
+      },
+      "characters": [
+        {
+          "name": "Presenter",
+          "prompt": "<exact full character design prompt>"
+        }
+      ],
+      "scenes": [
+        {
+          "id": "1",
+          "line": "<approved spoken line>",
+          "still_prompt": "<exact full still prompt>",
+          "motion_prompt": "<exact full motion prompt and guards>",
+          "duration_s": 5
+        }
+      ],
+      "voice": {
+        "voice_id": "<selected catalog voice ID>",
+        "name": "<selected voice name>",
+        "model": "<actual voice model>",
+        "settings": {}
+      },
+      "assembly": {
+        "ratio": "9:16",
+        "fps": 30
+      },
+      "fixes": [],
+      "clips": [
+        {
+          "scene": 1,
+          "url": "https://example.com/confirmed-scene-1.mp4",
+          "checks": [
+            {
+              "check": "visual_artifacts",
+              "status": "fail",
+              "note": "<actual observation; pass only after inspection>"
+            },
+            {
+              "check": "brand",
+              "status": "fail",
+              "note": "<actual observation; pass only after inspection>"
+            },
+            {
+              "check": "product",
+              "status": "fail",
+              "note": "<actual observation; pass only after inspection>"
+            },
+            {
+              "check": "voice_and_script",
+              "status": "fail",
+              "note": "<actual observation; pass only after inspection>"
+            },
+            {
+              "check": "duration_and_ratio",
+              "status": "fail",
+              "note": "<actual observation; pass only after inspection>"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
 
 Complete with video_render_run {brand_id,project_id,render:{render_id,status:"complete",output_url,quality_status:"passed",quality_report:{version:1,summary,checks:{source,brand,product,hook_and_scene_order,voice_and_script,captions,endcard_and_cta,duration_and_ratio,visual_artifacts},detected_issues:[],repair_actions:[],checked_at}}}. Each final check is {status:"pass"|"fail"|"not_applicable",note}; brand/product/scene order/duration/visual artifacts must pass. Save a failed candidate as blocked/failed with its issue, not complete. Final completion binds approval revisions, output and quality evidence to the render; pin with patch.final_render_id only after passing.
+
+All nine named final checks above are required, including source, voice_and_script, captions and endcard_and_cta when they are not applicable. A final check uses status:"pass"|"fail"|"not_applicable" and an optional note. The five mandatory passing checks are brand, product, hook_and_scene_order, duration_and_ratio and visual_artifacts; no final check may fail and detected_issues must be empty to complete. Record why a permitted check is not_applicable. Keep actual repair_actions and use the actual ISO 8601 checked_at time. The backend report is a minimum; it does not replace the full shared watch, claim verification or craft review.
+
+This blocked report illustrates every required field. Replace its findings and example timestamp with actual evidence. Only after repairs and the shared final review pass may the render be reported complete with quality_status:"passed", its confirmed output_url and no unresolved issues.
+
+```json
+{
+  "render": {
+    "render_id": "<existing render ID>",
+    "status": "failed",
+    "quality_status": "blocked",
+    "error_message": "<actual unresolved issue>",
+    "quality_report": {
+      "version": 1,
+      "summary": "<actual full-video review summary>",
+      "checks": {
+        "source": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "brand": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "product": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "hook_and_scene_order": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "voice_and_script": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "captions": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "endcard_and_cta": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "duration_and_ratio": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        },
+        "visual_artifacts": {
+          "status": "fail",
+          "note": "<actual finding from the shared review>"
+        }
+      },
+      "detected_issues": [
+        "<actual unresolved issue>"
+      ],
+      "repair_actions": [],
+      "checked_at": "2026-10-03T00:00:00Z"
+    }
+  }
+}
+```
 
 ## Feedback and delivery
 
