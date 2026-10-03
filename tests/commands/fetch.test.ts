@@ -194,4 +194,13 @@ describe('fetch command', () => {
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   });
 
+  it('refuses a non-file saved package before requesting the catalog', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa37-directory-'));
+    mockGetCredentials.mockReturnValue({api_key:'cal_test',email:'u@example.com',agent_id:'agent-1',api_base:'http://127.0.0.1:1'});
+    try {
+      await expect(createFetchCommand().parseAsync(['node','test','recipe','--saved-package',dir])).rejects.toThrow('process.exit called');
+      expect(loggerModule.error).toHaveBeenCalledWith('Saved package must be a regular JSON file');
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+
 });

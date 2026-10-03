@@ -48,7 +48,7 @@ return new Command('fetch')
     try {
       let saved: SkillPackageIdentity | undefined;
       if (options.savedPackage) {
-        const fd = fs.openSync(options.savedPackage, 'r');
+        const fd = fs.openSync(options.savedPackage, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
         try {
           if (!fs.fstatSync(fd).isFile()) throw new Error('Saved package must be a regular JSON file');
           const buffer = Buffer.alloc(16 * 1024 * 1024 + 1);
