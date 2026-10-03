@@ -421,6 +421,77 @@ upload and confirmation make the piece safe, so neither is batched.
 The `final` master and `final-thumb` poster (Step 4.4) carry `ingredient_key` too, so a
 resumed run that finds a passing `final` with the same digest only needs to publish.
 
+## Finished video, interrupted saving — resume the same version
+
+If the final already passed QC and the customer says **"finish saving this video"**, start here.
+Do not restart the recipe, choose another format, open another render, generate a take, or run a
+paid transcript check again. Saving uses the **same render_id**. The ordinary first-completion
+video fee can still apply; its existing same-render idempotency prevents a duplicate fee. Never
+promise that all saving is free.
+
+**Before the first final upload**, save the final review set and production manifest from Step
+4.5/4.6 (including any QC repairs), and write a durable local checkpoint outside the fetched-scripts cache. Keep the actual
+final, JPEG poster, structured passing quality report, and review evidence files alongside it in
+a retained local working folder. Record their SHA-256 **at the time those exact bytes pass QC**;
+never attach an old verdict to a newly hashed replacement. A sandbox's local disk can disappear:
+this checkpoint recovers connection interruptions, not lost storage. Save ingredients remotely
+as above and tell the customer if the checked local output is no longer available.
+
+With the current CLI and its normal login to the selected environment, write a manifest like:
+
+```json
+{
+  "brand_id": "<owning brand>", "project_id": "<same project>", "render_id": "<already opened render>",
+  "input_digest": "<assembly input digest>",
+  "final_path": "/absolute/retained/working/final.mp4",
+  "poster_path": "/absolute/retained/working/final-thumb.jpg",
+  "qc": {
+    "final_sha256": "<64 lowercase hex characters recorded during final QC>",
+    "poster_sha256": "<64 lowercase hex characters recorded during poster review>",
+    "report_path": "/absolute/retained/working/quality-report.json",
+    "evidence_paths": ["/absolute/retained/working/review/finished-ad.json"]
+  }
+}
+```
+
+Run `gooseworks video-save prepare --manifest <manifest.json> --checkpoint <retained/save-<render_id>.json>`
+before any upload, then `gooseworks video-save resume --checkpoint <same checkpoint>` for both
+normal saving and recovery. The helper uses the saved login and canonical MCP connection; it does
+not copy credentials or use a raw Ads REST fallback. Its atomic private checkpoint binds the
+environment, account, project owner, project/render, final/poster bytes, assembly digest, passing
+quality report, review set, evidence files and stage receipts. Preserve it until delivery. Never
+edit the checkpoint to clear a failed check. Keep checkpoint and manifest files out of commits.
+
+The helper reads remote state before writes. It keeps `final` / `final-thumb` ingredient keys
+and writes per-render paths `working/final-<render_id>.mp4` / `working/final-<render_id>-thumb.jpg`
+so saving this version cannot overwrite an older one. It confirms pending uploads, checks remote
+bytes against the QC hashes, and reuses confirmed media. A request with missing stored bytes can
+get a fresh upload URL at that same path. A lost completion reply is unknown until project read
+confirms the same render's output and passing report; then only final selection remains.
+
+**No CLI / a host-selected MCP connection:** keep the same protocol with the host's canonical
+tools. Atomically write versioned JSON locally (write a private same-directory temporary file,
+flush/fsync, rename, then fsync the directory) before any upload and between each upload request,
+PUT, confirmation, completion and final selection. Persist only public environment identity,
+account/owner/project/render IDs, file paths/sizes/hashes, input digest, exact quality report and
+evidence fingerprints, saved-review digest, media IDs and stage states; **no tokens, session IDs,
+signed URLs or auth headers**. On reconnect call `account_whoami`,
+`video_project_read { brand_id, project_id, include: ["renders"] }` and
+`media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key, input_digest }`
+on the original connection. Compare identities, local/evidence hashes and saved review; verify
+confirmed remote bytes too. Treat a lost reply as unknown and read back before retrying. Use only
+the missing `media_upload` → PUT → `media_confirm`, same-render `video_render_run { render: … }`
+callback and `video_project_upsert patch.final_render_id`; never a render-open call. Retain the
+strict Step 4.3/4.4 report and Step 4.5 review-set requirements.
+
+If authorization expired, reconnect/sign in through the normal host/CLI flow on the original
+connection, then resume. Missing tools are a reconnect requirement, not permission to switch
+environments. Missing/changed files, stale/missing QC, changed account/owner/review, another final
+selection, or a stopped/capped/failed/blocked render require diagnosis; do not reopen it or
+regenerate automatically. If saving stops, say: **"Your video is finished locally, but saving to
+Goose was interrupted."** Link the actual local file and preserve its checkpoint. Claim saved
+delivery only after a fresh project read verifies completion and selection of that exact render.
+
 ## Step 0 — project id, or video BATCH id? (fan out before anything else)
 
 The handoff is EITHER a single `project <id>` OR a `video batch <id>`. A batch is
@@ -993,7 +1064,13 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    use it anyway). Pin it only if they say to use it anyway. The app shows a blocked render as
    "Needs attention". **This gate is universal: it runs from this skill for every format, so a
    recipe never has to opt in.**
-4. Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
+4. **For a passing final, create the finished-video checkpoint first**, following "Finished video, interrupted saving"
+   above. With the CLI, use its prepare/resume flow instead of duplicating the writes below; it
+   saves the same already-opened render and pins only the checked output. Save the final review set
+   and production manifest (Step 4.5/4.6) before preparing that checkpoint. Without it, follow the
+   same durable protocol. A blocked version follows Step 4.3's existing upload/report-only path;
+   never route it through the passing-final helper or pin it automatically.
+   Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
    path: "working/final.mp4", ingredient_key: "final", input_digest, source: { type: "file", filename: "final.mp4", content_type:
    "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` →
    `media_confirm { brand_id, media_id: media.id }`. Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
@@ -1018,6 +1095,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for `thumbnail_url`.
 5. **Save the final review set BEFORE pinning** — it must describe the video you actually rendered.
+   In the checkpoint flow, save it before Step 4.4; do not rewrite it afterward merely to follow
+   the numbered order. Resume checks that this reviewed set stayed unchanged.
    If anything changed after the Step 3 approval (a line reworded, a clip or take swapped, a look,
    timing, caption or music change, a QC repair, or ANY change the user asked for in this chat),
    upsert the review set again: `video_project_upsert { brand_id, project_id, patch: { script: {
@@ -1034,7 +1113,9 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    fixes: [{ problem, fix }], notes? } } }`. Use the exact models and prompts you sent (full text, guards
    included), and list every fix you had to make (e.g. "VO ran 47s → tightened four lines, voice 1.08x";
    "hair drifted → restated the hair colour"). No URLs, keys or raw logs; it must stay under 48 KB.
+   In the checkpoint flow, save this before Step 4.4 too and skip the duplicate write afterward.
 7. Pin it — only a `passed` render (or a `blocked` one the user said to use anyway):
+   If the checkpoint helper already verified selection of this render, skip this duplicate write.
    `video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }`,
    then return the `app_url` + `brand_url` (from the project) verbatim. Never end on just "done" or
    a file path.
