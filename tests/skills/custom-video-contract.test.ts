@@ -4,6 +4,25 @@ const examples = [...getMakeCustomVideoSkillContent().matchAll(/```json\n([\s\S]
   .map((match) => JSON.parse(match[1]));
 
 describe('custom video documented API payloads', () => {
+  it('requires explicit live quote support before sending a quote flag', () => {
+    const content = getMakeCustomVideoSkillContent();
+    expect(content).toContain('read a fresh data_post_provider tool description from the selected connection');
+    expect(content).toContain('An extensible query schema or a newer fetched skill is not evidence');
+    expect(content).toContain('an older server can treat this flag as a paid generation request');
+  });
+
+  it('uses an explicit free MCP quote with the actual generation inputs', () => {
+    const quote = examples.find((example) => example.query?.quote_only === true);
+    expect(quote).toBeDefined();
+    expect(quote.provider).toBe('fal');
+    expect(quote.query).toEqual({ quote_only: true });
+    expect(typeof quote.project_id).toBe('string');
+    expect(quote.path).toMatch(/\/image-to-video$/);
+    expect(new URL(quote.body.image_url).protocol).toBe('https:');
+    expect(Number(quote.body.duration)).toBe(5);
+    expect(quote.body.generate_audio).toBe(false);
+  });
+
   it('uses character entries and distinct manifest/clip scene ID types', () => {
     const production = examples.find((example) => example.patch?.production)?.patch.production;
     expect(production).toBeDefined();
