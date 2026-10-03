@@ -88,6 +88,14 @@ review set; do not add a separate approval round.
 
 The generic production phases run in the Growth sandbox or a connected agent with a shell. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
 
+## Check the connected tool contract first
+
+Inspect the tool parameters exposed by the selected connection before creating or changing a custom project. catalog_fetch returns skill packages, not tool schemas. Use the host's registered tool definitions (MCP tools/list when available); do not assume that fetching a newer skill updates a connector's saved schema.
+
+video_project_upsert must expose custom_mode and idempotency_key for creation, reference_url when a reference is requested, and patch.script.expected_plan_revision for review saves. Before later writes, check that the connected tool exposes every field required by that action, including production clip checks and final quality evidence. If a required field is missing, stop before project writes or paid calls and report that the connected tools and custom-video skill are out of sync. Keep any proposed script in chat and label it as an unsaved, unapproved proposal. Do not drop required fields, switch environments, import the reference as a finished file, or create an HTML review page to work around the mismatch.
+
+The environment owner must confirm the app-MCP service rollout and refresh the connector's discovered tool schemas. Resume only when the required parameters are visible on the same selected connection. The Studio creative page remains the human review surface. Custom generation requires separate authenticated script and ingredient approvals; template skills' one-approval instructions and generic chat examples do not replace either custom gate.
+
 ## Load the shared production harness first
 
 This entry contains only the GooseWorks connection. Production sequencing, creative craft, reviews and repair loops are maintained in video-production-harness, published from the existing Studio harness. Do not invent a shorter local workflow.
@@ -114,7 +122,7 @@ Growth and connected coding agents supply local execution. A terminal-free MCP c
 
 ## Start and resume
 
-Fetch the current schemas with catalog_fetch before using a tool. For a new brief, call video_project_upsert with brand_id, name, format:"custom", custom_mode:"generate", brief:{prompt, audience, objective, product_name, cta, ratio, duration_seconds}, optional reference_url and a stable idempotency_key. Use only brief fields present in the schema. Instagram references have a metered public-data lookup; direct files are downloaded, probed and stored. generated_video_url and media_id mean finished-file imports, never references. Do not use import mode to bypass a generation project's review gates.
+After the connected tool contract passes the checks above, for a new brief call video_project_upsert with brand_id, name, format:"custom", custom_mode:"generate", brief:{prompt, audience, objective, product_name, cta, ratio, duration_seconds}, optional reference_url and a stable idempotency_key. Use only brief fields present in the schema. Instagram references have a metered public-data lookup; direct files are downloaded, probed and stored. generated_video_url and media_id mean finished-file imports, never references. Do not use import mode to bypass a generation project's review gates.
 
 Read video_project_read on every resume. Its project and custom_review are authoritative. Growth creates and retains origin_session_id from trusted chat context. The Studio creative page is the human review surface. Continue in Growth resumes that conversation. A connected agent can present the same app_url and poll for approvals; it cannot fabricate them using patch.approve/user_quote.
 
