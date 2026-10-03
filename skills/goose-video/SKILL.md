@@ -92,6 +92,101 @@ Everything else, including "make me a video ad for <brand>", starts at step 1 be
 - Anything else they volunteer: who it's for, names or terms it must say, things to stay away from. Never asked for; kept when offered.
 - What the picked format needs from the brand (`card.needs`): usually a clean product photo, a screen recording or their own footage.
 
+## Save durable brand answers, then verify them
+
+Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
+(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call `brand_update` with
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact `knowledge_updates` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
+schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | `patch.knowledge: { audience/positioning/voice: <answer> }` (one actual key). During onboarding, `brand_onboarding { action: "review_research", review: { action: "correct", field, value } }` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | `patch.facts: [{ kind: "insight", text }]`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | `patch.facts: [{ kind: "must", text }]`; pronunciation is exactly `Pronounce "<term>" as "<say_as>"`. |
+| Forbidden claim, word or visual | `patch.facts: [{ kind: "dont", text }]`. |
+| Durable visual, voice or pacing preference | `patch.facts: [{ kind: "do", text }]` for a preference; `dont` for an avoidance; `template_hint` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing `ad_brand_learning` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned `id` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use `brand_read` with `kit`, `learnings`
+or `onboarding` as appropriate, or `brand_onboarding { action: "status", brand_id }` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.
+
+## Video taste — reuse examples and preferences
+
+When asked to capture video taste, or when the user volunteers a durable video preference,
+first read the saved learnings and `media_list { brand_id, scope: "brand", scope_id: brand_id,
+tags: ["video-taste"], limit: 100 }`. Follow `next_cursor` before deciding an example is absent.
+Do not force a taste interview before an unrelated task or ask again for an existing preference.
+
+Save what the user has already supplied first. Then ask only the missing useful question, for
+example: "What do you like about this video—its pace, voice, captions, or look?" An inaccessible
+link can still be saved as a link with the user's explanation; do not pretend you watched it.
+
+- **Direct clip or video file:** register with `media_upload { brand_id, scope: "brand",
+  scope_id: brand_id, kind: "video", source: { type: "url", url }, tags: ["video-taste", "reference-only"],
+  metadata: { purpose: "video_taste", source_url: url, provenance: "user", captured_at: <ISO timestamp>,
+  preference: <the user's explanation> } }`. For a file use the live file/bytes upload flow and
+  `media_confirm` after a presigned upload. Registration of a URL does not copy or inspect it.
+- **Instagram/post/page link:** the same registration with `kind: "document"`; it is a link
+  bookmark, not downloadable footage or an indexed transcript. Do not fabricate a direct clip URL.
+- **Preferences:** save the user's reasons, likes and dislikes through the facts mapping above.
+  Read and preserve existing facts before updating one. Do not invent `video_preferences` or
+  new `video_lab` keys; the live kit patch accepts only its documented asset fields.
+- **Deduplicate:** reuse a matching returned media row, then `media_update` its title/tags/metadata
+  if needed; preserve existing metadata and tags. Do not create another row for the same example.
+  Read back with `media_list` and `brand_read` learnings before claiming it was saved.
+  Check the returned row belongs to this brand: URL deduplication may return another brand's
+  existing row. Do not relabel that row or claim success unless the current brand's scoped read
+  actually returns it. Report an unsaved association if no supported attach path is available.
+
+Never put third-party taste examples into kit reference images: `kind: "reference"` at brand
+scope writes there. The tags and metadata above record purpose and provenance; **they do not
+grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
+footage, face, product, testimonial or claims in a new ad without independently verified permission.
+
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
+Pass it with the brand rules into the existing video workflow. A one-video request overrides a
+default for that project; it does not silently rewrite the brand's standing preference.
+
 ## Composed Atoms
 
 MCP tools; `goose-video-local` does the making.
@@ -136,6 +231,9 @@ Call `brand_list`, with `query` when they named a brand. `query` is a case-insen
 - **Nothing matches** → say so, list the brands they do have in a table, and offer to add the new one here: "Or send me its website and I'll add it." With a website, call `brand_create { name, website_url }` (free). It starts brand research, which fills in the logo and colours in a few minutes. Carry on from step 2 while it runs. Never create a brand they didn't ask for, and never guess the website.
 
 If the GooseWorks MCP's own instructions have you check onboarding first and it turns out unfinished, finish it, then come back here with the customer's original sentence.
+
+Read the resolved brand and saved rules/preferences as described above before asking a goal
+question or choosing a format. Carry the verified taste brief into the project handoff.
 
 ### 2. Ask what the ad is for, in one open question
 

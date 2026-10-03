@@ -68,7 +68,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'make-custom-video',
     when: 'Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate Studio script and ingredient approvals are required',
-    how: 'Use the installed entry skill, or fetch make-custom-video through the catalog. Growth uses its sandbox and connected agents use their local tools.',
+    how: 'Use the installed GooseWorks connection entry, or fetch make-custom-video through the catalog. It loads video-production-harness; Growth uses its sandbox and connected agents use their local tools.',
     delivery: 'entry',
   },
   {
