@@ -392,9 +392,10 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('After EACH piece is generated AND passes its own QC, upload it right away');
     expect(local).toContain('path:\n"working/<role>/<file>", ingredient_key, input_digest');
     expect(local).toContain('from media_proxy import input_digest');
-    // Record media_id + path in the ingredients list, batching the script patch.
-    expect(local).toContain('Put the piece\'s `media_id` (`media.id`), `path`');
-    expect(local).toMatch(/Batch this\s+script patch every 3–5 pieces/);
+    // Confirmed keyed media persists resume state without clearing the approved review.
+    expect(local).toContain("Record each confirmed piece's\n`media_id`, `path`, `ingredient_key` and `input_digest` locally");
+    expect(local).toContain('Before approval, mirror the draft ingredients');
+    expect(local).toContain('After approval, do NOT write `patch.script`');
     // Resume: one media_list at start, reuse only on a matching digest.
     expect(local).toContain('ingredient_key_prefix: "",\nlimit: 100 }');
     expect(local).toContain('AND the same `input_digest`, **download it instead of\ngenerating**');
@@ -550,62 +551,62 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video.match(/^---$/gm)).toHaveLength(2);
   });
 
-  // Server video orders are paused on the public MCP (gooseworks-app #1549):
-  // the skill must not teach the quote / gate / CreativeSpec server flow.
-  it('carries no server-render ordering flow', () => {
-    for (const gone of ['kind: "partial"', 'gate_step_idx', 'CreativeSpec', 'approved_quote_digest',
-      'execution_choice', 'kind: "redraft"', 'Do not fetch template atoms, call media']) {
-      expect(video).not.toContain(gone);
-    }
-    expect(video).toContain('The GooseWorks server does not render\nvideos right now.');
-    expect(video).toContain('**Never order a server render.**');
+  it('uses card capability independently of local execution', () => {
+    expect(video).toContain('card.display_hint');
+    expect(video).toContain('client: { shell: true }');
+    expect(video).toContain('print no table or list of the formats');
+    expect(video).toContain('print card.text_summary as returned');
+    expect(video).toContain('Never offer\n  available_here:false');
+    expect(video).not.toContain('always a markdown table');
+    expect(video).not.toContain('Every video format runs on the customer');
   });
 
-  it('runs brand → goal → every format in a table → machine check → project → goose-video-local', () => {
-    const order = ['### 1. Resolve the brand', '### 2. Ask what the ad is for', '### 3. Show every format in a table',
-      '### 4. Check this machine can render it', '### 5. Create the project and hand it off'].map((h) => video.indexOf(h));
-    for (let i = 0; i < order.length; i++) {
-      expect(order[i]).toBeGreaterThan(-1);
-      if (i) expect(order[i]).toBeGreaterThan(order[i - 1]);
-    }
-    expect(video).toContain('video_catalog_list { kind: "formats", brand_id }');
-    expect(video).toMatch(/gooseworks doctor/);
+  it('runs brand → defaults → picker → exact runtime check → one project', () => {
+    const order = ['### 1. Resolve the brand', '### 2. Keep the goal', '### 3. Show the picker',
+      '### 4. Check this machine', '### 5. Create the project'].map(h => video.indexOf(h));
+    order.forEach((position, i) => {
+      expect(position).toBeGreaterThan(-1);
+      if (i) expect(position).toBeGreaterThan(order[i - 1]);
+    });
+    expect(video).toContain('Never ask what the ad is for before showing formats');
     expect(video).toContain('video_project_upsert { brand_id, name, format: <template_id> }');
-    expect(video).toContain('catalog_fetch { type: "skill", slug: "goose-video-local" }');
-    expect(video).toMatch(/needs Claude Code, Codex or Cursor/);
+    expect(video).toContain('request-specific setup requirement');
+    expect(video).not.toContain('finish it, then come back here');
   });
 
-  it('fetches and checks the selected renderer before creating a project or spending', () => {
+  it('preserves renderer-specific checks and falls back without silent format changes', () => {
     const setup = video.slice(video.indexOf('### 4. Check this machine'), video.indexOf('### 5. Create the project'));
-    expect(setup).toContain('gooseworks doctor --no-browser');
-    expect(setup).toContain('fetch the selected template and its capabilities');
-    expect(setup).toContain('gooseworks doctor --renderer-script');
-    expect(setup).toContain('Do not guess a renderer from a format name');
-    expect(setup).toContain('Non-browser capabilities need only their documented runtime checks');
-    expect(setup).toContain('Never create paid ingredients before the selected renderer passes');
-    expect(setup).not.toContain('Chromium is actually downloaded');
+    for (const required of ['gooseworks doctor --no-browser', 'fetch the selected template and its capabilities',
+      'gooseworks doctor --renderer-script', 'Do not guess a renderer from a', 'exact-runtime',
+      'Non-browser capabilities need only their documented runtime checks',
+      'Never create paid ingredients before the selected renderer passes', 'never silently change the selected format']) {
+      expect(setup).toContain(required);
+    }
+    expect(setup).toContain('client:{shell:false}');
   });
 
-  it('routes existing projects and batches to goose-video-local first', () => {
-    const route = video.indexOf('## Route first');
-    expect(route).toBeGreaterThan(-1);
-    expect(route).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
-    expect(video).toContain('fetch_skill("goose-video-local")');
+  it('routes existing projects first and delegates chat execution without claiming readiness', () => {
+    expect(video.indexOf('## Route first')).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
+    expect(video).toContain('goose_run_task { brand_id, project_id, message }');
+    expect(video).toContain('Never tell a chat host it needs Claude Code to start');
+    expect(video).toContain('A saved free draft is not a started worker or a complete plan');
+    expect(video).toContain('never claim completion or approve an empty plan');
+    expect(video).toContain('Read again on a customer reply, card action or requested update');
   });
 
-  it('keeps the table rules: every row, quoted cards, demo links, table before the question', () => {
-    expect(video).toContain('with **every row** the tool returned');
-    expect(video).toContain('**"What it looks like" is `card.description`, quoted.**');
+  it('preserves readiness, text demos and the complete-plan credit gate', () => {
     expect(video).toContain('A format whose card contradicts what they asked for is never Suggested');
-    expect(video).toContain('**Print the table in your message, THEN ask which one.**');
+    expect(video).toMatch(/unknown suitability is “needs review[.”]/);
     expect(video).toContain('"no demo yet"');
+    expect(video).toContain('one plan, one approval with the total in credits');
+    expect(video).toContain('Custom videos retain separate Studio script/ingredient/budget gates');
   });
 
   it('names the keyless fal route and scopes photos_generate', () => {
     expect(video).toContain('**No FAL_KEY, ElevenLabs key or `fal_client` is ever needed.**');
     expect(video).toContain('data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">');
     expect(video).toContain('job_get { job_id }');
-    expect(video).toMatch(/`photos_generate` is \*\*not\*\* a general image tool/);
+    expect(video).toMatch(/`photos_generate` is \*\*not\*\* a general\s+image tool/);
     expect(video).toContain('**A missing key is never a blocker.**');
   });
 
@@ -625,8 +626,8 @@ describe('skills/goose-video → ad-angle-miner', () => {
     expect(video).toMatch(/run it with the \*\*video\*\* output/);
   });
 
-  it('offers it once when the goal answer is "not sure"', () => {
-    expect(video).toMatch(/find ideas first\s+with `ad-angle-miner`/);
+  it('keeps idea requests on ad-angle-miner without forcing a goal interview', () => {
+    expect(video).toContain('Idea requests still follow ad-angle-miner with the video output');
   });
 });
 
@@ -686,5 +687,57 @@ describe('make-custom-video shared harness connection', () => {
     expect(getGooseVideoSkillContent()).toContain('make-custom-video');
     expect(getGooseVideoLocalSkillContent()).toContain('make-custom-video');
     expect(getGooseVideoLocalSkillContent()).toContain('custom_video_state');
+  });
+});
+
+
+describe('current template approval and follow-up contract', () => {
+  const local = getGooseVideoLocalSkillContent();
+  it('records the current full total for a single project and preserves custom gates', () => {
+    expect(local).toContain('render_estimate.total_credits');
+    expect(local).toContain('A single project requires recorded approval');
+    expect(local).not.toContain('returns\n   `approval_not_required: true`');
+    expect(local).toContain('Studio records independent authenticated script/ingredient approvals');
+  });
+  it('checks stop between paid actions and binds fixes/remixes to the watched render', () => {
+    expect(local).toContain('After EVERY progress callback inspect stop');
+    expect(local).toContain('SPEND_CAP_REACHED');
+    expect(local).toContain('scope:"raise_cap"');
+    expect(local).toContain('Never replace a supplied\n  watched render with the final');
+    expect(local).toContain('fix_of_render_id');
+    expect(local).toContain('remix_of_render_id');
+    expect(local).toContain('retry_after_seconds');
+  });
+});
+
+
+describe('hosted existing-video handoff and render timeline', () => {
+  const local = getGooseVideoLocalSkillContent();
+  it('routes projects and batches before handing off with mutually exclusive ids', () => {
+    expect(local).toContain('First perform the mandatory route check below');
+    expect(local).toContain('goose_run_task { brand_id, batch_id, message }');
+    expect(local).toContain('never send both ids');
+    expect(local).toContain('Generated custom children keep their separate make-custom-video flow');
+  });
+  it('opens one render after approval and before production, never after assembling the master', () => {
+    expect(local).toContain('after recorded approval, BEFORE paid production');
+    expect(local).toContain('reuse that render_id for progress');
+    expect(local).not.toContain('open it only once you\n  actually have a rendered master');
+  });
+  it('preserves approval while confirmed media and progress provide resume state', () => {
+    expect(local).toContain('Keep the approved review unchanged during production');
+    expect(local).toContain('do NOT write `patch.script` or `script_drafts` during any');
+    expect(local).toContain('confirmed media rows\nand render progress are the durable resume record');
+    expect(local).not.toContain('script patch every 3–5 pieces');
+    expect(local).toContain('Never reuse the earlier yes for a changed plan');
+  });
+  it('settles production before the final review write and preserves guarded same-render saving', () => {
+    expect(local).toContain('Only after all paid production, QC, repairs and pending provider work are finished and settled');
+    expect(local).toContain('Never relabel a changed plan as provenance or silently reuse approval');
+    expect(local).toContain('After this write, do not start new paid work');
+    expect(local).toContain('complete the same render with its existing finishing allowance and guards');
+    expect(local).toContain('Save the final review set BEFORE pinning');
+    expect(local).toContain('expected_review_digest');
+    expect(local).toContain('a stopped/capped/failed/blocked render require diagnosis');
   });
 });
