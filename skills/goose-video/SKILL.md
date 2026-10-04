@@ -2,20 +2,17 @@
 name: goose-video
 slug: goose-video
 description: >
-  Start a video ad without leaving the chat. Use it when the user says "make me a video ad for
-  <brand>", "I want a video ad", or asks for a UGC / iMessage / explainer / product-demo video.
-  One sentence is enough: it picks the brand, asks what the ad is for, shows every video format in
-  a table with demo links, checks this machine can render, creates the project and hands it to
-  goose-video-local, which makes the video here and saves it back to the app. Every format runs on
-  the customer's own machine (Claude Code, Codex or Cursor); a hosted connector (ChatGPT,
-  claude.ai, Cowork) can show the formats but cannot render one.
+  Start a video ad in the same chat. Resolve the brand and suggest supported formats with a
+  picker or the returned text choices. An agent with a verified shell makes the video with
+  goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
+  one complete template plan and total credits before production. Custom videos retain Studio gates.
 category: ads
-version: 2.0.1
+version: 3.0.0
 author: GooseWorks
-tags: [gooseworks, ads, video, client-side, local-render]
+tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
 
-# GooseWorks Video Ads — pick a format, then make it here
+# GooseWorks Video Ads — choose, review, make
 
 ## How to talk to the customer (applies to every message you send them)
 
@@ -71,18 +68,15 @@ the other. Check the actual advertised tools before using new fields.
 
 ## Purpose
 
-Gets a customer from one sentence ("make me a video ad for Bioma") to a video project with the
-right format, then hands that project to **`goose-video-local`**, which makes the video on this
-machine and saves it back to the app.
+Resolve the brand, show supported formats and create one saved project. An agent with a verified
+shell follows **`goose-video-local`**. A chat host delegates that same project to the GooseWorks
+coworker, which renders in its sandbox. This is agent execution, not a recipe server-order API.
 
-**Every video format runs on the customer's machine.** The GooseWorks server does not render
-videos right now. It lists the formats, stores the project, bills each paid step through its media
-proxy and keeps the finished video. There is no server quote, no server script preview and no
-server render to order: `video_catalog_list` returns only client-side formats
-(`execution: "client"`), and a server-format project is refused with `format_unavailable`.
-
-**The whole job happens in the chat.** Choosing, approving and receiving the video all happen here,
-as text and links the customer can click. Template-remix work uses this chat. Custom videos use Studio for script and ingredient approval, preview replacement and saved feedback, then return to the same Growth conversation.
+**Cards and execution are separate capabilities.** A terminal may render without drawing a
+picker; a chat host may draw a picker while the coworker renders. Follow `card.display_hint`
+and `available_here`, never a guess from the host's name. Template-remix review stays in this
+chat. Custom videos use Studio for separate script and ingredient approval, then return to the
+same Growth conversation.
 
 ## Custom videos: route before formats
 
@@ -102,7 +96,7 @@ Use `goose-video-local` if it is installed; otherwise load it with
 
 When they ask **what** to make ("give me video ad ideas", "what angles should I use?", "what's
 working for my competitors?"), fetch **`ad-angle-miner`** (`catalog_fetch { type: "skill", slug: "ad-angle-miner" }`,
-or `gooseworks fetch ad-angle-miner`) and run it with the **video** output. It returns ranked
+using its advertised tools) and run it with the **video** output. It returns ranked
 video ideas mapped to formats and hands the picked ones to `goose-video-local`.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
@@ -146,10 +140,9 @@ review set; do not add a separate approval round.
 
 ## Inputs
 
-- A brand, usually named in the opening sentence. Resolved to `brand_id`; with one brand in the org it needs no input.
-- What the ad is for, in the customer's words (optional; asked once, never forced). It becomes the brief `goose-video-local` works from.
-- Anything else they volunteer: who it's for, names or terms it must say, things to stay away from. Never asked for; kept when offered.
-- What the picked format needs from the brand (`card.needs`): usually a clean product photo, a screen recording or their own footage.
+- A brand, usually named in the request. Resolve it from the accessible brands; one brand needs no question.
+- The customer's goal, occasion, audience, selected angle and constraints when supplied; otherwise propose defaults from the verified kit.
+- The selected format's required assets. Presence does not prove suitability; uncertain assets remain “needs review.”
 
 ## Save durable brand answers, then verify them
 
@@ -248,140 +241,129 @@ default for that project; it does not silently rewrite the brand's standing pref
 
 ## Composed Atoms
 
-MCP tools; `goose-video-local` does the making.
-
-- `brand_list`: brand NAME → `brand_id`. Pass `query` when they named one.
-- `brand_create { name, website_url }`: only when the customer asks to add a brand that isn't there. Free.
-- `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }`: research status, logo, product photos.
-- `video_catalog_list { kind: "formats", brand_id }`: every format that can be made. Each row has `template_id`, `card.description`, `card.best_for`, `card.needs` and `examples[]` (demo videos). The response carries a `client_formats_note` with the machine checks.
-- `video_project_upsert { brand_id, name, format: <template_id> }`: creates the project. Free.
-- `catalog_fetch { type: "skill", slug: "goose-video-local" }`: the skill that makes it.
+Use the live canonical schemas: brand_read, brand_create, video_catalog_list,
+video_project_upsert, video_project_read, catalog_fetch, goose_run_task and job_cancel.
+An old tool name in a recipe is not grounds for terminal-update advice in a chat host.
 
 ## Paid media: images, clips, voice
 
-Every paid generation — a creator still, a product cutout, a screen-recording frame placed in a
-laptop, an animated clip, a voiceover, a music bed — goes through the GooseWorks media proxy and is
-billed per call to the project. **No FAL_KEY, ElevenLabs key or `fal_client` is ever needed.**
-A recipe, atom or open-source skill that says "needs FAL_KEY" is satisfied by the proxy; it is
-never a blocker. With the GooseWorks MCP alone:
-
-- **Image or clip, any fal model** (Nano Banana, GPT-image, Seedream, Seedance, Kling):
-  `data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }`,
-  then poll `job_get { job_id }` until `complete`; the `*.fal.media` URLs are in `result`.
-- **Voice or music:** `data_post_provider { provider: "elevenlabs", … , project_id }`.
-- **A local file as an input** (a frame, a screenshot): `media_upload` it first and pass the returned public URL.
-
-`photos_generate` is **not** a general image tool: it only photographs a physical catalog product
-(apparel, beauty, CPG). A software screenshot or app mockup is a fal image edit. `goose-video-local`
-has the full rules (atoms, the relay, saving each piece as it passes QC).
+**No FAL_KEY, ElevenLabs key or `fal_client` is ever needed.** Use
+`data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }`
+then `job_get { job_id }`; voice/music use provider:"elevenlabs". Upload local inputs through
+media_upload first. **A missing key is never a blocker.** `photos_generate` is **not** a general
+image tool: it photographs physical catalog products only. Use goose-video-local for the
+runtime, paid approval, asset saving and quality checks.
 
 ## Workflow
 
-The opening is fixed: **brand → what it's for → format table → machine check → project → hand off.**
-Do each step without waiting for the customer to ask for it.
-
 ### 1. Resolve the brand, quietly when you can
 
-Call `brand_list`, with `query` when they named a brand. `query` is a case-insensitive substring match, so "Kolkata Chai" also finds "Kolkata Chai Co". If it finds nothing, call `brand_list` once more with no query before deciding.
+Call brand_read without brand_id to list accessible brands. Resolve the customer's name from
+actual returned names. One brand, or exactly one match: state it and continue. Several possible
+brands: show names and websites and ask once. No match: show accessible brands and offer to add
+one only when the customer asks and supplies its website; never guess the URL.
 
-- **The org has exactly one brand** → use it. Say which in one line ("Making this for **Bioma**.") and move on. Don't ask.
-- **The name they said matches exactly one brand** → use it. Say which.
-- **Several match, or they named none and the org has several** → show a table (name, website) and ask.
-- **Nothing matches** → say so, list the brands they do have in a table, and offer to add the new one here: "Or send me its website and I'll add it." With a website, call `brand_create { name, website_url }` (free). It starts brand research, which fills in the logo and colours in a few minutes. Carry on from step 2 while it runs. Never create a brand they didn't ask for, and never guess the website.
+Read `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` before
+choosing a format. Reconcile explicit brand corrections through the durable capture rules.
+A direct video request does not require first-campaign acceptance. Follow any returned
+request-specific setup requirement; never mark research complete or accept a campaign to
+bypass setup. Keep the original request.
 
-If the GooseWorks MCP's own instructions have you check onboarding first and it turns out unfinished, finish it, then come back here with the customer's original sentence.
+### 2. Keep the goal and propose defaults
 
-Read the resolved brand and saved rules/preferences as described above before asking a goal
-question or choosing a format. Carry the verified taste brief into the project handoff.
+Never ask what the ad is for before showing formats. Keep the customer's exact direction.
+Otherwise propose defaults from the verified kit's products, audience, offer and voice. Show
+those defaults in the saved plan so any can be changed. Never invent proof or product facts.
+Idea requests still follow ad-angle-miner with the video output.
 
-### 2. Ask what the ad is for, in one open question
+### 3. Show the picker or its text fallback
 
-Unless the opening sentence already said it, ask **one** plain question and wait:
+Call `video_catalog_list { kind: "formats", brand_id }`. On the customer's computer, when you
+can actually execute shell commands, include `client: { shell: true }`; in a chat host omit
+that claim. Inside a coworker sandbox follow its reported capabilities, never claim to be the
+customer's computer. Respect requested limit and next_cursor for more item pages; the card may
+contain a full picker independently of the item page.
 
-> What's this ad for? For example: launching something, a sale, explaining how it works, or showing real results. Anything you tell me helps me pick the right format.
-
-This is a free-text question: **no menu, no table, no list of formats yet.** Take whatever they say, even "not sure". Never ask it twice, and never block on it.
-
-If the answer is "not sure" or "what should I make?", offer once, in one line, to find ideas first
-with `ad-angle-miner` (video output: it looks at competitors' ads and what's getting organic reach,
-then suggests ranked ideas with formats). If they say yes, switch to it; otherwise carry on to the table.
-
-**Keep the answer, as they said it.** It is the brief `goose-video-local` works from in step 5. If their words also say who the ad is for, a name or term the ad must say, or something to stay away from, note those too. Never ask for those and never fill them with a guess.
-
-Skip the question when the opening already names a goal ("…a video ad for our summer sale") or a format ("…an iMessage video ad"). With a format named, go to the table with that format first and marked.
-
-### 3. Show every format in a table, best fit first
-
-`video_catalog_list { kind: "formats", brand_id }`, then **always a markdown table in your message**, with **every row** the tool returned.
-
-Order the rows by how well each format fits their answer. Judge fit from `card.description` and `card.best_for` against what they said. **A format whose card contradicts what they asked for is never Suggested**, however well its keywords match. When nothing fits, say so before the table ("None of our formats does X; the closest is Y, which gives up Z") and still show the table. Mark **exactly one** row **Suggested** with a few words on why; a close second can be **Also good**.
-
-| | Format | What it looks like | Needs | Demo |
-|---|---|---|---|---|
-| **Suggested** | Split-screen creator demo | A creator reacts on top while your app plays below | a screen recording of your product | [watch](https://…) |
-| **Also good** | Creator product review | An AI creator reviews your product to camera, holding it | a clean photo of the real product | [watch](https://…) |
-
-- **"What it looks like" is `card.description`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief.
-- **Needs** is `card.needs` in plain words, with the row's `asset_readiness` gaps or pending inspection. A format with missing required assets goes last; don't hide it, don't suggest it. Unknown suitability is “needs review,” not proof that a file is missing or usable. Inspect the selected format's candidates before spending.
-- **Match the product to the format.** A format built around a creator HOLDING a physical product is a poor fit for a software product; one built on a screen recording is a poor fit for a physical one. Say so in the row.
-- **Demo** is `examples[0].output_url`. When a format has none, write "no demo yet"; never leave it blank.
-- **Price:** say once, under the table, that each paid step (a creator still, a clip, a voice) is billed per call and approved before it runs. There is no single up-front quote.
-
-**Print the table in your message, THEN ask which one.** Never put the formats only inside a structured question control: it renders plain option labels, not links, so the customer would be picking a format they were never able to watch.
+- **card.display_hint:"widget"**: the picker replaces a format table. Write at most one short
+  acknowledgement, print no table or list of the formats, and wait for the selection.
+- **Otherwise**: print card.text_summary as returned. Without a card, show returned rows with
+  names, faithful descriptions, needs and demo links, respecting the requested page size.
+  Write "no demo yet" when absent. Never put links only in a question control.
+- A format whose card contradicts what they asked for is never Suggested. Never offer
+  available_here:false as an executable choice. Relay not_available_here in one short line.
+- Missing required assets are missing; unknown suitability is “needs review.” Inspect the
+  selected format's candidates before spending. Never promise an unverified asset is ready.
+- Template formats use **one plan, one approval with the total in credits**, not approval for
+  each paid step. Custom videos retain separate Studio script/ingredient/budget gates.
 
 ### 4. Check this machine can render it
 
-- **Hosted connector** (ChatGPT, claude.ai, Cowork: no shell) → say plainly that the video is made on their own machine and needs Claude Code, Codex or Cursor. Stop there; do not create a project you cannot finish.
-- **Terminal host** → run `gooseworks doctor --no-browser` for common setup (auth/MCP, Node 18+, ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities, as described in `goose-video-local` Step 2, and install the selected renderer's documented dependencies in its fetched folder. Do not guess a renderer from a format name. For each Node renderer using Playwright's default Chromium launch, run `gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"` with the same environment (including `NODE_PATH` and `PLAYWRIGHT_BROWSERS_PATH`) used for rendering. Use the actual script path, never the example filename. Other browser runtimes or custom launch settings need the capability's equivalent exact-runtime launch check; a default Playwright probe cannot certify them. Non-browser capabilities need only their documented runtime checks. With no CLI, follow the equivalent checks in `goose-video-local` Phase 0 and Step 2. Any check fails → show the folder-specific repair, fix it under existing setup permissions, and recheck. The probe downloads nothing. Never create paid ingredients before the selected renderer passes.
-
-Then say plainly, in one short paragraph: it renders on this machine; paid steps are billed per call and each is approved before it runs; it needs what `card.needs` says.
+- **Chat host without a shell:** skip local checks and delegate an available format in Step 5.
+  Never tell a chat host it needs Claude Code to start. Browser-only formats remain unavailable
+  here; give computer setup guidance only if asked how to make one.
+- **Local shell:** run `gooseworks doctor --no-browser` for common setup (auth/MCP, Node 18+,
+  ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities,
+  and install documented dependencies in its fetched folder. Do not guess a renderer from a
+  format name. For each Node renderer using default Playwright Chromium, run
+  `gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"` with
+  the exact environment used to render, including NODE_PATH and PLAYWRIGHT_BROWSERS_PATH.
+  Use the actual script path. Custom browser launch settings need their equivalent exact-runtime
+  check. Non-browser capabilities need only their documented runtime checks.
+  Never create paid ingredients before the selected renderer passes. Repair and recheck under
+  existing setup permissions. If it cannot be fixed, re-list with client:{shell:false} and
+  delegate only a format available to the coworker; never silently change the selected format.
+- **Coworker sandbox:** you are the renderer. Follow goose-video-local's sandbox checks; never
+  hand off recursively or claim browser capability that the sandbox lacks.
 
 ### 5. Create the project and hand it off, in this session
 
-1. `video_project_upsert { brand_id, name, format: <template_id> }` with **no `brief`** (a brief makes a concept batch).
-   If the customer already chose a campaign or campaign concept, include its verified
-   `campaign_id` and optional `campaign_concept_id` on this create (also on a batch create).
-   Use the IDs read from that brand's saved campaign; the concept must belong to that campaign.
-   Omit unknown IDs and never infer a link or create a campaign solely to file a video.
-2. Load `goose-video-local` (installed, or `catalog_fetch { type: "skill", slug: "goose-video-local" }`) and follow it on that `project_id` now. Their step-2 answer and anything they volunteered is the brief for its Step 1.5: use it, don't ask again.
+1. `video_project_upsert { brand_id, name, format: <template_id> }` with no brief (a brief creates
+   a concept batch). Include client:{shell:true} only for real local execution. Default
+   creation_intent:"format" keeps the style with this brand's content; source_remix requires an
+   explicit choice to use source content.
+   If they already chose a campaign/concept, include its verified campaign_id and optional
+   campaign_concept_id. Read the IDs from that brand's saved campaign; the concept must belong
+   to it. Omit unknown IDs and never infer a link or create a campaign solely to file a video.
+2. **Verified local shell or coworker sandbox:** load
+   `catalog_fetch { type: "skill", slug: "goose-video-local" }` and follow it on the same project_id.
+   Carry the customer's words, verified defaults, campaign and selected angle into its brief.
+3. **Chat host:** `goose_run_task { brand_id, project_id, message }` with the request, selected
+   format and defaults. Keep task_id. Continue questions/edits with the same task and project.
+   A saved free draft is not a started worker or a complete plan. Follow actual saved state.
+4. When follow.card_follows is true, the card follows progress: do not re-read it in a loop.
+   Read again on a customer reply, card action or requested update. A failure or missing saved
+   plan needs the returned recovery action; never claim completion or approve an empty plan.
+   Approval requires the current complete plan and total. Insufficient balance: offer a shorter
+   video or top-up. “Not now” keeps the saved plan.
 
 Do not hand the customer a command to paste somewhere else.
 
 ## Decision Rules
 
-- **One sentence is a complete request.** Never answer "make me a video ad for X" by asking which format, which tool or what to do next. Run steps 1–3 and let the table do the asking.
-- **One brand in the org → never ask which brand.** State the one you used.
-- **Open question first, table second.** The goal question comes before any list, and the table comes ordered, with one suggestion.
-- **More than two options → table in the message.** A question control may capture the answer after the table, never instead of it.
-- **Quote cards, never paraphrase them.** A reworded card can promise something the format cannot do.
-- **A contradiction with the card outranks every keyword match.**
-- **They asked for a format that isn't in the catalogue** → it isn't available yet. Say so, show the table, and don't improvise one.
-- **A missing key is never a blocker.** Paid media goes through `data_post_provider` (see "Paid media"); never ask anyone to set FAL_KEY.
-- **Never order a server render.** There is none right now; every format is made here by `goose-video-local`.
+- One sentence is a complete request. Resolve the brand and show formats without a goal interview.
+- One brand in the org: never ask which brand. Cards decide presentation; checks decide execution.
+- Use canonical tools. Preserve campaign context, selected script angles and custom Studio gates.
+- Never fabricate readiness, completion, approval or a second project.
 
 ## Output
 
-A created video project on the picked format, handed to `goose-video-local` in the same session, which delivers the finished video in the chat.
+One project, one current saved plan in this chat, then the finished video. With a widget write one
+line and do not add app_url, brand_url or duplicate video links. A text host gets text_summary
+and its usable delivery link.
 
 ## Quality Checks
 
-- A one-sentence opening got: the brand resolved (unasked when there is one), one open goal question, then a table of every format with demo links and one suggestion.
-- Every "What it looks like" cell is the card's own words; no Suggested format's card contradicts what they asked for.
-- Common setup and the selected renderer's actual launch check passed before the project was created or any paid ingredients; a hosted connector was told it needs Claude Code, Codex or Cursor.
-- The project was created with no brief, and `goose-video-local` ran on it in the same session with the customer's step-2 answer as its brief.
-- No one was asked for a FAL_KEY or any provider key.
+- No forced goal question, duplicate table or unsupported shell claim.
+- The exact renderer passed before local paid ingredients; uncertain assets stay uncertain.
+- Selected campaign and angle survive; a single template project has no brief.
+- Current complete plan and total precede approval. Custom Studio gates remain independent.
 
 ## Failure Modes
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| "Make me a video ad for X" got back "which format / what would you like?" | Treated the one-liner as incomplete | Run steps 1–3 unprompted |
-| Asked which brand in a one-brand org | Skipped the count check in step 1 | Use the only brand and say which |
-| Demo links invisible to the customer | The choices went only into the structured question control | Table in the message first; the control only takes the answer |
-| `format_unavailable` | A server-rendered format, paused right now | Re-read the catalogue; offer what's in it |
-| "I can't generate the image: FAL_KEY isn't set / fal_client isn't installed" | Read an atom's or open-source skill's environment line as a requirement | Use `data_post_provider { provider: "fal", … }` + `job_get`; no key is needed |
-| "The only image tool is photos_generate and it wants a product_id" | `photos_generate` is for physical catalog products only | Any other image is a fal call through `data_post_provider` |
-| `gooseworks doctor` fails | A missing toolchain piece | Show its fix command, re-check; never start anyway |
-| Video not on this plan | Lite and trial have no video entitlement | Say so and point at the upgrade; this is the one app trip that's allowed |
-| Two projects for one video | A second project was created instead of continuing the first | Continue on the SAME `project_id` |
-
+| Picker plus table | Ignored display_hint | Widget: one line; otherwise text_summary |
+| Terminal loses formats | Confused cards with execution | Declare real shell capability and check renderer |
+| Chat told it cannot start | Only local execution considered | Create once and delegate to coworker |
+| Worker ends without a plan | Assumed completion means ready | Follow actual failure/recovery state |
+| Two projects for one video | Recreated instead of resuming | Continue same project and task |
