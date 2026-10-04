@@ -1195,8 +1195,11 @@ ${CUSTOMER_TALK}
 
 ## Chat hosts and cards
 
-Without a shell, hand this same project to \`goose_run_task { brand_id, project_id, message }\` and
-keep task_id. Inside a coworker sandbox you are the renderer: never delegate recursively.
+First perform the mandatory route check below. Then, without a shell, hand a verified template
+project to \`goose_run_task { brand_id, project_id, message }\`, or a verified template batch to
+\`goose_run_task { brand_id, batch_id, message }\` (never send both ids). Keep task_id and the
+same project or batch. Generated custom children keep their separate make-custom-video flow.
+Inside a coworker sandbox you are the renderer: never delegate recursively.
 With card.display_hint:"widget", say at most one line and never duplicate its plan, total or
 links. Otherwise print card.text_summary. Read again on customer input, not in a polling loop.
 A free saved draft is not proof that planning started or a complete plan exists.
@@ -1452,9 +1455,9 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   invisible in the app.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   per call as you generate (Step 4). The render row (\`${RENDER_ROW_TOOL} ${RENDER_OPEN_ARGS}\`) charges the flat
-  **video base fee once, when a full render is reported \`complete\`** — so open it only once you
-  actually have a rendered master (Step 4.1/4.2), and never open a second row on a guess (a second
-  completed row bills again). The final-video QC gate (Step 4.3) then sits between
+  **video base fee once, when a full render is reported \`complete\`**. Open one row immediately
+  after recorded approval, BEFORE paid production (Step 4.1), and reuse that render_id for progress
+  and completion. Never open a second row on a guess (a second completed row bills again). The final-video QC gate (Step 4.3) then sits between
   that master and PINNING it. Call \`account_whoami\` first to see the credit balance.
 
 ## Save as you go — and resume (never pay twice for a piece)
@@ -1532,11 +1535,18 @@ char-level timestamps as \`vo/scene-03.timestamps\` (\`kind: "document"\`, same 
 built from them; without them a resumed run has to fall back to Whisper timings, which mis-case
 brand names.
 
-**4. Record it in the ingredients list.** Put the piece's \`media_id\` (\`media.id\`), \`path\`
-and \`ingredient_key\` on its entry in \`script_drafts.ingredients\` and mirror with
-\`video_project_upsert { brand_id, project_id, patch: { script: { script_drafts } } }\`. Batch this
-script patch every 3–5 pieces (and always once more when a stage ends) to limit calls — the
-upload and confirmation make the piece safe, so neither is batched.
+**4. Keep the approved review unchanged during production.** Record each confirmed piece's
+\`media_id\`, \`path\`, \`ingredient_key\` and \`input_digest\` locally; the confirmed media rows
+and render progress are the durable resume record. Before approval, mirror the draft ingredients
+as part of Step 3. After approval, do NOT write \`patch.script\` or \`script_drafts\` during any
+paid production, QC or repair step, or while provider work is pending. A review-set write clears
+approval and can stop the next paid step, including a batch concept. Save the final descriptive
+review once all paid work is finished and settled, as Step 4.5 requires.
+
+Any material creative change or ANY change the user asked for in this chat must stop production:
+save the changed complete plan and full credit total, then obtain fresh approval before continuing.
+Never reuse the earlier yes for a changed plan. A repair that restores the approved choices can
+continue within the existing allowance and Stop guards without rewriting the approved review.
 
 The \`final\` master and \`final-thumb\` poster (Step 4.4) carry \`ingredient_key\` too, so a
 resumed run that finds a passing \`final\` with the same digest only needs to publish.
@@ -1550,7 +1560,12 @@ video fee can still apply; its existing same-render idempotency prevents a dupli
 promise that all saving is free.
 
 **Before the first final upload**, save the final review set and production manifest from Step
-4.5/4.6 (including any QC repairs), and write a durable local checkpoint outside the fetched-scripts cache. Keep the actual
+4.5/4.6 (including any QC repairs) only after all paid work is finished and settled. Preserve the
+approved creative choices; a material change requires the changed-plan approval flow first.
+After that final save, start no new provider or render work: prepare the checkpoint and finish
+the same opened render using its existing finishing allowance and guards. A released allowance
+or stopped/capped render requires normal recovery; never reopen or bypass approval.
+Write a durable local checkpoint outside the fetched-scripts cache. Keep the actual
 final, JPEG poster, structured passing quality report, and review evidence files alongside it in
 a retained local working folder. Record their SHA-256 **at the time those exact bytes pass QC**;
 never attach an old verdict to a newly hashed replacement. A sandbox's local disk can disappear:
@@ -2031,6 +2046,8 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
    \`GW_PROJECT_ID\` exported. **Save as you go** (section above): skip any piece already saved
    with the same \`input_digest\` (download it), and upload each new piece with its
    \`ingredient_key\` + \`input_digest\` the moment it passes QC.
+   Keep the approved script and review unchanged throughout production and QC; confirmed media
+   and progress preserve resume state. Stop and replan/reapprove any material creative change.
    A voiceover made with \`data_post_provider\` (ElevenLabs \`…/with-timestamps\`) returns its
    \`alignment\` only in the reply: write it to \`working/vo/<scene>.timestamps.json\` at once
    (captions are timed from it) and record the returned \`media_id\` on the ingredient.
@@ -2147,16 +2164,22 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for \`thumbnail_url\`.
 5. **Save the final review set BEFORE pinning** — it must describe the video you actually rendered.
-   In the checkpoint flow, save it before Step 4.4; do not rewrite it afterward merely to follow
-   the numbered order. Resume checks that this reviewed set stayed unchanged.
-   If anything changed after the Step 3 approval (a line reworded, a clip or take swapped, a look,
-   timing, caption or music change, a QC repair, or ANY change the user asked for in this chat),
-   upsert the review set again: \`video_project_upsert { brand_id, project_id, patch: { script: {
+   Only after all paid production, QC, repairs and pending provider work are finished and settled,
+   save one final descriptive/provenance update: confirmed pieces, exact settings and repairs that
+   preserve the approved creative choices. Material creative changes, including changed lines,
+   look, timing, captions or music, require a changed complete plan, total and fresh approval BEFORE
+   the changed production. Never relabel a changed plan as provenance or silently reuse approval.
+   In the checkpoint flow, save the final review before Step 4.4; do not rewrite it afterward merely
+   to follow the numbered order. Resume checks that this reviewed set stayed unchanged.
+   When final provenance needs updating, upsert the review set once:
+   \`video_project_upsert { brand_id, project_id, patch: { script: {
    script_drafts, script } } }\` with the final lines, final pieces (mark generated takes as done, not
    "not generated yet") and the settings you used. The project keeps this, not your chat: it is
    what the app shows, and what a Community remix of this video copies. Instructions that live only
    in this conversation are lost when it ends. **Keep the approved detail**: never shorten a piece to a
    summary (e.g. per-scene prompts or their "no shake / no letterbox" guards). Only update what changed.
+   After this write, do not start new paid work. Save the production manifest, prepare the final
+   checkpoint and complete the same render with its existing finishing allowance and guards.
 6. **Save the production manifest** — HOW you made it, so the next run (or a remix) starts from what
    worked instead of rediscovering it: \`video_project_upsert { brand_id, project_id, patch: { production:
    { version: 1, pipeline: [{ step, model, purpose?, settings? }], style: { prompt, negative, notes? },

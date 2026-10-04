@@ -392,9 +392,10 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('After EACH piece is generated AND passes its own QC, upload it right away');
     expect(local).toContain('path:\n"working/<role>/<file>", ingredient_key, input_digest');
     expect(local).toContain('from media_proxy import input_digest');
-    // Record media_id + path in the ingredients list, batching the script patch.
-    expect(local).toContain('Put the piece\'s `media_id` (`media.id`), `path`');
-    expect(local).toMatch(/Batch this\s+script patch every 3–5 pieces/);
+    // Confirmed keyed media persists resume state without clearing the approved review.
+    expect(local).toContain("Record each confirmed piece's\n`media_id`, `path`, `ingredient_key` and `input_digest` locally");
+    expect(local).toContain('Before approval, mirror the draft ingredients');
+    expect(local).toContain('After approval, do NOT write `patch.script`');
     // Resume: one media_list at start, reuse only on a matching digest.
     expect(local).toContain('ingredient_key_prefix: "",\nlimit: 100 }');
     expect(local).toContain('AND the same `input_digest`, **download it instead of\ngenerating**');
@@ -706,5 +707,37 @@ describe('current template approval and follow-up contract', () => {
     expect(local).toContain('fix_of_render_id');
     expect(local).toContain('remix_of_render_id');
     expect(local).toContain('retry_after_seconds');
+  });
+});
+
+
+describe('hosted existing-video handoff and render timeline', () => {
+  const local = getGooseVideoLocalSkillContent();
+  it('routes projects and batches before handing off with mutually exclusive ids', () => {
+    expect(local).toContain('First perform the mandatory route check below');
+    expect(local).toContain('goose_run_task { brand_id, batch_id, message }');
+    expect(local).toContain('never send both ids');
+    expect(local).toContain('Generated custom children keep their separate make-custom-video flow');
+  });
+  it('opens one render after approval and before production, never after assembling the master', () => {
+    expect(local).toContain('after recorded approval, BEFORE paid production');
+    expect(local).toContain('reuse that render_id for progress');
+    expect(local).not.toContain('open it only once you\n  actually have a rendered master');
+  });
+  it('preserves approval while confirmed media and progress provide resume state', () => {
+    expect(local).toContain('Keep the approved review unchanged during production');
+    expect(local).toContain('do NOT write `patch.script` or `script_drafts` during any');
+    expect(local).toContain('confirmed media rows\nand render progress are the durable resume record');
+    expect(local).not.toContain('script patch every 3–5 pieces');
+    expect(local).toContain('Never reuse the earlier yes for a changed plan');
+  });
+  it('settles production before the final review write and preserves guarded same-render saving', () => {
+    expect(local).toContain('Only after all paid production, QC, repairs and pending provider work are finished and settled');
+    expect(local).toContain('Never relabel a changed plan as provenance or silently reuse approval');
+    expect(local).toContain('After this write, do not start new paid work');
+    expect(local).toContain('complete the same render with its existing finishing allowance and guards');
+    expect(local).toContain('Save the final review set BEFORE pinning');
+    expect(local).toContain('expected_review_digest');
+    expect(local).toContain('a stopped/capped/failed/blocked render require diagnosis');
   });
 });
