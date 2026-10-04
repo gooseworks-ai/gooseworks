@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { ensureLoggedIn } from './login';
-import { installManagedEntrySkills, installStandaloneSkill, removeAllSkills } from '../skills/installer';
+import { installManagedEntrySkills, installStandaloneSkill } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp, verifyMcpReachable } from '../agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../agents/codex';
@@ -11,6 +11,7 @@ import { getEntrySkills } from '../skills/master-skill';
 import { API_BASE } from '../config';
 import { getVersion } from '../version';
 import { runDoctorChecks } from './doctor';
+import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 
 interface InstallOptions {
   claude?: boolean;
@@ -21,6 +22,7 @@ interface InstallOptions {
   apiBase?: string;
   with?: string[];
   ref?: string;
+  overwriteModified?: boolean;
 }
 
 export function createInstallCommand(): Command {
@@ -34,6 +36,7 @@ Examples:
   .option('--codex', 'Configure for Codex')
   .option('--cursor', 'Configure for Cursor')
   .option('--all', 'Configure for all detected agents (implies --mcp)')
+  .option('--overwrite-modified', 'Replace edited or untracked managed skill files after you back them up')
   .option('--mcp', 'Also register the GooseWorks MCP server')
   .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
   .option('--api-base <url>', 'API base URL', API_BASE)
@@ -55,17 +58,25 @@ Examples:
     const creds = await ensureLoggedIn(opts.apiBase, opts.ref);
     logger.success(`Logged in as ${creds.email}`);
 
-    // Step 2: Install entry skills (clean old skills first)
+    // Step 2: Refresh bundled entries; preserve standalone and edited copies.
+    const freshness = await readEntryFreshnessReport();
+    await reportEntrySkillFreshness(freshness);
+    if (freshness.cli === 'outdated') {
+      logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
+      process.exit(1);
+      return;
+    }
     logger.step(2, 3, 'Installing GooseWorks skills...');
-    removeAllSkills();
-    for (const r of installManagedEntrySkills(getEntrySkills(), { force: true })) {
-      logger.success(`Installed ${r.name} skill to ~/.agents/skills/${r.name}/`);
+    for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
+      if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
+      else logger.success(`${r.action === 'installed' ? 'Installed' : 'Kept'} ${r.name} skill at ~/.agents/skills/${r.name}/`);
     }
     for (const slug of opts.with || []) {
       try {
         logger.info(`Installing standalone skill ${slug}...`);
         let lastReported = 0;
         await installStandaloneSkill(slug, {
+          overwriteModified: opts.overwriteModified,
           onProgress: ({ downloaded, total }) => {
             const step = Math.max(1, Math.min(5, Math.ceil(total / 10)));
             if (downloaded === total || downloaded - lastReported >= step) {
@@ -163,8 +174,7 @@ Examples:
       }
     }
 
-    // GOOSE-3718: every video ad is made on this machine, so say up front
-    // whether this one can make them.
+    // General setup only; selected renderers are checked after they are fetched.
     reportLocalVideoToolchain();
 
     const agentNames = targetAgents.map((a) =>
@@ -213,14 +223,14 @@ function reportLocalVideoToolchain(): void {
     return; // a broken probe must never fail the install
   }
   if (missing.length === 0) {
-    logger.success('Local video toolchain ready (ffmpeg, ffprobe, Playwright Chromium, Node): this machine can make video ads.');
+    logger.success('Local video toolchain ready for general setup (ffmpeg, ffprobe, Playwright Chromium, Node). Check the selected renderer with `gooseworks doctor --renderer-script <path>` before paid work.');
     return;
   }
   logger.info('Video ads are made on this machine and need these tools. To make them here, install:');
   for (const c of missing) {
     logger.warn(`  ${c.label}  →  ${c.fix}`);
   }
-  logger.info('Then run `gooseworks doctor` to confirm.');
+  logger.info('Then run `gooseworks doctor` for general setup; check the selected browser renderer with `--renderer-script <path>` before paid work.');
 }
 
 function collectSkillSlug(value: string, previous: string[]): string[] {

@@ -10,7 +10,7 @@ description: >
   the customer's own machine (Claude Code, Codex or Cursor); a hosted connector (ChatGPT,
   claude.ai, Cowork) can show the formats but cannot render one.
 category: ads
-version: 2.0.0
+version: 2.0.1
 author: GooseWorks
 tags: [gooseworks, ads, video, client-side, local-render]
 ---
@@ -47,6 +47,28 @@ Example. Instead of a dozen lines about render tools, scripts, uploads and portr
 both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
 here and I'll make the full video (about N credits)."
 
+## Use current instructions for new work
+
+Before a new task in a terminal host, run `gooseworks skills status` once. It compares the
+installed entry files, running CLI and published npm release. An older CLI needs a package
+upgrade before `gooseworks update`; update alone only uses that CLI's bundled instructions.
+Preserve local edits or unknown install provenance. Review/back up before explicitly replacing
+modified files; never quietly reinstall over them. If the release check is unavailable, report
+that freshness is unknown rather than claiming the local copy is latest.
+
+For a new recipe run, fetch its package from the connected catalog. Retain the returned
+`version` / `contentHash` and every dependency's hash with the saved package. When reusing a
+saved fetch JSON, `gooseworks fetch <slug> --saved-package <file>` returns the current package
+and a hash comparison without changing that file. With MCP, if the advertised `catalog_fetch`
+schema accepts them, send `saved_content_hash` and `saved_dependency_hashes`; otherwise fetch
+normally and compare the returned hashes yourself. Missing hashes mean unknown, not current.
+The server cannot inspect a client's saved files; hash metadata does not certify later edits.
+Fetch current packages into a new run directory and report stale saved instructions. Preserve
+an existing approved run's recorded package; changing that harness requires a reviewed change
+and approval before spending. Hosted installed snapshots use the existing Skills Update action.
+Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
+the other. Check the actual advertised tools before using new fields.
+
 ## Purpose
 
 Gets a customer from one sentence ("make me a video ad for Bioma") to a video project with the
@@ -60,7 +82,11 @@ server render to order: `video_catalog_list` returns only client-side formats
 (`execution: "client"`), and a server-format project is refused with `format_unavailable`.
 
 **The whole job happens in the chat.** Choosing, approving and receiving the video all happen here,
-as text and links the customer can click. The app is for **payment and nothing else**.
+as text and links the customer can click. Template-remix work uses this chat. Custom videos use Studio for script and ingredient approval, preview replacement and saved feedback, then return to the same Growth conversation.
+
+## Custom videos: route before formats
+
+For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in Studio before paid production. Do not force a template choice or import the reference as a finished video.
 
 ## Route first: is this a new video?
 
@@ -81,6 +107,43 @@ video ideas mapped to formats and hands the picked ones to `goose-video-local`.
 
 Everything else, including "make me a video ad for <brand>", starts at step 1 below.
 
+## Keep the selected connection for the whole run
+
+Call `account_whoami` on the connection that owns the brand/project before the first write.
+Keep `environment.name` and the public `environment.api_origin` with this run. Respect the
+user's selected production or staging connection. If multiple connections are available and
+none was selected, resolve that once. Missing or unknown identity is uncertainty, not
+permission to switch. Never infer the environment from credits, billing links or Node mode.
+
+Reads, project creation, uploads, generation, polling and final updates all use that same
+connection. If a production request fails, resume or report the failure on production;
+never retry it on staging or recreate the project there. Before retrying a timed-out write,
+read back the existing project or paid request on the selected connection.
+
+Local/CLI proxy origin must match `environment.api_origin`. If it differs, use the MCP
+relay on the selected connection (`GW_MEDIA_VIA=mcp`) before paid calls. Do not change
+credentials or API origins to recover a failed write. An explicit user-requested move is
+a separate operation, with the existing project and paid requests reconciled first.
+
+## Check assets for the selected format before spending
+
+For a template, read its structured `asset_readiness` from
+`video_catalog_list { kind: "formats", brand_id }`. `missing` names gaps;
+`needs_review` means suitability is unverified, including older recipes without
+structured requirements. `ready` describes assets only, not script or budget approval.
+For a custom video, derive requirements from its actual approved scenes.
+
+Inspect candidate files for the chosen product and format. A catalog photo can contain
+multiple objects, other products or a person; its existence or approved status does not
+make it a standalone image of the selected product. Check object count, framing, readable
+print and real image bytes. A service conversation has no automatic packshot requirement.
+
+Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
+original, inspect the result and include it in the normal ingredient review. When no
+usable input exists, explain the gap before generation. Estimate any paid preparation
+separately before spending. Record the selected asset and inspection in the project
+review set; do not add a separate approval round.
+
 ## Inputs
 
 - A brand, usually named in the opening sentence. Resolved to `brand_id`; with one brand in the org it needs no input.
@@ -88,13 +151,108 @@ Everything else, including "make me a video ad for <brand>", starts at step 1 be
 - Anything else they volunteer: who it's for, names or terms it must say, things to stay away from. Never asked for; kept when offered.
 - What the picked format needs from the brand (`card.needs`): usually a clean product photo, a screen recording or their own footage.
 
+## Save durable brand answers, then verify them
+
+Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
+(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call `brand_update` with
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact `knowledge_updates` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
+schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | `patch.knowledge: { audience/positioning/voice: <answer> }` (one actual key). During onboarding, `brand_onboarding { action: "review_research", review: { action: "correct", field, value } }` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | `patch.facts: [{ kind: "insight", text }]`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | `patch.facts: [{ kind: "must", text }]`; pronunciation is exactly `Pronounce "<term>" as "<say_as>"`. |
+| Forbidden claim, word or visual | `patch.facts: [{ kind: "dont", text }]`. |
+| Durable visual, voice or pacing preference | `patch.facts: [{ kind: "do", text }]` for a preference; `dont` for an avoidance; `template_hint` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing `ad_brand_learning` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned `id` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use `brand_read` with `kit`, `learnings`
+or `onboarding` as appropriate, or `brand_onboarding { action: "status", brand_id }` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.
+
+## Video taste — reuse examples and preferences
+
+When asked to capture video taste, or when the user volunteers a durable video preference,
+first read the saved learnings and `media_list { brand_id, scope: "brand", scope_id: brand_id,
+tags: ["video-taste"], limit: 100 }`. Follow `next_cursor` before deciding an example is absent.
+Do not force a taste interview before an unrelated task or ask again for an existing preference.
+
+Save what the user has already supplied first. Then ask only the missing useful question, for
+example: "What do you like about this video—its pace, voice, captions, or look?" An inaccessible
+link can still be saved as a link with the user's explanation; do not pretend you watched it.
+
+- **Direct clip or video file:** register with `media_upload { brand_id, scope: "brand",
+  scope_id: brand_id, kind: "video", source: { type: "url", url }, tags: ["video-taste", "reference-only"],
+  metadata: { purpose: "video_taste", source_url: url, provenance: "user", captured_at: <ISO timestamp>,
+  preference: <the user's explanation> } }`. For a file use the live file/bytes upload flow and
+  `media_confirm` after a presigned upload. Registration of a URL does not copy or inspect it.
+- **Instagram/post/page link:** the same registration with `kind: "document"`; it is a link
+  bookmark, not downloadable footage or an indexed transcript. Do not fabricate a direct clip URL.
+- **Preferences:** save the user's reasons, likes and dislikes through the facts mapping above.
+  Read and preserve existing facts before updating one. Do not invent `video_preferences` or
+  new `video_lab` keys; the live kit patch accepts only its documented asset fields.
+- **Deduplicate:** reuse a matching returned media row, then `media_update` its title/tags/metadata
+  if needed; preserve existing metadata and tags. Do not create another row for the same example.
+  Read back with `media_list` and `brand_read` learnings before claiming it was saved.
+  Check the returned row belongs to this brand: URL deduplication may return another brand's
+  existing row. Do not relabel that row or claim success unless the current brand's scoped read
+  actually returns it. Report an unsaved association if no supported attach path is available.
+
+Never put third-party taste examples into kit reference images: `kind: "reference"` at brand
+scope writes there. The tags and metadata above record purpose and provenance; **they do not
+grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
+footage, face, product, testimonial or claims in a new ad without independently verified permission.
+
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
+Pass it with the brand rules into the existing video workflow. A one-video request overrides a
+default for that project; it does not silently rewrite the brand's standing preference.
+
 ## Composed Atoms
 
 MCP tools; `goose-video-local` does the making.
 
 - `brand_list`: brand NAME → `brand_id`. Pass `query` when they named one.
 - `brand_create { name, website_url }`: only when the customer asks to add a brand that isn't there. Free.
-- `brand_get_context { brand_id }`: research status, logo, product photos.
+- `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }`: research status, logo, product photos.
 - `video_catalog_list { kind: "formats", brand_id }`: every format that can be made. Each row has `template_id`, `card.description`, `card.best_for`, `card.needs` and `examples[]` (demo videos). The response carries a `client_formats_note` with the machine checks.
 - `video_project_upsert { brand_id, name, format: <template_id> }`: creates the project. Free.
 - `catalog_fetch { type: "skill", slug: "goose-video-local" }`: the skill that makes it.
@@ -133,6 +291,9 @@ Call `brand_list`, with `query` when they named a brand. `query` is a case-insen
 
 If the GooseWorks MCP's own instructions have you check onboarding first and it turns out unfinished, finish it, then come back here with the customer's original sentence.
 
+Read the resolved brand and saved rules/preferences as described above before asking a goal
+question or choosing a format. Carry the verified taste brief into the project handoff.
+
 ### 2. Ask what the ad is for, in one open question
 
 Unless the opening sentence already said it, ask **one** plain question and wait:
@@ -161,7 +322,7 @@ Order the rows by how well each format fits their answer. Judge fit from `card.d
 | **Also good** | Creator product review | An AI creator reviews your product to camera, holding it | a clean photo of the real product | [watch](https://…) |
 
 - **"What it looks like" is `card.description`, quoted.** Copy it word for word; you may cut it at a sentence boundary, never re-word it. A paraphrase once turned "narrates how it gets beaten" into "narrates the fix", which made a villain format look right for a no-villain brief.
-- **Needs** is `card.needs` in plain words. Judge logo and product photos from the `brand_list` row; treat anything you can't see as missing rather than make extra calls. A format that needs something the brand lacks goes last; don't hide it, don't suggest it.
+- **Needs** is `card.needs` in plain words, with the row's `asset_readiness` gaps or pending inspection. A format with missing required assets goes last; don't hide it, don't suggest it. Unknown suitability is “needs review,” not proof that a file is missing or usable. Inspect the selected format's candidates before spending.
 - **Match the product to the format.** A format built around a creator HOLDING a physical product is a poor fit for a software product; one built on a screen recording is a poor fit for a physical one. Say so in the row.
 - **Demo** is `examples[0].output_url`. When a format has none, write "no demo yet"; never leave it blank.
 - **Price:** say once, under the table, that each paid step (a creator still, a clip, a voice) is billed per call and approved before it runs. There is no single up-front quote.
@@ -171,7 +332,7 @@ Order the rows by how well each format fits their answer. Judge fit from `card.d
 ### 4. Check this machine can render it
 
 - **Hosted connector** (ChatGPT, claude.ai, Cowork: no shell) → say plainly that the video is made on their own machine and needs Claude Code, Codex or Cursor. Stop there; do not create a project you cannot finish.
-- **Terminal host** → run `gooseworks doctor` (or, with no CLI, the manual checks in `client_formats_note`). It checks Node 18+, ffmpeg with libx264 + libass, ffprobe, and that Playwright's Chromium is actually downloaded. Anything fails → show the exact fix command and ask them to run it, then check again. Never start on a machine that failed the check.
+- **Terminal host** → run `gooseworks doctor --no-browser` for common setup (auth/MCP, Node 18+, ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities, as described in `goose-video-local` Step 2, and install the selected renderer's documented dependencies in its fetched folder. Do not guess a renderer from a format name. For each Node renderer using Playwright's default Chromium launch, run `gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"` with the same environment (including `NODE_PATH` and `PLAYWRIGHT_BROWSERS_PATH`) used for rendering. Use the actual script path, never the example filename. Other browser runtimes or custom launch settings need the capability's equivalent exact-runtime launch check; a default Playwright probe cannot certify them. Non-browser capabilities need only their documented runtime checks. With no CLI, follow the equivalent checks in `goose-video-local` Phase 0 and Step 2. Any check fails → show the folder-specific repair, fix it under existing setup permissions, and recheck. The probe downloads nothing. Never create paid ingredients before the selected renderer passes.
 
 Then say plainly, in one short paragraph: it renders on this machine; paid steps are billed per call and each is approved before it runs; it needs what `card.needs` says.
 
@@ -202,7 +363,7 @@ A created video project on the picked format, handed to `goose-video-local` in t
 
 - A one-sentence opening got: the brand resolved (unasked when there is one), one open goal question, then a table of every format with demo links and one suggestion.
 - Every "What it looks like" cell is the card's own words; no Suggested format's card contradicts what they asked for.
-- The machine check ran and passed before the project was created; a hosted connector was told it needs Claude Code, Codex or Cursor.
+- Common setup and the selected renderer's actual launch check passed before the project was created or any paid ingredients; a hosted connector was told it needs Claude Code, Codex or Cursor.
 - The project was created with no brief, and `goose-video-local` ran on it in the same session with the customer's step-2 answer as its brief.
 - No one was asked for a FAL_KEY or any provider key.
 

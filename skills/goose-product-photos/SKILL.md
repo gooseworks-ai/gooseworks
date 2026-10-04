@@ -56,6 +56,28 @@ Example. Instead of a dozen lines about render tools, scripts, uploads and portr
 both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
 here and I'll make the full video (about N credits)."
 
+## Use current instructions for new work
+
+Before a new task in a terminal host, run `gooseworks skills status` once. It compares the
+installed entry files, running CLI and published npm release. An older CLI needs a package
+upgrade before `gooseworks update`; update alone only uses that CLI's bundled instructions.
+Preserve local edits or unknown install provenance. Review/back up before explicitly replacing
+modified files; never quietly reinstall over them. If the release check is unavailable, report
+that freshness is unknown rather than claiming the local copy is latest.
+
+For a new recipe run, fetch its package from the connected catalog. Retain the returned
+`version` / `contentHash` and every dependency's hash with the saved package. When reusing a
+saved fetch JSON, `gooseworks fetch <slug> --saved-package <file>` returns the current package
+and a hash comparison without changing that file. With MCP, if the advertised `catalog_fetch`
+schema accepts them, send `saved_content_hash` and `saved_dependency_hashes`; otherwise fetch
+normally and compare the returned hashes yourself. Missing hashes mean unknown, not current.
+The server cannot inspect a client's saved files; hash metadata does not certify later edits.
+Fetch current packages into a new run directory and report stale saved instructions. Preserve
+an existing approved run's recorded package; changing that harness requires a reviewed change
+and approval before spending. Hosted installed snapshots use the existing Skills Update action.
+Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
+the other. Check the actual advertised tools before using new fields.
+
 ## Prerequisite — the GooseWorks MCP server is REQUIRED
 
 Everything goes through the `mcp__gooseworks__*` tools. If they are not available, **stop and
@@ -65,7 +87,7 @@ HTTP/file fallback.
 ## Start from the brand context — don't re-ask what it already answers
 
 If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
-`brand_get_context` yourself first. It answers most of the setup questions below, so **do not ask
+`brand_read` yourself first. It answers most of the setup questions below, so **do not ask
 the user for them**:
 
 - **Which product?** — the context's `products[]` are the real catalog entries. Offer them; never
@@ -129,7 +151,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 ## Workflow — shoot a product
 
-1. **Load the brand context** (`brand_get_context`, or reuse what the router passed you) and
+1. **Load the brand context** (`brand_read`, or reuse what the router passed you) and
    **resolve the brand + product.** `list_ad_brands` → `brand_id`. `list_brand_products` → pick a
    `product_id` from the catalog you already know about. If the product genuinely isn't there,
    `import_product` (poll `get_product_import`).
@@ -147,7 +169,7 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - **Never invent product facts.** The backend grounds the shot on the product's real images; don't
   describe a product you can't see.
 - **Use the brand context instead of interviewing the user.** Product, audience, voice, positioning,
-  logo/colors/fonts all come from `brand_get_context` / the brand kit. Ask only for the shot
+  logo/colors/fonts all come from `brand_read` / the brand kit. Ask only for the shot
   category, count, quality, and model consent.
 - **Ask before spending.** Quote the estimate and confirm `count` / `quality` before
   `generate_product_photos` — it reserves credits.

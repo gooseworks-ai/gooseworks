@@ -11,7 +11,7 @@ description: >
   video_project_read. Not for a hosted connector with no shell. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.5.0
+version: 0.5.2
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -48,6 +48,28 @@ Example. Instead of a dozen lines about render tools, scripts, uploads and portr
 both hosts and the ending. You can also review your recipe ingredients in the app: <link>. Say go
 here and I'll make the full video (about N credits)."
 
+## Use current instructions for new work
+
+Before a new task in a terminal host, run `gooseworks skills status` once. It compares the
+installed entry files, running CLI and published npm release. An older CLI needs a package
+upgrade before `gooseworks update`; update alone only uses that CLI's bundled instructions.
+Preserve local edits or unknown install provenance. Review/back up before explicitly replacing
+modified files; never quietly reinstall over them. If the release check is unavailable, report
+that freshness is unknown rather than claiming the local copy is latest.
+
+For a new recipe run, fetch its package from the connected catalog. Retain the returned
+`version` / `contentHash` and every dependency's hash with the saved package. When reusing a
+saved fetch JSON, `gooseworks fetch <slug> --saved-package <file>` returns the current package
+and a hash comparison without changing that file. With MCP, if the advertised `catalog_fetch`
+schema accepts them, send `saved_content_hash` and `saved_dependency_hashes`; otherwise fetch
+normally and compare the returned hashes yourself. Missing hashes mean unknown, not current.
+The server cannot inspect a client's saved files; hash metadata does not certify later edits.
+Fetch current packages into a new run directory and report stale saved instructions. Preserve
+an existing approved run's recorded package; changing that harness requires a reviewed change
+and approval before spending. Hosted installed snapshots use the existing Skills Update action.
+Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
+the other. Check the actual advertised tools before using new fields.
+
 ## Mandatory route check before any local work or spend
 
 For every existing `project_id` (including one supplied by the app's copy-for-Claude command),
@@ -65,6 +87,7 @@ media-proxy calls, or a review-set upload. For a batch, inspect each child proje
   `job_cancel`.
 - **A client-side format or template remix** (a `source_sample_id` / `template_id` and none of
   the above) → continue below.
+- **Generated custom video** (`project.custom_video_state.mode === "generate"`) → fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }`, follow it on this same project and stop following the template flow. Studio records independent authenticated script/ingredient approvals and a budget; do not report approval_not_required.
 - **Unclear** → read again or ask; never guess and generate. A copy prompt that names this skill
   is not proof of which kind the project is.
 
@@ -86,6 +109,43 @@ and models; ignore its intermediate pauses. This is the exact contradiction that
 (GOOSE-2542) — there is no ambiguity: review-once wins.
 
 The app NEVER runs this skill by itself — it is the viewer + review surface; you are the renderer.
+
+## Keep the selected connection for the whole run
+
+Call `account_whoami` on the connection that owns the brand/project before the first write.
+Keep `environment.name` and the public `environment.api_origin` with this run. Respect the
+user's selected production or staging connection. If multiple connections are available and
+none was selected, resolve that once. Missing or unknown identity is uncertainty, not
+permission to switch. Never infer the environment from credits, billing links or Node mode.
+
+Reads, project creation, uploads, generation, polling and final updates all use that same
+connection. If a production request fails, resume or report the failure on production;
+never retry it on staging or recreate the project there. Before retrying a timed-out write,
+read back the existing project or paid request on the selected connection.
+
+Local/CLI proxy origin must match `environment.api_origin`. If it differs, use the MCP
+relay on the selected connection (`GW_MEDIA_VIA=mcp`) before paid calls. Do not change
+credentials or API origins to recover a failed write. An explicit user-requested move is
+a separate operation, with the existing project and paid requests reconciled first.
+
+## Check assets for the selected format before spending
+
+For a template, read its structured `asset_readiness` from
+`video_catalog_list { kind: "formats", brand_id }`. `missing` names gaps;
+`needs_review` means suitability is unverified, including older recipes without
+structured requirements. `ready` describes assets only, not script or budget approval.
+For a custom video, derive requirements from its actual approved scenes.
+
+Inspect candidate files for the chosen product and format. A catalog photo can contain
+multiple objects, other products or a person; its existence or approved status does not
+make it a standalone image of the selected product. Check object count, framing, readable
+print and real image bytes. A service conversation has no automatic packshot requirement.
+
+Reuse a suitable approved image first. A free crop or cutout is a new file: keep the
+original, inspect the result and include it in the normal ingredient review. When no
+usable input exists, explain the gap before generation. Estimate any paid preparation
+separately before spending. Record the selected asset and inspection in the project
+review set; do not add a separate approval round.
 
 ## Where am I running? (decide once, first)
 
@@ -119,7 +179,8 @@ Seedance, Kling). No atom script is needed:
 
 1. A local input (a frame pulled from a screen recording, a screenshot) must be a public URL first:
    `media_upload { brand_id, scope: "video_project", scope_id: project_id, source: { type: "file" | "bytes", … } }`
-   (no `path`) and use the returned `media.url`.
+   (no `path`). For a file, PUT its bytes to `upload.url` with `upload.required_headers`,
+   then call `media_confirm { brand_id, media_id: media.id }`. Use the returned `media.url`.
 2. `data_post_provider { provider: "fal", path: <model id, e.g. "fal-ai/nano-banana/edit">, body: <model input>, project_id }`
    returns `{ job_id: "fal:<request_id>" }`. Pass an `idempotency_key` so a retry isn't billed twice.
 3. Poll `job_get { job_id }` every few seconds until `complete`; the `*.fal.media` URLs are in
@@ -159,12 +220,12 @@ client that does not expose the canonical tool; never mix both for one step.
 | Template recipe | `catalog_fetch { type: "template", slug: <source_sample_id> }` | `get_ad_template` |
 | Capability skill (atom) + its scripts | `catalog_fetch { type: "skill", slug }` | `gooseworks fetch <slug>` / `fetch_skill` |
 | Brand kit, products, rules | `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` | `brand_get_context` / `get_brand_kit` |
-| Save a brand rule (a correction) | `brand_update { brand_id, patch: { facts: [{ id?, kind, text }] } }` | none |
+| Save a brand rule (a correction) | `brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact words>, patch: { facts: [{ id?, kind, text }] } }` | none |
 | Mirror the review set | `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts, script } } }` | `update_ad_project_script` |
 | Project assets | `video_project_upsert { …, patch: { assets: [...] } }` | `update_ad_project_asset` |
 | Progress note | `video_project_upsert { …, patch: { message: { role: "agent", content } } }` | `append_project_message` |
 | Batch status | `video_project_upsert { brand_id, batch_id, patch: { batch: { status } } }` | `update_ad_video_batch` |
-| Upload a file to the project | `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }` → PUT (no confirm for `path` uploads) | `get_upload_url` / `get_ad_upload_url` |
+| Upload a file to the project | `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path, source: { type: "file", filename, content_type } }` → PUT → `media_confirm { brand_id, media_id: media.id }` | `get_upload_url` / `get_ad_upload_url` |
 | Save / find a finished piece (resume) | `media_upload { …, path, ingredient_key, input_digest }` / `media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "" }` (see "Save as you go") | none |
 | Open the render row | `video_render_run { brand_id, project_id, kind: "full" }` (no `dry_run`; returns `render_id`) | `submit_render { project_id, kind: "full" }` |
 | Update the render row | `video_render_run { brand_id, project_id, render: { render_id, status, output_url?, thumbnail_url?, error_message?, quality_status?, quality_report? } }` | `update_render_status` |
@@ -250,14 +311,16 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   rendering until one is confirmed:
   1. **Sandbox →** see "Running in a GooseWorks sandbox": ffmpeg + ffprobe (+ PIL on demand); no
      Chromium, so browser formats stop there.
-  2. **CLI present →** run `gooseworks doctor` (checks login, MCP, Node 18+, ffmpeg with
-     libx264 + libass, ffprobe, and that Playwright's Chromium is actually DOWNLOADED, in one
-     shot). Fix any ✗ with the command it prints, then continue.
+  2. **CLI present →** run `gooseworks doctor --no-browser` for login, MCP, Node 18+, ffmpeg
+     with libx264 + libass, and ffprobe. This is common setup only. After fetching the selected
+     capabilities in Step 2, check each browser renderer's actual launch before ANY paid
+     ingredient. An unscoped `gooseworks doctor` checks only the calling folder's browser;
+     it cannot certify a different fetched renderer.
   3. **No CLI →** check the toolchain yourself: `node --version` (18+), `ffmpeg -version`,
-     `ffprobe -version`, and the Chromium browser itself — `npx --no-install playwright install
-     --dry-run chromium` prints the install location; if that folder is missing, run
-     `npx playwright install chromium`. A resolvable `playwright` package with no browser
-     downloaded is the classic false pass. The `watch` QC step later needs the same ffmpeg and,
+     `ffprobe -version`, plus `ffmpeg -hide_banner -encoders` (libx264) and
+     `ffmpeg -hide_banner -filters` (ass). After fetching, use the exact-package free launch
+     check in Step 2; resolving a package or finding a cache folder does not prove its browser
+     can launch. The `watch` QC step later needs the same ffmpeg and,
      for transcripts, a Whisper backend — without one it degrades to frames only.
   4. **Docker available →** the most reliable way to get the toolchain on a host that lacks it:
      run the render steps inside the prebuilt image
@@ -282,10 +345,12 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   project-relative path (`working/final.mp4`, `working/review/end-card.png`). The server stores it
   in the project folder of the org-default Ads agent (where the app's render-file route reads) and
   returns `upload.url` (presigned PUT), `upload.required_headers` and
-  `upload.render_file_url`. PUT the bytes with exactly those headers. **Do NOT call
-  `media_confirm` for a `path` upload** — it is a workspace-file upload and the server rejects
-  confirm on it ("not created through a presigned upload"); `media_confirm` is only for a
-  path-less upload. Never hand-build storage paths or agent prefixes; a bare workspace upload is
+  `upload.render_file_url`. PUT the bytes with exactly those headers, check the PUT returned
+  2xx, then call `media_confirm { brand_id, media_id: media.id }` and require success before
+  using the file in ingredients or completing a render. This applies to project-path and
+  path-less file uploads. Confirmation verifies the stored file; Goose performs this tool step
+  without asking the user for another approval. On failure, report or repair the upload before
+  continuing. Never hand-build storage paths or agent prefixes; a bare workspace upload is
   invisible in the app.
 - Media generation (FAL / ElevenLabs) through the GooseWorks proxies is the **REAL spend** — billed
   per call as you generate (Step 4). The render row (`video_render_run kind: "full"`) charges the flat
@@ -327,7 +392,9 @@ inputs: {key: digest, …}})`.
 `media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key_prefix: "",
 limit: 100 }`. It returns ONE compact row per `ingredient_key` (the newest):
 `{ id, ingredient_key, input_digest, kind, status, mime, bytes, url, path, created_at }`. Every
-status except archived is included (project-path uploads stay `pending` — that is normal).
+status except archived is included. Project-path uploads remain `pending` until
+`media_confirm` succeeds. Confirm a pending project-path upload before reusing it; if
+confirmation fails, repair the upload before treating it as a verified save.
 Page with `cursor` if `next_cursor` is set (keep the first row you see per key — it is the newest). Also read `script_drafts.ingredients` from
 `video_project_read`: it records which pieces were already approved in the review.
 
@@ -357,8 +424,9 @@ different take of the same inputs.
 the uploads to the end:
 `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
 "working/<role>/<file>", ingredient_key, input_digest, source: { type: "file", filename,
-content_type } }` → PUT the bytes to `upload.url` with `upload.required_headers` (no
-`media_confirm` for a `path` upload). Kind: `audio` (VO), `music`, `image` (a still),
+content_type } }` → PUT the bytes to `upload.url` with `upload.required_headers` →
+`media_confirm { brand_id, media_id: media.id }`. Require a successful confirmation.
+Kind: `audio` (VO), `music`, `image` (a still),
 `video` (a clip), `endcard`, `document` (captions / a JSON sidecar), `render` (the master),
 `thumbnail`. Re-uploading the same key is fine — the newest wins. A piece that FAILED QC is never
 uploaded under its key. **Save a piece's sidecars with it** under `<key>.<name>` — e.g. the VO's
@@ -370,10 +438,89 @@ brand names.
 and `ingredient_key` on its entry in `script_drafts.ingredients` and mirror with
 `video_project_upsert { brand_id, project_id, patch: { script: { script_drafts } } }`. Batch this
 script patch every 3–5 pieces (and always once more when a stage ends) to limit calls — the
-`media_upload` itself is what makes a piece safe, so it is never batched.
+upload and confirmation make the piece safe, so neither is batched.
 
 The `final` master and `final-thumb` poster (Step 4.4) carry `ingredient_key` too, so a
 resumed run that finds a passing `final` with the same digest only needs to publish.
+
+## Finished video, interrupted saving — resume the same version
+
+If the final already passed QC and the customer says **"finish saving this video"**, start here.
+Do not restart the recipe, choose another format, open another render, generate a take, or run a
+paid transcript check again. Saving uses the **same render_id**. The ordinary first-completion
+video fee can still apply; its existing same-render idempotency prevents a duplicate fee. Never
+promise that all saving is free.
+
+**Before the first final upload**, save the final review set and production manifest from Step
+4.5/4.6 (including any QC repairs), and write a durable local checkpoint outside the fetched-scripts cache. Keep the actual
+final, JPEG poster, structured passing quality report, and review evidence files alongside it in
+a retained local working folder. Record their SHA-256 **at the time those exact bytes pass QC**;
+never attach an old verdict to a newly hashed replacement. A sandbox's local disk can disappear:
+this checkpoint recovers connection interruptions, not lost storage. Save ingredients remotely
+as above and tell the customer if the checked local output is no longer available.
+
+With the current CLI and its normal login to the selected environment, write a manifest like:
+
+```json
+{
+  "brand_id": "<owning brand>", "project_id": "<same project>", "render_id": "<already opened render>",
+  "input_digest": "<assembly input digest>",
+  "final_path": "/absolute/retained/working/final.mp4",
+  "poster_path": "/absolute/retained/working/final-thumb.jpg",
+  "qc": {
+    "final_sha256": "<64 lowercase hex characters recorded during final QC>",
+    "poster_sha256": "<64 lowercase hex characters recorded during poster review>",
+    "report_path": "/absolute/retained/working/quality-report.json",
+    "evidence_paths": ["/absolute/retained/working/review/finished-ad.json"]
+  }
+}
+```
+
+Run `gooseworks video-save prepare --manifest <manifest.json> --checkpoint <retained/save-<render_id>.json>`
+before any upload, then `gooseworks video-save resume --checkpoint <same checkpoint>` for both
+normal saving and recovery. The helper uses the saved login and canonical MCP connection; it does
+not copy credentials or use a raw Ads REST fallback. Its atomic private checkpoint binds the
+environment, account, project owner, project/render, final/poster bytes, assembly digest, passing
+quality report, review set, evidence files and stage receipts. Preserve it until delivery. Never
+edit the checkpoint to clear a failed check. Keep checkpoint and manifest files out of commits.
+
+The helper reads remote state before writes. It keeps `final` / `final-thumb` ingredient keys
+and writes per-render paths `working/final-<render_id>.mp4` / `working/final-<render_id>-thumb.jpg`
+so saving this version cannot overwrite an older one. It confirms pending uploads, checks remote
+bytes against the QC hashes, and reuses confirmed media. A request with missing stored bytes can
+get a fresh upload URL at that same path. A lost completion reply is unknown until project read
+confirms the same render's output and passing report; then only final selection remains.
+
+**No CLI / a host-selected MCP connection:** keep the same protocol with the host's canonical
+tools. Atomically write versioned JSON locally (write a private same-directory temporary file,
+flush/fsync, rename, then fsync the directory) before any upload and between each upload request,
+PUT, confirmation, completion and final selection. Persist only public environment identity,
+account/owner/project/render IDs, file paths/sizes/hashes, input digest, exact quality report and
+evidence fingerprints, saved-review digest, media IDs and stage states; **no tokens, session IDs,
+signed URLs or auth headers**. On reconnect call `account_whoami`,
+`video_project_read { brand_id, project_id, include: ["renders"] }` and
+`media_list { brand_id, scope: "video_project", scope_id: project_id, ingredient_key, input_digest }`
+on the original connection. Compare identities, local/evidence hashes and saved review; verify
+confirmed remote bytes too. Treat a lost reply as unknown and read back before retrying. Use only
+the missing `media_upload` → PUT → `media_confirm`, same-render `video_render_run { render: … }`
+callback and `video_project_upsert` with only `patch.final_render_id` and
+`patch.final_selection_guard: { expected_final_render_id, expected_review_digest }`; never a
+render-open call. The expected final is the last read's pin, including explicit `null`; the
+review digest is SHA-256 of recursively sorted-key JSON
+`{script: project.script ?? null, script_drafts: project.script_drafts ?? null}` saved at checkpoint
+creation. First confirm the selected server advertises this guard in `tools/list`. If absent,
+stop and request the normal server update/reconnect; an unguarded pin is unsafe. A
+`final_selection_conflict` means the choice or review changed: keep the checkpoint and explain
+that saving stopped without overwriting it. Retain the
+strict Step 4.3/4.4 report and Step 4.5 review-set requirements.
+
+If authorization expired, reconnect/sign in through the normal host/CLI flow on the original
+connection, then resume. Missing tools are a reconnect requirement, not permission to switch
+environments. Missing/changed files, stale/missing QC, changed account/owner/review, another final
+selection, or a stopped/capped/failed/blocked render require diagnosis; do not reopen it or
+regenerate automatically. If saving stops, say: **"Your video is finished locally, but saving to
+Goose was interrupted."** Link the actual local file and preserve its checkpoint. Claim saved
+delivery only after a fresh project read verifies completion and selection of that exact render.
 
 ## Step 0 — project id, or video BATCH id? (fan out before anything else)
 
@@ -452,8 +599,13 @@ for a field the brief leaves empty. Map the fields you WILL honor:
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's `researchStatus` (or the brand's `research_status`) is `complete`, REUSE it —
    never re-research. If not, run brand research first (`catalog_fetch { type: "skill", slug:
-   "brand-research" }`, follow it, then `brand_update { brand_id, patch: { kit_patch,
-   finalize_research: true } }`) before continuing. Then do Step 1.7.
+   "brand-research" }`) and follow its stored-pack workflow. Only when that verified pack is
+   saved in the supported research workspace, finalize with
+   `brand_update { brand_id, patch: { finalize_research: true } }`, then read the brand back.
+   Never send raw research JSON through `kit_patch`: the public tool accepts only the existing
+   `video_lab` asset slot there. If there is no verified stored pack, submit researched facts
+   through typed `patch.knowledge` / `patch.kit` as pending agent proposals; do not pretend
+   research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a `remix` block)
 
@@ -498,10 +650,17 @@ not your memory of the chat:
 }
 ```
 
+- **Video taste is direction, not dialogue.** Before mapping brand rules, extract entries
+  prefixed `Video preference:` from both `learnings` and `kit.instructions` into the verified
+  taste brief, including accepted proposals. They govern pacing, voices, captions, visuals and
+  format choice; do not copy them into `must_say` / `never_say` or read them aloud. Carry the
+  brief into the choices, scene planning and review.
 - **Sources.** `learnings` are the brand's saved rules (the user's past corrections among them):
   `must` / `do` → `must_say`, `dont` → `never_say`, and a `must` whose text reads
   `Pronounce "<term>" as "<say_as>"` (straight or curly quotes) → `pronunciations`. Add `kit.instructions` (free-text
-  standing rules) to `must_say` / `never_say` as they read.
+  standing rules) only when they require actual spoken wording or prohibit a claim. Production
+  directions stay in the brief. A required spoken line or prohibited claim remains its own
+  ordinary `must` / `dont` rule.
 - **Which product.** The one the brief names (`creative_brief.productName`); with none, the row
   whose name matches the product the user asked for, or the brand itself for a one-product
   brand. Product lists often hold other brands' items or old ads saved as products: if more than
@@ -534,7 +693,7 @@ When the user corrects something about the BRAND in chat — how a name is said,
 not be made, a product fact, a visual rule ("never use red", "the logo goes top-left") — save it
 in the SAME turn, before anything else:
 
-`brand_update { brand_id, patch: { facts: [{ kind, text }] } }`
+`brand_update { brand_id, knowledge_intent: "user_correction", user_statement: <the user's exact correction>, patch: { facts: [{ kind, text }] } }`
 
 | Correction | `kind` | `text` |
 |---|---|---|
@@ -546,10 +705,107 @@ in the SAME turn, before anything else:
 
 - If it changes an EXISTING rule (a new pronunciation for the same term), update that rule by id
   (`facts: [{ id: <learning_id>, text }]`) instead of adding a second one.
-- Then tell the user in one line: "Saved to your brand: every future video will use it." Update
+- Use the correction intent and user's statement when supported, as described below. Read
+  `brand_read` learnings back and verify the rule and source before claiming it was saved.
+- Then tell the user in one line: "Saved to your brand for future videos." Update
   `working/brand-rules.json` and apply the rule to THIS video too.
 - A one-off note about this video ("make it shorter", "use the blue background here") is NOT a
   brand rule: don't save it.
+
+## Save durable brand answers, then verify them
+
+Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
+(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
+research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+
+When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
+standing fact, save that answer in the same turn. The capture request authorizes those answers;
+do not ask for approval again. A direction for this one video stays in its brief. If the scope
+is genuinely ambiguous, ask whether it applies to future videos before saving a standing rule.
+
+Use the **live registered schema**. Where supported, call `brand_update` with
+`knowledge_intent: "user_correction"` and `user_statement` containing the user's exact,
+verbatim answer, not your paraphrase or researched text.
+For an inference or suggested improvement, use `knowledge_intent: "agent_proposal"`. Show the
+before/after change from your prior read and proposed value; retain the returned proposal IDs
+and say the user must accept it in the app. Link only a review surface actually returned by a
+tool; the compact `knowledge_updates` response does not itself contain a diff or URL.
+A pending proposal is not a saved fact. Never call an unavailable
+tool or silently relabel research or your inference as something the user said.
+
+The safe structured shape is `patch: { knowledge: { positioning?, audience?, voice?,
+instructions?, brandType?, tagline?, valueProps? } }`, using only fields present in the live
+schema. Inferred rules/taste go in an `instructions` proposal with a rationale, never in
+`patch.facts`. Prefix every video-only preference in that proposed text with "Video preference:"
+so it remains production direction after acceptance. Preserve unrelated instructions when
+proposing a merged replacement.
+
+| User answer | Canonical write |
+| --- | --- |
+| Primary audience, positioning or voice correction | `patch.knowledge: { audience/positioning/voice: <answer> }` (one actual key). During onboarding, `brand_onboarding { action: "review_research", review: { action: "correct", field, value } }` writes these existing corrections with provenance. |
+| Founder story, customer pains, objections, buying trigger or useful audience detail without a structured field | `patch.facts: [{ kind: "insight", text }]`; retain attribution such as "Founder reports: …" rather than turn a belief into a verified result. |
+| Required wording or pronunciation | `patch.facts: [{ kind: "must", text }]`; pronunciation is exactly `Pronounce "<term>" as "<say_as>"`. |
+| Forbidden claim, word or visual | `patch.facts: [{ kind: "dont", text }]`. |
+| Durable visual, voice or pacing preference | `patch.facts: [{ kind: "do", text }]` for a preference; `dont` for an avoidance; `template_hint` for a preferred format. Prefix video-only preferences with "Video preference:". |
+
+Facts are existing `ad_brand_learning` rows with user provenance; they are not a second profile.
+Update a matching rule by its returned `id` instead of adding duplicates. Preserve unrelated
+rules and the user's exact meaning. Only use the legacy facts shape for explicitly user-authored
+answers when the live schema lacks intent fields; agent suggestions still need a proposal path.
+
+**Claims and plans have separate gates.** A founder assertion or proof point is not an approved,
+evidence-backed claim or consent to quote a customer. Use the existing evidence/claims and
+operating-plan tools only if registered, following their proposal, evidence and confirmation
+requirements. Never encode a spend cap, approver or emergency stop as a learning. If that write
+path is missing, report the specific unsaved item and keep it pending for the supported review
+surface; do not claim it was saved or create a parallel local profile.
+
+After every write, **read back before saying saved**: use `brand_read` with `kit`, `learnings`
+or `onboarding` as appropriate, or `brand_onboarding { action: "status", brand_id }` after an
+onboarding answer. Verify the intended field/rule, its source and the absence of a conflicting
+duplicate. A generic success response, pending proposal, ignored key or truncated result is not
+proof. Report partial saves honestly. Carry the verified rules into the current task and the
+routed skill; claims still pass their own safety gate.
+
+## Video taste — reuse examples and preferences
+
+When asked to capture video taste, or when the user volunteers a durable video preference,
+first read the saved learnings and `media_list { brand_id, scope: "brand", scope_id: brand_id,
+tags: ["video-taste"], limit: 100 }`. Follow `next_cursor` before deciding an example is absent.
+Do not force a taste interview before an unrelated task or ask again for an existing preference.
+
+Save what the user has already supplied first. Then ask only the missing useful question, for
+example: "What do you like about this video—its pace, voice, captions, or look?" An inaccessible
+link can still be saved as a link with the user's explanation; do not pretend you watched it.
+
+- **Direct clip or video file:** register with `media_upload { brand_id, scope: "brand",
+  scope_id: brand_id, kind: "video", source: { type: "url", url }, tags: ["video-taste", "reference-only"],
+  metadata: { purpose: "video_taste", source_url: url, provenance: "user", captured_at: <ISO timestamp>,
+  preference: <the user's explanation> } }`. For a file use the live file/bytes upload flow and
+  `media_confirm` after a presigned upload. Registration of a URL does not copy or inspect it.
+- **Instagram/post/page link:** the same registration with `kind: "document"`; it is a link
+  bookmark, not downloadable footage or an indexed transcript. Do not fabricate a direct clip URL.
+- **Preferences:** save the user's reasons, likes and dislikes through the facts mapping above.
+  Read and preserve existing facts before updating one. Do not invent `video_preferences` or
+  new `video_lab` keys; the live kit patch accepts only its documented asset fields.
+- **Deduplicate:** reuse a matching returned media row, then `media_update` its title/tags/metadata
+  if needed; preserve existing metadata and tags. Do not create another row for the same example.
+  Read back with `media_list` and `brand_read` learnings before claiming it was saved.
+  Check the returned row belongs to this brand: URL deduplication may return another brand's
+  existing row. Do not relabel that row or claim success unless the current brand's scoped read
+  actually returns it. Report an unsaved association if no supported attach path is available.
+
+Never put third-party taste examples into kit reference images: `kind: "reference"` at brand
+scope writes there. The tags and metadata above record purpose and provenance; **they do not
+grant or enforce usage rights**. Study the structure, pacing and look only. Never use the example's
+footage, face, product, testimonial or claims in a new ad without independently verified permission.
+
+Read video-only entries prefixed `Video preference:` from both saved learnings and
+`kit.instructions`, including accepted proposals. Keep them out of required or forbidden
+dialogue. Build a brief from the verified readback: preferred pace, voice, caption treatment, visual style,
+formats to favour/avoid, reference links and the user's reasons. Say what is still unknown.
+Pass it with the brand rules into the existing video workflow. A one-video request overrides a
+default for that project; it does not silently rewrite the brand's standing preference.
 
 ## Step 2 — read the template's recipe (it carries everything; NO hardcoded format map)
 
@@ -578,8 +834,32 @@ there is no `format → recipe-slug` table and no per-format skill to fetch.
 
 Save each fetched capability's content, scripts + files under `/tmp/gooseworks-scripts/<name>/`
 (layout in "Running in a GooseWorks sandbox"). If a capability is a Node package (a phone-mockup
-renderer), `npm install` in its folder so its `generate.js` + Playwright resolve, and point the
-recorder's `NODE_PATH` at it — local machines only; in a sandbox that format stops (no Chromium).
+renderer), install its documented dependencies in the folder containing its `package.json`,
+and preserve the recorder's documented `NODE_PATH` — local machines only; in a sandbox that
+format stops (no Chromium).
+
+**Selected browser readiness — before ANY paid ingredient:** identify the actual browser script
+from the fetched capability's instructions (including an HTML end-card renderer if used).
+For Node scripts using `require('playwright')` with default `chromium.launch()`, run
+`gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"`.
+Substitute the actual script, and keep the same cwd and environment as the render, including
+`NODE_PATH` and `PLAYWRIGHT_BROWSERS_PATH`. It resolves Playwright relative to that script,
+launches and closes Chromium with the default settings and bounded waits, and downloads nothing.
+On failure, stop before spending, show its folder-specific repair and recheck after setup.
+For non-browser formats use `doctor --no-browser` plus their documented runtime checks;
+never combine `--no-browser` with `--renderer-script` or use it to bypass a browser renderer.
+
+**No CLI or CLI without these flags:** run an equivalent free probe in a separate Node process: use
+`require('node:module').createRequire(require('node:path').resolve(actualRendererScript))`
+to load `playwright`; keep the render's cwd, environment and default launch settings. Await
+`chromium.launch({ timeout: 15000 })`, then await `browser.close()` (bound close to 3 seconds).
+Bound the whole process to 20 seconds and stop its own process tree on failure or timeout.
+Report the resolved module path/version and error without credentials. Missing module, executable,
+headless runtime or failed launch is a failed check; a cache folder, executablePath alone or
+another project's browser is not a pass. Other browser packages, Python renderers or custom
+launch settings need the same free launch/close check through their documented runtime and
+actual settings. Do not replace their browser/channel/flags to get a pass. Setup is a separate
+action under existing permissions; this check never silently installs or downloads anything.
 
 > **Migration note:** older phone-mockup formats (`imessage` / `chatgpt` / `apple-notes`) whose DB
 > recipe does not yet carry `atoms` / `instructions` still hold the legacy `recipe.thread` payload;
@@ -669,7 +949,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    - **FREE or CHEAP paid** (≤ ~100 credits) → generate it now and upload it with
      `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind, path:
      "working/review/<name>", ingredient_key, input_digest, source: { type: "file", filename:
-     "<name>", content_type } }` → PUT (no `media_confirm` for a `path` upload); set that
+     "<name>", content_type } }` → PUT → `media_confirm { brand_id, media_id: media.id }`;
+     after confirmation succeeds, set that
      piece's `path` (+ `media_id`, `ingredient_key`) in `script_drafts` to the project-relative
      `working/review/<name>`. First check "Save as you go" — a piece already saved with the same
      digest is downloaded, not regenerated.
@@ -820,12 +1101,19 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    use it anyway). Pin it only if they say to use it anyway. The app shows a blocked render as
    "Needs attention". **This gate is universal: it runs from this skill for every format, so a
    recipe never has to opt in.**
-4. Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
+4. **For a passing final, create the finished-video checkpoint first**, following "Finished video, interrupted saving"
+   above. With the CLI, use its prepare/resume flow instead of duplicating the writes below; it
+   saves the same already-opened render and pins only the checked output. Save the final review set
+   and production manifest (Step 4.5/4.6) before preparing that checkpoint. Without it, follow the
+   same durable protocol. A blocked version follows Step 4.3's existing upload/report-only path;
+   never route it through the passing-final helper or pin it automatically.
+   Publish: `media_upload { brand_id, scope: "video_project", scope_id: project_id, kind: "render",
    path: "working/final.mp4", ingredient_key: "final", input_digest, source: { type: "file", filename: "final.mp4", content_type:
-   "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` (no
-   `media_confirm` — path uploads don't take one). Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
+   "video/mp4" } }` → PUT the master to `upload.url` with `upload.required_headers` →
+   `media_confirm { brand_id, media_id: media.id }`. Same for the poster (`kind: "thumbnail"`, `path: "working/final-thumb.jpg"`, `ingredient_key: "final-thumb"`).
    Keep each `upload.render_file_url`. Verify the PUT returned 2xx and the file you uploaded is a
-   real, non-empty MP4 (ffprobe it) BEFORE marking the render complete.
+   real, non-empty MP4 (ffprobe it), and require both confirmations to succeed BEFORE marking
+   the render complete.
    Then `video_render_run { brand_id, project_id, render: { render_id, status: "complete", output_url, thumbnail_url } }` (attach the Step 4.3 verdict as `quality_status: "passed"` (or
    `"blocked"` when the gate still fails after 2 repair rounds) + `quality_report` — ALWAYS
    attach it; a batch concept cannot complete without a passing one; exact shape, strict (no extra keys):
@@ -844,6 +1132,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    — the app re-presigns it on every view) — NEVER a raw proxy/CDN/presigned URL (those expire).
    Same for `thumbnail_url`.
 5. **Save the final review set BEFORE pinning** — it must describe the video you actually rendered.
+   In the checkpoint flow, save it before Step 4.4; do not rewrite it afterward merely to follow
+   the numbered order. Resume checks that this reviewed set stayed unchanged.
    If anything changed after the Step 3 approval (a line reworded, a clip or take swapped, a look,
    timing, caption or music change, a QC repair, or ANY change the user asked for in this chat),
    upsert the review set again: `video_project_upsert { brand_id, project_id, patch: { script: {
@@ -860,7 +1150,11 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    fixes: [{ problem, fix }], notes? } } }`. Use the exact models and prompts you sent (full text, guards
    included), and list every fix you had to make (e.g. "VO ran 47s → tightened four lines, voice 1.08x";
    "hair drifted → restated the hair colour"). No URLs, keys or raw logs; it must stay under 48 KB.
+   In the checkpoint flow, save this before Step 4.4 too and skip the duplicate write afterward.
 7. Pin it — only a `passed` render (or a `blocked` one the user said to use anyway):
+   If checkpoint recovery already verified selection of this render, skip this duplicate write.
+   An unfinished checkpoint must use the guarded selection protocol above; never replace it
+   with an unguarded pin.
    `video_project_upsert { brand_id, project_id, patch: { final_render_id: render_id } }`,
    then return the `app_url` + `brand_url` (from the project) verbatim. Never end on just "done" or
    a file path.
@@ -944,8 +1238,9 @@ FAL storage proxy. Never pass a `render-file` URL to a provider — it needs app
 - **The CLI and credentials.json are optional.** In a GooseWorks sandbox (`GW_MEDIA_PROXY_TOKEN`
   set) use the env proxies and `catalog_fetch`; never call a provider with a raw key.
 - **No Chromium in a sandbox** — a browser-rendered format stops there, before any spend, and says so.
-- **Toolchain before spend** — `gooseworks doctor` (CLI) or the manual check; stop with the exact
-  fix if anything is missing.
+- **Toolchain before spend** — common checks use `gooseworks doctor --no-browser`; every selected
+  browser renderer must also pass `--renderer-script` or its equivalent exact-runtime launch
+  check in Step 2. Stop with the folder-specific fix if anything is missing.
 - **Assemble the whole review set first**, mirror it with `video_project_upsert patch.script`, and
   get ONE approval in this chat, recorded with `patch.approve`, BEFORE the expensive render
   (review-once). Never send the user to the app to approve; the app is only for reviewing.

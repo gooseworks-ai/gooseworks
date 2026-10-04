@@ -1,3 +1,8 @@
+jest.mock('../../src/commands/skills', () => ({
+  readEntryFreshnessReport: jest.fn().mockResolvedValue({cli: 'current'}),
+  reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
+}));
+
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -361,6 +366,8 @@ describe('install command', () => {
       await createInstallCommand().parseAsync(['node', 'test', '--claude']);
       expect(runDoctorChecks).toHaveBeenCalledWith({ includeAuth: false });
       expect(loggerModule.success).toHaveBeenCalledWith(expect.stringContaining('Local video toolchain ready'));
+      expect(loggerModule.success).toHaveBeenCalledWith(expect.stringContaining('Check the selected renderer'));
+      expect(loggerModule.success).not.toHaveBeenCalledWith(expect.stringContaining('this machine can make video ads'));
     });
 
     it('lists each missing item with its fix, and still completes the install', async () => {

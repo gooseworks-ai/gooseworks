@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getCredentials } from '../auth/credentials';
-import { installManagedEntrySkills, removeAllSkills } from '../skills/installer';
+import { installManagedEntrySkills } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../agents/codex';
@@ -8,20 +8,29 @@ import { configureCursor, hasExistingCursorMcpEntry } from '../agents/cursor';
 import { isAgentInstalled } from '../agents/detect';
 import { getEntrySkills } from '../skills/master-skill';
 import * as logger from '../utils/logger';
+import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 
 export const updateCommand = new Command('update')
-  .description('Update GooseWorks skill to the latest version')
-  .action(async () => {
+  .description('Refresh entry skills from this installed CLI; preserve edited files and saved recipes')
+  .option('--overwrite-modified', 'Replace edited or untracked managed entry files after you back them up')
+  .action(async (opts: { overwriteModified?: boolean }) => {
     const creds = getCredentials();
     if (!creds) {
       logger.error('Not logged in. Run "gooseworks login" first.');
       process.exit(1);
     }
 
+    const freshness = await readEntryFreshnessReport();
+    await reportEntrySkillFreshness(freshness);
+    if (freshness.cli === 'outdated') {
+      logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
+      process.exit(1);
+      return;
+    }
     logger.step(1, 2, 'Updating skills...');
-    removeAllSkills();
-    for (const r of installManagedEntrySkills(getEntrySkills(), { force: true })) {
-      logger.success(`Updated ${r.name} skill`);
+    for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
+      if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
+      else logger.success(`${r.action === 'installed' ? 'Updated' : 'Kept'} ${r.name} skill`);
     }
 
     logger.step(2, 2, 'Reconfiguring agents...');
@@ -61,5 +70,5 @@ export const updateCommand = new Command('update')
       }
     }
 
-    logger.done('Update complete!');
+    logger.done('Bundled entry refresh complete. Standalone recipes and project-pinned packages were preserved.');
   });

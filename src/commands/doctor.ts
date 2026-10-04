@@ -1,8 +1,8 @@
 import { Command } from 'commander';
 import { spawnSync } from 'child_process';
-import * as fs from 'fs';
 import { getCredentials } from '../auth/credentials';
 import * as logger from '../utils/logger';
+import { checkBrowserPreflight } from '../utils/browser-preflight';
 
 /** Run a binary and capture its output; never throws. */
 function run(bin: string, args: string[]): { status: number | null; out: string } {
@@ -36,31 +36,6 @@ function ffmpegBuild(): { ok: boolean; detail: string } {
   return { ok: false, detail: `ffmpeg is installed but lacks ${missing}` };
 }
 
-/**
- * "Playwright is installed" used to mean the npm package resolved. The renderer
- * needs the Chromium BROWSER, which `npx playwright install chromium` downloads
- * separately, so confirm the executable actually exists on disk.
- */
-function chromiumBrowser(): { ok: boolean; detail: string } {
-  // 1. Resolve through the package: the most precise answer when it works.
-  const resolved = run(process.execPath, [
-    '-e',
-    "try{const p=require('playwright');process.stdout.write(p.chromium.executablePath())}catch(e){process.exit(2)}",
-  ]);
-  if (resolved.status === 0 && resolved.out.trim()) {
-    const exe = resolved.out.trim();
-    return fs.existsSync(exe)
-      ? { ok: true, detail: exe }
-      : { ok: false, detail: `Playwright is installed but Chromium is not downloaded (expected at ${exe})` };
-  }
-  // 2. Fall back to the CLI's own dry run, which prints the install location.
-  const dry = run('npx', ['--no-install', 'playwright', 'install', '--dry-run', 'chromium']);
-  if (dry.status !== 0) return { ok: false, detail: 'Playwright is not installed' };
-  const location = /Install location:\s*(.+)/.exec(dry.out)?.[1]?.trim();
-  if (location && fs.existsSync(location)) return { ok: true, detail: location };
-  return { ok: false, detail: 'Playwright is installed but Chromium is not downloaded' };
-}
-
 function nodeVersion(): { ok: boolean; detail: string } {
   const major = Number(process.versions.node.split('.')[0]);
   return { ok: major >= 18, detail: `node ${process.versions.node}` };
@@ -74,14 +49,24 @@ export interface DoctorCheck {
   fix: string;
   /** What was actually found, for the human and for `--json`. */
   detail?: string;
+  /** Browser diagnostics identify the package actually probed. */
+  code?: string;
+  rendererScript?: string;
+  modulePath?: string;
+  version?: string;
+  executablePath?: string;
 }
 
 /**
  * The checks behind `gooseworks doctor`, reusable by `install` and by anything
- * that wants to know whether THIS machine can make a video ad
- * (GOOSE-3718). Pure process probes: no network, nothing written.
+ * that wants common machine checks. An explicit renderer script verifies that
+ * renderer's Playwright, not a package belonging to the calling project.
+ * No download or ad render. Browser startup uses normal runtime temp files.
  */
-export function runDoctorChecks(opts: { includeAuth?: boolean } = {}): DoctorCheck[] {
+export function runDoctorChecks(opts: { includeAuth?: boolean; includeBrowser?: boolean; rendererScript?: string } = {}): DoctorCheck[] {
+  if (opts.includeBrowser === false && opts.rendererScript !== undefined) {
+    throw new Error('--renderer-script cannot be combined with --no-browser');
+  }
   const checks: DoctorCheck[] = [];
   if (opts.includeAuth !== false) {
     const creds = getCredentials();
@@ -97,7 +82,6 @@ export function runDoctorChecks(opts: { includeAuth?: boolean } = {}): DoctorChe
   }
   const node = nodeVersion();
   const ffmpeg = ffmpegBuild();
-  const chromium = chromiumBrowser();
   checks.push(
     { id: 'node', label: 'Node.js 18 or newer', ok: node.ok, detail: node.detail, fix: 'install Node 18+ (https://nodejs.org) or `nvm install 22`' },
     {
@@ -108,31 +92,32 @@ export function runDoctorChecks(opts: { includeAuth?: boolean } = {}): DoctorChe
       fix: 'brew install ffmpeg (macOS) / apt-get install ffmpeg (Linux)',
     },
     { id: 'ffprobe', label: 'ffprobe on PATH', ok: onPath('ffprobe'), fix: 'bundled with ffmpeg — install ffmpeg' },
-    {
-      id: 'chromium',
-      label: 'Playwright Chromium downloaded',
-      ok: chromium.ok,
-      detail: chromium.detail,
-      fix: 'npx playwright install chromium',
-    },
   );
+  if (opts.includeBrowser !== false) {
+    checks.push({
+      id: 'chromium',
+      label: opts.rendererScript !== undefined ? 'Selected renderer Chromium launch' : 'General Playwright Chromium launch',
+      ...checkBrowserPreflight({ rendererScript: opts.rendererScript }),
+    });
+  }
   return checks;
 }
 
 /**
- * `gooseworks doctor` — verify the local prerequisites for making VIDEO ads on
- * this machine with goose-video-local (Playwright records the mockup, ffmpeg
- * stitches/mixes/burns captions). Also checks auth + that the GooseWorks MCP
- * server is wired, since the renderer reads/writes the project over MCP. Every
- * video ad is made locally now (server orders are paused), so this exits
- * non-zero if anything is missing: the agent's preflight relays the fix and
- * stops before creating a project.
+ * General setup is not certification for an unfetched renderer. The selected
+ * renderer must pass its own free launch check before paid ingredients.
  */
-export const doctorCommand = new Command('doctor')
+export function createDoctorCommand(): Command {
+  return new Command('doctor')
   .description('Check local prerequisites for video ad rendering (ffmpeg, Playwright Chromium, Node) + auth/MCP')
   .option('--json', 'Print the checks as JSON (for an agent to parse)')
-  .action((opts: { json?: boolean }) => {
-    const checks = runDoctorChecks();
+  .option('--renderer-script <path>', 'Launch Chromium through the selected Node renderer’s Playwright installation')
+  .option('--no-browser', 'Check common prerequisites only (for non-browser formats or before fetching a renderer)')
+  .action((opts: { json?: boolean; rendererScript?: string; browser?: boolean }, command: Command) => {
+    if (opts.browser === false && opts.rendererScript !== undefined) {
+      command.error('--renderer-script cannot be combined with --no-browser');
+    }
+    const checks = runDoctorChecks({ includeBrowser: opts.browser, rendererScript: opts.rendererScript });
     const allOk = checks.every((c) => c.ok);
 
     if (opts.json) {
@@ -151,11 +136,16 @@ export const doctorCommand = new Command('doctor')
     }
     logger.info('');
     if (allOk) {
-      logger.success('All set — this machine can make video ads (goose-video-local).');
+      logger.success(opts.rendererScript !== undefined
+        ? 'Common prerequisites and the selected renderer’s default Chromium launch passed.'
+        : 'Common setup checks passed. After fetching a browser renderer, check it with --renderer-script before paid work.');
     } else {
       logger.warn(
-        'Some prerequisites are missing. Video ads are made on this machine, so fix the items above before starting one, then re-run: gooseworks doctor.',
+        'Some prerequisites are missing. Fix the items above, then re-run the same doctor check before paid work.',
       );
       process.exitCode = 1;
     }
   });
+}
+
+export const doctorCommand = createDoctorCommand();

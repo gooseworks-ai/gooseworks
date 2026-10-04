@@ -139,12 +139,14 @@ describe('skills/master-skill', () => {
       expect(content).toContain('Do not print, enumerate, or summarize');
       expect(content).toMatch(/After `done`[\s\S]*brand_onboarding \{ action: "status" \}/i);
       expect(content).toContain('First campaign');
-      expect(content).toContain('Where you are');
+      expect(content).not.toContain('**Where you are** — Ask');
       expect(content).toContain('Review');
       expect(content).toContain('Channels');
-      expect(content).toContain('under_1k');
-      expect(content).toContain('revenue');
-      expect(content).toContain('90-day goal');
+      expect(content).toContain('under_10k');
+      expect(content).toContain('not_sure');
+      expect(content).toContain('revenue / 90-day-goal / `save_progress` screen is retired');
+      expect(content).toContain('taste: { hearted_ids, skipped_ids, complete }');
+      expect(content).toContain('review: { action: "correct", field, value }');
       expect(content).not.toContain('Who makes your ad creatives right now?');
       expect(content).not.toContain('Where did you find GooseWorks?');
       expect(content).not.toContain('connect_tools');
@@ -232,12 +234,13 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('set_creative_feedback');
   });
 
-  it('reconciles brand facts back into the kit — ask first, then update', () => {
+  it('reconciles authorized user corrections and leaves inferred improvements pending', () => {
     expect(ads).toContain('Keep the brand kit in sync');
-    expect(ads).toContain('update_brand_kit');
-    expect(ads).toContain('upsert_brand_product');
-    // Must ask permission, not silently mutate the kit.
-    expect(ads).toMatch(/ASK first|Ask first|ASK before writing|never silently mutate/i);
+    expect(ads).toContain('knowledge_intent: "user_correction"');
+    expect(ads).toContain('knowledge_intent: "agent_proposal"');
+    expect(ads).toContain('read back before saying saved');
+    expect(ads).not.toContain('update_brand_kit');
+    expect(ads).not.toContain('upsert_brand_product');
   });
 });
 
@@ -246,7 +249,7 @@ describe('skills/getEntrySkills', () => {
   // a hand-maintained SKILL.md on disk that this list never emitted or refreshed.
   it('vendors all five entry skills (not ads-remix)', () => {
     const names = getEntrySkills().map(s => s.name);
-    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'goose-product-photos']);
+    expect(names).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'make-custom-video', 'goose-product-photos']);
     expect(getEntrySkillNames()).toEqual(names);
   });
 
@@ -260,9 +263,9 @@ describe('skills/getEntrySkills', () => {
 });
 
 describe('skills/brand-aware router preamble (GOOSE-3193)', () => {
-  it('the router mandates brand_get_context BEFORE routing', () => {
+  it('the router mandates brand_read BEFORE routing', () => {
     const master = getMasterSkillContent();
-    expect(master).toContain('brand_get_context');
+    expect(master).toContain('brand_read');
     expect(master).toContain('Load the brand context FIRST');
     // The five things the preamble must carry into the routed skill.
     for (const field of ['voice', 'products', 'audience', 'positioning', 'research status']) {
@@ -275,7 +278,7 @@ describe('skills/brand-aware router preamble (GOOSE-3193)', () => {
     ['goose-ads', getGooseAdsSkillContent()],
     ['goose-product-photos', getGooseProductPhotosSkillContent()],
   ])('%s tells the agent to use the brand context instead of asking', (_name, skill) => {
-    expect(skill).toContain('brand_get_context');
+    expect(skill).toContain('brand_read');
     expect(skill).toContain("don't re-ask what it already answers");
   });
 });
@@ -354,7 +357,8 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
 
   it('saves a brand correction with brand_update facts in the same turn', () => {
     expect(local).toContain('Brand corrections stick');
-    expect(local).toMatch(/brand_update \{ brand_id, patch: \{ facts: \[\{ kind, text \}\] \} \}/);
+    expect(local).toMatch(/brand_update \{ brand_id, knowledge_intent: "user_correction", user_statement:[^\n]+patch: \{ facts: \[\{ kind, text \}\] \} \}/);
+    expect(local).toMatch(/Read\s+`brand_read` learnings back and verify/);
     expect(local).toMatch(/is NOT a\s+brand rule: don't save it/);
   });
 
@@ -413,8 +417,9 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
   it('is the LOCAL render contract with a free review gate (not the static backend batch)', () => {
     // Local render lifecycle + the free in-app review tool.
     expect(local).toContain('Playwright');
-    // The classic false pass: the package resolves, the browser was never downloaded.
-    expect(local).toMatch(/Chromium is actually DOWNLOADED/);
+    // Readiness belongs to the fetched renderer, not the calling project's package/cache.
+    expect(local).toContain('gooseworks doctor --no-browser');
+    expect(local).toContain('gooseworks doctor --renderer-script');
     expect(local).toContain('node --version');
     // GOOSE-3726: canonical tools drive every step.
     expect(local).toContain('video_project_upsert { brand_id, project_id,\n   patch: { script: { script_drafts, script } } }');
@@ -438,6 +443,23 @@ describe('skills/getGooseVideoLocalSkillContent', () => {
     expect(local).toContain('render-file?path=');
     // It is NOT the static backend-batch wrapper.
     expect(local).not.toContain('submit_remix_batch');
+  });
+
+  it('checks the selected fetched browser before script review or any paid ingredient', () => {
+    const fetched = local.indexOf('Save each fetched capability');
+    const selected = local.indexOf('**Selected browser readiness');
+    const script = local.indexOf('## Step 2.5');
+    expect(selected).toBeGreaterThan(fetched);
+    expect(selected).toBeLessThan(script);
+    expect(local).toContain('before ANY paid ingredient');
+    expect(local).toContain('including an HTML end-card renderer if used');
+    expect(local).toContain('NODE_PATH');
+    expect(local).toContain('PLAYWRIGHT_BROWSERS_PATH');
+    expect(local).toContain("createRequire(require('node:path').resolve(actualRendererScript))");
+    expect(local).toContain('chromium.launch({ timeout: 15000 })');
+    expect(local).toContain('stop its own process tree on failure or timeout');
+    expect(local).toContain('never combine `--no-browser` with `--renderer-script`');
+    expect(local).not.toContain('--dry-run chromium');
   });
 
   it('uses canonical MCP tools, keeping legacy names only as a fallback column (GOOSE-3726)', () => {
@@ -553,6 +575,17 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video).toMatch(/needs Claude Code, Codex or Cursor/);
   });
 
+  it('fetches and checks the selected renderer before creating a project or spending', () => {
+    const setup = video.slice(video.indexOf('### 4. Check this machine'), video.indexOf('### 5. Create the project'));
+    expect(setup).toContain('gooseworks doctor --no-browser');
+    expect(setup).toContain('fetch the selected template and its capabilities');
+    expect(setup).toContain('gooseworks doctor --renderer-script');
+    expect(setup).toContain('Do not guess a renderer from a format name');
+    expect(setup).toContain('Non-browser capabilities need only their documented runtime checks');
+    expect(setup).toContain('Never create paid ingredients before the selected renderer passes');
+    expect(setup).not.toContain('Chromium is actually downloaded');
+  });
+
   it('routes existing projects and batches to goose-video-local first', () => {
     const route = video.indexOf('## Route first');
     expect(route).toBeGreaterThan(-1);
@@ -626,5 +659,32 @@ describe('local video script research handoff', () => {
     expect(strategy).toContain('Never report a failed check as a pass');
     expect(strategy).not.toContain("Don't mention it to the user");
     expect(strategy).not.toContain('skip this step');
+  });
+});
+
+describe('make-custom-video shared harness connection', () => {
+  it('fetches shared production while keeping the GooseWorks approval and storage contract', () => {
+    const { getMakeCustomVideoSkillContent } = require('../../src/skills/master-skill');
+    const body = getMakeCustomVideoSkillContent();
+    expect(body).toContain('expected_plan_revision');
+    expect(body).toContain('preview_estimate');
+    expect(body).toContain('custom_review.ingredients_approved');
+    expect(body).toContain('claim');
+    expect(body).toContain('requires_skills: [video-production-harness]');
+    expect(body).toContain('slug:"video-production-harness"');
+    expect(body).toContain('script_drafts.harness.content_hash');
+    expect(body).toContain('never fall back to a vendored playbook');
+    expect(body).toContain('every detailed step invoked by the orchestrator');
+    expect(body).not.toContain('def assemble(');
+    expect(body).not.toContain('### State 0');
+    expect(body).not.toContain('Canonical content SHA256');
+    expect(body).toContain('confirmed');
+    expect(body).not.toContain('/Users/');
+  });
+  it('routes original briefs and references before template-only execution', () => {
+    const { getGooseVideoSkillContent, getGooseVideoLocalSkillContent } = require('../../src/skills/master-skill');
+    expect(getGooseVideoSkillContent()).toContain('make-custom-video');
+    expect(getGooseVideoLocalSkillContent()).toContain('make-custom-video');
+    expect(getGooseVideoLocalSkillContent()).toContain('custom_video_state');
   });
 });
