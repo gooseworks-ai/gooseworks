@@ -1908,7 +1908,13 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   bank or its readable workspace pointer. A selected miner idea includes its angle id,
   evidence and proof plan, not only its hook. Reuse the shared video-angle-bank.v1 from
   the brand's video-scripts workspace or this run. Prepare angle-context.json with the
-  writer's preparation script and use its strict rule check before review.
+  writer's preparation script with \`--brief working/script/creative-brief.json\` and use
+  its strict rule check before review. Save the sourced brief in the writer's documented
+  shape: exact product/variant, buyer situation, supported mechanism, offer/CTA, constraints,
+  delivery intent, source references, locked copy, applicable prior decisions and unknowns.
+  New custom/template shapes set \`requires_creative_brief: true\`; both writer and critic
+  receive the same angle-context. Carry that brief revision into the scene/tool plan and
+  production manifest; missing evidence stays explicit rather than becoming a claim.
 - **Already decided stays decided.** The user's angle, hook, batch concept, recipe choice
   or remix direction is binding. Preserve the selected angle id. Compare executions or
   hooks inside it; do not reopen the angle choice. An incompatible promise needs a
@@ -1934,6 +1940,38 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   recipe. Skip speech writing and spoken checks, not the strategy step.
 - **Keep private provenance separate.** Store source quotes and links in the research
   workspace; put only a concise strategy explanation in remixable review data.
+
+## Shared editorial craft inside this template flow
+
+Fetch \`video-production-harness\` and read its \`references/editorial-review.md\`,
+\`references/specialist-handoff.md\` and \`references/hook-compatibility.md\`, plus the
+review/edit/polish/promote/wrap steps when used. Save the fetched version/content hash with
+this run's capability records. These supply craft and evidence rules inside the template
+flow; this entry's existing review, paid approval, storage and two-repair limit still apply.
+Do not turn a template into a custom project or import the custom host's extra gates.
+
+Before executing a fetched recipe atom, pass the exact brief/script revision, scene/beat IDs,
+timing, selected product/assets/source windows, performance choice and expected output roles.
+Check actual scripts/dependencies and free runtime readiness, then validate returned media
+against that handoff. An interrupted run reuses valid approved media with matching digest;
+a file merely existing does not prove validity. A missing package/required renderer blocks
+that route before paid generation, with a concrete supported alternative for review.
+
+Rough review asks what the cut communicates and whether the proof/payoff serves the hook;
+fine review diagnoses performance, sequence and local execution; final review checks each
+actual export. Save the received message from the cut before comparing with the brief where
+possible. A technically clean incoherent cut returns to script/sequence work; a local caption
+defect gets a local repair. These internal questions share existing review surfaces.
+
+Before a hook change, classify same-promise compatible opening versus new-promise/body recut.
+For example, an automatic report supports “stop copying campaign results”; it does not alone
+prove “know where to spend the next dollar.” Propose required script/body/coverage changes for
+the latter. Every restyled opening gets fresh image/action/audio/text review even when words
+are unchanged. Fetch the existing \`render-hook-replacement\` before selecting that route;
+a not-found/empty result stops it before generation. Use its actual preflight and preservation
+checks when available; never build a duplicate renderer or infer publication from source.
+Compare complete labeled candidates, retain source/body/ending and record the hypothesis.
+No quality score or recommendation is an observed performance winner.
 
 ## Step 3 — assemble the review set, then get ONE approval (before the expensive render)
 
@@ -2089,7 +2127,10 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
      everyday word (the flag strips those tokens from the WHOLE diff, so never pass "a", "one",
      "works" alone): Whisper spells a respelled name back as the brand word ("Goose Works" heard
      as "Gooseworks"), so the diff must accept it. The proof of
-     HOW it was said is the text you sent to the voice (keep it in the review), not the transcript. It blocks a mis-voiced word
+     intended delivery is the text/settings you sent (keep them in the review); actual
+     pronunciation/performance requires isolated and mixed-audio listening at normal speed.
+     Preserve pauses/emphasis and final consonants; never mandate faster or louder delivery.
+     Verify a transcript mismatch against the actual audio before calling it a defect. It flags a mis-voiced word
      (approved "human-vetted" → "human witted"), a dropped phrase, or silence. It routes Whisper
      through the gooseworks proxy when \`OPENAI_BASE_URL\` is set (sandbox:
      \`$GW_WHISPER_PROXY_URL/v1\`); with no backend at all, run \`fal-ai/whisper\` via the FAL proxy
@@ -2098,8 +2139,10 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
      UGC/Seedance masters, which carry no subtitle track.** Diff the caption file you burned
      (SRT/ASS/PNG cue list) against the SAME Whisper transcript + word timings — every caption line
      must match the heard/scripted words and sit within ~0.3s of when they're spoken; then in the
-     visual pass below, read the burned caption off 4–5 sampled frames to confirm it's on screen at
-     that time and not colliding with the end card. Mismatched text or >0.3s drift fails the gate.
+     visual pass below, inspect each cue and its start/end boundaries in actual frames, plus
+     full-speed playback at destination size, to confirm reading time, product visibility,
+     hierarchy and no duplicate overlay or end-card collision. Silent/text-led formats use
+     approved visible wording and reading windows, not nonexistent speech timings. Mismatched text or >0.3s drift fails the gate.
    - **Visual + structure** — always: run the \`watch\` skill on the master — beat/scene order + SFX,
      the brand's product (not the source's) is shown, the end card has the brand's logo file (or its name set in the brand font) + code, no
      deformation/artifact, duration within ~20% of the source.
@@ -2122,6 +2165,12 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
    - **Output size** — always **1080×1920 (9:16)**. Video ads are only ever 9:16. Lipsync / video
      models often return 720p or odd sizes — scale (and pad if the aspect differs) every clip to
      1080×1920 BEFORE the concat, never ship the model's native size.
+   Save exact output checksum/version, first-to-last normal-speed playback and full-audio
+   coverage. Frame sheets, transcripts and process success do not substitute for listening or
+   continuous motion. Missing required capability leaves review incomplete/blocked. Each
+   supported crop, duration, language or caption derivative needs its own actual-file review;
+   unsupported destination requirements need a reviewed route, never a silent export change.
+   Honor intended silence, loops and endings rather than forcing music or fades on every ad.
    If ANY applicable pass fails, FIX it (regenerate/stitch the offending window, re-composite the
    end card from the real logo file, rebuild captions) and re-run the passes — only a clean pass
    proceeds to pinning. **At most 2 repair rounds.** If a pass still fails after them, do NOT pin
@@ -2266,6 +2315,22 @@ file (a product image, a VO track), it must be a PUBLIC URL: upload it with \`me
 FAL storage proxy. Never pass a \`render-file\` URL to a provider — it needs app auth.
 
 ## Follow-up actions use the watched version
+
+Keep original note text, exact source render/time and intended viewer effect. Record an
+acceptance condition and disposition in existing feedback/project artifacts; applying a
+command means changed, not verified. Consolidate duplicates without deleting their source
+IDs. Conflicting “calmer” and “more urgent” instructions need the authorized decision owner's
+recorded choice, even if they touch different files. Offer concrete cheap alternatives for
+“more premium” inside the approved scope before escalating taste.
+
+Map changed copy/performance/shot/pause to affected picture, timings, captions, music/SFX,
+approvals and derivatives; preserve unrelated approved work. Rewatch the full candidate and
+verify the original effect before resolving a note. Accepted final, candidate and original
+note source remain distinct across selection and rollback. Keep editable script/timeline,
+source assets/takes, stems, captions, package versions and prior decisions in the existing
+production manifest/history; retrieve applicable rejections/pronunciation/delivery rules
+before a related brief. Project taste is not a standing brand rule. Record audience results
+only with actual variant/audience/placement/objective/window; otherwise unavailable.
 
 - “Fix this”: use the render/project context attached to the message (or named version, else
   the final one). Save patch.fix { of_render_id, changes, total_credits }. Never replace a supplied

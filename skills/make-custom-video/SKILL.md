@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.1.0
+version: 2.2.0
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -204,6 +204,26 @@ packages and existing jobs; do not silently fetch latest over an approved run. A
 package must be restored, and a changed route/model/input must be quoted and reviewed through
 the affected custom gate before spending. If a required capability is unavailable, record
 the limitation and propose a supported revision instead of improvising a bypass.
+
+## Carry the sourced brief and verify the handoff
+
+Before script writing, save the writer's documented creative-brief.json from the current brand/product evidence and project directions. Include exact product/variant, buyer situation, supported mechanism/claims, offer/CTA, constraints, delivery intent, locked copy, applicable prior decisions and explicit unknowns with source references. Use the fetched write-video-ad-script preparation command with --brief working/script/creative-brief.json and its documented bank/brand/product/template arguments; set the new shape.requires_creative_brief to true. The writer and critic consume that same angle-context. Save only the concise brief/revision and workspace reference in script_drafts extra fields, never full research/package contents. A missing required brief fails the script check; do not rerun known research or rewrite user-locked wording silently.
+
+Read references/specialist-handoff.md from the saved shared harness. For each selected UGC, product/demo or motion operation, extend the existing script_drafts.capability_plan entry with the exact approved brief/script revisions, mapped scene/beat numbers and timing, selected product/reference/source IDs and excerpt ranges, audio/performance choice, package/version/hash and expected returned artifact roles. These are existing extra draft/project artifacts, not new API parameters. Preserve the distinction between numeric script_drafts.scenes[].scene and string production scene IDs.
+
+Check the actual returned package before executing: H3 plan_takes uses beats id/start/end/vo and character image/identity/environment/delivery; footage-cutlist uses sources and per-beat source/in/out/fit/why; goose-graphics returns static composition/PNG and still needs an actual motion renderer. Do not replace an unsupported helper with a guessed tool name. Preflight the real binary/import/browser and a free dry run, not just its presence. Existing-file skip behavior is not validity: probe saved media and verify fingerprints/approval/job results first, then reuse approved media on resume without new generation.
+
+Validate returned media and provenance against the handoff before clip checks/assembly: exact scene/source revision, words/product/variant, visible proof, measured duration/ratio, selected voice/native speech and neighboring continuity. All speech requires actual isolated performance listening and full mixed-output listening; transcript/word timing only supports that judgment. Audition representative unresolved material and reuse valid approved takes. No mandatory faster delivery or louder climax.
+
+## Hook changes and editorial review
+
+Read references/hook-compatibility.md and references/editorial-review.md from this run's saved harness. Resolve the exact watched source/render and classify same-promise hook versus a new promise requiring different body/proof/payoff. Every changed opening gets new image/action/audio/text review, including visual-only restyles with unchanged words. Shortlist cheap ideas before media spend; keep a broader recut distinct from an isolated opening test.
+
+For an isolated hook replacement, fetch the existing render-hook-replacement package and inspect its real preflight/config contract. A not-found/empty catalog response blocks that route before paid generation; an open source change is not proof of served availability. Preserve source/body/ending using its own verification, then play/listen to the complete candidates and register each separately. Recommendations are creative judgments, never unmeasured performance winners.
+
+Run rough/fine/final review questions through the current Studio surfaces. First save what the actual cut communicates, then compare with the brief; concept review has no watched-cut verdict. Route unsupported promise to script/concept, missing proof to production, sequence problems to edit and local defects to repair. Unavailable required playback/listening is incomplete and cannot become quality_status passed.
+
+Keep exact feedback text/source/time, intended effect and acceptance condition. Consolidate duplicate notes and record conflicting intentions plus the authorized owner's decision. Preserve changed versus verified dispositions in existing feedback/production metadata or linked project artifacts; executing a fix does not resolve it. Invalidate only affected script/assets/timings/captions/mix/approvals/derivatives, retain valid unrelated work, and rewatch each actual delivered file. Preserve editable timeline, stems, caption sources, selected/candidate versions, rejected options with reasons and scoped pronunciation/delivery history for the next run. Approval and model scores are not audience performance.
 
 ## GooseWorks capability binding
 
@@ -429,7 +449,7 @@ This blocked report illustrates every required field. Replace its findings and e
 
 ## Feedback and delivery
 
-Studio saves script/ingredient/video feedback before continuation and invalidates the affected approvals. Read custom_review.feedback on every turn. Replace only the affected assets; save revised estimates and stop for renewed approval. Deliver the playable current_render_url with render_artifact kind:"video" in Growth, show the Studio app_url and actual project spend. Keep final history; never create another project just because an agent restarted.
+Studio saves script/ingredient/video feedback before continuation and invalidates the affected approvals. Read custom_review.feedback on every turn, preserving the original watched render/time and text when provided. A selected final change never relocates an earlier note. Resolve only after the candidate satisfies the original intended effect and full-output recheck; keep incomplete or conflicting notes open. Replace only the affected assets; save revised estimates and stop for renewed approval. Deliver the playable current_render_url with render_artifact kind:"video" in Growth, show the Studio app_url and actual project spend. Keep final history; never create another project just because an agent restarted.
 
 ## Reviewed snapshot, voices and supported pricing
 
