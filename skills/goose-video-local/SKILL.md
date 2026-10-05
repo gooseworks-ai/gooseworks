@@ -98,7 +98,7 @@ media-proxy calls, or a review-set upload. For a batch, inspect each child proje
   `job_cancel`.
 - **A client-side format or template remix** (a `source_sample_id` / `template_id` and none of
   the above) → continue below.
-- **Generated custom video** (`project.custom_video_state.mode === "generate"`) → fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }`, follow it on this same project and stop following the template flow. Studio records independent authenticated script/ingredient approvals and a budget; do not report approval_not_required.
+- **Generated custom video** (`project.custom_video_state.mode === "generate"`) → fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }`, follow it on this same project and stop following the template flow. Record independent authenticated script/ingredient approvals in this chat with the current custom_review.approval_quote phase, review_token and cumulative total; Studio is optional. A handed-off coworker cannot self-approve; do not report approval_not_required.
 - **Unclear** → read again or ask; never guess and generate. A copy prompt that names this skill
   is not proof of which kind the project is.
 
