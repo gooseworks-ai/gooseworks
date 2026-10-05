@@ -1,6 +1,6 @@
 {
   "package": "gooseworks",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "entries": {
     "gooseworks": "a72a8e215bf73c03dd25907ddadfbf16b2e3ecf073a97d59e26d4c4463da3086",
     "goose-ads": "73e8f31ac8fd0fb2c8eb38be048808d954936e11ce54e7f803daf50f1ed4ffc5",
