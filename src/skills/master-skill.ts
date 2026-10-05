@@ -25,6 +25,7 @@
  */
 import { renderDomainRouteTable, renderBrandGrowthTable } from './routes';
 import { CUSTOM_VIDEO_ADAPTER_CONTENT } from './custom-video-skill';
+const STORED_FOOTAGE_GUIDANCE = "\n## Use uploaded footage\n\nWhen the customer asks to use existing footage, check the actual advertised schemas. Use `media_search` with purpose `production`, kind `video`, the brand and current project when needed. Omit query spend for free retrieval. Read facts/scenes with `media_analyze`, then use `media_excerpt` action `inspect` to review actual bounded frames and timed transcript before selecting. A description or thumbnail URL alone is not visual review.\n\nFreeze `source_excerpt:{asset_id,analysis_revision,scene_id,start_ms,end_ms,audio_mode}`. Revision is the original-byte SHA, scene may be null for a known user trim, bounds use integer milliseconds, and audio is original or muted. Call `media_excerpt` action `attach` with that exact selection and a stable idempotency key. The returned project remains unfinished and unapproved. Open its existing Studio review; preserve user locks and requested format, and keep footage separate from image packshot indexes. An incompatible format requires an explicit choice before changing it.\n\nFor custom production, fetch the current shared `video-production-harness` and follow script/ingredient gates. Download the verified original and trim its exact selected window at normal speed with the approved audio. Recheck current revision and production permission before consumption and final upload/completion. Save excerpt lineage in plan and ingredient readback. Missing optional semantics does not require another upload; known user-selected stored footage remains usable. Research and competitor references never become production footage. Selected originals require no paid generation; only newly generated/replaced ingredients consume the approved budget.\n";
 
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
@@ -1142,7 +1143,7 @@ and its usable delivery link.
 | Chat told it cannot start | Only local execution considered | Create once and delegate to coworker |
 | Worker ends without a plan | Assumed completion means ready | Follow actual failure/recovery state |
 | Two projects for one video | Recreated instead of resuming | Continue same project and task |
-`;
+${STORED_FOOTAGE_GUIDANCE}`;
 }
 
 /**
@@ -2329,7 +2330,7 @@ FAL storage proxy. Never pass a \`render-file\` URL to a provider — it needs a
   it** (see "Report problems") so we can see + fix it.
 - Finish according to card.display_hint: widget hosts get one short line without duplicate links;
   text hosts get card.text_summary and the returned delivery links verbatim.
-`;
+${STORED_FOOTAGE_GUIDANCE}`;
 }
 
 
@@ -2480,5 +2481,5 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 /** Thin GooseWorks connection to the catalog-published Studio harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`);
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
 }
