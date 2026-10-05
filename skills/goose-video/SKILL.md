@@ -5,7 +5,7 @@ description: >
   Start a video ad in the same chat. Resolve the brand and suggest supported formats with a
   picker or the returned text choices. An agent with a verified shell makes the video with
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
-  one complete template plan and total credits before production. Custom videos retain Studio gates.
+  one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
 version: 3.0.0
 author: GooseWorks
@@ -75,12 +75,12 @@ coworker, which renders in its sandbox. This is agent execution, not a recipe se
 **Cards and execution are separate capabilities.** A terminal may render without drawing a
 picker; a chat host may draw a picker while the coworker renders. Follow `card.display_hint`
 and `available_here`, never a guess from the host's name. Template-remix review stays in this
-chat. Custom videos use Studio for separate script and ingredient approval, then return to the
-same Growth conversation.
+chat. Custom videos use separate authenticated script and ingredient approvals in this same chat.
+Studio is an optional review surface.
 
 ## Custom videos: route before formats
 
-For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in Studio before paid production. Do not force a template choice or import the reference as a finished video.
+For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template choice or import the reference as a finished video.
 
 ## Route first: is this a new video?
 
@@ -294,7 +294,7 @@ contain a full picker independently of the item page.
 - Missing required assets are missing; unknown suitability is “needs review.” Inspect the
   selected format's candidates before spending. Never promise an unverified asset is ready.
 - Template formats use **one plan, one approval with the total in credits**, not approval for
-  each paid step. Custom videos retain separate Studio script/ingredient/budget gates.
+  each paid step. Custom videos retain separate authenticated script/ingredient/budget gates in this chat.
 
 ### 4. Check this machine can render it
 
@@ -342,7 +342,7 @@ Do not hand the customer a command to paste somewhere else.
 
 - One sentence is a complete request. Resolve the brand and show formats without a goal interview.
 - One brand in the org: never ask which brand. Cards decide presentation; checks decide execution.
-- Use canonical tools. Preserve campaign context, selected script angles and custom Studio gates.
+- Use canonical tools. Preserve campaign context, selected script angles and custom authenticated review gates.
 - Never fabricate readiness, completion, approval or a second project.
 
 ## Output
@@ -356,7 +356,7 @@ and its usable delivery link.
 - No forced goal question, duplicate table or unsupported shell claim.
 - The exact renderer passed before local paid ingredients; uncertain assets stay uncertain.
 - Selected campaign and angle survive; a single template project has no brief.
-- Current complete plan and total precede approval. Custom Studio gates remain independent.
+- Current complete plan and total precede approval. Custom script and ingredient gates remain independent; Studio is optional.
 
 ## Failure Modes
 
