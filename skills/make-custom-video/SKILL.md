@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.0.0
+version: 2.1.0
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -11,7 +11,7 @@ harness_binding: gooseworks/v2
 
 # Human version
 
-This adapter connects the production playbook to GooseWorks. Customers review their script, actual ingredients and budget in Studio. The agent continues in the same conversation and saves the checked final video to the project.
+This adapter connects the production playbook and specialist skill catalog to GooseWorks. It matches each scene to existing creator, footage, graphics, audio and review tools. Customers review their script, actual ingredients and budget in Studio; the agent saves the checked final video to the same project.
 
 ---
 
@@ -128,6 +128,83 @@ Read the returned content, orchestrator.md, capabilities.md and every detailed s
 
 On resume, read video_project_read and use the saved package matching script_drafts.harness.content_hash. Do not refetch latest or overwrite this run's package. If the package is missing, stop and restore that version before continuing; fetching today's release does not restore it. New projects load the current catalog release. This is an agent-held saved package, not a server-enforced immutable registry.
 
+## Discover specialists for the actual scenes
+
+Custom means composing available capabilities around the brief. Before the design/tool plan,
+match each scene and finishing step to the current skill catalog. Repeat this check when a
+new requirement or repair appears, before writing a helper or making a provider call. The
+shared harness owns the sequence; specialist skills supply implementations inside its phases.
+
+Use the known routes below as starting points. Fetch the relevant skill, read its instructions
+and failure modes, and inspect its returned scripts/files/dependencies before choosing it.
+For an unmatched need, use the advertised catalog_search {type:"skill",query:"<capability>"},
+or search_skills on a connection exposing that alias; CLI: gooseworks search "<capability>".
+Use short separate queries such as "creator", "footage", "motion" or "captions": search words
+are ANDed. Do not restrict discovery to category "ads"; video helpers also live under
+"general" and "content". Follow returned pagination when relevant results are not on the
+first page. Fetch by returned slug with catalog_fetch {type:"skill",slug:"<slug>"}, fetch_skill,
+or gooseworks fetch <slug>. Inspect the selected connection's advertised schemas first.
+
+| Scene or operation | Specialist to fetch | How it fits custom production |
+| --- | --- | --- |
+| Evidence-backed hook, script or script rewrite | [[composes::write-video-ad-script]] | Supply the actual custom scene/tool plan and brand evidence in place of a fixed template recipe. Keep the harness script review and lock. |
+| Generated creator saying an exact script across takes | [[composes::create-creator-takes-h3]] | Plan on line boundaries, preserve approved face/room/dialogue, review the first take alone and carry its native voice to later takes. |
+| Real product footage, screen recordings or screenshots | [[composes::footage-cutlist]] | Inspect source windows, map each proof shot to its line, review the cut list and render the product layer. |
+| Creator beside, over or between product footage | [[composes::compose-creator-layer]] | Combine the inspected creator track and product layer per beat. Preserve the creator's dialogue as the master audio. |
+| Native multi-cut performance or general generated B-roll | [[composes::create-video-seedance-2-fal]] or [[composes::create-video-fal]] | Choose from the actual supported endpoint/schema and quoted operations; use H3 when a continuous exact-script creator track is the better fit. |
+| Character anchors, grounded product edits or scene stills | [[composes::create-image-fal]] or [[composes::create-image-gpt-image-fal]] | Reuse approved identity and real product references. Check preview eligibility and bounded pricing for the exact endpoint. |
+| Separate narrator or voice audition | [[composes::create-vo-elevenlabs]] | Use the host-approved voice and locked copy. Do not add a second narration over native creator speech. |
+| Music bed or song | [[composes::create-music-elevenlabs]] | Include its actual quote in the phase budget; preserve the approved audio strategy and lyric/beat timing. |
+| Branded text cards, graphics or end card | [[composes::goose-graphics]] | Start from a fitting layout/style and real logo. It produces graphics; animation still requires an actual local renderer. |
+| Narration-led zoom/pan on an existing demo | [[composes::video-polish]] | Use its measured zoom targets only with the installed Remotion/transcription capabilities required by this route. |
+| Conventional clip stitching or overlays | [[composes::stitch-videos-ffmpeg]] | Use its local implementation when it fits the edit; the shared harness assembly helper remains available for ordinary concat/mix. |
+| Word timing and final caption treatment | [[composes::caption-burn]] | Inspect the actual transcript against locked copy. Caption only after picture and mix polish, then repeat final review. |
+| Replace a defective silent B-roll window in a UGC master | [[composes::ugc-fixloop]] | Keep the original continuous dialogue; this repair does not fix a talking shot's lips or voice. |
+| Complete-video observation and finished-ad checks | [[composes::watch]] and [[composes::review-finished-ad]] | Supply real frames/audio, brand assets and timestamps. Their results support the shared final QC; they do not grant approval. |
+
+For format-specific motion, chat, podcast, product or music layouts, search the catalog for
+the matching render-* capability and inspect its config and inputs. Reuse a compatible
+renderer or phase implementation without changing the custom project into a fixed template.
+Do not call a template's one-shot driver, create a second project, or replace the shared
+production sequence just to use one of its helpers. The table is a starting map, not an
+exhaustive catalog or a promise that every published skill is executable on this connection.
+
+## Bind and retain the selected specialists
+
+A fetched package proves that instructions exist; it does not prove that its provider,
+pricing, dependencies or local renderer are available. Check each selected route before
+spending. Materialize all returned scripts, files and dependency packages in separate,
+run-specific package folders, preserving relative paths and rejecting paths outside the
+package. Do not save several skills into one scripts folder: helpers with the same filename
+would overwrite each other. Read the installed media-proxy dependency before running any
+paid helper. Every paid submit must propagate this project's project_id / GW_PROJECT_ID
+through the managed transport on the selected connection and pass the normal quote and
+approval checks. A helper that cannot carry that context is unavailable for paid custom work.
+Never run its direct-key path or substitute a guessed endpoint or price.
+
+Use specialist craft and executable helpers inside the corresponding shared phase. This
+adapter's project state, supported providers, authenticated script/ingredient gates and
+budget override a specialist's legacy setup, dollar estimate or standalone approval flow.
+Captions remain last even if a renderer normally burns them earlier: choose its uncaptioned
+output or use another compatible implementation. Verify the returned scripts implement any
+requested setting; prose alone is not an executable capability.
+
+For H3, the creator still is a script-approved image preview, while the first native-speaking
+take is a video and requires ingredient approval and its quoted budget. Review that take's
+voice before the remaining takes; do not spend on it as an image/voice audition. Native H3
+speech is not a selected ElevenLabs voice: do not invent a voice_id or replace its audio with
+separate TTS. Save the actual audio strategy and take/reference provenance in extra draft
+fields. Use selected voice roles and playable auditions when the route actually uses them.
+
+Save a compact script_drafts.capability_plan with each selected operation's purpose,
+scene numbers (or "final"), skill_slug, version, content_hash, package_path, dependency
+identities, inputs, expected outputs and supported execution route. Keep full packages in the
+run's durable workspace, outside the 256 KB review payload. On resume, reuse the recorded
+packages and existing jobs; do not silently fetch latest over an approved run. A missing
+package must be restored, and a changed route/model/input must be quoted and reviewed through
+the affected custom gate before spending. If a required capability is unavailable, record
+the limitation and propose a supported revision instead of improvising a bypass.
+
 ## GooseWorks capability binding
 
 Read capabilities.md to bind shared instructions. GooseWorks is authoritative for project state and approvals; local working artifacts grant no spending permission.
@@ -194,7 +271,7 @@ Save provider request IDs and actual uploaded URLs promptly. Custom operations w
 
 ## Clips, assembly and quality
 
-Fetch the supported model/provider skill when needed. Keep anchors and exact lines fixed. Use the Python assembly helper returned in the shared harness scripts for actual existing clips. It needs only Python, FFmpeg and FFprobe; it does not call a provider or require Chromium. Inspect generated clips before assembly, and watch the final export after assembly/captions.
+Use the selected packages in script_drafts.capability_plan for each scene and operation. Recheck specialist discovery for new requirements or repairs before improvising a helper. Keep anchors and exact lines fixed. Use the Python assembly helper returned in the shared harness scripts for actual existing clips. It needs only Python, FFmpeg and FFprobe; it does not call a provider or require Chromium. Inspect generated clips before assembly, and watch the final export after assembly/captions.
 
 Open a render with video_render_run {brand_id,project_id,kind:"full"}; executor:"cloud_agent" for Growth when exposed by the current schema. Report live workflow_stage/progress_note/progress_percent while producing it. Upload the final file to scope:"video_project", scope_id:project_id. The tool opens/reports a client-executed render; fixed server orders remain paused.
 
