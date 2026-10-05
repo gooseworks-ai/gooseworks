@@ -4,6 +4,16 @@ const examples = [...getMakeCustomVideoSkillContent().matchAll(/```json\n([\s\S]
   .map((match) => JSON.parse(match[1]));
 
 describe('custom video documented API payloads', () => {
+  it('requires actual final recipe persistence, readback and fresh remix approvals', () => {
+    const content = getMakeCustomVideoSkillContent();
+    expect(content).toContain('remix.direction.implementation');
+    expect(content).toContain('fresh approvals');
+    expect(content).toContain('actual production recipe');
+    expect(content).toContain('before showing its preview or pausing for review');
+    expect(content).toContain('exact current spoken line');
+    expect(content).toContain('production_manifest');
+    expect(content).toContain('read-back');
+  });
   it('requires explicit live quote support before sending a quote flag', () => {
     const content = getMakeCustomVideoSkillContent();
     expect(content).toContain('read a fresh data_post_provider tool description from the selected connection');
