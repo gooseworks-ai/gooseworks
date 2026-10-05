@@ -4,27 +4,44 @@ Put your AI agent on the growth team. GooseWorks gives Claude Code, Cursor, and 
 
 ## Install
 
-Pick your agent:
+**Paste this into your agent** (Claude Code, Cursor, Codex, or a chat app like Claude or ChatGPT):
+
+```text
+Install gooseworks: https://gooseworks.ai/install.md
+```
+
+Your agent reads that page and follows it. The page is short and you can read it too. It makes the agent:
+
+1. **Ask you first.** It says exactly what it will install and waits for your OK. The install touches your agent's skills folder, its MCP config and `~/.gooseworks/credentials.json`, nothing else, and only ever runs `npx gooseworks@latest …`.
+2. **Install** the GooseWorks skills and register the `gooseworks` MCP server with the right flag for your agent (`--claude`, `--cursor`, `--codex`), always with `--mcp`.
+3. **Sign you in** with Google in your browser (the URL is always printed too).
+4. **Check the install** with `npx gooseworks@latest doctor` and tell you to restart the agent so the MCP tools load.
+5. **Set up your company** after the restart: it asks for your website and saves what it learns as a reusable **Company Brain** that improves every later research, creative, and growth task.
+
+Want a specific skill too? Say so: `Install gooseworks: https://gooseworks.ai/install.md, including the goose-graphics skill.`
+
+If your agent cannot run terminal commands (claude.ai, ChatGPT), the page tells it to give you the MCP connector address (`https://mcp.gooseworks.ai/mcp`) instead.
+
+### Run it yourself
+
+Prefer the terminal? Pick your agent (keep `--mcp`; `--all` includes it):
 
 ```bash
 # Claude Code
-npx gooseworks install --claude --mcp
-npx gooseworks install --claude --mcp --with goose-graphics
+npx gooseworks@latest install --claude --mcp
+npx gooseworks@latest install --claude --mcp --with goose-graphics
 
 # Cursor
-npx gooseworks install --cursor --mcp
+npx gooseworks@latest install --cursor --mcp
 
 # Codex
-npx gooseworks install --codex --mcp
+npx gooseworks@latest install --codex --mcp
 
 # All detected agents
-npx gooseworks install --all
+npx gooseworks@latest install --all
 ```
 
-This does three things:
-1. Opens browser for Google sign-in
-2. Installs the GooseWorks skill into your coding agent
-3. You're ready — ask your agent to "scrape reddit", "find leads", "research competitors", or "create product photos"
+Restart your coding agent afterwards (MCP servers are only read at startup), then ask it to "scrape reddit", "find leads", "research competitors", or "create product photos".
 
 You do not need a special onboarding command. Ask GooseWorks to do a normal task, or say:
 
