@@ -119,6 +119,14 @@ project and bind the plan to its returned bundle through the normal review flow 
 retrying; never bypass it or retry paid calls blindly. Unchanged approved legacy resumes
 retain their package, context and approvals; an upgrade alone needs no extra approval.
 
+**To apply a deliberate brand correction to a new or revised plan**, make a fresh, unfiltered
+`brand_read` of those four sections and use its returned `brand_context.digest` in the
+complete revised `script_drafts` through the existing `video_project_upsert`
+`patch.script` save. The server verifies that digest against the current brand and replaces
+its snapshot with the saved plan. Review and approve the affected script, ingredients and
+budget through the normal flow. Never refresh an ongoing approved run automatically; its
+recorded package and brand inputs stay pinned until an intentional change.
+
 ## Chat hosts and cards
 
 First perform the mandatory route check below. Then, without a shell, hand a verified template

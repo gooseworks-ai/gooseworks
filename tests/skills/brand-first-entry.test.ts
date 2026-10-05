@@ -37,6 +37,11 @@ describe('video entry prerequisite coverage', () => {
     expect(preflight).toContain('script_drafts.video_brand_context` is server-owned');
     expect(preflight).toContain('video_brand_context_required');
     expect(preflight).toContain('an upgrade alone needs no extra approval');
+    expect(preflight).toContain('fresh, unfiltered');
+    expect(preflight).toContain('use its returned `brand_context.digest`');
+    expect(preflight).toContain('`patch.script` save');
+    expect(preflight).toContain('Never refresh an ongoing approved run automatically');
+    expect(preflight).toContain('normal flow');
     expect(preflight).not.toMatch(/brand_loaded|read: ?true|brand_read_receipt/);
   });
 
