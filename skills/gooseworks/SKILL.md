@@ -75,6 +75,19 @@ the other. Check the actual advertised tools before using new fields.
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
 
+**Follow the connector's full-guide requirement when available.** Fetch
+`catalog_fetch { type: "skill", slug: "gooseworks-guide" }` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns `not_found`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.
+
 For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
 our video taste", stay here and follow **Guided brand capture** below. This extends the current
 brand and onboarding flow; it does not create another onboarding checklist.

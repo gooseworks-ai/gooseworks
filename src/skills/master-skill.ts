@@ -62,6 +62,19 @@ and approval before spending. Hosted installed snapshots use the existing Skills
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.`;
 
+const VIDEO_GUIDE_COMPATIBILITY = `**Follow the connector's full-guide requirement when available.** Fetch
+\`catalog_fetch { type: "skill", slug: "gooseworks-guide" }\` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns \`not_found\`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.`;
+
 /** One prerequisite for template, custom and delegated video entry. */
 function videoEntryPreparation(slug: 'goose-video' | 'goose-video-local' | 'make-custom-video'): string {
   return `## Prepare the video workflow and brand before creative work
@@ -74,6 +87,8 @@ the same entry. A CLI freshness warning does not block using the current connect
 Keep the fetched package and hashes in a new run folder; do not replace edited installed files.
 If current instructions cannot be loaded, resolve the connection before format suggestions,
 script writing or production. Do not continue from an old installed workflow or session notes.
+
+${VIDEO_GUIDE_COMPATIBILITY}
 
 **For an existing project or batch, read \`video_project_read\` first.** Determine its actual
 route and saved review state before fetching a recipe or doing local work. Resume an approved
@@ -101,23 +116,34 @@ not spoken lines. Use the kit's audience, offer and voice as defaults without an
 The rules file mirrors context; it is not proof of a read or permission to spend. Keep the
 route's existing script, ingredient and budget approvals, including its allowed previews.
 
-**Bind saved copy to the server's brand bundle.** Project create/read returns top-level
+**Use the server's brand bundle when the selected API returns it.** Project create/read may
+return top-level
 \`brand_context\`: \`{ version: 1, brand_id, digest, loaded_at, sections, brand, kit, products,
-learnings }\`. Its sections cover summary, kit, products and learnings. Use this authoritative
-bundle for the saved plan and local rules once the project exists. On a new/changed script
-save, include \`script_drafts.brand_context_digest = brand_context.digest\` alongside the
-existing script fields. \`script_drafts.video_brand_context\` is server-owned: do not author,
-replace or forge it, and do not invent a read receipt. Keep the full bundle out of client
-review payloads. If managed generation returns \`video_brand_context_required\`, reload the
-project and bind the plan to its returned bundle through the normal review flow before
-retrying; never bypass it or retry paid calls blindly. Unchanged approved legacy resumes
+learnings }\`. Its sections cover summary, kit, products and learnings.
+
+| Returned brand/project response on the selected connection | Required action |
+| --- | --- |
+| A complete authoritative version-1 \`brand_context\` is returned | Binding is required: use its contents for the plan/rules and include \`script_drafts.brand_context_digest = brand_context.digest\` with each new/changed script save. |
+| An older API returns the actual four brand sections but no \`brand_context\` in either the brand read or project response | Prepare from those full sections, write the brand rules and follow the selected connection's existing approval flow and advertised fields. Do not fabricate a receipt or send nonexistent bundle/digest fields. |
+
+An incomplete/malformed bundle or missing brand section is a preparation failure, never the
+older-API exception. Once this connection returns an authoritative bundle, use its binding
+contract. \`script_drafts.video_brand_context\` is server-owned: do not author, replace or forge
+it, and do not invent a read receipt or hash local brand facts into one. Keep the full bundle
+out of client review payloads. If managed generation returns HTTP 409
+\`video_brand_context_required\`, reload the project and bind the plan to its returned bundle
+through the normal review flow before retrying. That refusal never permits the older-API
+fallback, skipping sections or retrying paid calls blindly. Unchanged approved legacy resumes
 retain their package, context and approvals; an upgrade alone needs no extra approval.
 
 **To apply a deliberate brand correction to a new or revised plan**, make a fresh, unfiltered
-\`brand_read\` of those four sections and use its returned \`brand_context.digest\` in the
-complete revised \`script_drafts\` through the existing \`video_project_upsert\`
-\`patch.script\` save. The server verifies that digest against the current brand and replaces
-its snapshot with the saved plan. Review and approve the affected script, ingredients and
+\`brand_read\` of those four sections. When it returns the authoritative bundle, use its
+returned \`brand_context.digest\` in the complete revised \`script_drafts\` through the existing
+\`video_project_upsert\` \`patch.script\` save; the server verifies the current brand and replaces
+its snapshot with the saved plan. On an older API with no bundle contract, apply the actual
+four-section correction and save the revised draft through its existing flow without inventing
+digest fields. If a connection that already returned a bundle cannot supply the fresh bundle,
+resolve that failure before rebinding. Review and approve the affected script, ingredients and
 budget through the normal flow. Never refresh an ongoing approved run automatically; its
 recorded package and brand inputs stay pinned until an intentional change.`;
 }
@@ -351,6 +377,8 @@ ${CUSTOMER_TALK}
 ## Route to the right skill FIRST
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+
+${VIDEO_GUIDE_COMPATIBILITY}
 
 For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
 our video taste", stay here and follow **Guided brand capture** below. This extends the current

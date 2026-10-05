@@ -230,4 +230,32 @@ describe('fetch command', () => {
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   });
 
+  it('delivers compatible current entry instructions through the old production catalog shape without inventing receipts', async () => {
+    // This is the observed old API shape: entry bytes come from CLI main, while
+    // the catalog metadata has no backend brand-context capability declaration.
+    const current = {
+      slug: 'goose-video', name: 'GooseWorks Video Ads', version: 'cli-current',
+      content: getGooseVideoSkillContent(), scripts: null, files: null, config: {},
+      metadata: { source: 'cli-entry-skill', source_url: 'https://raw.githubusercontent.com/gooseworks-ai/gooseworks/main/skills/goose-video/SKILL.md' },
+      requiresSkills: [], dependencySkills: [],
+    };
+    server = await startServer((req, res) => {
+      expect(req.url).toBe('/api/skills/catalog/goose-video');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', data: current }));
+    });
+    mockGetCredentials.mockReturnValue({ api_key: 'cal_test', email: 'u@example.com', agent_id: 'agent-1', api_base: server.url });
+    await createFetchCommand().parseAsync(['node', 'test', 'goose-video']);
+    const emitted = JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]));
+    expect(emitted.content).toBe(current.content);
+    expect(emitted).not.toHaveProperty('brand_context');
+    expect(emitted).not.toHaveProperty('brand_context_digest');
+    expect(emitted.content).toContain('brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }');
+    expect(emitted.content).toContain('An older API returns the actual four brand sections');
+    expect(emitted.content).toContain('Do not fabricate a receipt or send nonexistent bundle/digest fields');
+    expect(emitted.content).toContain('Binding is required');
+    expect(emitted.content).toContain('That refusal never permits the older-API');
+    expect(emitted.content).toContain('Guide returns `not_found`');
+  });
+
 });
