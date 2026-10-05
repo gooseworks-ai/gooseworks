@@ -1,6 +1,6 @@
 {
   "name": "gooseworks",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "GooseWorks CLI \u2014 give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
