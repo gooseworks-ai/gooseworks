@@ -599,7 +599,7 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video).toMatch(/unknown suitability is “needs review[.”]/);
     expect(video).toContain('"no demo yet"');
     expect(video).toContain('one plan, one approval with the total in credits');
-    expect(video).toContain('Custom videos retain separate Studio script/ingredient/budget gates');
+    expect(video).toContain('Custom videos retain separate authenticated script/ingredient/budget gates in this chat');
   });
 
   it('names the keyless fal route and scopes photos_generate', () => {
@@ -688,6 +688,32 @@ describe('make-custom-video shared harness connection', () => {
     expect(getGooseVideoLocalSkillContent()).toContain('make-custom-video');
     expect(getGooseVideoLocalSkillContent()).toContain('custom_video_state');
   });
+  it('records chat approval against the exact custom phase, review token and cumulative budget', () => {
+    const { getMakeCustomVideoSkillContent } = require('../../src/skills/master-skill');
+    const body = getMakeCustomVideoSkillContent();
+    expect(body).toContain('phase:custom_review.approval_quote.phase');
+    expect(body).toContain('review_token:custom_review.approval_quote.review_token');
+    expect(body).toContain('total_credits:custom_review.approval_quote.total_credits');
+    expect(body).toContain('custom_review.committed_credits plus the remaining quoted operations');
+    expect(body).toContain('custom_review.script_token or custom_review.ingredient_token');
+    expect(body).toContain('never silently attach the earlier yes to a newer token or amount');
+    expect(body).toContain('require script_approved:true');
+    expect(body).toContain('require ingredients_approved:true');
+    expect(body).toContain('Only the authenticated customer-facing connection');
+    expect(body).toContain('It cannot call patch.approve to approve its own work');
+    expect(body).toContain('do not require Chrome, browser unlocks or Studio access');
+    expect(body).not.toContain('A chat reply, local artifact or shared auto mode cannot replace either token');
+    expect(body).not.toContain('The Studio creative page is the human review surface');
+  });
+  it('uses provider quotes and server-measured source duration without a priced-model list', () => {
+    const { getMakeCustomVideoSkillContent } = require('../../src/skills/master-skill');
+    const body = getMakeCustomVideoSkillContent();
+    expect(body).toContain('supported provider estimates');
+    expect(body).toContain('instead of a skill-maintained priced-model list');
+    expect(body).toContain('authorized media metadata or a bounded probe');
+    expect(body).toContain('do not add invented duration fields to the provider body');
+    expect(body).not.toContain('Unknown/token/GPU pricing and unsupported parameter combinations are refused');
+  });
 });
 
 
@@ -697,7 +723,7 @@ describe('current template approval and follow-up contract', () => {
     expect(local).toContain('render_estimate.total_credits');
     expect(local).toContain('A single project requires recorded approval');
     expect(local).not.toContain('returns\n   `approval_not_required: true`');
-    expect(local).toContain('Studio records independent authenticated script/ingredient approvals');
+    expect(local).toContain('Record independent authenticated script/ingredient approvals in this chat');
   });
   it('checks stop between paid actions and binds fixes/remixes to the watched render', () => {
     expect(local).toContain('After EVERY progress callback inspect stop');
