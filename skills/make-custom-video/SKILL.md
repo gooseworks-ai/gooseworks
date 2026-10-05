@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -68,6 +68,55 @@ an existing approved run's recorded package; changing that harness requires a re
 and approval before spending. Hosted installed snapshots use the existing Skills Update action.
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
+
+## Prepare the video workflow and brand before creative work
+
+**Installed entry files are bootstrap instructions.** For new work started from an installed
+file or an old chat, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` on the selected
+connection and read its returned content and dependencies before continuing. Use the already
+fetched body when this entry came from that connection in this run; do not recursively fetch
+the same entry. A CLI freshness warning does not block using the current connected package.
+Keep the fetched package and hashes in a new run folder; do not replace edited installed files.
+If current instructions cannot be loaded, resolve the connection before format suggestions,
+script writing or production. Do not continue from an old installed workflow or session notes.
+
+**For an existing project or batch, read `video_project_read` first.** Determine its actual
+route and saved review state before fetching a recipe or doing local work. Resume an approved
+run with its recorded packages, brand inputs, script and ingredients; do not silently replace
+them with today's release or brand rules. Follow returned preparation requirements and use
+the existing affected review/approval flow for an intentional change. Reads, free drafts,
+imports and existing-job retrieval do not grant permission for new paid production.
+
+**For every new plan, resolve the brand and call**
+`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }` **before**
+suggesting formats, mining video angles, writing any script, creating a production plan or
+handing the work to another agent. Use `brand_get_context` with those same four sections only
+when advertised. Reuse a complete read from this run on the same connection and brand.
+Onboarding completion, a summary-only response and earlier session notes do not supply the
+kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
+creative work. Use known kit facts while research is incomplete; do not restart research
+solely because its status is pending. Never invent a product fact or accept a campaign to
+bypass preparation.
+
+Carry that context through custom/template/idea routing and delegation. Before writing, make
+the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
+prohibited claims, real logo, font, palette and the selected product's supported facts.
+Entries prefixed `Video preference:` and visual/pacing instructions are creative direction,
+not spoken lines. Use the kit's audience, offer and voice as defaults without an interview.
+The rules file mirrors context; it is not proof of a read or permission to spend. Keep the
+route's existing script, ingredient and budget approvals, including its allowed previews.
+
+**Bind saved copy to the server's brand bundle.** Project create/read returns top-level
+`brand_context`: `{ version: 1, brand_id, digest, loaded_at, sections, brand, kit, products,
+learnings }`. Its sections cover summary, kit, products and learnings. Use this authoritative
+bundle for the saved plan and local rules once the project exists. On a new/changed script
+save, include `script_drafts.brand_context_digest = brand_context.digest` alongside the
+existing script fields. `script_drafts.video_brand_context` is server-owned: do not author,
+replace or forge it, and do not invent a read receipt. Keep the full bundle out of client
+review payloads. If managed generation returns `video_brand_context_required`, reload the
+project and bind the plan to its returned bundle through the normal review flow before
+retrying; never bypass it or retry paid calls blindly. Unchanged approved legacy resumes
+retain their package, context and approvals; an upgrade alone needs no extra approval.
 
 ## Keep the selected connection for the whole run
 

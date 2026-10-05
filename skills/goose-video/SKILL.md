@@ -7,7 +7,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.0
+version: 3.0.1
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -78,6 +78,55 @@ and `available_here`, never a guess from the host's name. Template-remix review 
 chat. Custom videos use separate authenticated script and ingredient approvals in this same chat.
 Studio is an optional review surface.
 
+## Prepare the video workflow and brand before creative work
+
+**Installed entry files are bootstrap instructions.** For new work started from an installed
+file or an old chat, fetch `catalog_fetch { type: "skill", slug: "goose-video" }` on the selected
+connection and read its returned content and dependencies before continuing. Use the already
+fetched body when this entry came from that connection in this run; do not recursively fetch
+the same entry. A CLI freshness warning does not block using the current connected package.
+Keep the fetched package and hashes in a new run folder; do not replace edited installed files.
+If current instructions cannot be loaded, resolve the connection before format suggestions,
+script writing or production. Do not continue from an old installed workflow or session notes.
+
+**For an existing project or batch, read `video_project_read` first.** Determine its actual
+route and saved review state before fetching a recipe or doing local work. Resume an approved
+run with its recorded packages, brand inputs, script and ingredients; do not silently replace
+them with today's release or brand rules. Follow returned preparation requirements and use
+the existing affected review/approval flow for an intentional change. Reads, free drafts,
+imports and existing-job retrieval do not grant permission for new paid production.
+
+**For every new plan, resolve the brand and call**
+`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }` **before**
+suggesting formats, mining video angles, writing any script, creating a production plan or
+handing the work to another agent. Use `brand_get_context` with those same four sections only
+when advertised. Reuse a complete read from this run on the same connection and brand.
+Onboarding completion, a summary-only response and earlier session notes do not supply the
+kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
+creative work. Use known kit facts while research is incomplete; do not restart research
+solely because its status is pending. Never invent a product fact or accept a campaign to
+bypass preparation.
+
+Carry that context through custom/template/idea routing and delegation. Before writing, make
+the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
+prohibited claims, real logo, font, palette and the selected product's supported facts.
+Entries prefixed `Video preference:` and visual/pacing instructions are creative direction,
+not spoken lines. Use the kit's audience, offer and voice as defaults without an interview.
+The rules file mirrors context; it is not proof of a read or permission to spend. Keep the
+route's existing script, ingredient and budget approvals, including its allowed previews.
+
+**Bind saved copy to the server's brand bundle.** Project create/read returns top-level
+`brand_context`: `{ version: 1, brand_id, digest, loaded_at, sections, brand, kit, products,
+learnings }`. Its sections cover summary, kit, products and learnings. Use this authoritative
+bundle for the saved plan and local rules once the project exists. On a new/changed script
+save, include `script_drafts.brand_context_digest = brand_context.digest` alongside the
+existing script fields. `script_drafts.video_brand_context` is server-owned: do not author,
+replace or forge it, and do not invent a read receipt. Keep the full bundle out of client
+review payloads. If managed generation returns `video_brand_context_required`, reload the
+project and bind the plan to its returned bundle through the normal review flow before
+retrying; never bypass it or retry paid calls blindly. Unchanged approved legacy resumes
+retain their package, context and approvals; an upgrade alone needs no extra approval.
+
 ## Custom videos: route before formats
 
 For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template choice or import the reference as a finished video.
@@ -90,9 +139,10 @@ Hand off to **`goose-video-local`** now, and stop following this skill, for:
 - the app's copy-for-Claude command (it names `goose-video-local`);
 - "remix this video ad template" for a specific app template.
 
-Use `goose-video-local` if it is installed; otherwise load it with
+Load the current `goose-video-local` entry with
 `catalog_fetch { type: "skill", slug: "goose-video-local" }` on the GooseWorks MCP (older clients:
-`fetch_skill("goose-video-local")`). It reads the project first and says what to do with it.
+`fetch_skill("goose-video-local")`), unless already fetched on this connection in this run.
+It reads the project first and retains an approved run's recorded recipe packages.
 
 When they ask **what** to make ("give me video ad ideas", "what angles should I use?", "what's
 working for my competitors?"), fetch **`ad-angle-miner`** (`catalog_fetch { type: "skill", slug: "ad-angle-miner" }`,

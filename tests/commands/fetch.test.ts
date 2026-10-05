@@ -23,6 +23,8 @@ jest.mock('../../src/utils/logger', () => ({
 import { getCredentials } from '../../src/auth/credentials';
 import * as loggerModule from '../../src/utils/logger';
 import { fetchCommand, createFetchCommand } from '../../src/commands/fetch';
+import { getGooseVideoSkillContent } from '../../src/skills/master-skill';
+import { skillContentHash } from '../../src/skills/releases';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 
@@ -192,6 +194,31 @@ describe('fetch command', () => {
       expect(result.content).toBe('# current');
       expect(fs.readFileSync(target,'utf8')).toBe(saved);
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+
+  it('fetches the current video entry for a new run and compares an old approved package without changing it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'brand-first-video-'));
+    const target = path.join(dir, 'approved-package.json');
+    const old = JSON.stringify({ slug: 'goose-video', version: '0.3.0', content: '# approved old entry', contentHash: skillContentHash('# approved old entry') });
+    fs.writeFileSync(target, old);
+    const content = getGooseVideoSkillContent();
+    const current = { slug: 'goose-video', name: 'Goose Video', version: '3.0.1', content, contentHash: skillContentHash(content) };
+    let requests = 0;
+    server = await startServer((req, res) => {
+      expect(req.url).toBe('/api/skills/catalog/goose-video');
+      requests++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', data: current }));
+    });
+    mockGetCredentials.mockReturnValue({ api_key: 'cal_test', email: 'u@example.com', agent_id: 'agent-1', api_base: server.url });
+    try {
+      await createFetchCommand().parseAsync(['node', 'test', 'goose-video']);
+      expect(JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]))).toMatchObject({ ...current, freshness: { status: 'not_compared' } });
+      await createFetchCommand().parseAsync(['node', 'test', 'goose-video', '--saved-package', target]);
+      expect(JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]))).toMatchObject({ ...current, freshness: { status: 'stale', changes: ['goose-video'] } });
+      expect(requests).toBe(2);
+      expect(fs.readFileSync(target, 'utf8')).toBe(old);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('refuses a non-file saved package before requesting the catalog', async () => {

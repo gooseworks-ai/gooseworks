@@ -62,19 +62,19 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-video',
     when: 'Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain.',
-    how: 'Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.',
+    how: 'For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume.',
     delivery: 'entry',
   },
   {
     skill: 'make-custom-video',
-    when: 'Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate Studio script and ingredient approvals are required',
-    how: 'Use the installed GooseWorks connection entry, or fetch make-custom-video through the catalog. It loads video-production-harness; Growth uses its sandbox and connected agents use their local tools.',
+    when: 'Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate script and ingredient approvals are required in the same chat',
+    how: 'Fetch the current make-custom-video entry and its production harness for new work, then read summary, kit, products and learnings before script writing. Read an existing project first and retain its approved package/context on resume.',
     delivery: 'entry',
   },
   {
     skill: 'goose-video-local',
     when: 'Render an EXISTING app video project or batch on this machine — the app\'s "copy for Claude" command names it',
-    how: 'Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.',
+    how: 'Read the existing project first. Use the current goose-video-local entry as the connection adapter, retain approved recipe packages/context and apply brand preparation before a new plan or script.',
     delivery: 'entry',
   },
   {
