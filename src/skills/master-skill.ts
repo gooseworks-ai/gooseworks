@@ -62,6 +62,92 @@ and approval before spending. Hosted installed snapshots use the existing Skills
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.`;
 
+const VIDEO_GUIDE_COMPATIBILITY = `**Follow the connector's full-guide requirement when available.** Fetch
+\`catalog_fetch { type: "skill", slug: "gooseworks-guide" }\` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns \`not_found\`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.`;
+
+/** One prerequisite for template, custom and delegated video entry. */
+function videoEntryPreparation(slug: 'goose-video' | 'goose-video-local' | 'make-custom-video'): string {
+  return `## Prepare the video workflow and brand before creative work
+
+**Installed entry files are bootstrap instructions.** For new work started from an installed
+file or an old chat, fetch \`catalog_fetch { type: "skill", slug: "${slug}" }\` on the selected
+connection and read its returned content and dependencies before continuing. Use the already
+fetched body when this entry came from that connection in this run; do not recursively fetch
+the same entry. A CLI freshness warning does not block using the current connected package.
+Keep the fetched package and hashes in a new run folder; do not replace edited installed files.
+If current instructions cannot be loaded, resolve the connection before format suggestions,
+script writing or production. Do not continue from an old installed workflow or session notes.
+
+${VIDEO_GUIDE_COMPATIBILITY}
+
+**For an existing project or batch, read \`video_project_read\` first.** Determine its actual
+route and saved review state before fetching a recipe or doing local work. Resume an approved
+run with its recorded packages, brand inputs, script and ingredients; do not silently replace
+them with today's release or brand rules. Follow returned preparation requirements and use
+the existing affected review/approval flow for an intentional change. Reads, free drafts,
+imports and existing-job retrieval do not grant permission for new paid production.
+
+**For every new plan, resolve the brand and call**
+\`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }\` **before**
+suggesting formats, mining video angles, writing any script, creating a production plan or
+handing the work to another agent. Use \`brand_get_context\` with those same four sections only
+when advertised. Reuse a complete read from this run on the same connection and brand.
+Onboarding completion, a summary-only response and earlier session notes do not supply the
+kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
+creative work. Use known kit facts while research is incomplete; do not restart research
+solely because its status is pending. Never invent a product fact or accept a campaign to
+bypass preparation.
+
+Carry that context through custom/template/idea routing and delegation. Before writing, make
+the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
+prohibited claims, real logo, font, palette and the selected product's supported facts.
+Entries prefixed \`Video preference:\` and visual/pacing instructions are creative direction,
+not spoken lines. Use the kit's audience, offer and voice as defaults without an interview.
+The rules file mirrors context; it is not proof of a read or permission to spend. Keep the
+route's existing script, ingredient and budget approvals, including its allowed previews.
+
+**Use the server's brand bundle when the selected API returns it.** Project create/read may
+return top-level
+\`brand_context\`: \`{ version: 1, brand_id, digest, loaded_at, sections, brand, kit, products,
+learnings }\`. Its sections cover summary, kit, products and learnings.
+
+| Returned brand/project response on the selected connection | Required action |
+| --- | --- |
+| A complete authoritative version-1 \`brand_context\` is returned | Binding is required: use its contents for the plan/rules and include \`script_drafts.brand_context_digest = brand_context.digest\` with each new/changed script save. |
+| An older API returns the actual four brand sections but no \`brand_context\` in either the brand read or project response | Prepare from those full sections, write the brand rules and follow the selected connection's existing approval flow and advertised fields. Do not fabricate a receipt or send nonexistent bundle/digest fields. |
+
+An incomplete/malformed bundle or missing brand section is a preparation failure, never the
+older-API exception. Once this connection returns an authoritative bundle, use its binding
+contract. \`script_drafts.video_brand_context\` is server-owned: do not author, replace or forge
+it, and do not invent a read receipt or hash local brand facts into one. Keep the full bundle
+out of client review payloads. If managed generation returns HTTP 409
+\`video_brand_context_required\`, reload the project and bind the plan to its returned bundle
+through the normal review flow before retrying. That refusal never permits the older-API
+fallback, skipping sections or retrying paid calls blindly. Unchanged approved legacy resumes
+retain their package, context and approvals; an upgrade alone needs no extra approval.
+
+**To apply a deliberate brand correction to a new or revised plan**, make a fresh, unfiltered
+\`brand_read\` of those four sections. When it returns the authoritative bundle, use its
+returned \`brand_context.digest\` in the complete revised \`script_drafts\` through the existing
+\`video_project_upsert\` \`patch.script\` save; the server verifies the current brand and replaces
+its snapshot with the saved plan. On an older API with no bundle contract, apply the actual
+four-section correction and save the revised draft through its existing flow without inventing
+digest fields. If a connection that already returned a bundle cannot supply the fresh bundle,
+resolve that failure before rebinding. Review and approve the affected script, ingredients and
+budget through the normal flow. Never refresh an ongoing approved run automatically; its
+recorded package and brand inputs stay pinned until an intentional change.`;
+}
+
 const CUSTOMER_TALK = `## How to talk to the customer (applies to every message you send them)
 
 The customer is a marketer or founder, not an engineer. Everything in this skill about tools,
@@ -275,7 +361,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.0.0
+version: 1.0.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -290,7 +376,9 @@ ${CUSTOMER_TALK}
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+
+${VIDEO_GUIDE_COMPATIBILITY}
 
 For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
 our video taste", stay here and follow **Guided brand capture** below. This extends the current
@@ -306,6 +394,13 @@ Examples — all of these route to \`goose-ads\`, not the data flow: "remix this
 ## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
 
 **Call \`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }\` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use \`brand_get_context\` with the same sections only when that tool is advertised. It is a read-only call that returns the brand's canonical facts and saved rules:
+
+For videos, read the current workflow first as described above, then load all four creative
+sections (summary, kit, products and learnings) before suggesting formats, choosing angles or
+writing a script. Onboarding facts alone are insufficient. Carry saved rules and kit assets
+into the specialist's brand preparation. \`Video preference:\` rules describe the look, voice
+and pacing; they are not lines to read aloud. On an approved resume, preserve the saved brand
+inputs and packages; an intentional change uses the existing affected review/approval gates.
 
 | It returns | Use it for |
 | --- | --- |
@@ -957,7 +1052,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.0
+version: 3.0.1
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -978,6 +1073,8 @@ and \`available_here\`, never a guess from the host's name. Template-remix revie
 chat. Custom videos use separate authenticated script and ingredient approvals in this same chat.
 Studio is an optional review surface.
 
+${videoEntryPreparation('goose-video')}
+
 ## Custom videos: route before formats
 
 For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch \`catalog_fetch { type: "skill", slug: "make-custom-video" }\` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template choice or import the reference as a finished video.
@@ -990,9 +1087,10 @@ Hand off to **\`goose-video-local\`** now, and stop following this skill, for:
 - the app's copy-for-Claude command (it names \`goose-video-local\`);
 - "remix this video ad template" for a specific app template.
 
-Use \`goose-video-local\` if it is installed; otherwise load it with
+Load the current \`goose-video-local\` entry with
 \`catalog_fetch { type: "skill", slug: "goose-video-local" }\` on the GooseWorks MCP (older clients:
-\`fetch_skill("goose-video-local")\`). It reads the project first and says what to do with it.
+\`fetch_skill("goose-video-local")\`), unless already fetched on this connection in this run.
+It reads the project first and retains an approved run's recorded recipe packages.
 
 When they ask **what** to make ("give me video ad ideas", "what angles should I use?", "what's
 working for my competitors?"), fetch **\`ad-angle-miner\`** (\`catalog_fetch { type: "skill", slug: "ad-angle-miner" }\`,
@@ -1185,7 +1283,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.1
+version: 0.6.2
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -1193,6 +1291,8 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 # GooseWorks Video Ads — local remix runtime
 
 ${CUSTOMER_TALK}
+
+${videoEntryPreparation('goose-video-local')}
 
 ## Chat hosts and cards
 
@@ -1651,7 +1751,7 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
 **Loop shape (ONE approval for the batch, isolated work per concept):**
 1. Run **Step 1 + Step 1.5 + Step 2 + Step 2.5 + Step 3-assemble** for EACH concept project (each
    has its own \`project_id\`, brief, \`GW_PROJECT_ID\` and \`working/\` folder — never cross-write
-   between concepts). The brand read (Step 1 item 3) and \`brand-rules.json\` (Step 1.7) are per
+   between concepts). The brand read (Step 1 item 2) and \`brand-rules.json\` (Step 1.7) are per
    BRAND: do them once for the batch and copy the file into each concept's \`working/\`. The read is
    ~90K characters. Step 2.5's angle bank is shared per brand AND product: load or build it once, and
    give every concept whose angle is \`auto\` a DIFFERENT angle from that list, so the batch is N
@@ -1713,20 +1813,24 @@ for a field the brief leaves empty. Map the fields you WILL honor:
   "also 1:1" option included).
 - \`polish_policy\` (\`standard\` | \`extra\`) → \`extra\` means spend the extra pass on QC/polish.
 
-2. \`catalog_fetch { type: "template", slug: <source_sample_id> }\` → the source video: \`media_url\`,
-   \`recipe\`, \`format\` (e.g. "podcast-skit", "imessage"), \`extracted_script\`, \`how_to\`, \`remix_spec\`.
-3. Brand gate: \`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }\`
+2. Brand gate: \`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }\`
    (older clients: \`brand_get_context\` with the same sections). Ask for all four: the default
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's \`researchStatus\` (or the brand's \`research_status\`) is \`complete\`, REUSE it —
-   never re-research. If not, run brand research first (\`catalog_fetch { type: "skill", slug:
-   "brand-research" }\`) and follow its stored-pack workflow. Only when that verified pack is
+   never re-research. A pending status alone does not require research; use verified stored
+   facts and ask only for an actual gap. If the context is empty or the customer requests
+   research, load \`catalog_fetch { type: "skill", slug:
+   "brand-research" }\` and follow its stored-pack workflow. Only when that verified pack is
    saved in the supported research workspace, finalize with
    \`brand_update { brand_id, patch: { finalize_research: true } }\`, then read the brand back.
    Never send raw research JSON through \`kit_patch\`: the public tool accepts only the existing
    \`video_lab\` asset slot there. If there is no verified stored pack, submit researched facts
    through typed \`patch.knowledge\` / \`patch.kit\` as pending agent proposals; do not pretend
    research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
+3. For a new plan, \`catalog_fetch { type: "template", slug: <source_sample_id> }\` → the source
+   video: \`media_url\`, \`recipe\`, \`format\` (e.g. "podcast-skit", "imessage"),
+   \`extracted_script\`, \`how_to\`, \`remix_spec\`. For an approved resume, restore the recorded
+   package and dependencies instead of fetching today's recipe over the saved plan.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a \`remix\` block)
 
@@ -1755,8 +1859,9 @@ Its \`video_project_read\` returns a top-level \`remix\` block
 
 ### Step 1.7 — the brand rules file and the brand assets (every run, before any writing)
 
-Write \`working/brand-rules.json\` from the Step 1 brand read. Every later step reads THIS file,
-not your memory of the chat:
+Before new writing, write \`working/brand-rules.json\` from the Step 1 brand read. Preserve an
+approved run's saved rules on resume; reconcile an intentional rule change through the existing
+review gate. Every later step reads THIS file, not your memory of the chat:
 
 \`\`\`json
 {
@@ -2546,5 +2651,5 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 /** Thin GooseWorks connection to the catalog-published production harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${videoEntryPreparation('make-custom-video')}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
 }

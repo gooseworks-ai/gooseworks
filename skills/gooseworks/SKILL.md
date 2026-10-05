@@ -8,7 +8,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.0.0
+version: 1.0.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -73,7 +73,20 @@ the other. Check the actual advertised tools before using new fields.
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+
+**Follow the connector's full-guide requirement when available.** Fetch
+`catalog_fetch { type: "skill", slug: "gooseworks-guide" }` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns `not_found`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.
 
 For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
 our video taste", stay here and follow **Guided brand capture** below. This extends the current
@@ -83,9 +96,9 @@ brand and onboarding flow; it does not create another onboarding checklist.
 | --- | --- | --- |
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
-| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate Studio script and ingredient approvals are required | **`make-custom-video`** | Use the installed GooseWorks connection entry, or fetch make-custom-video through the catalog. It loads video-production-harness; Growth uses its sandbox and connected agents use their local tools. |
-| Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
+| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume. |
+| Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate script and ingredient approvals are required in the same chat | **`make-custom-video`** | Fetch the current make-custom-video entry and its production harness for new work, then read summary, kit, products and learnings before script writing. Read an existing project first and retain its approved package/context on resume. |
+| Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Read the existing project first. Use the current goose-video-local entry as the connection adapter, retain approved recipe packages/context and apply brand preparation before a new plan or script. |
 | Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
 | Animate an approved static ad or product image | **`animate-image`** | Fetch with `gooseworks fetch animate-image` and follow its GooseWorks MCP workflow. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
@@ -95,6 +108,13 @@ Examples — all of these route to `goose-ads`, not the data flow: "remix this a
 ## Load the brand context FIRST (mandatory — before you route, and before you ask anything)
 
 **Call `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use `brand_get_context` with the same sections only when that tool is advertised. It is a read-only call that returns the brand's canonical facts and saved rules:
+
+For videos, read the current workflow first as described above, then load all four creative
+sections (summary, kit, products and learnings) before suggesting formats, choosing angles or
+writing a script. Onboarding facts alone are insufficient. Carry saved rules and kit assets
+into the specialist's brand preparation. `Video preference:` rules describe the look, voice
+and pacing; they are not lines to read aloud. On an approved resume, preserve the saved brand
+inputs and packages; an intentional change uses the existing affected review/approval gates.
 
 | It returns | Use it for |
 | --- | --- |
