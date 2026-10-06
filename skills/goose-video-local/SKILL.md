@@ -11,7 +11,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.4
+version: 0.6.5
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -1185,11 +1185,13 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
    more credits, so your budget goes from <from_credits> to <to_credits>. OK?" Only after the
    customer's yes to that number: patch.approve { scope:"raise_cap", total_credits: <to_credits>,
    user_quote: "<their exact words>" }. total_credits is the new budget itself, never credits to
-   add; raise_cap_credits is not needed for one video. If they pick a smaller choice past the
+   add; do not send raise_cap_credits for one video. If they pick a smaller choice past the
    budget, send that choice's new budget as total_credits (never above to_credits). Sending the same
    total_credits again changes nothing (already_raised: carry on). An earlier yes, or "I don't care
-   about the cost", is not approval of a new budget. If cost.raise_quote is null, the approved budget
-   already covers the work: carry on, do not ask. A refused raise changes nothing:
+   about the cost", is not approval of a new budget. If cost.raise_quote is null because the plan was saved
+   again since its approval (plan_status is not "approved"), show the plan with its total and
+   approve it again; otherwise the approved budget already covers the work: carry on, do not ask.
+   After a raise, open a new render that reuses the saved pieces. A refused raise changes nothing:
    cap_raise_not_needed means carry on within the budget, or, when it says the plan was saved again,
    show the plan with its total and approve the plan again; cap_raise_total_required means read the
    project again and send total_credits equal to cost.raise_quote.to_credits after the customer

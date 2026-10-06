@@ -104,6 +104,13 @@ describe('custom video documented API payloads', () => {
     expect(c).toContain('complete that same render; a candidate needs no separate approval phase');
     expect(c).toContain('If your own render shows stop_reason "superseded"');
     expect(c).not.toContain('Save a failed candidate as blocked/failed');
+    expect(c).not.toContain('Use exactly one of these four');
+    expect(c).toContain('output_url when an uploaded candidate exists');
+    // A stop (customer or spending limit) is reported as stopped, never failed.
+    expect(c).toMatch(/\| Stop requested: a progress callback returned stop:true because the customer stopped the video or a paid step hit the spending limit \| "stopped" \|/);
+    expect(c).not.toMatch(/\| Real failure:[^\n]*customer stopped/);
+    expect(c).toContain('When stop:true comes with stop_reason "superseded", report nothing further on that render');
+    expect(c).toContain('include:["assets","renders"]');
   });
 
   it('finalizes an existing candidate only through a new render bound to the current approval', () => {
@@ -119,7 +126,7 @@ describe('custom video documented API payloads', () => {
   it('matches a named format and runs its selector before going custom', () => {
     const c = getMakeCustomVideoSkillContent();
     expect(c).toContain('## Match a named format before going custom');
-    expect(c).toContain('scripts/prepare_script_context.py');
+    expect(c).toContain('python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>');
     expect(c).toContain('it is a stop, not permission to go custom');
     expect(c).toMatch(/conversation \(mic-only, product-sample, concept-challenge\).*Preview only/);
     expect(c).toContain("keeps that format's hard constraints");
@@ -147,5 +154,8 @@ describe('custom video documented API payloads', () => {
     const c = getMakeCustomVideoSkillContent();
     expect(c).not.toContain('raise_cap');
     expect(c).toContain('A custom video\'s budget grows only through a renewed approval');
+    expect(c).toContain('On SPEND_CAP_REACHED the open render is asked to stop: report it "stopped"');
+    expect(c).toContain('record the customer\'s approval of that total, and open a new render that reuses the saved pieces');
+    expect(c).not.toContain('A spending-limit stop is waiting for the customer');
   });
 });

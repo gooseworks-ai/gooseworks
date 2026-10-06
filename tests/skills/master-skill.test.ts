@@ -747,7 +747,10 @@ describe('current template approval and follow-up contract', () => {
     expect(local).toContain('already_raised: carry on');
     expect(local).toContain('cap_raise_total_required means read the\n   project again and send total_credits equal to cost.raise_quote.to_credits');
     expect(local).toContain('"I don\'t care\n   about the cost", is not approval of a new budget');
-    expect(local).toContain('If cost.raise_quote is null, the approved budget\n   already covers the work');
+    expect(local).toContain('do not send raise_cap_credits for one video');
+    expect(local).toContain('If cost.raise_quote is null because the plan was saved\n   again since its approval');
+    expect(local).toContain('otherwise the approved budget already covers the work: carry on, do not ask');
+    expect(local).toContain('After a raise, open a new render that reuses the saved pieces');
     expect(local).toContain('cap_raise_not_needed');
     expect(local).toContain('cap_raise_changed');
     expect(local).toContain('approve the plan again');
