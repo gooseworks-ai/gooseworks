@@ -618,6 +618,14 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
 });
 
 // GOOSE-3743: idea requests go to goose-skills' ad-angle-miner (video output).
+describe('skills/goose-video named formats before custom (GOOSE-3909)', () => {
+  it('checks the catalog for a named format before routing to custom', () => {
+    const video = getGooseVideoSkillContent();
+    expect(video).toContain('Go custom only when no format fits');
+    expect(video.indexOf('First check the catalog')).toBeLessThan(video.indexOf('slug: "make-custom-video"'));
+  });
+});
+
 describe('skills/goose-video → ad-angle-miner', () => {
   const video = getGooseVideoSkillContent();
 
@@ -729,6 +737,16 @@ describe('current template approval and follow-up contract', () => {
     expect(local).toContain('After EVERY progress callback inspect stop');
     expect(local).toContain('SPEND_CAP_REACHED');
     expect(local).toContain('scope:"raise_cap"');
+  });
+  it('raises a budget only after a real limit stop, by the server quote, on a fresh yes', () => {
+    expect(local).toContain("Never raise a video's budget on your own judgment");
+    expect(local).toContain('say cost.raise_quote in one line');
+    expect(local).toContain('total_credits: <to_credits>');
+    expect(local).toContain('"I don\'t care about the cost", is not\n   approval of a new budget');
+    expect(local).toContain('If cost.raise_quote is null, the approved budget already covers the\n   work');
+    expect(local).toContain('cap_raise_not_needed');
+    expect(local).toContain('cap_raise_changed');
+    expect(local).toContain('approve the plan again');
     expect(local).toContain('Never replace a supplied\n  watched render with the final');
     expect(local).toContain('fix_of_render_id');
     expect(local).toContain('remix_of_render_id');

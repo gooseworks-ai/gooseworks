@@ -66,8 +66,17 @@ describe('custom video documented API payloads', () => {
   it('contains every final QC field and keeps illustrative evidence blocked', () => {
     const render = examples.find((example) => example.render?.quality_report)?.render;
     expect(render).toBeDefined();
-    expect(render.status).toBe('failed');
+    // GOOSE-3909: the example is a render waiting for the customer, not a failure.
+    expect(render.status).toBe('running');
+    expect(render.workflow_stage).toBe('blocked');
     expect(render.quality_status).toBe('blocked');
+    expect(new URL(render.output_url).protocol).toBe('https:');
+    expect(render.choices.length).toBeGreaterThan(0);
+    expect(render.choices.length).toBeLessThanOrEqual(4);
+    for (const choice of render.choices) {
+      expect(choice.label.length).toBeLessThanOrEqual(60);
+      expect(choice.message.length).toBeLessThanOrEqual(200);
+    }
     const report = render.quality_report;
     expect(report.version).toBe(1);
     expect(typeof report.summary).toBe('string');
@@ -82,5 +91,61 @@ describe('custom video documented API payloads', () => {
     expect(report.detected_issues.length).toBeGreaterThan(0);
     expect(Array.isArray(report.repair_actions)).toBe(true);
     expect(Number.isNaN(Date.parse(report.checked_at))).toBe(false);
+  });
+
+  it('separates waiting for the customer from failure', () => {
+    const c = getMakeCustomVideoSkillContent();
+    expect(c).toContain('### Render run states');
+    expect(c).toContain('Waiting for the customer is not a failure');
+    expect(c).toContain('valid only while the approval it rests on is current');
+    expect(c).toContain('failure_code review_expired');
+    expect(c).toContain('Opening a new render stops the older open render of this video with stop_reason "superseded"');
+    expect(c).toContain('treat a render left at "running" with workflow_stage "blocked" as a pending customer decision');
+    expect(c).toContain('complete that same render; a candidate needs no separate approval phase');
+    expect(c).toContain('If your own render shows stop_reason "superseded"');
+    expect(c).not.toContain('Save a failed candidate as blocked/failed');
+  });
+
+  it('finalizes an existing candidate only through a new render bound to the current approval', () => {
+    const c = getMakeCustomVideoSkillContent();
+    expect(c).toContain('### Finalize an existing candidate after re-approval');
+    expect(c).toContain('If the script changed, save it and record the customer\'s script approval first');
+    expect(c).toContain('save the candidate as a video ingredient');
+    expect(c).toContain('Open a new render with video_render_run');
+    expect(c).toContain('Do not regenerate or re-upload');
+    expect(c).toContain('one checked clip per scene');
+  });
+
+  it('matches a named format and runs its selector before going custom', () => {
+    const c = getMakeCustomVideoSkillContent();
+    expect(c).toContain('## Match a named format before going custom');
+    expect(c).toContain('scripts/prepare_script_context.py');
+    expect(c).toContain('it is a stop, not permission to go custom');
+    expect(c).toMatch(/conversation \(mic-only, product-sample, concept-challenge\).*Preview only/);
+    expect(c).toContain("keeps that format's hard constraints");
+    expect(c).toContain('never continue past it silently');
+    expect(c).toContain('[[composes::render-street-interview]]');
+    // The route check comes before the harness and any paid preview.
+    expect(c.indexOf('## Match a named format before going custom'))
+      .toBeLessThan(c.indexOf('## Load the shared production harness first'));
+  });
+
+  it('makes people with the route builder, never by hand or with Flux', () => {
+    const c = getMakeCustomVideoSkillContent();
+    expect(c).toContain('## People in generated images');
+    expect(c).toContain('[[composes::create-creator-takes-h3]] (scripts/make_character.py)');
+    expect(c).toContain('--dry-run --payload-out');
+    expect(c).toContain('without --dry-run and with GW_PROJECT_ID set to this project');
+    expect(c).toContain('A hand-written generic prompt is not a substitute for the builder');
+    expect(c).toContain('Never send a generated photoreal person still as a reference image');
+    expect(c).toContain('crop each face, enlarge it 2×');
+    expect(c).not.toMatch(/prefer supported fal-ai\/flux/);
+    expect(c).not.toContain('| Character anchors, grounded product edits or scene stills |');
+  });
+
+  it('never tells custom videos to raise their budget with raise_cap', () => {
+    const c = getMakeCustomVideoSkillContent();
+    expect(c).not.toContain('raise_cap');
+    expect(c).toContain('A custom video\'s budget grows only through a renewed approval');
   });
 });

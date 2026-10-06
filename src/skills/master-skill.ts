@@ -1052,7 +1052,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.1
+version: 3.0.2
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -1075,9 +1075,9 @@ Studio is an optional review surface.
 
 ${videoEntryPreparation('goose-video')}
 
-## Custom videos: route before formats
+## Custom videos: check formats first
 
-For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch \`catalog_fetch { type: "skill", slug: "make-custom-video" }\` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template choice or import the reference as a finished video.
+First check the catalog: when the brief names or implies a listed format (for example a street interview, testimonial, podcast or chat video), show that format and its fit through the format flow below, including its support status. Go custom only when no format fits and the customer chooses custom after hearing why; custom keeps that format's hard constraints. For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch \`catalog_fetch { type: "skill", slug: "make-custom-video" }\` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template that does not fit or that the customer declined, and do not import the reference as a finished video.
 
 ## Route first: is this a new video?
 
@@ -1283,7 +1283,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.3
+version: 0.6.4
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -2198,8 +2198,20 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    about start / blocked / complete.
 After EVERY progress callback inspect stop. If true, start no new paid step; record
    status:"stopped" with a plain note and report what is kept and credits used. SPEND_CAP_REACHED
-   stops the same way; raising the cap requires patch.approve scope:"raise_cap" and the customer's
-   words. Send render.steps with the same neutral names each time and a live count only in the
+   stops the same way. Never raise a video's budget on your own judgment. Raise it only when a paid
+   step was refused with SPEND_CAP_REACHED or the progress card offers "Finish it" or a choice past the budget.
+   Then read the project and say cost.raise_quote in one line: "Finishing needs up to <by_credits>
+   more credits, so your budget goes from <from_credits> to <to_credits>. OK?" Only after the
+   customer's yes to that number: patch.approve { scope:"raise_cap", raise_cap_credits: <by_credits>,
+   total_credits: <to_credits>, user_quote: "<their exact words>" }. If they pick a smaller choice
+   past the budget, send its new budget as total_credits (never above to_credits) and the difference
+   from from_credits as raise_cap_credits. An earlier yes, or "I don't care about the cost", is not
+   approval of a new budget. If cost.raise_quote is null, the approved budget already covers the
+   work: carry on, do not ask. A refused raise changes nothing: cap_raise_not_needed means carry on
+   within the budget, or, when it says the plan was saved again, show the plan with its total and
+   approve the plan again; cap_raise_changed, cap_raise_too_large or total_changed mean read the
+   project again and show the current cost.raise_quote. Custom videos never use raise_cap.
+   Send render.steps with the same neutral names each time and a live count only in the
    current detail; use render.choices when blocked.
 2. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
    clips, voice, music — through the media proxies (below), each from its approved prompt, with
