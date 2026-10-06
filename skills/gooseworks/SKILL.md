@@ -8,7 +8,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.0.1
+version: 1.1.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -73,7 +73,7 @@ the other. Check the actual advertised tools before using new fields.
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
 
 **Follow the connector's full-guide requirement when available.** Fetch
 `catalog_fetch { type: "skill", slug: "gooseworks-guide" }` when the connector requires it.
@@ -121,18 +121,68 @@ inputs and packages; an intentional change uses the existing affected review/app
 | **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
 | **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
 | **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
-| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" Kit proof points are proof an ad may state as written; other positioning text is context. |
 | **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
 
 Then:
 
-1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
-2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
+1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you, plus the evidence brief from the Brain search below. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
+2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context or the Brain search answers, they win — answer it yourself and move on. Ask only for what is genuinely missing after both, or a decision that is the user's to make.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
 4. **If `brand_read` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose `brand_get_context` / `get_brand_kit`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
 5. **A read grants no write permission.** Save explicit durable answers/corrections with the capture policy below. Propose agent-derived changes for review; never overwrite confirmed knowledge with research or a guess.
 
-Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
+Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, search
+the Brand Brain next. Ask the user only when that search cannot answer it and the answer is
+theirs to give.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one short query (under 500 characters) in
+   the user's own words plus the product (for example "ads for <product>: what worked, what to
+   avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `refresh_required` | The results shown are current; some changed sources were left out | Use them; search again shortly for anything missing |
+| `building` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Claim-grade proof is a result with `approved_ad_claim: true` or the kit's
+   `approvedClaims` within their stated applicability; the kit's `proofPoints` are what the
+   backend allows an ad to state, used as written. Other Kit text, documents and performance
+   numbers are context, never public claims. Never invent an offer, price or result. Judge
+   relevance and skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+   Keep directions already chosen (the user's words, a project's creative brief, handed-off
+   defaults, approved plans): search only to fill empty fields and to apply saved rules. When a
+   returned card or picker presents the choice, your recommendation is its one acknowledgement
+   line and the saved plan's defaults, not a separate list.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Setup
 
@@ -207,8 +257,8 @@ already volunteered in this chat, and **save known information first** using the
 mapping below. Do not run a long questionnaire as a prerequisite for making an ad.
 
 For facts needed by the task but absent from the read, call `knowledge_search` first if it is
-registered. Use returned citations and states honestly: an empty, building or failed index is
-not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
+registered, as in **"Search the Brand Brain, then propose"**. Use returned citations and states
+honestly: an empty, building or failed index is not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
 answered by trustworthy saved knowledge.
 
 Ask one short group of missing human-only facts at a time, in plain language, with the relevant

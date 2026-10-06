@@ -11,7 +11,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.5
+version: 0.6.6
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -110,7 +110,8 @@ Onboarding completion, a summary-only response and earlier session notes do not 
 kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
 creative work. Use known kit facts while research is incomplete; do not restart research
 solely because its status is pending. Never invent a product fact or accept a campaign to
-bypass preparation.
+bypass preparation. Then search the Brand Brain (next section) before suggesting formats,
+choosing an angle or asking the user for a brand fact.
 
 Carry that context through custom/template/idea routing and delegation. Before writing, make
 the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
@@ -150,6 +151,54 @@ digest fields. If a connection that already returned a bundle cannot supply the 
 resolve that failure before rebinding. Review and approve the affected script, ingredients and
 budget through the normal flow. Never refresh an ongoing approved run automatically; its
 recorded package and brand inputs stay pinned until an intentional change.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one short query (under 500 characters) in
+   the user's own words plus the product (for example "ads for <product>: what worked, what to
+   avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `refresh_required` | The results shown are current; some changed sources were left out | Use them; search again shortly for anything missing |
+| `building` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Claim-grade proof is a result with `approved_ad_claim: true` or the kit's
+   `approvedClaims` within their stated applicability; the kit's `proofPoints` are what the
+   backend allows an ad to state, used as written. Other Kit text, documents and performance
+   numbers are context, never public claims. Never invent an offer, price or result. Judge
+   relevance and skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+   Keep directions already chosen (the user's words, a project's creative brief, handed-off
+   defaults, approved plans): search only to fill empty fields and to apply saved rules. When a
+   returned card or picker presents the choice, your recommendation is its one acknowledgement
+   line and the saved plan's defaults, not a separate list.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Chat hosts and cards
 
@@ -684,8 +733,8 @@ written per-project; a batch just runs it N times with the shared approval gate 
 
 The composer already collected the user's creative direction onto the project. **Read it and treat
 it as ground truth — it OVERRIDES the template recipe's defaults, and it REPLACES the clarifying
-questions you would otherwise ask.** Only fall back to the recipe default (then, last, to asking)
-for a field the brief leaves empty. Map the fields you WILL honor:
+questions you would otherwise ask.** For a field the brief leaves empty, use the Brain search's
+evidence brief first, then the recipe default, then (last) asking. Map the fields you WILL honor:
 
 - `creative_brief.productName` / `.offer` / `.angle` → the product, offer/code, and angle. Do
   **not** ask "which product / what offer / what angle" if these are set.
@@ -1020,7 +1069,9 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   a catalogue card alone cannot establish fit. An impossible essential visual blocks
   the proposal until repaired. Do not force a testimonial into every format.
 - **Research only what is missing.** Fetching the miner does not spend or rerun research.
-  Reuse current facts and prior evidence. If paid collection is needed, its permission
+  Reuse current facts and prior evidence. The Brain search's evidence brief (citations, the
+  state of each query and open gaps) is the first source for the brief's source references and
+  prior decisions. If paid collection is needed, its permission
   rides in the existing choices round. A new product with no reviews can use verified
   facts and a feasible demo; do not require paid research merely to fill a quote quota.
 - **Choose eligible concepts only.** Take the strongest supported concept and validated
