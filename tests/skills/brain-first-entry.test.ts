@@ -43,17 +43,37 @@ describe('Brain-first entry', () => {
     const block = getGooseAdsSkillContent();
     const rows = block.slice(block.indexOf(BRAIN)).split('\n').filter((line) => line.startsWith('| '));
     expect(rows.find((r) => r.includes('`status: "empty"`'))).toContain('never "the brand has no proof"');
-    expect(rows.find((r) => r.includes('`refresh_required`'))).toContain('Retry once shortly');
+    // refresh_required returns current results with stale sources dropped: usable, not "not ready".
+    expect(rows.find((r) => r.includes('`refresh_required`'))).toContain('Use them; search again shortly');
+    expect(rows.find((r) => r.startsWith('| `building`'))).toContain('Retry once shortly');
     expect(rows.find((r) => r.includes('not registered'))).toContain('treat evidence as unchecked');
     expect(rows.find((r) => r.includes('An empty Kit field'))).toContain('still search before asking');
   });
 
-  it('only an approved claim is claim-grade; Kit proof points are context', () => {
+  // The kit's proofPoints are already limited to proof an ad may state (backend
+  // QA-03), so they are claim-grade as written; free Kit prose is not.
+  it('approved claims and kit proof points are claim-grade; other Kit text is context', () => {
     const ads = getGooseAdsSkillContent();
-    expect(ads).toContain('Only a result with `approved_ad_claim: true` is claim-grade proof');
-    expect(ads).toContain('**What to claim** → only an approved claim');
+    expect(ads).toContain('Claim-grade proof is a result with `approved_ad_claim: true` or the kit\'s\n   `approvedClaims`');
+    expect(ads).toContain('the kit\'s `proofPoints` are what the\n   backend allows an ad to state, used as written');
+    expect(ads).toContain('Never invent an offer, price or result.');
+    expect(ads).toContain('**What to claim** → only claim-grade proof');
     expect(ads).not.toContain('**The angle, offer framing, and what to claim** → **positioning**');
-    expect(getMasterSkillContent()).toContain('Kit proof points are context, not approved ad claims.');
+    expect(ads).not.toContain('Kit proof points, documents and performance numbers are context');
+    const router = getMasterSkillContent();
+    expect(router).toContain('Kit proof points are proof an ad may state as written');
+    expect(router).not.toContain('Kit proof points are context, not approved ad claims.');
+  });
+
+  it('keeps chosen directions and lets pickers carry the recommendation', () => {
+    const block = getGooseVideoSkillContent();
+    expect(block).toContain('Keep directions already chosen (the user\'s words, a project\'s creative brief, handed-off\n   defaults, approved plans)');
+    expect(block).toContain('When a\n   returned card or picker presents the choice, your recommendation is its one acknowledgement\n   line');
+    expect(getGooseVideoLocalSkillContent()).toContain('use the Brain search\'s\nevidence brief first, then the recipe default, then (last) asking');
+  });
+
+  it('keeps queries within the search limit', () => {
+    expect(getGooseAdsSkillContent()).toContain('Run one short query (under 500 characters)');
   });
 
   it('removes the instructions that sent agents to ask instead of search', () => {

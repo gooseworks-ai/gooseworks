@@ -121,7 +121,7 @@ inputs and packages; an intentional change uses the existing affected review/app
 | **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
 | **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
 | **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
-| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" Kit proof points are context, not approved ad claims. |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" Kit proof points are proof an ad may state as written; other positioning text is context. |
 | **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
 
 Then:
@@ -145,8 +145,9 @@ product emphasis, format or source ad — and before you ask the user for any br
 `knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
 approval, no announcement to the customer and no questionnaire.
 
-1. **Search for this task, not the whole Brain.** Run one query in the user's own words plus the
-   product (for example "ads for <product>: what worked, what to avoid") and one with
+1. **Search for this task, not the whole Brain.** Run one short query (under 500 characters) in
+   the user's own words plus the product (for example "ads for <product>: what worked, what to
+   avoid") and one with
    `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
    creative results. Add a query only for a specific open question. Reuse results from this run.
 2. **Keep these states distinct** and record which one each query returned:
@@ -155,21 +156,28 @@ approval, no announcement to the customer and no questionnaire.
 | --- | --- | --- |
 | `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
 | `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
-| `building` or `refresh_required` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| `refresh_required` | The results shown are current; some changed sources were left out | Use them; search again shortly for anything missing |
+| `building` | The index is not ready | Retry once shortly, then continue with the gap stated |
 | An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
 | An empty Kit field | Only that field is blank | Not a search result: still search before asking |
 
 3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
    options out; an approved or well-rated past creative is a proven angle to lead with; a report
-   shows what worked. Only a result with `approved_ad_claim: true` is claim-grade proof. Kit
-   text, documents and performance numbers are context, never public claims. Judge relevance and
-   skip results about another product or business.
+   shows what worked. Claim-grade proof is a result with `approved_ad_claim: true` or the kit's
+   `approvedClaims` within their stated applicability; the kit's `proofPoints` are what the
+   backend allows an ad to state, used as written. Other Kit text, documents and performance
+   numbers are context, never public claims. Never invent an offer, price or result. Judge
+   relevance and skip results about another product or business.
 4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
    format) and a one-line reason naming what you found, with up to two alternatives. When several
    directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
    as an active campaign or approved past creatives, and name the other as an alternative instead
    of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
    approval. Never ask the user for a fact the Brain already answered.
+   Keep directions already chosen (the user's words, a project's creative brief, handed-off
+   defaults, approved plans): search only to fill empty fields and to apply saved rules. When a
+   returned card or picker presents the choice, your recommendation is its one acknowledgement
+   line and the saved plan's defaults, not a separate list.
 5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
    the state of each query, what it ruled out and the open gaps. Tell the customer the findings
    in plain words; the citations stay in the brief.
