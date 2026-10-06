@@ -741,9 +741,13 @@ describe('current template approval and follow-up contract', () => {
   it('raises a budget only after a real limit stop, by the server quote, on a fresh yes', () => {
     expect(local).toContain("Never raise a video's budget on your own judgment");
     expect(local).toContain('say cost.raise_quote in one line');
-    expect(local).toContain('total_credits: <to_credits>');
-    expect(local).toContain('"I don\'t care about the cost", is not\n   approval of a new budget');
-    expect(local).toContain('If cost.raise_quote is null, the approved budget already covers the\n   work');
+    expect(local).toContain('scope:"raise_cap", total_credits: <to_credits>');
+    expect(local).toContain('total_credits is the new budget itself, never credits to\n   add');
+    expect(local).not.toContain('raise_cap_credits: <by_credits>');
+    expect(local).toContain('already_raised: carry on');
+    expect(local).toContain('cap_raise_total_required means read the\n   project again and send total_credits equal to cost.raise_quote.to_credits');
+    expect(local).toContain('"I don\'t care\n   about the cost", is not approval of a new budget');
+    expect(local).toContain('If cost.raise_quote is null, the approved budget\n   already covers the work');
     expect(local).toContain('cap_raise_not_needed');
     expect(local).toContain('cap_raise_changed');
     expect(local).toContain('approve the plan again');

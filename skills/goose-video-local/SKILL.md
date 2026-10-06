@@ -1183,15 +1183,18 @@ After EVERY progress callback inspect stop. If true, start no new paid step; rec
    step was refused with SPEND_CAP_REACHED or the progress card offers "Finish it" or a choice past the budget.
    Then read the project and say cost.raise_quote in one line: "Finishing needs up to <by_credits>
    more credits, so your budget goes from <from_credits> to <to_credits>. OK?" Only after the
-   customer's yes to that number: patch.approve { scope:"raise_cap", raise_cap_credits: <by_credits>,
-   total_credits: <to_credits>, user_quote: "<their exact words>" }. If they pick a smaller choice
-   past the budget, send its new budget as total_credits (never above to_credits) and the difference
-   from from_credits as raise_cap_credits. An earlier yes, or "I don't care about the cost", is not
-   approval of a new budget. If cost.raise_quote is null, the approved budget already covers the
-   work: carry on, do not ask. A refused raise changes nothing: cap_raise_not_needed means carry on
-   within the budget, or, when it says the plan was saved again, show the plan with its total and
-   approve the plan again; cap_raise_changed, cap_raise_too_large or total_changed mean read the
-   project again and show the current cost.raise_quote. Custom videos never use raise_cap.
+   customer's yes to that number: patch.approve { scope:"raise_cap", total_credits: <to_credits>,
+   user_quote: "<their exact words>" }. total_credits is the new budget itself, never credits to
+   add; raise_cap_credits is not needed for one video. If they pick a smaller choice past the
+   budget, send that choice's new budget as total_credits (never above to_credits). Sending the same
+   total_credits again changes nothing (already_raised: carry on). An earlier yes, or "I don't care
+   about the cost", is not approval of a new budget. If cost.raise_quote is null, the approved budget
+   already covers the work: carry on, do not ask. A refused raise changes nothing:
+   cap_raise_not_needed means carry on within the budget, or, when it says the plan was saved again,
+   show the plan with its total and approve the plan again; cap_raise_total_required means read the
+   project again and send total_credits equal to cost.raise_quote.to_credits after the customer
+   approves that number; cap_raise_changed or cap_raise_too_large mean read the project again and
+   show the current cost.raise_quote. Custom videos never use raise_cap.
    Send render.steps with the same neutral names each time and a live count only in the
    current detail; use render.choices when blocked.
 2. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
