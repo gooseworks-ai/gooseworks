@@ -7,7 +7,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.1
+version: 3.0.2
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -118,7 +118,8 @@ Onboarding completion, a summary-only response and earlier session notes do not 
 kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
 creative work. Use known kit facts while research is incomplete; do not restart research
 solely because its status is pending. Never invent a product fact or accept a campaign to
-bypass preparation.
+bypass preparation. Then search the Brand Brain (next section) before suggesting formats,
+choosing an angle or asking the user for a brand fact.
 
 Carry that context through custom/template/idea routing and delegation. Before writing, make
 the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
@@ -158,6 +159,46 @@ digest fields. If a connection that already returned a bundle cannot supply the 
 resolve that failure before rebinding. Review and approve the affected script, ingredients and
 budget through the normal flow. Never refresh an ongoing approved run automatically; its
 recorded package and brand inputs stay pinned until an intentional change.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one query in the user's own words plus the
+   product (for example "ads for <product>: what worked, what to avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `building` or `refresh_required` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Only a result with `approved_ad_claim: true` is claim-grade proof. Kit
+   text, documents and performance numbers are context, never public claims. Judge relevance and
+   skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Custom videos: route before formats
 
@@ -354,8 +395,9 @@ bypass setup. Keep the original request.
 ### 2. Keep the goal and propose defaults
 
 Never ask what the ad is for before showing formats. Keep the customer's exact direction.
-Otherwise propose defaults from the verified kit's products, audience, offer and voice. Show
-those defaults in the saved plan so any can be changed. Never invent proof or product facts.
+Otherwise propose defaults from the verified kit's products, audience, offer and voice and the
+Brain search's evidence brief (proven angles, saved rules, approved claims). Show those defaults
+in the saved plan so any can be changed. Never invent proof or product facts.
 Idea requests still follow ad-angle-miner with the video output.
 
 ### 3. Show the picker or its text fallback

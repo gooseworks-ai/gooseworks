@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.2.2
+version: 2.2.3
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -109,7 +109,8 @@ Onboarding completion, a summary-only response and earlier session notes do not 
 kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
 creative work. Use known kit facts while research is incomplete; do not restart research
 solely because its status is pending. Never invent a product fact or accept a campaign to
-bypass preparation.
+bypass preparation. Then search the Brand Brain (next section) before suggesting formats,
+choosing an angle or asking the user for a brand fact.
 
 Carry that context through custom/template/idea routing and delegation. Before writing, make
 the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
@@ -149,6 +150,46 @@ digest fields. If a connection that already returned a bundle cannot supply the 
 resolve that failure before rebinding. Review and approve the affected script, ingredients and
 budget through the normal flow. Never refresh an ongoing approved run automatically; its
 recorded package and brand inputs stay pinned until an intentional change.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one query in the user's own words plus the
+   product (for example "ads for <product>: what worked, what to avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `building` or `refresh_required` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Only a result with `approved_ad_claim: true` is claim-grade proof. Kit
+   text, documents and performance numbers are context, never public claims. Judge relevance and
+   skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Keep the selected connection for the whole run
 
@@ -288,7 +329,7 @@ the limitation and propose a supported revision instead of improvising a bypass.
 
 ## Carry the sourced brief and verify the handoff
 
-Before script writing, save the writer's documented creative-brief.json from the current brand/product evidence and project directions. Include exact product/variant, buyer situation, supported mechanism/claims, offer/CTA, constraints, delivery intent, locked copy, applicable prior decisions and explicit unknowns with source references. Before using the writer, run its free python3 <saved-writer-package>/scripts/verify_handoff.py --package-dir <saved-writer-package> --out working/script/writer-handoff-check.json check against the actual fetched prepare/lint scripts and retain the result and script hashes. A missing checker, failed check or unsupported --brief command blocks the required writer route before saving or approving a new plan; keep any chat proposal unsaved and unapproved until the compatible package is available on this same connection. Do not remove the brief, strict check or requires_creative_brief requirement to run an older parser. Use the fetched write-video-ad-script preparation command with --brief working/script/creative-brief.json and its documented bank/brand/product/template arguments; set the new shape.requires_creative_brief to true. The writer and critic consume that same angle-context. Save only the concise brief/revision and workspace reference in script_drafts extra fields, never full research/package contents. A missing required brief fails the script check; do not rerun known research or rewrite user-locked wording silently.
+Before script writing, save the writer's documented creative-brief.json from the current brand/product evidence (the Brain search's evidence brief: cited findings, the state of each query and open gaps) and project directions. Include exact product/variant, buyer situation, supported mechanism/claims, offer/CTA, constraints, delivery intent, locked copy, applicable prior decisions and explicit unknowns with source references. Before using the writer, run its free python3 <saved-writer-package>/scripts/verify_handoff.py --package-dir <saved-writer-package> --out working/script/writer-handoff-check.json check against the actual fetched prepare/lint scripts and retain the result and script hashes. A missing checker, failed check or unsupported --brief command blocks the required writer route before saving or approving a new plan; keep any chat proposal unsaved and unapproved until the compatible package is available on this same connection. Do not remove the brief, strict check or requires_creative_brief requirement to run an older parser. Use the fetched write-video-ad-script preparation command with --brief working/script/creative-brief.json and its documented bank/brand/product/template arguments; set the new shape.requires_creative_brief to true. The writer and critic consume that same angle-context. Save only the concise brief/revision and workspace reference in script_drafts extra fields, never full research/package contents. A missing required brief fails the script check; do not rerun known research or rewrite user-locked wording silently.
 
 Read references/specialist-handoff.md from the saved shared harness. For each selected UGC, product/demo or motion operation, extend the existing script_drafts.capability_plan entry with the exact approved brief/script revisions, mapped scene/beat numbers and timing, selected product/reference/source IDs and excerpt ranges, audio/performance choice, package/version/hash and expected returned artifact roles. These are existing extra draft/project artifacts, not new API parameters. Preserve the distinction between numeric script_drafts.scenes[].scene and string production scene IDs.
 

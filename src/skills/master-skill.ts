@@ -75,6 +75,52 @@ A missing custom entry or required custom tool/schema remains unavailable: never
 a template or an import to bypass it. Never hide other fetch errors or continue from cached
 instructions merely because the guide was not found.`;
 
+/**
+ * The Brain-first entry contract, shared by the router, goose-ads and every video
+ * entry. A fresh agent read the Kit, then asked the user for angles and proof
+ * the Brand Brain already held: no entry made the search a step, and several
+ * told it to ask. Searching is free and read-only, so it needs no approval.
+ */
+const BRAIN_FIRST_ENTRY = `## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After \`brand_read\`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+\`knowledge_search { brand_id, query }\`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one query in the user's own words plus the
+   product (for example "ads for <product>: what worked, what to avoid") and one with
+   \`source_types: ["evidence", "claim", "learning", "creative", "document"]\` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| \`status: "ok"\` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| \`status: "empty"\` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| \`building\` or \`refresh_required\` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from \`brand_read\` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A \`dont\`/\`must\` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Only a result with \`approved_ad_claim: true\` is claim-grade proof. Kit
+   text, documents and performance numbers are context, never public claims. Judge relevance and
+   skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.`;
+
 /** One prerequisite for template, custom and delegated video entry. */
 function videoEntryPreparation(slug: 'goose-video' | 'goose-video-local' | 'make-custom-video'): string {
   return `## Prepare the video workflow and brand before creative work
@@ -106,7 +152,8 @@ Onboarding completion, a summary-only response and earlier session notes do not 
 kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
 creative work. Use known kit facts while research is incomplete; do not restart research
 solely because its status is pending. Never invent a product fact or accept a campaign to
-bypass preparation.
+bypass preparation. Then search the Brand Brain (next section) before suggesting formats,
+choosing an angle or asking the user for a brand fact.
 
 Carry that context through custom/template/idea routing and delegation. Before writing, make
 the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
@@ -145,7 +192,9 @@ four-section correction and save the revised draft through its existing flow wit
 digest fields. If a connection that already returned a bundle cannot supply the fresh bundle,
 resolve that failure before rebinding. Review and approve the affected script, ingredients and
 budget through the normal flow. Never refresh an ongoing approved run automatically; its
-recorded package and brand inputs stay pinned until an intentional change.`;
+recorded package and brand inputs stay pinned until an intentional change.
+
+${BRAIN_FIRST_ENTRY}`;
 }
 
 const CUSTOMER_TALK = `## How to talk to the customer (applies to every message you send them)
@@ -361,7 +410,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.0.1
+version: 1.1.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -376,7 +425,7 @@ ${CUSTOMER_TALK}
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), and follow the matching workflow with that context. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
 
 ${VIDEO_GUIDE_COMPATIBILITY}
 
@@ -407,18 +456,22 @@ inputs and packages; an intentional change uses the existing affected review/app
 | **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
 | **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
 | **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
-| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" Kit proof points are context, not approved ad claims. |
 | **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
 
 Then:
 
-1. **Pass what it returned INTO the routed skill.** When you hand off to \`goose-ads\`, \`goose-video\`, \`goose-product-photos\`, \`goose-graphics\`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
-2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
+1. **Pass what it returned INTO the routed skill.** When you hand off to \`goose-ads\`, \`goose-video\`, \`goose-product-photos\`, \`goose-graphics\`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you, plus the evidence brief from the Brain search below. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
+2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context or the Brain search answers, they win — answer it yourself and move on. Ask only for what is genuinely missing after both, or a decision that is the user's to make.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
 4. **If \`brand_read\` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose \`brand_get_context\` / \`get_brand_kit\`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
 5. **A read grants no write permission.** Save explicit durable answers/corrections with the capture policy below. Propose agent-derived changes for review; never overwrite confirmed knowledge with research or a guess.
 
-Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
+Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, search
+the Brand Brain next. Ask the user only when that search cannot answer it and the answer is
+theirs to give.
+
+${BRAIN_FIRST_ENTRY}
 
 ## Setup
 
@@ -493,8 +546,8 @@ already volunteered in this chat, and **save known information first** using the
 mapping below. Do not run a long questionnaire as a prerequisite for making an ad.
 
 For facts needed by the task but absent from the read, call \`knowledge_search\` first if it is
-registered. Use returned citations and states honestly: an empty, building or failed index is
-not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
+registered, as in **"Search the Brand Brain, then propose"**. Use returned citations and states
+honestly: an empty, building or failed index is not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
 answered by trustworthy saved knowledge.
 
 Ask one short group of missing human-only facts at a time, in plain language, with the relevant
@@ -699,7 +752,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.4.0
+version: 2.5.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -727,21 +780,28 @@ no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reje
 
 ## Start from the brand context — don't re-ask what it already answers
 
-If the \`gooseworks\` router handed you brand context, USE IT. If you were invoked directly, call
-\`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\` first. It already
-answers most of what the flows below would otherwise ask the user:
+If the \`gooseworks\` router handed you brand context and an evidence brief, USE THEM. If you were
+invoked directly, call \`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }\`
+first, then search the Brand Brain (next section). Together they answer most of what the flows
+below would otherwise ask the user:
 
-- **Which product to feature** → \`products[]\`. Offer the real catalog entries; never guess a
+- **Which product to feature** → \`products[]\`. Recommend one real catalog entry; never guess a
   product name and never ask the user to list their products.
 - **The vibe / tone of the copy** → the brand's **voice**. Use it; don't ask "what tone?".
 - **Who the ad is for** → the brand's **audience**. Don't ask "who's the target?".
-- **The angle, offer framing, and what to claim** → **positioning**, value props, proof points.
+- **The angle and offer framing** → **positioning** and value props, sharpened by the Brain:
+  lead with an angle past approved creatives proved, and drop anything a saved rule forbids.
+- **What to claim** → only an approved claim (\`approved_ad_claim: true\` in the search, or the
+  kit's approved claims). Kit proof points, documents and performance numbers are context.
 - **Logo, colors, fonts** → owned by the backend research pass. **Never re-derive them.**
 - **Whether the facts are trustworthy yet** → **research status**. If it isn't complete, say so in
   one line and continue; the batch queues and runs when research finishes.
 
-Ask only for what the context genuinely doesn't answer: the specific campaign intent (season,
-promo, which of several angles), the source ad, and anything the user must consent to.
+Don't ask for the angle, product or tone: recommend them with a one-line reason. Ask only for a
+decision the brand read and the Brain search cannot settle (for example an offer or season the
+user hasn't mentioned) and for anything the user must consent to (rights, spend).
+
+${BRAIN_FIRST_ENTRY}
 
 ## Identity & credits
 
@@ -867,15 +927,18 @@ ${DURABLE_BRAND_CAPTURE}
 ## Picking source ads — use approved sources, not the retired catalog
 
 When the user wants to make ads but has NOT named a specific template (id/slug/Community
-ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
-short ask flow — it mirrors the web app and keeps the human in the loop:
+ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead send **one
+proposal** — it mirrors the web app and keeps the human in the loop without an interview:
 
-1. **Ask what kind of ads they want** — the angle/offer/theme/season. **The brand context already
-   gives you the vibe (voice), the audience, and the product catalog — do NOT ask for those.**
-   Offer the real \`products[]\` to pick from rather than asking "which product?", and derive the
-   tone from the brand's voice. This shapes both the source choice and your steering \`prompt\`.
-   Keep it to one quick question about campaign intent.
-2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
+1. **Propose the direction yourself.** From the brand read and the evidence brief, recommend the
+   product, angle/offer and tone, with a one-line reason naming what the Brain showed (a past
+   approved angle, a rule it respects). **Do NOT ask what kind of ads they want, which product,
+   or the vibe.** Keep any direction the user already gave. This shapes both the source choice
+   and your steering \`prompt\`.
+2. **Recommend a source in the same message: their own ads, Community, upload, or "Surprise me".**
+   Default to their own approved ads when suitable ones exist, otherwise "Surprise me" picks for
+   the brand; list the other paths as one-line alternatives. You may resolve the picks and a free
+   estimate first so the proposal already carries the credit total.
    - **Their own ads** → use \`list_user_ad_templates\` to load the active brand's own sources and
      let them choose from the results.
    - **Community** → \`search_ad_templates\`, let them choose, then call \`remix_community_ad\`
@@ -903,12 +966,13 @@ claim ownership, and never attest rights for the user.
 
 ## Workflow — make ads from a template
 
-1. **Resolve the brand.** Use \`list_ad_brands\` by name/site, then call \`get_brand_kit\` for the
-   selected brand. If the
-   kit's \`researchStatus\` isn't \`complete\`, you can still submit (the batch queues and runs when
-   research finishes) — just tell the user. Use the kit to pick \`product_name\` (a real entry from
-   \`products[]\`, not a guess) and, if the user supplied product photos, \`reference_image_urls\`.
-2. **Pick the source ad(s) via the ask flow above.** Once you have concrete ids:
+1. **Resolve the brand and its evidence.** List brands with \`brand_read\` (no \`brand_id\`; older
+   clients: \`list_ad_brands\`), then read the selected brand's summary, kit, products and
+   learnings and search the Brand Brain as above. If research isn't \`complete\`, you can still
+   submit (the batch queues and runs when research finishes) — just tell the user. Use the read to
+   pick \`product_name\` (a real entry from \`products[]\`, not a guess) and, if the user supplied
+   product photos, \`reference_image_urls\`.
+2. **Pick the source ad(s) via the proposal above.** Once you have concrete ids:
    call \`get_static_ad_template\` for each.
    For a Community ad, \`remix_community_ad\` first; for an uploaded image, \`create_user_ad_template\`
    first.
@@ -1014,8 +1078,11 @@ run through the \`gooseworks\` CLI (\`gooseworks fetch\` / \`gooseworks call\`),
   each creative's \`app_url\`), copied verbatim. Never end on just "done" or a file path.
 - **Quote cost before generating** when it's non-trivial (use \`estimate_remix_batch\`), and
   relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
-- **Use approved source paths.** If the user didn't name a source, run the ask flow (own ads,
-  Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
+- **Search the Brain before proposing.** After the brand read and before choosing an angle,
+  claim or source — or asking for a brand fact — run the task's \`knowledge_search\` and carry
+  its evidence brief. A failed or empty search is stated as such, never as "no evidence exists".
+- **Use approved source paths.** If the user didn't name a source, recommend one in the single
+  proposal (own ads, Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
   \`surprise_me_templates\`; browsing uses \`/create?brand=<slug>&cli=true\`. Never use the retired
   curated third-party catalog.
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
@@ -1052,7 +1119,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.1
+version: 3.0.2
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -1146,8 +1213,9 @@ bypass setup. Keep the original request.
 ### 2. Keep the goal and propose defaults
 
 Never ask what the ad is for before showing formats. Keep the customer's exact direction.
-Otherwise propose defaults from the verified kit's products, audience, offer and voice. Show
-those defaults in the saved plan so any can be changed. Never invent proof or product facts.
+Otherwise propose defaults from the verified kit's products, audience, offer and voice and the
+Brain search's evidence brief (proven angles, saved rules, approved claims). Show those defaults
+in the saved plan so any can be changed. Never invent proof or product facts.
 Idea requests still follow ad-angle-miner with the video output.
 
 ### 3. Show the picker or its text fallback
@@ -1283,7 +1351,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.3
+version: 0.6.4
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -2039,7 +2107,9 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   a catalogue card alone cannot establish fit. An impossible essential visual blocks
   the proposal until repaired. Do not force a testimonial into every format.
 - **Research only what is missing.** Fetching the miner does not spend or rerun research.
-  Reuse current facts and prior evidence. If paid collection is needed, its permission
+  Reuse current facts and prior evidence. The Brain search's evidence brief (citations, the
+  state of each query and open gaps) is the first source for the brief's source references and
+  prior decisions. If paid collection is needed, its permission
   rides in the existing choices round. A new product with no reviews can use verified
   facts and a feasible demo; do not require paid research merely to fill a quote quota.
 - **Choose eligible concepts only.** Take the strongest supported concept and validated

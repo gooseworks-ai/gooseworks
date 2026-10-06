@@ -12,7 +12,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.4.0
+version: 2.5.0
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -90,21 +90,66 @@ no HTTP/file fallback — the REST ad endpoints are session-cookie-only and reje
 
 ## Start from the brand context — don't re-ask what it already answers
 
-If the `gooseworks` router handed you brand context, USE IT. If you were invoked directly, call
-`brand_read { brand_id, sections: ["summary","kit","products","learnings"] }` first. It already
-answers most of what the flows below would otherwise ask the user:
+If the `gooseworks` router handed you brand context and an evidence brief, USE THEM. If you were
+invoked directly, call `brand_read { brand_id, sections: ["summary","kit","products","learnings"] }`
+first, then search the Brand Brain (next section). Together they answer most of what the flows
+below would otherwise ask the user:
 
-- **Which product to feature** → `products[]`. Offer the real catalog entries; never guess a
+- **Which product to feature** → `products[]`. Recommend one real catalog entry; never guess a
   product name and never ask the user to list their products.
 - **The vibe / tone of the copy** → the brand's **voice**. Use it; don't ask "what tone?".
 - **Who the ad is for** → the brand's **audience**. Don't ask "who's the target?".
-- **The angle, offer framing, and what to claim** → **positioning**, value props, proof points.
+- **The angle and offer framing** → **positioning** and value props, sharpened by the Brain:
+  lead with an angle past approved creatives proved, and drop anything a saved rule forbids.
+- **What to claim** → only an approved claim (`approved_ad_claim: true` in the search, or the
+  kit's approved claims). Kit proof points, documents and performance numbers are context.
 - **Logo, colors, fonts** → owned by the backend research pass. **Never re-derive them.**
 - **Whether the facts are trustworthy yet** → **research status**. If it isn't complete, say so in
   one line and continue; the batch queues and runs when research finishes.
 
-Ask only for what the context genuinely doesn't answer: the specific campaign intent (season,
-promo, which of several angles), the source ad, and anything the user must consent to.
+Don't ask for the angle, product or tone: recommend them with a one-line reason. Ask only for a
+decision the brand read and the Brain search cannot settle (for example an offer or season the
+user hasn't mentioned) and for anything the user must consent to (rights, spend).
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one query in the user's own words plus the
+   product (for example "ads for <product>: what worked, what to avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `building` or `refresh_required` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Only a result with `approved_ad_claim: true` is claim-grade proof. Kit
+   text, documents and performance numbers are context, never public claims. Judge relevance and
+   skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Identity & credits
 
@@ -283,15 +328,18 @@ routed skill; claims still pass their own safety gate.
 ## Picking source ads — use approved sources, not the retired catalog
 
 When the user wants to make ads but has NOT named a specific template (id/slug/Community
-ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead run this
-short ask flow — it mirrors the web app and keeps the human in the loop:
+ad/upload), do NOT silently browse the raw catalog and hand-pick for them. Instead send **one
+proposal** — it mirrors the web app and keeps the human in the loop without an interview:
 
-1. **Ask what kind of ads they want** — the angle/offer/theme/season. **The brand context already
-   gives you the vibe (voice), the audience, and the product catalog — do NOT ask for those.**
-   Offer the real `products[]` to pick from rather than asking "which product?", and derive the
-   tone from the brand's voice. This shapes both the source choice and your steering `prompt`.
-   Keep it to one quick question about campaign intent.
-2. **Ask how to pick a source: their own ads, Community, upload, or "Surprise me".**
+1. **Propose the direction yourself.** From the brand read and the evidence brief, recommend the
+   product, angle/offer and tone, with a one-line reason naming what the Brain showed (a past
+   approved angle, a rule it respects). **Do NOT ask what kind of ads they want, which product,
+   or the vibe.** Keep any direction the user already gave. This shapes both the source choice
+   and your steering `prompt`.
+2. **Recommend a source in the same message: their own ads, Community, upload, or "Surprise me".**
+   Default to their own approved ads when suitable ones exist, otherwise "Surprise me" picks for
+   the brand; list the other paths as one-line alternatives. You may resolve the picks and a free
+   estimate first so the proposal already carries the credit total.
    - **Their own ads** → use `list_user_ad_templates` to load the active brand's own sources and
      let them choose from the results.
    - **Community** → `search_ad_templates`, let them choose, then call `remix_community_ad`
@@ -319,12 +367,13 @@ claim ownership, and never attest rights for the user.
 
 ## Workflow — make ads from a template
 
-1. **Resolve the brand.** Use `list_ad_brands` by name/site, then call `get_brand_kit` for the
-   selected brand. If the
-   kit's `researchStatus` isn't `complete`, you can still submit (the batch queues and runs when
-   research finishes) — just tell the user. Use the kit to pick `product_name` (a real entry from
-   `products[]`, not a guess) and, if the user supplied product photos, `reference_image_urls`.
-2. **Pick the source ad(s) via the ask flow above.** Once you have concrete ids:
+1. **Resolve the brand and its evidence.** List brands with `brand_read` (no `brand_id`; older
+   clients: `list_ad_brands`), then read the selected brand's summary, kit, products and
+   learnings and search the Brand Brain as above. If research isn't `complete`, you can still
+   submit (the batch queues and runs when research finishes) — just tell the user. Use the read to
+   pick `product_name` (a real entry from `products[]`, not a guess) and, if the user supplied
+   product photos, `reference_image_urls`.
+2. **Pick the source ad(s) via the proposal above.** Once you have concrete ids:
    call `get_static_ad_template` for each.
    For a Community ad, `remix_community_ad` first; for an uploaded image, `create_user_ad_template`
    first.
@@ -430,8 +479,11 @@ run through the `gooseworks` CLI (`gooseworks fetch` / `gooseworks call`), like 
   each creative's `app_url`), copied verbatim. Never end on just "done" or a file path.
 - **Quote cost before generating** when it's non-trivial (use `estimate_remix_batch`), and
   relay `insufficient_credits` plainly if the submit is rejected — don't retry blindly.
-- **Use approved source paths.** If the user didn't name a source, run the ask flow (own ads,
-  Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
+- **Search the Brain before proposing.** After the brand read and before choosing an angle,
+  claim or source — or asking for a brand fact — run the task's `knowledge_search` and carry
+  its evidence brief. A failed or empty search is stated as such, never as "no evidence exists".
+- **Use approved source paths.** If the user didn't name a source, recommend one in the single
+  proposal (own ads, Community, upload, Surprise me, or browse in the app). "Surprise me" goes through
   `surprise_me_templates`; browsing uses `/create?brand=<slug>&cli=true`. Never use the retired
   curated third-party catalog.
   Generate when they paste the app's copyable remix prompt back (or submit the surprise picks
