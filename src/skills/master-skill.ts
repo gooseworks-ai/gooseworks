@@ -1283,7 +1283,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.2
+version: 0.6.3
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -2015,7 +2015,16 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   evidence and proof plan, not only its hook. Reuse the shared video-angle-bank.v1 from
   the brand's video-scripts workspace or this run. Prepare angle-context.json with the
   writer's preparation script with \`--brief working/script/creative-brief.json\` and use
-  its strict rule check before review. Save the sourced brief in the writer's documented
+  its strict rule check before review. First run the fetched writer's free
+  \`python3 <saved-writer-package>/scripts/verify_handoff.py --package-dir <saved-writer-package> --out working/script/writer-handoff-check.json\` check against those
+  actual saved prepare/lint scripts. Retain the result and script hashes with the run.
+  A provided writer package with a missing checker, failed check or unsupported flag
+  is incompatible: stop this handoff and refresh the package on the same connection.
+  Never use the provisional agent path after a provided package fails validation.
+  Only an actual \`not_found\` for an optional writer permits the explicit provisional
+  agent check below; a required writer remains blocked. Never silently remove the brief,
+  strict check or new shape requirement to run an older parser.
+  Save the sourced brief in the writer's documented
   shape: exact product/variant, buyer situation, supported mechanism, offer/CTA, constraints,
   delivery intent, source references, locked copy, applicable prior decisions and unknowns.
   New custom/template shapes set \`requires_creative_brief: true\`; both writer and critic
@@ -2037,9 +2046,11 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   hook into review, with up to two viable alternatives when the direction is open.
   Do not pad three concepts or select the highest-ranked rejected one. If all fail,
   repair within the brief and recipe before Step 3.
-- **Unavailable writer or research.** Complete an explicit agent check of claim support,
-  recipe limits, visual feasibility and hook payoff. Record missing provenance and say
-  in the review when research is provisional. Never report a failed check as a pass.
+- **Optional writer not found or unavailable research.** Only when the optional writer
+  returns \`not_found\`, complete an explicit agent check of claim support, recipe limits,
+  visual feasibility and hook payoff. Record missing provenance and say in the review when
+  research is provisional. A provided incompatible writer or another fetch error stops
+  the handoff. Never report a failed check as a pass.
 - **The user's exact lines** remain verbatim; use report-only checks and raise material
   timing, claim or format conflicts without silently rewriting them.
 - **No spoken words.** Still fit the visual promise, reveal, cards and CTA to the silent
@@ -2051,9 +2062,14 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
 
 Fetch \`video-production-harness\` and read its \`references/editorial-review.md\`,
 \`references/specialist-handoff.md\` and \`references/hook-compatibility.md\`, plus the
-review/edit/polish/promote/wrap steps when used. Save the fetched version/content hash with
-this run's capability records. These supply craft and evidence rules inside the template
-flow; this entry's existing review, paid approval, storage and two-repair limit still apply.
+review/edit/polish/promote/wrap steps when used. Verify every named file is returned as
+nonempty text before relying on that package. A version/content hash alone cannot establish
+that the required guides were published. Missing guides block new template creative work
+before project writes or paid previews; resolve the package on this same connection. Keep
+an unchanged approved resume on its recorded package and approvals.
+Save the fetched version/content hash with this run's capability records. These supply
+craft and evidence rules inside the template flow; this entry's existing review, paid
+approval, storage and two-repair limit still apply.
 Do not turn a template into a custom project or import the custom host's extra gates.
 
 Before executing a fetched recipe atom, pass the exact brief/script revision, scene/beat IDs,
