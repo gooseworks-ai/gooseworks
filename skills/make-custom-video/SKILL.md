@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.2.3
+version: 2.3.2
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -248,6 +248,28 @@ video_project_upsert must expose custom_mode and idempotency_key for creation, r
 
 The environment owner must confirm the app-MCP service rollout and refresh the connector's discovered tool schemas. Resume only when the required parameters are visible on the same selected connection. Review and approval stay in the current chat; the Studio creative page is optional. Custom generation requires separate authenticated script and ingredient approvals with their current review tokens and cumulative budgets. Template skills' one-approval instructions do not replace either custom gate. A missing approval field is a tool rollout mismatch, not a reason to require Chrome.
 
+## Match a named format before going custom
+
+Before creating a custom project, when the brief changes, and before any paid preview, check whether the request names or implies a catalog format: street interview / vox pop / man-on-the-street, street testimonial, podcast, iMessage or chat, split-screen creator, screen insert, listicle, and so on. Call video_catalog_list {kind:"formats", brand_id}, then fetch that format's renderer or recipe skill and run its own selector or checks.
+
+For a street interview, fetch render-street-interview, read its street-script-writing guide, write a brief JSON with mode, offering_type (physical, service or digital), interaction_type and participants (people interviewed on screen, not counting the interviewer), and run python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>. It exits 2 whenever the status is not ready-for-writing. Its route output is binding: route.support ("render" or "preview-only"), route.person_reference and route.max_participants. A status of unsupported-route lists route_gaps and alternatives; it is a stop, not permission to go custom: show the alternatives and go custom only if the customer picks it.
+
+| Street route | On screen | Person image reference | Status |
+| --- | --- | --- | --- |
+| render-street-interview product-guess (physical product only) | Interviewer and up to four participants in one take | Forbidden: people are written in the prompt; the only reference is a standalone physical product photo | Renders |
+| render-street-interview conversation (mic-only, product-sample, concept-challenge) | Interviewer and one participant | Forbidden: no reference images, no phone, screen or UI | Preview only in this format: script and prompt dry run, no paid render |
+| ugc-street-testimonial format | One person, no interviewer | Required: the creator still that format's recipe prescribes | Template format |
+
+If the request fits a route, use that format; a fitting template format is not a custom video. If nothing fits, tell the customer in plain words what is supported and what is preview only, and name the closest supported options (the selector's alternatives) and how each differs. Or propose custom and say why. Go custom only when the customer chooses it. A custom video built on a named format still keeps that format's hard constraints. For a street interview, those are:
+
+- people described in text, never as uploaded person photos;
+- one generation per interview take;
+- deep focus;
+- the first take at 720p;
+- every caption and letter drawn locally.
+
+A selector result of needs-reference or unsupported-route, a provisional creative review or an unobserved reference is unresolved. Report it and ask before script approval; never continue past it silently.
+
 ## Load the shared production harness first
 
 This entry contains only the GooseWorks connection. Production sequencing, creative craft, reviews and repair loops are maintained in video-production-harness, published from the existing Studio harness. Do not invent a shorter local workflow.
@@ -282,7 +304,9 @@ or gooseworks fetch <slug>. Inspect the selected connection's advertised schemas
 | Real product footage, screen recordings or screenshots | [[composes::footage-cutlist]] | Inspect source windows, map each proof shot to its line, review the cut list and render the product layer. |
 | Creator beside, over or between product footage | [[composes::compose-creator-layer]] | Combine the inspected creator track and product layer per beat. Preserve the creator's dialogue as the master audio. |
 | Native multi-cut performance or general generated B-roll | [[composes::create-video-seedance-2-fal]] or [[composes::create-video-fal]] | Choose from the actual supported endpoint/schema and quoted operations; use H3 when a continuous exact-script creator track is the better fit. |
-| Character anchors, grounded product edits or scene stills | [[composes::create-image-fal]] or [[composes::create-image-gpt-image-fal]] | Reuse approved identity and real product references. Check preview eligibility and bounded pricing for the exact endpoint. |
+| Street interview, vox pop or man-on-the-street | [[composes::render-street-interview]] | Run its selector first (see "Match a named format before going custom"). Keep its route contract: people in text, one take per interview, 720p first take, local captions, end card and ambience bed. Do not call its one-shot driver or create a second project. |
+| A generated person in any still or as a video reference | [[composes::create-creator-takes-h3]] (scripts/make_character.py) | Follow "People in generated images" below. The selected route decides whether a person still is allowed at all. |
+| Grounded product edits or scene stills without a person | [[composes::create-image-fal]] or [[composes::create-image-gpt-image-fal]] | Reuse approved product references. Check preview eligibility and bounded pricing for the exact endpoint. |
 | Separate narrator or voice audition | [[composes::create-vo-elevenlabs]] | Use the host-approved voice and locked copy. Do not add a second narration over native creator speech. |
 | Music bed or song | [[composes::create-music-elevenlabs]] | Include its actual quote in the phase budget; preserve the approved audio strategy and lyric/beat timing. |
 | Branded text cards, graphics or end card | [[composes::goose-graphics]] | Start from a fitting layout/style and real logo. It produces graphics; animation still requires an actual local renderer. |
@@ -292,12 +316,22 @@ or gooseworks fetch <slug>. Inspect the selected connection's advertised schemas
 | Replace a defective silent B-roll window in a UGC master | [[composes::ugc-fixloop]] | Keep the original continuous dialogue; this repair does not fix a talking shot's lips or voice. |
 | Complete-video observation and finished-ad checks | [[composes::watch]] and [[composes::review-finished-ad]] | Supply real frames/audio, brand assets and timestamps. Their results support the shared final QC; they do not grant approval. |
 
-For format-specific motion, chat, podcast, product or music layouts, search the catalog for
+For format-specific motion, chat, podcast, street-interview, product or music layouts, search the catalog for
 the matching render-* capability and inspect its config and inputs. Reuse a compatible
 renderer or phase implementation without changing the custom project into a fixed template.
 Do not call a template's one-shot driver, create a second project, or replace the shared
 production sequence just to use one of its helpers. The table is a starting map, not an
 exhaustive catalog or a promise that every published skill is executable on this connection.
+
+## People in generated images
+
+Apply this whenever a generated image or video shows a person: creator, presenter, interviewee or any face in focus. Customers reject smooth, airbrushed, AI-looking people and blurred backgrounds.
+
+- The selected route decides first. When it forbids person references (every render-street-interview route), describe people in the video prompt and make no person stills. When it requires a person reference, make it with the builder that route prescribes. The ugc-street-testimonial recipe prescribes its own creator still.
+- Otherwise, every generated person comes from create-creator-takes-h3's scripts/make_character.py. Fetch create-creator-takes-h3 and create-image-fal together, because the builder calls create-image-fal's gen_image.py. Pass the customer's six choices (age, gender, ethnicity, hair, wardrobe and scene) and keep its defaults: fal-ai/nano-banana-pro, 4K, phone capture with deep focus, head and upper chest, face filling 45 to 55 percent. Run it with --dry-run --payload-out <file> first: the file holds {model, body}, the exact request. Quote that body through data_post_provider with path set to its model and query:{quote_only:true}, as in "Saved review schema". Once the still is approved and quoted, run make_character.py again without --dry-run and with GW_PROJECT_ID set to this project, so the same body goes through the managed proxy.
+- Never hand-write a person prompt, fill the generic avatar template by hand, or use fal-ai/flux/dev, fal-ai/flux/schnell or another Flux route for a face. A hand-written generic prompt is not a substitute for the builder. If the builder's request cannot be quoted, report a pricing blocker.
+- Never send a generated photoreal person still as a reference image to bytedance/seedance-2.0/reference-to-video; its likeness gate refuses uploaded images of people. For an exact-script creator from an approved still, use create-creator-takes-h3's takes.
+- Before showing ingredients, crop each face, enlarge it 2× and look. Fix it or report it when skin is waxy or glossy, pores are missing, the background is blurred or bokeh, hands or lettering are garbled, or the face is under about 300 px tall. Show the customer only stills that pass.
 
 ## Bind and retain the selected specialists
 
@@ -429,7 +463,7 @@ Only the authenticated customer-facing connection can record the customer's appr
 
 ## Paid execution and resume
 
-Every managed media call carries project_id (GW_PROJECT_ID in scripts) and a stable input fingerprint. Use the managed fal/ElevenLabs endpoints and credentials supplied by Growth; never request customer provider keys. Do not expose those credentials in logs. Recheck custom_review before dispatch. The backend reserves estimated outstanding costs atomically, enforces the approved total (maximum3,000 credits) and prevents duplicate submissions. At most a20% overrun can be newly approved; this is not automatic permission to spend above the customer's selected limit.
+Every managed media call carries project_id (GW_PROJECT_ID in scripts) and a stable input fingerprint. Use the managed fal/ElevenLabs endpoints and credentials supplied by Growth; never request customer provider keys. Do not expose those credentials in logs. Recheck custom_review before dispatch. The backend reserves estimated outstanding costs atomically, enforces the approved total (maximum 3,000 credits) and prevents duplicate submissions. At most a 20% overrun can be newly approved; this is not automatic permission to spend above the customer's selected limit. A custom video's budget grows only through a renewed approval. On SPEND_CAP_REACHED the open render is asked to stop: report it "stopped" with what was kept (see "Render run states") and tell the customer what was made and spent. Then save a revised estimate, show the new custom_review.approval_quote with its current total, record the customer's approval of that total, and open a new render that reuses the saved pieces.
 
 Preview eligibility and price support are separate checks. Use an exact endpoint permitted by the backend preview policy and confirm its current request schema and server quote. Model discovery and provider pricing can change: use the selected connection's actual quote, including supported provider estimates, instead of a skill-maintained priced-model list. A model-family name does not make every route eligible for script previews. Do not move a preview to another phase to bypass its approval gate. If pricing cannot be established, keep the saved request and report a system pricing blocker; do not ask the customer to choose when their choices are already approved. Final clip models require ingredient approval. Existing-job polls remain permitted after edits; retrieval does not authorize new media.
 
@@ -440,6 +474,26 @@ Save provider request IDs and actual uploaded URLs promptly. Custom operations w
 Use the selected packages in script_drafts.capability_plan for each scene and operation. Recheck specialist discovery for new requirements or repairs before improvising a helper. Keep anchors and exact lines fixed. Use the Python assembly helper returned in the shared harness scripts for actual existing clips. It needs only Python, FFmpeg and FFprobe; it does not call a provider or require Chromium. Inspect generated clips before assembly, and watch the final export after assembly/captions.
 
 Open a render with video_render_run {brand_id,project_id,kind:"full"}; executor:"cloud_agent" for Growth when exposed by the current schema. Report live workflow_stage/progress_note/progress_percent while producing it. Upload the final file to scope:"video_project", scope_id:project_id. The tool opens/reports a client-executed render; fixed server orders remain paused.
+
+### Render run states
+
+Report the open render's state with video_render_run {brand_id,project_id,render:{render_id,...}}. Use the row that matches:
+
+| Situation | status | workflow_stage | quality_status | Also send |
+| --- | --- | --- | --- | --- |
+| Producing, checking or repairing | "running" | preparing, rendering, checking, repairing or rechecking | "pending" | progress_note, progress_percent, steps |
+| Waiting for the customer: they must approve a candidate, choose or give feedback, with or without an uploaded candidate | "running" | "blocked" | "blocked" | output_url when an uploaded candidate exists, error_message saying in plain words what you need from them, and choices (at most 4 buttons; put credits on any paid choice). A quality_report is optional while waiting; when sent, it carries the current findings |
+| Stop requested: a progress callback returned stop:true because the customer stopped the video or a paid step hit the spending limit | "stopped" | omit | omit | progress_note saying in plain words what was kept. Start no new paid step; let a call already running finish. |
+| Real failure: no usable candidate can be produced (provider refusal with no approved alternative, or a system blocker you cannot recover) | "failed" | omit (the server sets blocked) | "blocked" | error_message in plain words |
+| Done | "complete" | omit (the server sets ready) | "passed" | output_url and the full quality_report, only after the final recipe is saved and read back as described below |
+
+Waiting for the customer is not a failure, and neither is a stop. Never report "failed" because you are waiting for approval, a choice or feedback, or because the customer or the spending limit stopped the video. When stop:true comes with stop_reason "superseded", report nothing further on that render. The app shows a waiting render's candidate as "Needs your approval" and keeps it for up to 14 days; after that the server ends it as failed with failure_code review_expired. The uploaded file stays in the project either way.
+
+A waiting state is valid only while the approval it rests on is current. A render can complete only under the approval it was opened with. After any script or ingredient edit (yours or the customer's), or after review_expired, the old render cannot be completed: read video_project_read {brand_id,project_id,include:["assets","renders"]}, show the changed review and the current custom_review.approval_quote in chat, record the customer's approval of each phase it asks for, then open a new render. Opening a new render stops the older open render of this video with stop_reason "superseded" ("Replaced by a newer version."). Report nothing more on a superseded render and start no paid step for it; continue on the new one. To deliver an unchanged candidate on the new render, follow "Finalize an existing candidate after re-approval" below.
+
+When the customer approves a waiting candidate and nothing in the review changed, finish the shared final review and complete that same render; a candidate needs no separate approval phase. When they ask for changes, save the feedback and follow the normal edit and approval gates.
+
+On resume, treat a render left at "running" with workflow_stage "blocked" as a pending customer decision. Read custom_review and custom_review.feedback before doing anything else. If your own render shows stop_reason "superseded", another run replaced it: read video_project_read {brand_id,project_id,include:["assets","renders"]} and continue on the newer render; do not open another one just to resume.
 
 After each accepted generation or deterministic edit, update patch.production with the steps and settings that actually ran. Save and read back the actual candidate recipe before showing its preview or pausing for review, so an interrupted or waiting run does not leave only an early plan in the backend. Partial progress is allowed; pending creative approval or QC must stay explicit and must never be converted into passing clip evidence.
 
@@ -535,19 +589,31 @@ The following is a one-scene JSON shape example. Replace all placeholders with a
 }
 ```
 
-Complete with video_render_run {brand_id,project_id,render:{render_id,status:"complete",output_url,quality_status:"passed",quality_report:{version:1,summary,checks:{source,brand,product,hook_and_scene_order,voice_and_script,captions,endcard_and_cta,duration_and_ratio,visual_artifacts},detected_issues:[],repair_actions:[],checked_at}}}. Each final check is {status:"pass"|"fail"|"not_applicable",note}; brand/product/scene order/duration/visual artifacts must pass. Save a failed candidate as blocked/failed with its issue, not complete. Final completion binds approval revisions, output and quality evidence to the render; pin with patch.final_render_id only after passing.
+Complete with video_render_run {brand_id,project_id,render:{render_id,status:"complete",output_url,quality_status:"passed",quality_report:{version:1,summary,checks:{source,brand,product,hook_and_scene_order,voice_and_script,captions,endcard_and_cta,duration_and_ratio,visual_artifacts},detected_issues:[],repair_actions:[],checked_at}}}. Each final check is {status:"pass"|"fail"|"not_applicable",note}; brand/product/scene order/duration/visual artifacts must pass. A candidate that fails QC is never complete: keep it "running" with workflow_stage "repairing" while you fix it, report the waiting state above when the customer must decide, and use "failed" only for a real failure. Final completion binds approval revisions, output and quality evidence to the render; pin with patch.final_render_id only after passing.
 
 All nine named final checks above are required, including source, voice_and_script, captions and endcard_and_cta when they are not applicable. A final check uses status:"pass"|"fail"|"not_applicable" and an optional note. The five mandatory passing checks are brand, product, hook_and_scene_order, duration_and_ratio and visual_artifacts; no final check may fail and detected_issues must be empty to complete. Record why a permitted check is not_applicable. Keep actual repair_actions and use the actual ISO 8601 checked_at time. The backend report is a minimum; it does not replace the full shared watch, claim verification or craft review.
 
-This blocked report illustrates every required field. Replace its findings and example timestamp with actual evidence. Only after repairs and the shared final review pass may the render be reported complete with quality_status:"passed", its confirmed output_url and no unresolved issues.
+This waiting-for-the-customer report illustrates every required field. Replace the URL, reason, choices, findings and example timestamp with actual evidence. Only after repairs and the shared final review pass may the render be reported complete with quality_status:"passed", its confirmed output_url and no unresolved issues.
 
 ```json
 {
   "render": {
     "render_id": "<existing render ID>",
-    "status": "failed",
+    "status": "running",
+    "workflow_stage": "blocked",
     "quality_status": "blocked",
-    "error_message": "<actual unresolved issue>",
+    "output_url": "https://example.com/confirmed-candidate-in-this-project.mp4",
+    "error_message": "<what you need from the customer, in plain words>",
+    "choices": [
+      {
+        "label": "Approve this version",
+        "message": "I approve this version"
+      },
+      {
+        "label": "Change something",
+        "message": "I want to change something in this version"
+      }
+    ],
     "quality_report": {
       "version": 1,
       "summary": "<actual full-video review summary>",
@@ -598,6 +664,17 @@ This blocked report illustrates every required field. Replace its findings and e
   }
 }
 ```
+
+### Finalize an existing candidate after re-approval
+
+Use this when an uploaded candidate (a confirmed video in this project) already shows and says exactly what the current script says, but its render can no longer complete: the script was amended to match the take, or the wait ended as review_expired. If any spoken line, caption, scene or ingredient differs from the current script, this route does not apply: repair or regenerate under the normal gates.
+
+1. If the script changed, save it and record the customer's script approval first, as in "Record each approval in this chat". Then save the candidate as a video ingredient (its confirmed URL) in the review set, show the candidate and the current custom_review.approval_quote in chat, and record the ingredient approval. The earlier render was approved against the old review, and the server will not complete it.
+2. Open a new render with video_render_run {brand_id,project_id,kind:"full"}. Start no provider call. The older waiting render stops as superseded.
+3. Run the shared final review on the existing file against the current script. voice_and_script and captions must match the current lines.
+4. Save and read back the final production recipe with the current lines and one checked clip per scene, as described in "Clips, assembly and quality". Reuse the clip records from the candidate's saved recipe, updated to the current lines.
+5. Complete the new render with status:"complete", output_url set to the existing candidate's confirmed URL, quality_status:"passed" and the full quality_report. Do not regenerate or re-upload. No credits are spent.
+6. Pin it with video_project_upsert patch.final_render_id (alias set_final_render).
 
 ## Feedback and delivery
 

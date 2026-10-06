@@ -7,7 +7,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.2
+version: 3.0.3
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -208,9 +208,9 @@ approval, no announcement to the customer and no questionnaire.
 
 On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
-## Custom videos: route before formats
+## Custom videos: check formats first
 
-For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template choice or import the reference as a finished video.
+First check the catalog: when the brief names or implies a listed format (for example a street interview, testimonial, podcast or chat video), show that format and its fit through the format flow below, including its support status. Go custom only when no format fits and the customer chooses custom after hearing why; custom keeps that format's hard constraints. For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template that does not fit or that the customer declined, and do not import the reference as a finished video.
 
 ## Route first: is this a new video?
 
