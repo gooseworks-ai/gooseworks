@@ -53,6 +53,9 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
+      - name: Provide Changesets base branch
+        if: github.ref_name == 'dev'
+        run: git branch --no-track main origin/main
       - id: plan
         run: node scripts/release.cjs prepare
       - if: steps.plan.outputs.publish == 'true'

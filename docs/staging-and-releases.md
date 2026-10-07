@@ -37,8 +37,9 @@ An npm maintainer opens the `gooseworks` package's settings and adds a GitHub Ac
 | Repository | `gooseworks` |
 | Workflow filename | `release.yml` |
 | Environment | `npm-release` |
+| Allowed actions | Allow direct publishing with `npm publish` |
 
-Create the GitHub `npm-release` environment and allow `dev` and `main` to deploy. Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. The workflow uses npm OIDC, so no npm token or local npm login is needed.
+The GitHub `npm-release` environment already allows `dev` and `main` to deploy. Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. The workflow uses npm OIDC, so no npm token or local npm login is needed. New npm trusted publishers default to staged publishing; explicitly allow `npm publish` for this workflow. See [npm's trusted publishing setup](https://docs.npmjs.com/trusted-publishers/).
 
 Add a Changeset to CLI changes with `npm run changeset`. Raise feature PRs to `dev`; test the resulting `@next` package, then promote to `main`. Merge the bot's **Release GooseWorks CLI** version PR to publish the stable version. The bot does the version bump, generated manifest, changelog, build, tests, packaging, npm publish, and GitHub release.
 
