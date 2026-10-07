@@ -104,12 +104,29 @@ describe('skills/master-skill', () => {
     });
 
     it('routes ScrapeCreators through MCP in terminal-free clients', () => {
-      expect(content).toContain('call_data_provider');
+      expect(content).toContain('data_call_provider');
+      expect(content).toContain('data_post_provider');
       expect(content).toMatch(/Choose the available runtime.*MCP first/i);
       expect(content).toMatch(/environment-neutral operation/i);
       expect(content).toMatch(/Do not shell out.*separate provider key/i);
       expect(content).toMatch(/gooseworks call <provider> <path>/i);
       expect(content).not.toMatch(/paid data[\s\S]*still requires the CLI for now/i);
+    });
+
+    // QA-26: the connector lists only canonical tool names. A chat agent told to
+    // call a retired name cannot find it and tells the customer to update a
+    // terminal they do not have. Legacy brand reads stay only as a labelled fallback.
+    it('names only tools the GooseWorks connector lists for the no-CLI path (QA-26)', () => {
+      expect(content).toContain('`gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**');
+      expect(content).toContain('`gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`**');
+      expect(content).toContain('`gooseworks credits` → **`account_whoami`**');
+      for (const retired of ['call_data_provider', 'post_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
+        expect(content).not.toContain(retired);
+      }
+      for (const line of content.split('\n').filter((l) => /brand_get_context|get_brand_kit/.test(l))) {
+        expect(line).toMatch(/older|fallback/i);
+      }
+      expect(content).toMatch(/In a chat app, never tell the user to install or update a\s+CLI or terminal/);
     });
   });
 

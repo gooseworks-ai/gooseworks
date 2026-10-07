@@ -418,7 +418,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.1.0
+version: 1.1.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -491,9 +491,11 @@ Skills may describe a managed provider request as an environment-neutral operati
 \`provider\`, \`method\`, \`path\`, and optional \`query\` or \`body\`. Execute the operation through
 the first available runtime:
 
-1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass the
-   operation directly to \`call_data_provider\`. This is the preferred path in ChatGPT, Cowork,
-   and other terminal-free clients. Do not shell out and do not ask for a separate provider key.
+1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass a GET
+   operation directly to \`data_call_provider\` (\`provider\`, \`path\`, \`query\`) and a POST
+   operation to \`data_post_provider\` (\`provider\`, \`path\`, \`body\`, optional \`query\`).
+   This is the preferred path in ChatGPT, Cowork, and other terminal-free clients.
+   Do not shell out and do not ask for a separate provider key.
 2. Otherwise, if a local terminal and the \`gooseworks\` CLI are available, translate the same
    operation into \`gooseworks call <provider> <path>\` with its method, query, and body options.
 3. Otherwise, follow the provider dependency's direct-key path only when the user has supplied
@@ -501,10 +503,15 @@ the first available runtime:
    the provider call ran.
 
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
-\`mcp__gooseworks__*\` tools are connected, use these equivalents:
-- \`gooseworks search <q>\` → the **\`search_skills\`** MCP tool.
-- \`gooseworks fetch <slug>\` → the **\`fetch_skill\`** MCP tool (same content/scripts/files/deps).
-- \`gooseworks credits\` → the **\`get_ad_credits\`** MCP tool.
+GooseWorks MCP tools are connected (\`mcp__gooseworks__*\` in a coding agent; the plain tool names
+in a chat app), use these equivalents:
+- \`gooseworks search <q>\` → **\`catalog_search { type: "skill", query: "<q>" }\`**.
+- \`gooseworks fetch <slug>\` → **\`catalog_fetch { type: "skill", slug: "<slug>" }\`** (same content/scripts/files/deps).
+- \`gooseworks credits\` → **\`account_whoami\`** (its credit wallet is the balance).
+
+If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
+user to reconnect or refresh GooseWorks. In a chat app, never tell the user to install or update a
+CLI or terminal.
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
