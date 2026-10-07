@@ -7,7 +7,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.3
+version: 3.0.4
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -211,6 +211,37 @@ On an approved resume, keep the saved brief and evidence; search again only for 
 ## Custom videos: check formats first
 
 First check the catalog: when the brief names or implies a listed format (for example a street interview, testimonial, podcast or chat video), show that format and its fit through the format flow below, including its support status. Go custom only when no format fits and the customer chooses custom after hearing why; custom keeps that format's hard constraints. For an original brief without a reference template, an Instagram reel/post URL or a direct video URL to study, fetch `catalog_fetch { type: "skill", slug: "make-custom-video" }` and follow it in this same session. It creates format:"custom", custom_mode:"generate" with the brief and optional reference_url. Growth executes in its managed sandbox; connected agents use their shell. Script and actual ingredients are reviewed and separately approved in the same chat before paid production; Studio is optional. Do not force a template that does not fit or that the customer declined, and do not import the reference as a finished video.
+
+## Run the format's route check before proposing it
+
+A catalog row says what a format is best for and ranks it for the brand. It does not say whether
+the format can make the setup the customer asked for (how many people, mic only, no product).
+Some renderers declare a route selector that decides that; today that is the street interview
+(`render-street-interview`). Before you propose, script or create a street-interview project,
+template or custom, run its check:
+
+1. Fetch `catalog_fetch { type: "skill", slug: "render-street-interview" }` (older clients:
+   `fetch_skill("render-street-interview")`) and save its scripts and files under
+   `/tmp/gooseworks-scripts/render-street-interview/`.
+2. With a shell, write a brief JSON with `mode` (`product-guess` or `conversation`),
+   `offering_type` (`physical`, `service` or `digital`, from the brand kit),
+   `interaction_type` (`product-guess`, `mic-only`, `product-sample` or
+   `concept-challenge`) and `participants` (people interviewed on screen, not counting the
+   interviewer). Run its free dry run, which makes no paid call:
+   `python3 /tmp/gooseworks-scripts/render-street-interview/scripts/prepare_script_context.py --brief <brief.json> --out <context.json>`.
+   Without a shell, apply the route table in its instructions the same way.
+3. **`unsupported-route` is a stop.** The script exits 2 and prints each `route gap:` and
+   `alternative:`. Tell the customer plainly, in one line, that this setup isn't supported and
+   why (for example: "A three-person street interview isn't something we can make for software
+   yet: the guessing version needs a physical product to hand over, and the mic-only version
+   takes one person."). Then offer its alternatives, each with how it differs. Do not create the
+   project or write a script for it. Go custom only if the customer picks it; custom keeps every
+   route constraint.
+4. Any other status means the route exists. Fix any `brief_gaps` and run it again;
+   `needs-reference` is a script-research gap for later, not a route problem. Carry the
+   `route` (support, participant limit, person-reference rule) into the plan. A
+   `preview-only` route makes a script and prompt preview, not a finished video: say so before
+   the customer chooses it.
 
 ## Route first: is this a new video?
 
@@ -423,6 +454,9 @@ contain a full picker independently of the item page.
   Write "no demo yet" when absent. Never put links only in a question control.
 - A format whose card contradicts what they asked for is never Suggested. Never offer
   available_here:false as an executable choice. Relay not_available_here in one short line.
+- `suggested` ranks a row for the brand; it never means the row makes the setup they named.
+  Never tell the customer a row is "exactly" what they asked for beyond what its card says. A
+  street interview still needs the route check above first.
 - Missing required assets are missing; unknown suitability is “needs review.” Inspect the
   selected format's candidates before spending. Never promise an unverified asset is ready.
 - Template formats use **one plan, one approval with the total in credits**, not approval for
