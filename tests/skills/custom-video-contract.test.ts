@@ -129,7 +129,9 @@ describe('custom video documented API payloads', () => {
     expect(c).toContain('python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>');
     expect(c).toContain('it is a stop, not permission to go custom');
     // A device showing the app is a prop: guessing stays unsupported (T-STR-3).
-    expect(c).toContain('A laptop, phone or other device showing software is a prop, not a physical product: offering_type stays digital or service');
+    expect(c).toContain('For a software, app or service brand, a laptop, phone or other device showing the software is a prop, not their product: offering_type stays digital or service, so guessing stays unsupported.');
+    // A device or hardware brand sells a physical product and keeps guessing.
+    expect(c).toContain('A brand that sells the device or hardware itself is physical and keeps guessing.');
     expect(c).toMatch(/conversation \(mic-only, product-sample, concept-challenge\).*Preview only/);
     expect(c).toContain("keeps that format's hard constraints");
     expect(c).toContain('never continue past it silently');

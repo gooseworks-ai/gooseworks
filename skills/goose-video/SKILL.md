@@ -241,8 +241,8 @@ finished video yet), the street testimonial if the catalog lists it, or custom. 
 never unlocks a route the table or the selector rules out.
 
 For such a brand the catalog marks the street-interview rows `fit.ok: false`: they can't make
-a finished video for it. That verdict is about the finished video, so you may still mention the
-one-person conversation, saying plainly that it is a script and prompt preview only.
+a finished video for it. That verdict is about the finished video, so still offer the one-person
+conversation, saying plainly that it is a script and prompt preview only.
 
 - **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
@@ -510,8 +510,9 @@ contain a full picker independently of the item page.
 - A format whose card contradicts what they asked for is never Suggested. Never offer
   available_here:false as an executable choice. Relay not_available_here in one short line.
 - A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer,
-  after hearing why, still asks for it; tell them why in plain words (its `fit.reason`), never
-  the field name.
+  after hearing why, still asks for it (the street conversation preview is the one exception; see
+  the route check). When they ask about one, tell them why in plain words (its `fit.reason`),
+  never the field name.
 - `suggested` ranks a row for the brand; it never means the row makes the setup they named.
   Never tell the customer a row is "exactly" what they asked for beyond what its card says. A
   street interview still needs the route check above first.

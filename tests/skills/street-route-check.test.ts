@@ -105,11 +105,11 @@ describe('goose-video street-interview route check', () => {
       'For such a brand the catalog marks the street-interview rows `fit.ok: false`: they can\'t make a finished video for it.',
     );
     expect(block).toContain(
-      'you may still mention the one-person conversation, saying plainly that it is a script and prompt preview only.',
+      'so still offer the one-person conversation, saying plainly that it is a script and prompt preview only.',
     );
     const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
     expect(picker).toContain(
-      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it; tell them why in plain words (its `fit.reason`), never the field name.',
+      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it (the street conversation preview is the one exception; see the route check). When they ask about one, tell them why in plain words (its `fit.reason`), never the field name.',
     );
   });
 
