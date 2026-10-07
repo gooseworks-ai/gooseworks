@@ -1190,8 +1190,8 @@ change the interaction, mode or number of people just to make a check pass.
      \`/tmp/gooseworks-scripts/render-street-interview/scripts/<name>\` and each \`files\` entry at
      \`/tmp/gooseworks-scripts/render-street-interview/<path>\`. Or call
      \`catalog_fetch { type: "skill", slug: "render-street-interview", delivery: "archive" }\`,
-     extract the ZIP, check each file against its \`manifest.json\` hashes and copy its
-     \`agent-config/skills/render-street-interview/\` folder to
+     extract the ZIP, check each file against its \`manifest.json\` hashes and copy the contents of its
+     \`agent-config/skills/render-street-interview/\` folder into
      \`/tmp/gooseworks-scripts/render-street-interview/\`. Either way the selector reads
      \`references/street-reference-library.json\` from that folder.
   2. Write a brief JSON. \`mode\` and \`interaction_type\` go in pairs: \`product-guess\` with

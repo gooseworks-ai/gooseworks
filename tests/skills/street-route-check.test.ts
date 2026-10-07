@@ -52,7 +52,7 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain('`gooseworks fetch render-street-interview > <file.json>`');
     expect(block).toContain('delivery: "archive"');
     // The archive keeps the skill under agent-config/skills/<slug>/.
-    expect(block).toContain('check each file against its `manifest.json` hashes and copy its `agent-config/skills/render-street-interview/` folder');
+    expect(block).toContain('check each file against its `manifest.json` hashes and copy the contents of its `agent-config/skills/render-street-interview/` folder into');
     expect(block).toContain('If the fetch or the run fails, decide from the table.');
     expect(block).toContain('makes no paid call');
     // The selector's own accepted values (prepare_script_context.py).
