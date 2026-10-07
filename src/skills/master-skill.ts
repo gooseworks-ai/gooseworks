@@ -1185,12 +1185,15 @@ change the interaction, mode or number of people just to make a check pass.
 - **With a shell** (the customer's computer or the coworker sandbox), also run its free
   selector, which makes no paid call. If the fetch or the run fails, decide from the table.
   1. Fetch the renderer to a file, not into the conversation: its inline package is over a
-     million characters. Use \`gooseworks fetch render-street-interview > <file.json>\`, or
-     \`catalog_fetch { type: "skill", slug: "render-street-interview", delivery: "archive" }\` and
-     extract the ZIP after checking its hashes. Save each \`scripts\` entry as
+     million characters. Either save the JSON from \`gooseworks fetch render-street-interview > <file.json>\`,
+     then write each \`scripts\` entry as
      \`/tmp/gooseworks-scripts/render-street-interview/scripts/<name>\` and each \`files\` entry at
-     \`/tmp/gooseworks-scripts/render-street-interview/<path>\`; the selector reads
-     \`references/street-reference-library.json\` from there.
+     \`/tmp/gooseworks-scripts/render-street-interview/<path>\`. Or call
+     \`catalog_fetch { type: "skill", slug: "render-street-interview", delivery: "archive" }\`,
+     extract the ZIP, check each file against its \`manifest.json\` hashes and copy its
+     \`agent-config/skills/render-street-interview/\` folder to
+     \`/tmp/gooseworks-scripts/render-street-interview/\`. Either way the selector reads
+     \`references/street-reference-library.json\` from that folder.
   2. Write a brief JSON. \`mode\` and \`interaction_type\` go in pairs: \`product-guess\` with
      \`product-guess\`, or \`conversation\` with \`mic-only\`, \`product-sample\` or \`concept-challenge\`.
      \`offering_type\` is exactly \`physical\`, \`service\` or \`digital\` (software, SaaS and apps are
@@ -1211,8 +1214,9 @@ person, and the three-person version needs a physical product to hand over." The
 closest supported options in plain words, each with how it differs. With a shell, these are the
 selector's \`alternatives\`. Without one, take them from the table:
 
-- the same setup within its limit: guessing with up to four people, a finished video; or a
-  conversation with one person, a script preview only;
+- when only the number of people was the problem, the same setup within its limit: guessing
+  (a physical product only) with up to four people, a finished video; or a conversation with
+  one person, a script preview only;
 - for something people can't hold (software, a service), a one-person conversation instead
   of guessing;
 - one person talking to camera with no interviewer, if the catalog lists that format;

@@ -51,6 +51,8 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain('Fetch the renderer to a file, not into the conversation');
     expect(block).toContain('`gooseworks fetch render-street-interview > <file.json>`');
     expect(block).toContain('delivery: "archive"');
+    // The archive keeps the skill under agent-config/skills/<slug>/.
+    expect(block).toContain('check each file against its `manifest.json` hashes and copy its `agent-config/skills/render-street-interview/` folder');
     expect(block).toContain('If the fetch or the run fails, decide from the table.');
     expect(block).toContain('makes no paid call');
     // The selector's own accepted values (prepare_script_context.py).
@@ -71,7 +73,7 @@ describe('goose-video street-interview route check', () => {
     // With a shell the selector decides them; without one, the table, never
     // a fixed list (a five-person guessing request gets four people, not one).
     expect(block).toContain("With a shell, these are the selector's `alternatives`. Without one, take them from the table:");
-    expect(block).toContain('- the same setup within its limit: guessing with up to four people, a finished video; or a conversation with one person, a script preview only;');
+    expect(block).toContain('- when only the number of people was the problem, the same setup within its limit: guessing (a physical product only) with up to four people, a finished video; or a conversation with one person, a script preview only;');
     expect(block).toContain("- for something people can't hold (software, a service), a one-person conversation instead of guessing;");
     expect(block).toContain('- a custom video, untested, that keeps the street format\'s limits.');
     expect(block).toContain('Never use route names or the script\'s wording.');
