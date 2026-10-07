@@ -97,19 +97,28 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain(
       'a one-person conversation (a script and prompt preview only, no finished video yet)',
     );
+    expect(block).toContain('the street testimonial if the catalog lists it and does not rule it out, or custom.');
     expect(block).toContain('Asking again never unlocks a route the table or the selector rules out.');
   });
 
   it("reads the catalog's fit.ok false on a street row as no finished video, not as no conversation", () => {
     expect(block).toContain(
-      'For such a brand the catalog marks the street-interview rows `fit.ok: false`: they can\'t make a finished video for it.',
+      'When they asked for a street interview, the catalog may mark (newer servers do) the street-interview rows `fit.ok: false` for such a brand: they can\'t make a finished video for it.',
     );
     expect(block).toContain(
       'so still offer the one-person conversation, saying plainly that it is a script and prompt preview only.',
     );
+    // A device brand whose kit reads as software: confirm before overriding the catalog.
+    expect(block).toContain(
+      'tell the customer the catalog flagged it and confirm what they sell before offering guessing with that device.',
+    );
     const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
     expect(picker).toContain(
-      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it (when they asked for a street interview, the one-person conversation preview is the one exception; see the route check). When they ask about one, tell them why in plain words (its `fit.reason`), never the field name.',
+      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it.',
+    );
+    // Insisting is not a way around the street route check (review round 4).
+    expect(picker).toContain(
+      'For a street interview, insisting never unlocks a route the route check rules out; when they asked for one, the one-person conversation preview is the one exception (see the route check).',
     );
   });
 
