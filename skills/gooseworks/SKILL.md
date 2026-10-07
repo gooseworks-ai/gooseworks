@@ -94,13 +94,13 @@ brand and onboarding flow; it does not create another onboarding checklist.
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
-| Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
+| Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-ads" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
+| Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-graphics" }`. In a terminal, use the installed copy if present; otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
 | Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume. |
 | Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate script and ingredient approvals are required in the same chat | **`make-custom-video`** | Fetch the current make-custom-video entry and its production harness for new work, then read summary, kit, products and learnings before script writing. Read an existing project first and retain its approved package/context on resume. |
 | Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Read the existing project first. Use the current goose-video-local entry as the connection adapter, retain approved recipe packages/context and apply brand preparation before a new plan or script. |
-| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Animate an approved static ad or product image | **`animate-image`** | Fetch with `gooseworks fetch animate-image` and follow its GooseWorks MCP workflow. |
+| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-product-photos" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
+| Animate an approved static ad or product image | **`animate-image`** | Fetch it (`catalog_fetch { type: "skill", slug: "animate-image" }` in a chat app, `gooseworks fetch animate-image` in a terminal) and follow its GooseWorks MCP workflow. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -206,15 +206,15 @@ the first available runtime:
    the provider call ran.
 
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
-GooseWorks MCP tools are connected (`mcp__gooseworks__*` in a coding agent; the plain tool names
-in a chat app), use these equivalents:
+GooseWorks MCP tools are connected, use these equivalents. Match on the tool name: a coding agent
+may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat app may not.
 - `gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**.
 - `gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`** (same content/scripts/files/deps).
-- `gooseworks credits` → **`account_whoami`** (its credit wallet is the balance).
+- `gooseworks credits` → **`account_whoami`** (the balance is `credits.available_credits`).
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
-user to reconnect or refresh GooseWorks. In a chat app, never tell the user to install or update a
-CLI or terminal.
+user to reconnect or refresh GooseWorks. Installing or updating the `gooseworks` CLI never fixes
+a missing connector tool, so never send a chat-app user to a terminal for it.
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same

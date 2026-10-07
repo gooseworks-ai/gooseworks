@@ -503,15 +503,15 @@ the first available runtime:
    the provider call ran.
 
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
-GooseWorks MCP tools are connected (\`mcp__gooseworks__*\` in a coding agent; the plain tool names
-in a chat app), use these equivalents:
+GooseWorks MCP tools are connected, use these equivalents. Match on the tool name: a coding agent
+may show a server prefix (for example \`mcp__gooseworks__catalog_search\`), a chat app may not.
 - \`gooseworks search <q>\` → **\`catalog_search { type: "skill", query: "<q>" }\`**.
 - \`gooseworks fetch <slug>\` → **\`catalog_fetch { type: "skill", slug: "<slug>" }\`** (same content/scripts/files/deps).
-- \`gooseworks credits\` → **\`account_whoami\`** (its credit wallet is the balance).
+- \`gooseworks credits\` → **\`account_whoami\`** (the balance is \`credits.available_credits\`).
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
-user to reconnect or refresh GooseWorks. In a chat app, never tell the user to install or update a
-CLI or terminal.
+user to reconnect or refresh GooseWorks. Installing or updating the \`gooseworks\` CLI never fixes
+a missing connector tool, so never send a chat-app user to a terminal for it.
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same

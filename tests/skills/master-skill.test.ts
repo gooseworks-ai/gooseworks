@@ -10,6 +10,9 @@ import {
   RENDER_OPEN_ARGS,
   RENDER_UPDATE_KEY,
 } from '../../src/skills/master-skill';
+import { DOMAIN_ROUTES } from '../../src/skills/routes';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -120,13 +123,33 @@ describe('skills/master-skill', () => {
       expect(content).toContain('`gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**');
       expect(content).toContain('`gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`**');
       expect(content).toContain('`gooseworks credits` → **`account_whoami`**');
-      for (const retired of ['call_data_provider', 'post_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
-        expect(content).not.toContain(retired);
+      expect(content).toMatch(/never send a chat-app user to a terminal for it/);
+
+      const connector = JSON.parse(
+        readFileSync(join(__dirname, '..', 'fixtures', 'connector-tool-names.json'), 'utf8'),
+      ) as { served: string[]; retired: string[] };
+      const served = new Set(connector.served);
+      const retired = new Set(connector.retired);
+      const retiredOutsideFallback: string[] = [];
+      const unservedCalls: string[] = [];
+      for (const line of content.split('\n')) {
+        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)/g)) {
+          if (retired.has(name) && !/older|fallback/i.test(line)) retiredOutsideFallback.push(name);
+        }
+        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*) \{/g)) {
+          if (!served.has(name)) unservedCalls.push(name);
+        }
       }
-      for (const line of content.split('\n').filter((l) => /brand_get_context|get_brand_kit/.test(l))) {
-        expect(line).toMatch(/older|fallback/i);
+      expect(retiredOutsideFallback).toEqual([]);
+      expect(unservedCalls).toEqual([]);
+    });
+
+    it('gives every CLI-delivered route a chat-app path (QA-26)', () => {
+      for (const route of DOMAIN_ROUTES) {
+        if (/gooseworks (install|fetch)/.test(route.how)) {
+          expect(route.how).toContain(`catalog_fetch { type: "skill", slug: "${route.skill}" }`);
+        }
       }
-      expect(content).toMatch(/In a chat app, never tell the user to install or update a\s+CLI or terminal/);
     });
   });
 
