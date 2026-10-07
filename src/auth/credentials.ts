@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { API_BASE } from '../config';
+import { assertConnection, getEnvironment, profileRoot } from '../environment';
 
 export interface Credentials {
   api_key: string;
@@ -17,26 +18,36 @@ export interface Credentials {
   mcp_server_url?: string;
 }
 
-const CREDENTIALS_DIR = path.join(os.homedir(), '.gooseworks');
-const CREDENTIALS_FILE = path.join(CREDENTIALS_DIR, 'credentials.json');
+function credentialsFile(): string { return path.join(profileRoot(), 'credentials.json'); }
+const LEGACY_FILE = path.join(os.homedir(), '.gooseworks', 'credentials.json');
+
+export function validateCredentials(creds: Credentials): void {
+  assertConnection(creds.api_base, 'api');
+  if (creds.mcp_server_url) assertConnection(creds.mcp_server_url, 'mcp');
+}
 
 export function getCredentials(): Credentials | null {
+  let parsed: Credentials;
   try {
-    if (!fs.existsSync(CREDENTIALS_FILE)) {
+    const file = fs.existsSync(credentialsFile()) ? credentialsFile()
+      : getEnvironment() === 'production' && fs.existsSync(LEGACY_FILE) ? LEGACY_FILE : null;
+    if (!file) return null;
+    parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!parsed.api_key || !parsed.email || !parsed.agent_id || !parsed.api_base) {
       return null;
     }
-    const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (!parsed.api_key || !parsed.email || !parsed.agent_id) {
-      return null;
-    }
-    return parsed as Credentials;
   } catch {
     return null;
   }
+  // A mismatched saved login is an error, never an excuse to use another profile.
+  validateCredentials(parsed);
+  return parsed;
 }
 
 export function saveCredentials(creds: Credentials): void {
+  validateCredentials(creds);
+  const CREDENTIALS_DIR = profileRoot();
+  const CREDENTIALS_FILE = credentialsFile();
   if (!fs.existsSync(CREDENTIALS_DIR)) {
     fs.mkdirSync(CREDENTIALS_DIR, { mode: 0o700, recursive: true });
   }
@@ -45,13 +56,17 @@ export function saveCredentials(creds: Credentials): void {
     JSON.stringify(creds, null, 2) + '\n',
     { mode: 0o600 }
   );
+  fs.chmodSync(CREDENTIALS_DIR, 0o700);
+  fs.chmodSync(CREDENTIALS_FILE, 0o600);
 }
 
 export function clearCredentials(): void {
+  const CREDENTIALS_FILE = credentialsFile();
   try {
     if (fs.existsSync(CREDENTIALS_FILE)) {
       fs.unlinkSync(CREDENTIALS_FILE);
     }
+    if (getEnvironment() === 'production' && fs.existsSync(LEGACY_FILE)) fs.unlinkSync(LEGACY_FILE);
   } catch {
     // Ignore errors during cleanup
   }

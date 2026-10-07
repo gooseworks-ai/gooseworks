@@ -131,6 +131,39 @@ describe('real local entry preservation', () => {
     try {expect(await status.readEntryFreshnessReport()).toMatchObject({cli:'unavailable',releasedVersion:null});}
     finally {global.fetch=original;}
   });
+  test('detects an old independent Codex entry even when the shared entry is current, without replacing it', () => {
+    const skill = { name: 'goose-video', content: '# current video workflow' };
+    installer.installManagedEntrySkills([skill]);
+    const hostDir = path.join(home, '.codex', 'skills', skill.name);
+    fs.mkdirSync(hostDir, { recursive: true });
+    const hostFile = path.join(hostDir, 'SKILL.md');
+    const old = '---\nname: goose-video\nversion: 0.3.0\n---\n# old local workflow';
+    fs.writeFileSync(hostFile, old);
+    const release = { version: '0.4.4', source: 'test-release', hashes: { [skill.name]: skillContentHash(skill.content) } };
+    const entry = status.entryFreshnessReport([skill], '0.4.4', release).entries[0];
+    expect(entry.local).toBe('bundled');
+    expect(entry.published).toBe('current');
+    expect(entry.hosts).toEqual([expect.objectContaining({ host: 'codex', path: hostFile, location: 'independent', local: 'different_from_bundle', published: 'different_from_release' })]);
+    installer.installManagedEntrySkills([skill]);
+    expect(fs.readFileSync(hostFile, 'utf8')).toBe(old);
+  });
+  test('recognizes the current shared host link and reports a dangling link as unknown', () => {
+    const skill = { name: 'goose-video-local', content: '# current runtime' };
+    installer.installManagedEntrySkills([skill]);
+    const hostRoot = path.join(home, '.claude', 'skills');
+    fs.mkdirSync(hostRoot, { recursive: true });
+    const link = path.join(hostRoot, skill.name);
+    fs.symlinkSync(path.join(installer.getSkillsBasePath(), skill.name), link, 'dir');
+    expect(status.entryFreshnessReport([skill], '0.4.4').entries[0].hosts).toEqual([
+      expect.objectContaining({ location: 'managed_link', local: 'bundled', published: 'unavailable' }),
+    ]);
+    fs.unlinkSync(link);
+    fs.symlinkSync(path.join(home, 'missing-approved-package'), link, 'dir');
+    expect(status.entryFreshnessReport([skill], '0.4.4').entries[0].hosts).toEqual([
+      expect.objectContaining({ location: 'unreadable', hash: null, local: 'unreadable', published: 'unavailable' }),
+    ]);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  });
   test('does not write through an entry symlink into a different directory', () => {
     const external = path.join(home, 'external'); fs.mkdirSync(external); fs.writeFileSync(path.join(external, 'SKILL.md'), '# external');
     fs.mkdirSync(installer.getSkillsBasePath(), { recursive: true });

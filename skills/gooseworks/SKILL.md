@@ -8,7 +8,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.0.0
+version: 1.1.2
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -73,7 +73,20 @@ the other. Check the actual advertised tools before using new fields.
 
 ## Route to the right skill FIRST
 
-First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. Then load the brand context (**"Load the brand context FIRST"**, immediately below). After that, check whether the request belongs to a specialized domain. If so, **switch to that skill** instead of the data flow below:
+First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
+
+**Follow the connector's full-guide requirement when available.** Fetch
+`catalog_fetch { type: "skill", slug: "gooseworks-guide" }` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns `not_found`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.
 
 For "interview me about the brand", "save our brand rules", "refine our audience", or "remember
 our video taste", stay here and follow **Guided brand capture** below. This extends the current
@@ -81,13 +94,13 @@ brand and onboarding flow; it does not create another onboarding checklist.
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
-| Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
+| Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-ads" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
-| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate Studio script and ingredient approvals are required | **`make-custom-video`** | Use the installed GooseWorks connection entry, or fetch make-custom-video through the catalog. It loads video-production-harness; Growth uses its sandbox and connected agents use their local tools. |
-| Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`. |
-| Animate an approved static ad or product image | **`animate-image`** | Fetch with `gooseworks fetch animate-image` and follow its GooseWorks MCP workflow. |
+| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume. |
+| Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate script and ingredient approvals are required in the same chat | **`make-custom-video`** | Fetch the current make-custom-video entry and its production harness for new work, then read summary, kit, products and learnings before script writing. Read an existing project first and retain its approved package/context on resume. |
+| Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Read the existing project first. Use the current goose-video-local entry as the connection adapter, retain approved recipe packages/context and apply brand preparation before a new plan or script. |
+| Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-product-photos" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
+| Animate an approved static ad or product image | **`animate-image`** | Fetch it (`catalog_fetch { type: "skill", slug: "animate-image" }` in a chat app, `gooseworks fetch animate-image` in a terminal) and follow its GooseWorks MCP workflow. |
 | Anything else — scraping, research, lead gen, enrichment, any data lookup | (stay here) | Follow "How to Use" below. |
 
 Examples — all of these route to `goose-ads`, not the data flow: "remix this ad with project id 123", "make an ad for my product", "research my brand", "why is my Meta campaign underperforming", "which creatives should I cut".
@@ -96,23 +109,80 @@ Examples — all of these route to `goose-ads`, not the data flow: "remix this a
 
 **Call `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }` before the first substantive step of ANY task**, and before you route to a specialist skill. Older clients can use `brand_get_context` with the same sections only when that tool is advertised. It is a read-only call that returns the brand's canonical facts and saved rules:
 
+For videos, read the current workflow first as described above, then load all four creative
+sections (summary, kit, products and learnings) before suggesting formats, choosing angles or
+writing a script. Onboarding facts alone are insufficient. Carry saved rules and kit assets
+into the specialist's brand preparation. `Video preference:` rules describe the look, voice
+and pacing; they are not lines to read aloud. On an approved resume, preserve the saved brand
+inputs and packages; an intentional change uses the existing affected review/approval gates.
+
 | It returns | Use it for |
 | --- | --- |
 | **voice** — tone, style, banned phrasing | Any copy, script, caption, hook, or headline. Don't ask "what tone?" |
 | **products** — names, descriptions, pricing, links, imagery | Picking the product to feature. Don't ask "which product?" — offer the list. |
 | **audience** — segments, demographics, jobs-to-be-done | Targeting, angles, creator fit. Don't ask "who is this for?" |
-| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" |
+| **positioning** — category, value props, proof points, tagline | Angles, offers, competitive framing. Don't ask "what makes you different?" Kit proof points are proof an ad may state as written; other positioning text is context. |
 | **research status** — whether the brand's research pass has completed | Whether the facts are trustworthy yet, or still being filled in. |
 
 Then:
 
-1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
-2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context answers, the context wins — answer it yourself and move on. Ask only for what is genuinely missing or ambiguous.
+1. **Pass what it returned INTO the routed skill.** When you hand off to `goose-ads`, `goose-video`, `goose-product-photos`, `goose-graphics`, or a fetched Brand Growth recipe, carry the voice / products / audience / positioning with you, plus the evidence brief from the Brain search below. Do **not** make the routed skill re-derive them, and do **not** re-run brand research when the context is already there.
+2. **Never re-ask the user for something the brand context already answers.** If a routed skill's own prose asks a question the context or the Brain search answers, they win — answer it yourself and move on. Ask only for what is genuinely missing after both, or a decision that is the user's to make.
 3. **If research status is not complete**, say so in one line, use what you have, and continue. Only run brand research when the context comes back empty or the user asks for it.
 4. **If `brand_read` is unavailable**, refresh the GooseWorks connection or tool list. An older connection may expose `brand_get_context` / `get_brand_kit`; use those only when actually advertised. Never require a legacy tool name or guess brand facts.
 5. **A read grants no write permission.** Save explicit durable answers/corrections with the capture policy below. Propose agent-derived changes for review; never overwrite confirmed knowledge with research or a guess.
 
-Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, ask.
+Never invent a brand fact. If it isn't in the brand context and the user hasn't said it, search
+the Brand Brain next. Ask the user only when that search cannot answer it and the answer is
+theirs to give.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one short query (under 500 characters) in
+   the user's own words plus the product (for example "ads for <product>: what worked, what to
+   avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `refresh_required` | The results shown are current; some changed sources were left out | Use them; search again shortly for anything missing |
+| `building` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Claim-grade proof is a result with `approved_ad_claim: true` or the kit's
+   `approvedClaims` within their stated applicability; the kit's `proofPoints` are what the
+   backend allows an ad to state, used as written. Other Kit text, documents and performance
+   numbers are context, never public claims. Never invent an offer, price or result. Judge
+   relevance and skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+   Keep directions already chosen (the user's words, a project's creative brief, handed-off
+   defaults, approved plans): search only to fill empty fields and to apply saved rules. When a
+   returned card or picker presents the choice, your recommendation is its one acknowledgement
+   line and the saved plan's defaults, not a separate list.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Setup
 
@@ -124,20 +194,31 @@ Skills may describe a managed provider request as an environment-neutral operati
 `provider`, `method`, `path`, and optional `query` or `body`. Execute the operation through
 the first available runtime:
 
-1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass the
-   operation directly to `call_data_provider`. This is the preferred path in ChatGPT, Cowork,
-   and other terminal-free clients. Do not shell out and do not ask for a separate provider key.
+1. If the matching GooseWorks MCP tool is registered, use it. For ScrapeCreators, pass a GET
+   operation directly to `data_call_provider` (`provider`, `path`, `query`) and a POST
+   operation to `data_post_provider` (`provider`, `path`, `body`, optional `query`).
+   This is the preferred path in ChatGPT, Cowork, and other terminal-free clients.
+   Do not shell out and do not ask for a separate provider key.
 2. Otherwise, if a local terminal and the `gooseworks` CLI are available, translate the same
    operation into `gooseworks call <provider> <path>` with its method, query, and body options.
 3. Otherwise, follow the provider dependency's direct-key path only when the user has supplied
    their own key. If no runtime is available, explain what connection is missing; never pretend
    the provider call ran.
 
+Managed provider calls are paid on the MCP and CLI runtimes alike (a ScrapeCreators call costs 1
+credit today, and each result reports what it charged). Before a skill's first paid call, tell the
+user roughly how many calls it will make and the credit total, and get their yes.
+
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
-`mcp__gooseworks__*` tools are connected, use these equivalents:
-- `gooseworks search <q>` → the **`search_skills`** MCP tool.
-- `gooseworks fetch <slug>` → the **`fetch_skill`** MCP tool (same content/scripts/files/deps).
-- `gooseworks credits` → the **`get_ad_credits`** MCP tool.
+GooseWorks MCP tools are connected, use these equivalents. Match on the tool name: a coding agent
+may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat app may not.
+- `gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**.
+- `gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`** (same content/scripts/files/deps).
+- `gooseworks credits` → **`account_whoami`** (the balance is `credits.available_credits`).
+
+If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
+user to reconnect or refresh GooseWorks. Installing or updating the `gooseworks` CLI never fixes
+a missing connector tool, so never send a chat-app user to a terminal for it.
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -187,8 +268,8 @@ already volunteered in this chat, and **save known information first** using the
 mapping below. Do not run a long questionnaire as a prerequisite for making an ad.
 
 For facts needed by the task but absent from the read, call `knowledge_search` first if it is
-registered. Use returned citations and states honestly: an empty, building or failed index is
-not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
+registered, as in **"Search the Brand Brain, then propose"**. Use returned citations and states
+honestly: an empty, building or failed index is not proof that the brand has no answer. Do not re-scrape or ask the founder for a fact already
 answered by trustworthy saved knowledge.
 
 Ask one short group of missing human-only facts at a time, in plain language, with the relevant
@@ -213,8 +294,9 @@ by the tools. Do not promise an unavailable evidence, claims or plan write.
 ## Save durable brand answers, then verify them
 
 Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
-(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
-research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+(older clients: `brand_get_context` with the same sections, only when that tool is advertised).
+Keep founder answers, user corrections, research and your own hypotheses distinct. Reuse
+matching saved answers; ask only about gaps.
 
 When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
 standing fact, save that answer in the same turn. The capture request authorizes those answers;
@@ -458,7 +540,7 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
-2. **Before paid operations**, tell the user the estimated credit cost
+2. **Before paid operations**, tell the user the estimated credit cost and get their yes
 3. **If a `gooseworks` command exits with "Not logged in"**: tell the user to run `npx gooseworks login`
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to `/tmp/gooseworks-scripts/`, install pip deps, then execute. NEVER pollute the user's project directory

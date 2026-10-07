@@ -11,7 +11,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.1
+version: 0.6.7
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -69,6 +69,136 @@ an existing approved run's recorded package; changing that harness requires a re
 and approval before spending. Hosted installed snapshots use the existing Skills Update action.
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
+
+## Prepare the video workflow and brand before creative work
+
+**Installed entry files are bootstrap instructions.** For new work started from an installed
+file or an old chat, fetch `catalog_fetch { type: "skill", slug: "goose-video-local" }` on the selected
+connection and read its returned content and dependencies before continuing. Use the already
+fetched body when this entry came from that connection in this run; do not recursively fetch
+the same entry. A CLI freshness warning does not block using the current connected package.
+Keep the fetched package and hashes in a new run folder; do not replace edited installed files.
+If current instructions cannot be loaded, resolve the connection before format suggestions,
+script writing or production. Do not continue from an old installed workflow or session notes.
+
+**Follow the connector's full-guide requirement when available.** Fetch
+`catalog_fetch { type: "skill", slug: "gooseworks-guide" }` when the connector requires it.
+The only older-server exception is below; it never removes brand preparation or approvals.
+
+| Returned guide/workflow state on the selected connection | Required action |
+| --- | --- |
+| Guide returns `not_found`, and this same connection already returned the complete current matching video entry with its required dependencies | Continue with that authoritative entry's workflow, full brand preparation and existing approvals. |
+| Guide has another error, no response, or incomplete content; or the matching entry/dependencies are missing, incomplete or from another connection | Stop before creative work, project writes or paid calls; resolve a compatible connection on this same environment. |
+
+A missing custom entry or required custom tool/schema remains unavailable: never substitute
+a template or an import to bypass it. Never hide other fetch errors or continue from cached
+instructions merely because the guide was not found.
+
+**For an existing project or batch, read `video_project_read` first.** Determine its actual
+route and saved review state before fetching a recipe or doing local work. Resume an approved
+run with its recorded packages, brand inputs, script and ingredients; do not silently replace
+them with today's release or brand rules. Follow returned preparation requirements and use
+the existing affected review/approval flow for an intentional change. Reads, free drafts,
+imports and existing-job retrieval do not grant permission for new paid production.
+
+**For every new plan, resolve the brand and call**
+`brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }` **before**
+suggesting formats, mining video angles, writing any script, creating a production plan or
+handing the work to another agent. Use `brand_get_context` with those same four sections only
+when advertised. Reuse a complete read from this run on the same connection and brand.
+Onboarding completion, a summary-only response and earlier session notes do not supply the
+kit, selected product facts or saved rules. If the full read is unavailable, resolve it before
+creative work. Use known kit facts while research is incomplete; do not restart research
+solely because its status is pending. Never invent a product fact or accept a campaign to
+bypass preparation. Then search the Brand Brain (next section) before suggesting formats,
+choosing an angle or asking the user for a brand fact.
+
+Carry that context through custom/template/idea routing and delegation. Before writing, make
+the workflow's brand-rules file from those sources: pronunciations, required spoken copy,
+prohibited claims, real logo, font, palette and the selected product's supported facts.
+Entries prefixed `Video preference:` and visual/pacing instructions are creative direction,
+not spoken lines. Use the kit's audience, offer and voice as defaults without an interview.
+The rules file mirrors context; it is not proof of a read or permission to spend. Keep the
+route's existing script, ingredient and budget approvals, including its allowed previews.
+
+**Use the server's brand bundle when the selected API returns it.** Project create/read may
+return top-level
+`brand_context`: `{ version: 1, brand_id, digest, loaded_at, sections, brand, kit, products,
+learnings }`. Its sections cover summary, kit, products and learnings.
+
+| Returned brand/project response on the selected connection | Required action |
+| --- | --- |
+| A complete authoritative version-1 `brand_context` is returned | Binding is required: use its contents for the plan/rules and include `script_drafts.brand_context_digest = brand_context.digest` with each new/changed script save. |
+| An older API returns the actual four brand sections but no `brand_context` in either the brand read or project response | Prepare from those full sections, write the brand rules and follow the selected connection's existing approval flow and advertised fields. Do not fabricate a receipt or send nonexistent bundle/digest fields. |
+
+An incomplete/malformed bundle or missing brand section is a preparation failure, never the
+older-API exception. Once this connection returns an authoritative bundle, use its binding
+contract. `script_drafts.video_brand_context` is server-owned: do not author, replace or forge
+it, and do not invent a read receipt or hash local brand facts into one. Keep the full bundle
+out of client review payloads. If managed generation returns HTTP 409
+`video_brand_context_required`, reload the project and bind the plan to its returned bundle
+through the normal review flow before retrying. That refusal never permits the older-API
+fallback, skipping sections or retrying paid calls blindly. Unchanged approved legacy resumes
+retain their package, context and approvals; an upgrade alone needs no extra approval.
+
+**To apply a deliberate brand correction to a new or revised plan**, make a fresh, unfiltered
+`brand_read` of those four sections. When it returns the authoritative bundle, use its
+returned `brand_context.digest` in the complete revised `script_drafts` through the existing
+`video_project_upsert` `patch.script` save; the server verifies the current brand and replaces
+its snapshot with the saved plan. On an older API with no bundle contract, apply the actual
+four-section correction and save the revised draft through its existing flow without inventing
+digest fields. If a connection that already returned a bundle cannot supply the fresh bundle,
+resolve that failure before rebinding. Review and approve the affected script, ingredients and
+budget through the normal flow. Never refresh an ongoing approved run automatically; its
+recorded package and brand inputs stay pinned until an intentional change.
+
+## Search the Brand Brain, then propose — before any creative choice or question
+
+The Brand Kit is a summary. The brand's saved knowledge (its Brain) holds what the Kit does not:
+rules from past feedback, approved and rejected creatives, customer evidence, approved claims,
+reports and documents. **After `brand_read`, and before you choose an angle, claim, hook,
+product emphasis, format or source ad — and before you ask the user for any brand fact — call
+`knowledge_search { brand_id, query }`** when it is registered. It is free and read-only: no
+approval, no announcement to the customer and no questionnaire.
+
+1. **Search for this task, not the whole Brain.** Run one short query (under 500 characters) in
+   the user's own words plus the product (for example "ads for <product>: what worked, what to
+   avoid") and one with
+   `source_types: ["evidence", "claim", "learning", "creative", "document"]` for proof and past
+   creative results. Add a query only for a specific open question. Reuse results from this run.
+2. **Keep these states distinct** and record which one each query returned:
+
+| Result | Means | Do |
+| --- | --- | --- |
+| `status: "ok"` with matches | Saved knowledge exists | Use it; keep each fact's citation in your working brief |
+| `status: "empty"` | Nothing saved matches this query | Say "no saved evidence for <topic>", never "the brand has no proof" |
+| `refresh_required` | The results shown are current; some changed sources were left out | Use them; search again shortly for anything missing |
+| `building` | The index is not ready | Retry once shortly, then continue with the gap stated |
+| An error, or the tool is not registered | Retrieval failed or is unavailable | Retry an error once, then continue from `brand_read` and treat evidence as unchecked |
+| An empty Kit field | Only that field is blank | Not a search result: still search before asking |
+
+3. **Let the findings change the plan.** A `dont`/`must` learning or a rejected creative rules
+   options out; an approved or well-rated past creative is a proven angle to lead with; a report
+   shows what worked. Claim-grade proof is a result with `approved_ad_claim: true` or the kit's
+   `approvedClaims` within their stated applicability; the kit's `proofPoints` are what the
+   backend allows an ad to state, used as written. Other Kit text, documents and performance
+   numbers are context, never public claims. Never invent an offer, price or result. Judge
+   relevance and skip results about another product or business.
+4. **Propose; don't interview.** Lead with one recommended direction (angle, product, source or
+   format) and a one-line reason naming what you found, with up to two alternatives. When several
+   directions fit (two audiences, products or campaigns), pick the one the evidence favours, such
+   as an active campaign or approved past creatives, and name the other as an alternative instead
+   of asking. Ask only for a decision the brand read and the search cannot settle, or for spend
+   approval. Never ask the user for a fact the Brain already answered.
+   Keep directions already chosen (the user's words, a project's creative brief, handed-off
+   defaults, approved plans): search only to fill empty fields and to apply saved rules. When a
+   returned card or picker presents the choice, your recommendation is its one acknowledgement
+   line and the saved plan's defaults, not a separate list.
+5. **Carry an evidence brief** into the routed skill, writer or plan: findings with citations,
+   the state of each query, what it ruled out and the open gaps. Tell the customer the findings
+   in plain words; the citations stay in the brief.
+
+On an approved resume, keep the saved brief and evidence; search again only for a new decision.
 
 ## Chat hosts and cards
 
@@ -560,7 +690,7 @@ the app's "N concepts" flow: one composer submission fans out into **N independe
 **Loop shape (ONE approval for the batch, isolated work per concept):**
 1. Run **Step 1 + Step 1.5 + Step 2 + Step 2.5 + Step 3-assemble** for EACH concept project (each
    has its own `project_id`, brief, `GW_PROJECT_ID` and `working/` folder — never cross-write
-   between concepts). The brand read (Step 1 item 3) and `brand-rules.json` (Step 1.7) are per
+   between concepts). The brand read (Step 1 item 2) and `brand-rules.json` (Step 1.7) are per
    BRAND: do them once for the batch and copy the file into each concept's `working/`. The read is
    ~90K characters. Step 2.5's angle bank is shared per brand AND product: load or build it once, and
    give every concept whose angle is `auto` a DIFFERENT angle from that list, so the batch is N
@@ -603,8 +733,8 @@ written per-project; a batch just runs it N times with the shared approval gate 
 
 The composer already collected the user's creative direction onto the project. **Read it and treat
 it as ground truth — it OVERRIDES the template recipe's defaults, and it REPLACES the clarifying
-questions you would otherwise ask.** Only fall back to the recipe default (then, last, to asking)
-for a field the brief leaves empty. Map the fields you WILL honor:
+questions you would otherwise ask.** For a field the brief leaves empty, use the Brain search's
+evidence brief first, then the recipe default, then (last) asking. Map the fields you WILL honor:
 
 - `creative_brief.productName` / `.offer` / `.angle` → the product, offer/code, and angle. Do
   **not** ask "which product / what offer / what angle" if these are set.
@@ -622,20 +752,24 @@ for a field the brief leaves empty. Map the fields you WILL honor:
   "also 1:1" option included).
 - `polish_policy` (`standard` | `extra`) → `extra` means spend the extra pass on QC/polish.
 
-2. `catalog_fetch { type: "template", slug: <source_sample_id> }` → the source video: `media_url`,
-   `recipe`, `format` (e.g. "podcast-skit", "imessage"), `extracted_script`, `how_to`, `remix_spec`.
-3. Brand gate: `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }`
+2. Brand gate: `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }`
    (older clients: `brand_get_context` with the same sections). Ask for all four: the default
    leaves out the kit and the brand's saved rules, and a video made without them is off-brand.
    If the kit's `researchStatus` (or the brand's `research_status`) is `complete`, REUSE it —
-   never re-research. If not, run brand research first (`catalog_fetch { type: "skill", slug:
-   "brand-research" }`) and follow its stored-pack workflow. Only when that verified pack is
+   never re-research. A pending status alone does not require research; use verified stored
+   facts and ask only for an actual gap. If the context is empty or the customer requests
+   research, load `catalog_fetch { type: "skill", slug:
+   "brand-research" }` and follow its stored-pack workflow. Only when that verified pack is
    saved in the supported research workspace, finalize with
    `brand_update { brand_id, patch: { finalize_research: true } }`, then read the brand back.
    Never send raw research JSON through `kit_patch`: the public tool accepts only the existing
    `video_lab` asset slot there. If there is no verified stored pack, submit researched facts
    through typed `patch.knowledge` / `patch.kit` as pending agent proposals; do not pretend
    research is finalized or its proposals are approved. Then do Step 1.7 with verified facts.
+3. For a new plan, `catalog_fetch { type: "template", slug: <source_sample_id> }` → the source
+   video: `media_url`, `recipe`, `format` (e.g. "podcast-skit", "imessage"),
+   `extracted_script`, `how_to`, `remix_spec`. For an approved resume, restore the recorded
+   package and dependencies instead of fetching today's recipe over the saved plan.
 
 ### Step 1.6 — a remix of a FINISHED video (the project read has a `remix` block)
 
@@ -664,8 +798,9 @@ Its `video_project_read` returns a top-level `remix` block
 
 ### Step 1.7 — the brand rules file and the brand assets (every run, before any writing)
 
-Write `working/brand-rules.json` from the Step 1 brand read. Every later step reads THIS file,
-not your memory of the chat:
+Before new writing, write `working/brand-rules.json` from the Step 1 brand read. Preserve an
+approved run's saved rules on resume; reconcile an intentional rule change through the existing
+review gate. Every later step reads THIS file, not your memory of the chat:
 
 ```json
 {
@@ -745,8 +880,9 @@ in the SAME turn, before anything else:
 ## Save durable brand answers, then verify them
 
 Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
-(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
-research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+(older clients: `brand_get_context` with the same sections, only when that tool is advertised).
+Keep founder answers, user corrections, research and your own hypotheses distinct. Reuse
+matching saved answers; ask only about gaps.
 
 When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
 standing fact, save that answer in the same turn. The capture request authorizes those answers;
@@ -910,7 +1046,16 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   evidence and proof plan, not only its hook. Reuse the shared video-angle-bank.v1 from
   the brand's video-scripts workspace or this run. Prepare angle-context.json with the
   writer's preparation script with `--brief working/script/creative-brief.json` and use
-  its strict rule check before review. Save the sourced brief in the writer's documented
+  its strict rule check before review. First run the fetched writer's free
+  `python3 <saved-writer-package>/scripts/verify_handoff.py --package-dir <saved-writer-package> --out working/script/writer-handoff-check.json` check against those
+  actual saved prepare/lint scripts. Retain the result and script hashes with the run.
+  A provided writer package with a missing checker, failed check or unsupported flag
+  is incompatible: stop this handoff and refresh the package on the same connection.
+  Never use the provisional agent path after a provided package fails validation.
+  Only an actual `not_found` for an optional writer permits the explicit provisional
+  agent check below; a required writer remains blocked. Never silently remove the brief,
+  strict check or new shape requirement to run an older parser.
+  Save the sourced brief in the writer's documented
   shape: exact product/variant, buyer situation, supported mechanism, offer/CTA, constraints,
   delivery intent, source references, locked copy, applicable prior decisions and unknowns.
   New custom/template shapes set `requires_creative_brief: true`; both writer and critic
@@ -925,16 +1070,20 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
   a catalogue card alone cannot establish fit. An impossible essential visual blocks
   the proposal until repaired. Do not force a testimonial into every format.
 - **Research only what is missing.** Fetching the miner does not spend or rerun research.
-  Reuse current facts and prior evidence. If paid collection is needed, its permission
+  Reuse current facts and prior evidence. The Brain search's evidence brief (citations, the
+  state of each query and open gaps) is the first source for the brief's source references and
+  prior decisions. If paid collection is needed, its permission
   rides in the existing choices round. A new product with no reviews can use verified
   facts and a feasible demo; do not require paid research merely to fill a quote quota.
 - **Choose eligible concepts only.** Take the strongest supported concept and validated
   hook into review, with up to two viable alternatives when the direction is open.
   Do not pad three concepts or select the highest-ranked rejected one. If all fail,
   repair within the brief and recipe before Step 3.
-- **Unavailable writer or research.** Complete an explicit agent check of claim support,
-  recipe limits, visual feasibility and hook payoff. Record missing provenance and say
-  in the review when research is provisional. Never report a failed check as a pass.
+- **Optional writer not found or unavailable research.** Only when the optional writer
+  returns `not_found`, complete an explicit agent check of claim support, recipe limits,
+  visual feasibility and hook payoff. Record missing provenance and say in the review when
+  research is provisional. A provided incompatible writer or another fetch error stops
+  the handoff. Never report a failed check as a pass.
 - **The user's exact lines** remain verbatim; use report-only checks and raise material
   timing, claim or format conflicts without silently rewriting them.
 - **No spoken words.** Still fit the visual promise, reveal, cards and CTA to the silent
@@ -946,9 +1095,14 @@ of ad performance. The existing Step 3 review and approval remain unchanged.
 
 Fetch `video-production-harness` and read its `references/editorial-review.md`,
 `references/specialist-handoff.md` and `references/hook-compatibility.md`, plus the
-review/edit/polish/promote/wrap steps when used. Save the fetched version/content hash with
-this run's capability records. These supply craft and evidence rules inside the template
-flow; this entry's existing review, paid approval, storage and two-repair limit still apply.
+review/edit/polish/promote/wrap steps when used. Verify every named file is returned as
+nonempty text before relying on that package. A version/content hash alone cannot establish
+that the required guides were published. Missing guides block new template creative work
+before project writes or paid previews; resolve the package on this same connection. Keep
+an unchanged approved resume on its recorded package and approvals.
+Save the fetched version/content hash with this run's capability records. These supply
+craft and evidence rules inside the template flow; this entry's existing review, paid
+approval, storage and two-repair limit still apply.
 Do not turn a template into a custom project or import the custom host's extra gates.
 
 Before executing a fetched recipe atom, pass the exact brief/script revision, scene/beat IDs,
@@ -1077,8 +1231,25 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    about start / blocked / complete.
 After EVERY progress callback inspect stop. If true, start no new paid step; record
    status:"stopped" with a plain note and report what is kept and credits used. SPEND_CAP_REACHED
-   stops the same way; raising the cap requires patch.approve scope:"raise_cap" and the customer's
-   words. Send render.steps with the same neutral names each time and a live count only in the
+   stops the same way. Never raise a video's budget on your own judgment. Raise it only when a paid
+   step was refused with SPEND_CAP_REACHED or the progress card offers "Finish it" or a choice past the budget.
+   Then read the project and say cost.raise_quote in one line: "Finishing needs up to <by_credits>
+   more credits, so your budget goes from <from_credits> to <to_credits>. OK?" Only after the
+   customer's yes to that number: patch.approve { scope:"raise_cap", total_credits: <to_credits>,
+   user_quote: "<their exact words>" }. total_credits is the new budget itself, never credits to
+   add; do not send raise_cap_credits for one video. If they pick a smaller choice past the
+   budget, send that choice's new budget as total_credits (never above to_credits). Sending the same
+   total_credits again changes nothing (already_raised: carry on). An earlier yes, or "I don't care
+   about the cost", is not approval of a new budget. If cost.raise_quote is null because the plan was saved
+   again since its approval (plan_status is not "approved"), show the plan with its total and
+   approve it again; otherwise the approved budget already covers the work: carry on, do not ask.
+   After a raise, open a new render that reuses the saved pieces. A refused raise changes nothing:
+   cap_raise_not_needed means carry on within the budget, or, when it says the plan was saved again,
+   show the plan with its total and approve the plan again; cap_raise_total_required means read the
+   project again and send total_credits equal to cost.raise_quote.to_credits after the customer
+   approves that number; cap_raise_changed or cap_raise_too_large mean read the project again and
+   show the current cost.raise_quote. Custom videos never use raise_cap.
+   Send render.steps with the same neutral names each time and a live count only in the
    current detail; use render.choices when blocked.
 2. Now generate every PAID piece you showed as a prompt in Step 3 — the AI stills/video, lipsync
    clips, voice, music — through the media proxies (below), each from its approved prompt, with

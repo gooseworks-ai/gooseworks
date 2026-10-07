@@ -10,6 +10,56 @@ import {
   RENDER_OPEN_ARGS,
   RENDER_UPDATE_KEY,
 } from '../../src/skills/master-skill';
+import { DOMAIN_ROUTES } from '../../src/skills/routes';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// QA-26 / VWR14: the customer GooseWorks connector lists only canonical tool names
+// (snapshot in tests/fixtures/connector-tool-names.json). A chat agent told to call
+// a retired name cannot find it and tells the customer to update a terminal they do
+// not have. Every skill a chat agent loads names only served tools; a retired name
+// may appear only on a line labelled "older client(s)" / "older connection(s)".
+const connector = JSON.parse(
+  readFileSync(join(__dirname, '..', 'fixtures', 'connector-tool-names.json'), 'utf8'),
+) as { served: string[]; retired: string[] };
+
+// Backticked identifiers that look like a connector tool (start like ads_, brand_,
+// photos_, job_, get_, ... or end in a tool verb) but are fields, values, statuses or
+// actions (`precision_edit` is an ads_creative_edit action), not tools.
+const TOOL_SHAPED_FIELD = /_(id|ids|url|urls|kind|required|updates|in_progress)$/;
+const TOOL_SHAPED_NON_TOOLS = new Set(['save_progress', 'video_preferences', 'video_lab', 'precision_edit']);
+const TOOL_VERB_SUFFIX = /_(read|get|list|create|update|upsert|generate|edit|upload|search|fetch|decide|delete|cancel)$/;
+
+function connectorNameViolations(content: string): {
+  retiredOutsideFallback: string[];
+  unservedCalls: string[];
+  unknownToolNames: string[];
+} {
+  const served = new Set(connector.served);
+  const retired = new Set(connector.retired);
+  const toolPrefixes = new Set([...connector.served, ...connector.retired].map((name) => name.split('_')[0]));
+  const retiredOutsideFallback: string[] = [];
+  const unservedCalls: string[] = [];
+  const unknownToolNames: string[] = [];
+  for (const line of content.split('\n')) {
+    const labelledFallback = /older (clients?|connections?)/i.test(line);
+    for (const [, name] of line.matchAll(/(?<![\w-])([a-z][a-z0-9_]*)(?![\w-])/g)) {
+      if (retired.has(name) && !labelledFallback) retiredOutsideFallback.push(name);
+    }
+    for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)\s*\{/g)) {
+      if (!served.has(name)) unservedCalls.push(name);
+    }
+    // A misspelt tool in prose (`ads_templates_read`, `photo_generate`, `brands_read(...)`)
+    // is neither served nor retired: it starts like a tool or ends in a tool verb.
+    for (const [, name] of line.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:`|\()/g)) {
+      if (served.has(name) || retired.has(name) || TOOL_SHAPED_FIELD.test(name) || TOOL_SHAPED_NON_TOOLS.has(name)) continue;
+      if (toolPrefixes.has(name.split('_')[0]) || TOOL_VERB_SUFFIX.test(name)) unknownToolNames.push(name);
+    }
+  }
+  return { retiredOutsideFallback, unservedCalls, unknownToolNames };
+}
+
+const NO_VIOLATIONS = { retiredOutsideFallback: [], unservedCalls: [], unknownToolNames: [] };
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -104,12 +154,40 @@ describe('skills/master-skill', () => {
     });
 
     it('routes ScrapeCreators through MCP in terminal-free clients', () => {
-      expect(content).toContain('call_data_provider');
+      expect(content).toContain('data_call_provider');
+      expect(content).toContain('data_post_provider');
       expect(content).toMatch(/Choose the available runtime.*MCP first/i);
       expect(content).toMatch(/environment-neutral operation/i);
       expect(content).toMatch(/Do not shell out.*separate provider key/i);
       expect(content).toMatch(/gooseworks call <provider> <path>/i);
       expect(content).not.toMatch(/paid data[\s\S]*still requires the CLI for now/i);
+    });
+
+    // QA-26: the connector lists only canonical tool names. A chat agent told to
+    // call a retired name cannot find it and tells the customer to update a
+    // terminal they do not have. Legacy brand reads stay only as a labelled fallback.
+    it('names only tools the GooseWorks connector lists for the no-CLI path (QA-26)', () => {
+      expect(content).toContain('`gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**');
+      expect(content).toContain('`gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`**');
+      expect(content).toContain('`gooseworks credits` → **`account_whoami`**');
+      expect(content).toMatch(/never send a chat-app user to a terminal for it/);
+
+      for (const retiredName of ['call_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
+        expect(content).not.toContain(retiredName);
+      }
+      expect(connectorNameViolations(content)).toEqual(NO_VIOLATIONS);
+    });
+
+    it('gives every CLI-delivered route a chat-app path (QA-26)', () => {
+      // goose-graphics runs the styles/formats CLI and Playwright locally, so it
+      // has no chat-app path yet; a catalog_fetch line would send chat agents
+      // into terminal-only steps.
+      const terminalOnly = new Set(['goose-graphics']);
+      for (const route of DOMAIN_ROUTES) {
+        if (!terminalOnly.has(route.skill) && /gooseworks (install|fetch)/.test(route.how)) {
+          expect(route.how).toContain(`catalog_fetch { type: "skill", slug: "${route.skill}" }`);
+        }
+      }
     });
   });
 
@@ -164,10 +242,10 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).not.toContain('slug: ads-remix');
   });
 
-  it('generates via the single backend workflow (MCP batch tools), not a local pipeline', () => {
-    expect(ads).toContain('submit_remix_batch');
-    expect(ads).toContain('regenerate_creative');
-    expect(ads).toContain('get_remix_batch');
+  it('generates via the single backend workflow (connector ad tools), not a local pipeline', () => {
+    expect(ads).toContain('`ads_generate` — **the one call that makes ads.**');
+    expect(ads).toContain('`ads_creative_edit { brand_id, creative_id, action }`');
+    expect(ads).toContain('`job_get { job_id, kind: "ads_batch" }`');
     // The old local-generation path must be gone (the skill no longer fetches a
     // local remix recipe or drives FAL itself). update_render_status / submit_render
     // are still NAMED — but only in a "do NOT call these" prohibition.
@@ -189,9 +267,9 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/Omit unspecified optional settings/i);
   });
 
-  it('recommends templates via surprise_me_templates instead of hand-picking the catalog', () => {
-    expect(ads).toContain('surprise_me_templates');
-    expect(ads).toContain('create_url');
+  it('recommends templates via the Surprise-me read instead of hand-picking the catalog', () => {
+    expect(ads).toMatch(/`ads_template_read \{ brand_id, mode:\s+"surprise", count: 4 \}`/);
+    expect(ads).toMatch(/Every pick is a template/);
     // Explicitly tells the agent NOT to freelance a pick from the raw catalog.
     expect(ads).toMatch(/do NOT .*hand-pick|Don't hand-pick templates/i);
   });
@@ -213,25 +291,85 @@ describe('skills/goose-ads entry skill', () => {
   });
 
   it('uses legally safer source paths from GOOSE-2979', () => {
-    expect(ads).toContain('list_user_ad_templates');
-    expect(ads).toContain('search_ad_templates');
-    expect(ads).toContain('remix_community_ad');
+    expect(ads).toContain('`ads_template_read { brand_id, mode: "mine", filters: { relationship: "self" } }`');
+    expect(ads).toMatch(/`ads_template_read \{ brand_id, mode: "query", query: "<the angle and look>" \}`/);
+    // A Community row's item_type decides which ads_generate source it goes in.
+    expect(ads).toMatch(/a `template` id goes in `source\.template_ids`,\s+a `creative` id in `source\.community_ad_ids`/);
+    expect(ads).toMatch(/`ads_template_create \{ brand_id, source: \{ type: "media", media_id \} \}`/);
+    expect(ads).toMatch(/`rights_attested: true` only after the user explicitly\s+confirms they own it/);
     expect(ads).toMatch(/ownership\/rights input/i);
     expect(ads).toMatch(/retired curated third-party catalog/i);
     expect(ads).toMatch(/Treat competitor ads as inspiration/i);
   });
 
-  it('exposes plan mode (compose → review/approve → generate) for parity with the app', () => {
-    expect(ads).toMatch(/approval option exposed by `submit_remix_batch`/i);
-    expect(ads).toContain('list_ad_approvals');
-    expect(ads).toContain('revise_ad_plan');
-    expect(ads).toContain('approve_ad_plan');
-    // It must be opt-in, not the default path.
-    expect(ads).toMatch(/opt-in|only offer plan mode|only when the user asks/i);
+  // ads_generate has no plan mode (a submit always generates); only a campaign's
+  // plans wait, and the approval is the user's yes in this chat.
+  it('has no plan step for one-off ads and approves campaign plans in the chat', () => {
+    expect(ads).toMatch(/`ads_generate` has no plan step/);
+    expect(ads).toMatch(/Never promise a review step before the images render/);
+    expect(ads).toContain('`request_campaign_generation { campaign_id }`');
+    expect(ads).toContain('`ads_creative_read { brand_id, view: "approvals", batch_id }`');
+    expect(ads).toContain('`ads_approval_decide { brand_id, decision: "approve", batch_id, user_quote: "<their exact words>" }`');
+    expect(ads).toMatch(/Never send them to a button in the app/);
   });
 
-  it('records the user’s reaction to a creative via set_creative_feedback', () => {
-    expect(ads).toContain('set_creative_feedback');
+  it('states the credit total and waits for an explicit yes before every paid call', () => {
+    expect(ads).toMatch(/Nothing paid runs without the user's explicit yes in this chat, given after you state the\s+credit total/);
+    expect(ads).toContain('`dry_run: true` returns `estimate`');
+    // Community and own-creative sources and most edits have no dry run.
+    expect(ads).toMatch(/No dry run \(it returns `not_available`/);
+    expect(ads).toContain('get the yes before sending `layerize: { confirmed: true }`');
+    expect(ads).toContain('`credits.available_credits` from `account_whoami`');
+  });
+
+  it('treats analysis and brand-research data calls as paid', () => {
+    expect(ads).toMatch(/every\s+`data_call_provider` \/ `data_post_provider` call/);
+    expect(ads).toMatch(/their\s+data calls are paid/);
+    expect(ads).not.toMatch(/do NOT touch[\s\S]{0,40}credits/);
+  });
+
+  it('routes Community search rows by sourceId and feed rows by item_type', () => {
+    expect(ads).toMatch(/each row's `sourceId` \(with `title` and `thumbnailUrl`\) goes\s+in `source\.community_ad_ids\[\]\.community_id`/);
+    expect(ads).toMatch(/`mode:\s+"community"`: its rows carry `item_type`/);
+  });
+
+  it('finalizes a research pack only when all four docs are written', () => {
+    for (const doc of ['brand-summary.md', 'visual-identity.md', 'audience.md', 'competitors.md', 'kit-patch.json']) {
+      expect(ads).toContain(doc);
+    }
+    expect(ads).toMatch(/finalize fails and marks the brand's research as failed/);
+    expect(ads).toMatch(/As proposals \(the default\)/);
+    expect(ads).toMatch(/in a chat app, only for a brand\s+with no website/);
+  });
+
+  // gooseworks-app#1827: ads_generate (batch.links), job_get(kind: ads_batch)
+  // (result.links) and ads_creative_read (app_url, brand_url) return app links.
+  it('ends a run with the app links the tools return', () => {
+    // Where the links are: ads_generate's batch, job_get's result, creative reads.
+    expect(ads).toMatch(/and the\s+`batch`, which already carries its `links`/);
+    expect(ads).toMatch(/`result\.links` holds the app links you end\s+the run with: `brand_url`/);
+    expect(ads).toMatch(/`creative_links: \[\{\s+project_id, app_url \}\]`/);
+    expect(ads).toMatch(/each row has its `app_url` and the list has the\s+`brand_url`/);
+    // Make-ads hand-back: matched by creative id, finished creatives only.
+    expect(ads).toMatch(/\*\*Hand back the ads with their links\.\*\*/);
+    expect(ads).toMatch(/match\s+`creative_links\[\]\.project_id` to `result\.creatives\[\]\.id`/);
+    expect(ads).toMatch(/skip a creative whose renders all\s+failed/);
+    // Edits, campaign approvals and the rule.
+    expect(ads).toMatch(/`result\.links` from `job_get` for `regenerate`, `resize` and\s+`precision_edit`/);
+    expect(ads).toMatch(/`creative\.app_url` and `creative\.brand_url` from `ads_creative_read \{ brand_id,\s+creative_id \}` for `animate` and `layerize`/);
+    expect(ads).toMatch(/end with each batch's `result\.links`/);
+    expect(ads).toMatch(/\*\*Always end a successful run with the finished images and their links\*\*/);
+    // Prod can lag staging: a server without links gets images only, not a promise.
+    expect(ads).toMatch(/A server older than this skill returns no\s+`links`[\s\S]{0,120}hand back the images\s+only and don't mention links/);
+    expect(ads).not.toMatch(/return no app links|no app links, so/);
+    // The browse link follows the environment of a returned brand_url.
+    expect(ads).toMatch(/`<app>` is the origin of a `brand_url` a tool returned\s+\(the part before `\/\?brand=`/);
+    expect(ads).toContain('`ads_creative_read { brand_id, limit: 1 }`');
+  });
+
+  it('records the user’s reaction to a creative via ads_creative_update', () => {
+    expect(ads).toContain('`ads_creative_update { brand_id, creative_id, patch }`');
+    expect(ads).toMatch(/`patch\.feedback: \{ render_id, rating:/);
   });
 
   it('reconciles authorized user corrections and leaves inferred improvements pending', () => {
@@ -291,12 +429,52 @@ describe('skills/getGooseProductPhotosSkillContent', () => {
     expect(photos).toContain('slug: goose-product-photos');
   });
 
-  it('keeps the MCP-only product-photo contract', () => {
-    expect(photos).toContain('generate_product_photos');
-    expect(photos).toContain('estimate_product_photos');
-    expect(photos).toContain('get_product_photo_generation');
-    expect(photos).toContain('approve_product_photo');
+  it('keeps the connector-only product-photo contract', () => {
+    expect(photos).toMatch(/`photos_generate \{ brand_id, product_id, variant_id\?, category/);
+    expect(photos).toContain('`photos_read { brand_id, generation_id }`');
+    expect(photos).toContain('`photos_update { brand_id, output_id, action: "approve" }`');
+    expect(photos).toContain('`job_get { job_id, kind: "product_import" }`');
     expect(photos).toContain('attestation_accepted');
+  });
+
+  it('quotes with a dry run and waits for an explicit yes before generating', () => {
+    expect(photos).toMatch(/Call `photos_generate` with the exact arguments you will submit plus\s+`dry_run: true`/);
+    expect(photos).toMatch(/Nothing paid runs without the user's explicit yes in this chat/);
+  });
+});
+
+// QA-26 / VWR14: the gooseworks entry routes chat agents (no terminal) to these two
+// skills with catalog_fetch, so they must work with the connector alone.
+describe.each([
+  ['goose-ads', getGooseAdsSkillContent()],
+  ['goose-product-photos', getGooseProductPhotosSkillContent()],
+])('%s names only tools the GooseWorks connector lists (QA-26 / VWR14)', (_name, skill) => {
+  it('names no retired tool outside a labelled fallback and calls only served tools', () => {
+    expect(connectorNameViolations(skill)).toEqual(NO_VIOLATIONS);
+    for (const retiredName of [
+      'submit_remix_batch', 'estimate_remix_batch', 'get_remix_batch', 'approve_ad_plan', 'list_ad_approvals',
+      'surprise_me_templates', 'generate_product_photos', 'estimate_product_photos', 'get_ad_credits',
+    ]) {
+      expect(skill).not.toContain(retiredName);
+    }
+  });
+
+  it('catches a retired name on a line that only says "fallback", and a misspelt tool', () => {
+    expect(connectorNameViolations(`${skill}\nThere is no HTTP or file fallback; call \`regenerate_creative\`.`).retiredOutsideFallback)
+      .toEqual(['regenerate_creative']);
+    expect(connectorNameViolations(`${skill}\nRead it with \`ads_templates_read\`.`).unknownToolNames).toEqual(['ads_templates_read']);
+    expect(connectorNameViolations(`${skill}\nShoot with \`photo_generate\`, then \`brands_read(brand_id)\`.`).unknownToolNames)
+      .toEqual(['photo_generate', 'brands_read']);
+    expect(connectorNameViolations(`${skill}\n\`estimate_remix_batch { items }\``).unservedCalls).toEqual(['estimate_remix_batch']);
+  });
+
+  it('asks a chat user to reconnect GooseWorks instead of sending them to a terminal', () => {
+    expect(skill).toMatch(/ask the\s+user to reconnect or refresh GooseWorks/);
+    expect(skill).toMatch(/never send a chat-app\s+user to a terminal/);
+    expect(skill).not.toMatch(/stop and\s+tell the user to run `gooseworks install/);
+    for (const line of skill.split('\n').filter((l) => l.includes('gooseworks install'))) {
+      expect(line).toMatch(/terminal/i);
+    }
   });
 });
 
@@ -618,6 +796,14 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
 });
 
 // GOOSE-3743: idea requests go to goose-skills' ad-angle-miner (video output).
+describe('skills/goose-video named formats before custom (GOOSE-3909)', () => {
+  it('checks the catalog for a named format before routing to custom', () => {
+    const video = getGooseVideoSkillContent();
+    expect(video).toContain('Go custom only when no format fits');
+    expect(video.indexOf('First check the catalog')).toBeLessThan(video.indexOf('slug: "make-custom-video"'));
+  });
+});
+
 describe('skills/goose-video → ad-angle-miner', () => {
   const video = getGooseVideoSkillContent();
 
@@ -729,6 +915,23 @@ describe('current template approval and follow-up contract', () => {
     expect(local).toContain('After EVERY progress callback inspect stop');
     expect(local).toContain('SPEND_CAP_REACHED');
     expect(local).toContain('scope:"raise_cap"');
+  });
+  it('raises a budget only after a real limit stop, by the server quote, on a fresh yes', () => {
+    expect(local).toContain("Never raise a video's budget on your own judgment");
+    expect(local).toContain('say cost.raise_quote in one line');
+    expect(local).toContain('scope:"raise_cap", total_credits: <to_credits>');
+    expect(local).toContain('total_credits is the new budget itself, never credits to\n   add');
+    expect(local).not.toContain('raise_cap_credits: <by_credits>');
+    expect(local).toContain('already_raised: carry on');
+    expect(local).toContain('cap_raise_total_required means read the\n   project again and send total_credits equal to cost.raise_quote.to_credits');
+    expect(local).toContain('"I don\'t care\n   about the cost", is not approval of a new budget');
+    expect(local).toContain('do not send raise_cap_credits for one video');
+    expect(local).toContain('If cost.raise_quote is null because the plan was saved\n   again since its approval');
+    expect(local).toContain('otherwise the approved budget already covers the work: carry on, do not ask');
+    expect(local).toContain('After a raise, open a new render that reuses the saved pieces');
+    expect(local).toContain('cap_raise_not_needed');
+    expect(local).toContain('cap_raise_changed');
+    expect(local).toContain('approve the plan again');
     expect(local).toContain('Never replace a supplied\n  watched render with the final');
     expect(local).toContain('fix_of_render_id');
     expect(local).toContain('remix_of_render_id');

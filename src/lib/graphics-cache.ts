@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { SLUG_RE } from './graphics-manifest';
+import { profileRoot } from '../environment';
 
 export type Resource = 'styles' | 'formats';
 export type Variant = 'md' | 'json';
@@ -23,7 +24,7 @@ export type Variant = 'md' | 'json';
 function getCacheRootInternal(): string {
   return (
     process.env.GOOSEWORKS_GRAPHICS_CACHE_DIR ||
-    path.join(os.homedir(), '.gooseworks', 'cache', 'graphics')
+    path.join(profileRoot(), 'cache', 'graphics')
   );
 }
 

@@ -23,6 +23,8 @@ jest.mock('../../src/utils/logger', () => ({
 import { getCredentials } from '../../src/auth/credentials';
 import * as loggerModule from '../../src/utils/logger';
 import { fetchCommand, createFetchCommand } from '../../src/commands/fetch';
+import { getGooseVideoSkillContent } from '../../src/skills/master-skill';
+import { skillContentHash } from '../../src/skills/releases';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 
@@ -194,6 +196,31 @@ describe('fetch command', () => {
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
   });
 
+  it('fetches the current video entry for a new run and compares an old approved package without changing it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'brand-first-video-'));
+    const target = path.join(dir, 'approved-package.json');
+    const old = JSON.stringify({ slug: 'goose-video', version: '0.3.0', content: '# approved old entry', contentHash: skillContentHash('# approved old entry') });
+    fs.writeFileSync(target, old);
+    const content = getGooseVideoSkillContent();
+    const current = { slug: 'goose-video', name: 'Goose Video', version: '3.0.1', content, contentHash: skillContentHash(content) };
+    let requests = 0;
+    server = await startServer((req, res) => {
+      expect(req.url).toBe('/api/skills/catalog/goose-video');
+      requests++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', data: current }));
+    });
+    mockGetCredentials.mockReturnValue({ api_key: 'cal_test', email: 'u@example.com', agent_id: 'agent-1', api_base: server.url });
+    try {
+      await createFetchCommand().parseAsync(['node', 'test', 'goose-video']);
+      expect(JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]))).toMatchObject({ ...current, freshness: { status: 'not_compared' } });
+      await createFetchCommand().parseAsync(['node', 'test', 'goose-video', '--saved-package', target]);
+      expect(JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]))).toMatchObject({ ...current, freshness: { status: 'stale', changes: ['goose-video'] } });
+      expect(requests).toBe(2);
+      expect(fs.readFileSync(target, 'utf8')).toBe(old);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('refuses a non-file saved package before requesting the catalog', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa37-directory-'));
     mockGetCredentials.mockReturnValue({api_key:'cal_test',email:'u@example.com',agent_id:'agent-1',api_base:'http://127.0.0.1:1'});
@@ -201,6 +228,34 @@ describe('fetch command', () => {
       await expect(createFetchCommand().parseAsync(['node','test','recipe','--saved-package',dir])).rejects.toThrow('process.exit called');
       expect(loggerModule.error).toHaveBeenCalledWith('Saved package must be a regular JSON file');
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+
+  it('delivers compatible current entry instructions through the old production catalog shape without inventing receipts', async () => {
+    // This is the observed old API shape: entry bytes come from CLI main, while
+    // the catalog metadata has no backend brand-context capability declaration.
+    const current = {
+      slug: 'goose-video', name: 'GooseWorks Video Ads', version: 'cli-current',
+      content: getGooseVideoSkillContent(), scripts: null, files: null, config: {},
+      metadata: { source: 'cli-entry-skill', source_url: 'https://raw.githubusercontent.com/gooseworks-ai/gooseworks/main/skills/goose-video/SKILL.md' },
+      requiresSkills: [], dependencySkills: [],
+    };
+    server = await startServer((req, res) => {
+      expect(req.url).toBe('/api/skills/catalog/goose-video');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', data: current }));
+    });
+    mockGetCredentials.mockReturnValue({ api_key: 'cal_test', email: 'u@example.com', agent_id: 'agent-1', api_base: server.url });
+    await createFetchCommand().parseAsync(['node', 'test', 'goose-video']);
+    const emitted = JSON.parse(String(consoleLogSpy.mock.calls.at(-1)?.[0]));
+    expect(emitted.content).toBe(current.content);
+    expect(emitted).not.toHaveProperty('brand_context');
+    expect(emitted).not.toHaveProperty('brand_context_digest');
+    expect(emitted.content).toContain('brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }');
+    expect(emitted.content).toContain('An older API returns the actual four brand sections');
+    expect(emitted.content).toContain('Do not fabricate a receipt or send nonexistent bundle/digest fields');
+    expect(emitted.content).toContain('Binding is required');
+    expect(emitted.content).toContain('That refusal never permits the older-API');
+    expect(emitted.content).toContain('Guide returns `not_found`');
   });
 
 });
