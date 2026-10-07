@@ -56,7 +56,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-graphics',
     when: 'Charts, infographics, slides, social graphics, branded visual designs from a style/format',
-    how: 'In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-graphics" }`. In a terminal, use the installed copy if present; otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`).',
+    how: 'If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`).',
     delivery: 'fetch',
   },
   {

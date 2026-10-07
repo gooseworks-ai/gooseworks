@@ -1,5 +1,5 @@
 {
-  "$comment": "SNAPSHOT of the tool names the customer GooseWorks connector lists (served) and the old names it no longer lists (retired: hidden aliases, replaced public names and removed tools). This repo cannot read the backend, so the entry-skill guard in tests/skills/master-skill.test.ts checks against this copy. If the guard fails because the backend renamed or added a tool, refresh both lists from the source files below.",
+  "$comment": "SNAPSHOT of the tool names the customer GooseWorks connector lists (served) and the old names it no longer lists (retired: hidden aliases, replaced public names and removed tools). This repo cannot read the backend, so the entry-skill guard in tests/skills/master-skill.test.ts checks against this copy. If the guard fails because the backend renamed or added a tool, refresh both lists from the source files below. Nothing in gooseworks-app fails when it renames a tool, so whoever renames or retires a customer tool there refreshes this file in the same change.",
   "source_repo": "gooseworks-app",
   "source_files": [
     "apps/api/src/app-mcp-server/lib/customer-tool-catalog.snapshot.json",

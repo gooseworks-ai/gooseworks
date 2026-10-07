@@ -132,11 +132,15 @@ describe('skills/master-skill', () => {
       const retired = new Set(connector.retired);
       const retiredOutsideFallback: string[] = [];
       const unservedCalls: string[] = [];
+      for (const retiredName of ['call_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
+        expect(content).not.toContain(retiredName);
+      }
       for (const line of content.split('\n')) {
-        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)/g)) {
-          if (retired.has(name) && !/older|fallback/i.test(line)) retiredOutsideFallback.push(name);
+        const labelledFallback = /older (clients?|connections?)|fallback/i.test(line);
+        for (const [, name] of line.matchAll(/(?<![\w-])([a-z][a-z0-9_]*)(?![\w-])/g)) {
+          if (retired.has(name) && !labelledFallback) retiredOutsideFallback.push(name);
         }
-        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*) \{/g)) {
+        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)\s*\{/g)) {
           if (!served.has(name)) unservedCalls.push(name);
         }
       }
@@ -145,8 +149,12 @@ describe('skills/master-skill', () => {
     });
 
     it('gives every CLI-delivered route a chat-app path (QA-26)', () => {
+      // goose-graphics runs the styles/formats CLI and Playwright locally, so it
+      // has no chat-app path yet; a catalog_fetch line would send chat agents
+      // into terminal-only steps.
+      const terminalOnly = new Set(['goose-graphics']);
       for (const route of DOMAIN_ROUTES) {
-        if (/gooseworks (install|fetch)/.test(route.how)) {
+        if (!terminalOnly.has(route.skill) && /gooseworks (install|fetch)/.test(route.how)) {
           expect(route.how).toContain(`catalog_fetch { type: "skill", slug: "${route.skill}" }`);
         }
       }
