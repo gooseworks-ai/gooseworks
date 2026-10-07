@@ -483,7 +483,7 @@ Idea requests still follow ad-angle-miner with the video output.
 ### 3. Show the picker or its text fallback
 
 Call `video_catalog_list { kind: "formats", brand_id }`. On the customer's computer, when you
-can actually execute shell commands, include `client: { shell: true }`; in a chat host omit
+can actually execute shell commands, you MUST choose local execution and include `client: { shell: true }`; in a chat host omit
 that claim. Inside a coworker sandbox follow its reported capabilities, never claim to be the
 customer's computer. Respect requested limit and next_cursor for more item pages; the card may
 contain a full picker independently of the item page.
@@ -509,7 +509,7 @@ contain a full picker independently of the item page.
   Never tell a chat host it needs Claude Code to start. Browser-only formats remain unavailable
   here; give computer setup guidance only if asked how to make one.
 - **Local shell:** run `gooseworks doctor --no-browser` for common setup (auth/MCP, Node 18+,
-  ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities,
+  ffmpeg with libx264 (libass only for an ASS caption route), ffprobe). Then fetch the selected template and its capabilities,
   and install documented dependencies in its fetched folder. Do not guess a renderer from a
   format name. For each Node renderer using default Playwright Chromium, run
   `gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"` with

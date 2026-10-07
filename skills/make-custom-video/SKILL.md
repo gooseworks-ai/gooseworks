@@ -240,6 +240,20 @@ review set; do not add a separate approval round.
 
 The generic production phases run in the Growth sandbox or a connected agent with a shell. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
 
+## Execution preflight
+
+A connected agent with a working shell executes this custom project locally. Declare client:{shell:true} on every video/format/catalog request that accepts it, including video_project_read. Each call can reach a different server process; a previous capability report does not carry over reliably. Missing libass does not remove shell capability: fetch [[composes::caption-burn]], which uses Pillow and FFmpeg overlay. Fetch every selected specialist and the invoked harness step files before declaring a route unavailable.
+
+For MCP-owned runs set GW_MEDIA_VIA=mcp and GW_PROJECT_ID before running any helper, even if CLI credentials exist. Record the selected account_whoami public API origin as GW_EXPECTED_API_ORIGIN; never open credential files to discover it. Use HTTP only after verifying the matching origin through supported CLI diagnostics. For large MCP relay bodies, use the helper's body_file without retyping: upload that JSON file to this same video project, confirm the returned asset, then call data_post_provider with body_asset_id and omit body when the tool advertises that argument. Its normal project, approval, budget and secret checks still apply. Older connectors must relay the exact saved JSON unchanged.
+
+Before taking over a delegated project, cancel its delegate task and read back that it is detached. Do not request another approval while a stale delegate remains attached. If cancellation is unsupported, save the blocker; a Stop followed by reapproval can wake the same delegate again.
+
+After a paid failure, reconcile the known job and actual charges. Stop after the first identical infrastructure failure; a failed coworker turn can still cost credits. Quotes are estimates, not actual spend. Preserve approved copy while changing cost explanations; show actual cumulative charges from the project ledger.
+
+Run helpers from the run's working directory with explicit absolute input/output paths. For footage, save inspected source in/out bounds and fit:width, including screen.fit:width. A planned creator image may be absent during free take planning; use plan_takes --plan-only instead of generating a placeholder.
+
+The writer's paid critic cannot run before custom script approval. Perform its rubric locally before script review and save that evidence. Only run an external critic when the host explicitly supports it in the current approved phase and budget; never bypass a spend gate or silently claim an independent critic ran.
+
 ## Check the connected tool contract first
 
 Inspect the tool parameters exposed by the selected connection before creating or changing a custom project. catalog_fetch returns skill packages, not tool schemas. Use the host's registered tool definitions (MCP tools/list when available); do not assume that fetching a newer skill updates a connector's saved schema.

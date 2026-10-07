@@ -453,7 +453,7 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   1. **Sandbox →** see "Running in a GooseWorks sandbox": ffmpeg + ffprobe (+ PIL on demand); no
      Chromium, so browser formats stop there.
   2. **CLI present →** run `gooseworks doctor --no-browser` for login, MCP, Node 18+, ffmpeg
-     with libx264 + libass, and ffprobe. This is common setup only. After fetching the selected
+     with libx264, and ffprobe. Require libass only for a selected ASS caption route; caption-burn uses Pillow overlays and does not need it. This is common setup only. After fetching the selected
      capabilities in Step 2, check each browser renderer's actual launch before ANY paid
      ingredient. An unscoped `gooseworks doctor` checks only the calling folder's browser;
      it cannot certify a different fetched renderer.
