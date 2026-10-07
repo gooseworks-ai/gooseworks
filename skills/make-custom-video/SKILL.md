@@ -112,9 +112,9 @@ The generic production phases run in the Growth sandbox or a connected agent wit
 
 ## Execution preflight
 
-A connected agent with a working shell executes this custom project locally. Declare client:{shell:true} on format/catalog requests that accept it. Missing libass does not remove shell capability: fetch [[composes::caption-burn]], which uses Pillow and FFmpeg overlay. Fetch every selected specialist and the invoked harness step files before declaring a route unavailable.
+A connected agent with a working shell executes this custom project locally. Declare client:{shell:true} on every video/format/catalog request that accepts it, including video_project_read. Each call can reach a different server process; a previous capability report does not carry over reliably. Missing libass does not remove shell capability: fetch [[composes::caption-burn]], which uses Pillow and FFmpeg overlay. Fetch every selected specialist and the invoked harness step files before declaring a route unavailable.
 
-For MCP-owned runs set GW_MEDIA_VIA=mcp and GW_PROJECT_ID before running any helper, even if CLI credentials exist. Record the selected account_whoami public API origin as GW_EXPECTED_API_ORIGIN; never open credential files to discover it. Use HTTP only after verifying the matching origin through supported CLI diagnostics.
+For MCP-owned runs set GW_MEDIA_VIA=mcp and GW_PROJECT_ID before running any helper, even if CLI credentials exist. Record the selected account_whoami public API origin as GW_EXPECTED_API_ORIGIN; never open credential files to discover it. Use HTTP only after verifying the matching origin through supported CLI diagnostics. For large MCP relay bodies, use the helper's body_file without retyping: upload that JSON file to this same video project, confirm the returned asset, then call data_post_provider with body_asset_id and omit body when the tool advertises that argument. Its normal project, approval, budget and secret checks still apply. Older connectors must relay the exact saved JSON unchanged.
 
 Before taking over a delegated project, cancel its delegate task and read back that it is detached. Do not request another approval while a stale delegate remains attached. If cancellation is unsupported, save the blocker; a Stop followed by reapproval can wake the same delegate again.
 
