@@ -1271,12 +1271,18 @@ propose putting a founder's or creator's face in one. Keep the customer's named 
 change the interaction, mode or number of people just to make a check pass.
 
 **Never offer guessing to software or a service.** The guessing route needs a physical product
-to hand over. For a software, app or service brand, never offer or script it, not even with a
-laptop, phone or other device showing the app as the prop: a device is not their product, and
-the selector still says unsupported. Offer the table's real alternatives instead (a one-person
-conversation, the street testimonial if the catalog lists it, or custom). A catalog row marked
-\`fit.ok: false\` is ruled out for this brand: never propose it unless the customer insists, and
-tell them why in plain words (its \`fit.reason\`).
+to hand over. When what the brand sells is software, an app or a service (nothing a person can
+hold), never offer or script guessing, not even with a laptop, phone or other device showing the
+app as the prop: the device is a prop, so \`offering_type\` stays \`digital\` or \`service\` and the
+selector says unsupported. A brand that sells a physical product, including a device or
+hardware that comes with an app, can still use guessing with that product. Offer the table's
+real alternatives instead: a one-person conversation (a script and prompt preview only, no
+finished video yet), the street testimonial if the catalog lists it, or custom. Asking again
+never unlocks a route the table or the selector rules out.
+
+For such a brand the catalog marks the street-interview rows \`fit.ok: false\`: they can't make
+a finished video for it. That verdict is about the finished video, so you may still mention the
+one-person conversation, saying plainly that it is a script and prompt preview only.
 
 - **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
@@ -1418,6 +1424,9 @@ contain a full picker independently of the item page.
   Write "no demo yet" when absent. Never put links only in a question control.
 - A format whose card contradicts what they asked for is never Suggested. Never offer
   available_here:false as an executable choice. Relay not_available_here in one short line.
+- A row with \`fit.ok: false\` is ruled out for this brand. Never propose it unless the customer,
+  after hearing why, still asks for it; tell them why in plain words (its \`fit.reason\`), never
+  the field name.
 - \`suggested\` ranks a row for the brand; it never means the row makes the setup they named.
   Never tell the customer a row is "exactly" what they asked for beyond what its card says. A
   street interview still needs the route check above first.

@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.3.2
+version: 2.3.3
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -252,7 +252,7 @@ The environment owner must confirm the app-MCP service rollout and refresh the c
 
 Before creating a custom project, when the brief changes, and before any paid preview, check whether the request names or implies a catalog format: street interview / vox pop / man-on-the-street, street testimonial, podcast, iMessage or chat, split-screen creator, screen insert, listicle, and so on. Call video_catalog_list {kind:"formats", brand_id}, then fetch that format's renderer or recipe skill and run its own selector or checks.
 
-For a street interview, fetch render-street-interview, read its street-script-writing guide, write a brief JSON with mode, offering_type (physical, service or digital), interaction_type and participants (people interviewed on screen, not counting the interviewer), and run python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>. It exits 2 whenever the status is not ready-for-writing. Its route output is binding: route.support ("render" or "preview-only"), route.person_reference and route.max_participants. A status of unsupported-route lists route_gaps and alternatives; it is a stop, not permission to go custom: show the alternatives and go custom only if the customer picks it.
+For a street interview, fetch render-street-interview, read its street-script-writing guide, write a brief JSON with mode, offering_type (physical, service or digital), interaction_type and participants (people interviewed on screen, not counting the interviewer), and run python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>. It exits 2 whenever the status is not ready-for-writing. Its route output is binding: route.support ("render" or "preview-only"), route.person_reference and route.max_participants. A status of unsupported-route lists route_gaps and alternatives; it is a stop, not permission to go custom: show the alternatives and go custom only if the customer picks it. A laptop, phone or other device showing software is a prop, not a physical product: offering_type stays digital or service, so guessing stays unsupported for a software, app or service brand.
 
 | Street route | On screen | Person image reference | Status |
 | --- | --- | --- | --- |

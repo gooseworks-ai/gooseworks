@@ -128,6 +128,8 @@ describe('custom video documented API payloads', () => {
     expect(c).toContain('## Match a named format before going custom');
     expect(c).toContain('python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>');
     expect(c).toContain('it is a stop, not permission to go custom');
+    // A device showing the app is a prop: guessing stays unsupported (T-STR-3).
+    expect(c).toContain('A laptop, phone or other device showing software is a prop, not a physical product: offering_type stays digital or service');
     expect(c).toMatch(/conversation \(mic-only, product-sample, concept-challenge\).*Preview only/);
     expect(c).toContain("keeps that format's hard constraints");
     expect(c).toContain('never continue past it silently');

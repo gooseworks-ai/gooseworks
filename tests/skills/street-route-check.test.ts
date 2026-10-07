@@ -87,12 +87,30 @@ describe('goose-video street-interview route check', () => {
   it('never offers guessing to a software or service brand, not even with a device as the prop', () => {
     expect(block).toContain('**Never offer guessing to software or a service.**');
     expect(block).toContain(
-      'For a software, app or service brand, never offer or script it, not even with a laptop, phone or other device showing the app as the prop',
+      'When what the brand sells is software, an app or a service (nothing a person can hold), never offer or script guessing, not even with a laptop, phone or other device showing the app as the prop',
     );
-    expect(block).toContain("Offer the table's real alternatives instead");
-    // The catalog's own verdict wins over any older instructions.
-    expect(block).toContain('A catalog row marked `fit.ok: false` is ruled out for this brand');
-    expect(block).toContain('tell them why in plain words (its `fit.reason`)');
+    expect(block).toContain('the device is a prop, so `offering_type` stays `digital` or `service`');
+    // A device or hardware brand sells a physical product: guessing stays open.
+    expect(block).toContain(
+      'A brand that sells a physical product, including a device or hardware that comes with an app, can still use guessing with that product.',
+    );
+    expect(block).toContain(
+      'a one-person conversation (a script and prompt preview only, no finished video yet)',
+    );
+    expect(block).toContain('Asking again never unlocks a route the table or the selector rules out.');
+  });
+
+  it("reads the catalog's fit.ok false on a street row as no finished video, not as no conversation", () => {
+    expect(block).toContain(
+      'For such a brand the catalog marks the street-interview rows `fit.ok: false`: they can\'t make a finished video for it.',
+    );
+    expect(block).toContain(
+      'you may still mention the one-person conversation, saying plainly that it is a script and prompt preview only.',
+    );
+    const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
+    expect(picker).toContain(
+      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it; tell them why in plain words (its `fit.reason`), never the field name.',
+    );
   });
 
   it('never reads a suggested row as a match for the setup the customer named', () => {
