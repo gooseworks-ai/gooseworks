@@ -205,6 +205,10 @@ the first available runtime:
    their own key. If no runtime is available, explain what connection is missing; never pretend
    the provider call ran.
 
+Managed provider calls are paid on the MCP and CLI runtimes alike (a ScrapeCreators call costs 1
+credit today, and each result reports what it charged). Before a skill's first paid call, tell the
+user roughly how many calls it will make and the credit total, and get their yes.
+
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
 GooseWorks MCP tools are connected, use these equivalents. Match on the tool name: a coding agent
 may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat app may not.

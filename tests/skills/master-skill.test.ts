@@ -23,10 +23,12 @@ const connector = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'connector-tool-names.json'), 'utf8'),
 ) as { served: string[]; retired: string[] };
 
-// Backticked identifiers that start like a connector tool (ads_, brand_, photos_,
-// job_, get_, ...) but are fields, values or statuses, not tools.
+// Backticked identifiers that look like a connector tool (start like ads_, brand_,
+// photos_, job_, get_, ... or end in a tool verb) but are fields, values, statuses or
+// actions (`precision_edit` is an ads_creative_edit action), not tools.
 const TOOL_SHAPED_FIELD = /_(id|ids|url|urls|kind|required|updates|in_progress)$/;
-const TOOL_SHAPED_NON_TOOLS = new Set(['save_progress', 'video_preferences', 'video_lab']);
+const TOOL_SHAPED_NON_TOOLS = new Set(['save_progress', 'video_preferences', 'video_lab', 'precision_edit']);
+const TOOL_VERB_SUFFIX = /_(read|get|list|create|update|upsert|generate|edit|upload|search|fetch|decide|delete|cancel)$/;
 
 function connectorNameViolations(content: string): {
   retiredOutsideFallback: string[];
@@ -47,10 +49,11 @@ function connectorNameViolations(content: string): {
     for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)\s*\{/g)) {
       if (!served.has(name)) unservedCalls.push(name);
     }
-    // A misspelt tool in prose (`ads_templates_read`) is neither served nor retired.
-    for (const [, name] of line.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g)) {
+    // A misspelt tool in prose (`ads_templates_read`, `photo_generate`, `brands_read(...)`)
+    // is neither served nor retired: it starts like a tool or ends in a tool verb.
+    for (const [, name] of line.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:`|\()/g)) {
       if (served.has(name) || retired.has(name) || TOOL_SHAPED_FIELD.test(name) || TOOL_SHAPED_NON_TOOLS.has(name)) continue;
-      if (toolPrefixes.has(name.split('_')[0])) unknownToolNames.push(name);
+      if (toolPrefixes.has(name.split('_')[0]) || TOOL_VERB_SUFFIX.test(name)) unknownToolNames.push(name);
     }
   }
   return { retiredOutsideFallback, unservedCalls, unknownToolNames };
@@ -326,7 +329,7 @@ describe('skills/goose-ads entry skill', () => {
   });
 
   it('routes Community search rows by sourceId and feed rows by item_type', () => {
-    expect(ads).toMatch(/each row's `sourceId` \(with `title` and `imageUrl`\) goes\s+in `source\.community_ad_ids\[\]\.community_id`/);
+    expect(ads).toMatch(/each row's `sourceId` \(with `title` and `thumbnailUrl`\) goes\s+in `source\.community_ad_ids\[\]\.community_id`/);
     expect(ads).toMatch(/`mode:\s+"community"`: its rows carry `item_type`/);
   });
 
@@ -335,7 +338,8 @@ describe('skills/goose-ads entry skill', () => {
       expect(ads).toContain(doc);
     }
     expect(ads).toMatch(/finalize fails and marks the brand's research as failed/);
-    expect(ads).toMatch(/As proposals \(the default, and the path in a chat app\)/);
+    expect(ads).toMatch(/As proposals \(the default\)/);
+    expect(ads).toMatch(/in a chat app, only for a brand\s+with no website/);
   });
 
   it('records the user’s reaction to a creative via ads_creative_update', () => {
@@ -434,6 +438,8 @@ describe.each([
     expect(connectorNameViolations(`${skill}\nThere is no HTTP or file fallback; call \`regenerate_creative\`.`).retiredOutsideFallback)
       .toEqual(['regenerate_creative']);
     expect(connectorNameViolations(`${skill}\nRead it with \`ads_templates_read\`.`).unknownToolNames).toEqual(['ads_templates_read']);
+    expect(connectorNameViolations(`${skill}\nShoot with \`photo_generate\`, then \`brands_read(brand_id)\`.`).unknownToolNames)
+      .toEqual(['photo_generate', 'brands_read']);
     expect(connectorNameViolations(`${skill}\n\`estimate_remix_batch { items }\``).unservedCalls).toEqual(['estimate_remix_batch']);
   });
 

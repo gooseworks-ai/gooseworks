@@ -199,10 +199,10 @@ How to get the total for each paid call:
 | `ads_generate` with `source.community_ad_ids` or `source.creative_ids` | No dry run (it returns `not_available`; these are priced when submitted). Pass `quality` explicitly (the user's choice, else `high`, the app default) and quote the images (each source's `variants` × its `ratios`) × `estimate.rates.<quality>` as the most it will cost (an engine without quality tiers costs the lower `rates.low`). `rates` comes with any template dry run; with no template at hand, dry-run one Surprise-me pick. |
 | `ads_creative_edit` `animate` | The same call with `dry_run: true` returns its `estimate`. |
 | `ads_creative_edit` `regenerate` / `precision_edit` | No dry run. Pass `quality` in the action's payload (without it `precision_edit` copies the source render's tier) and quote the images × `estimate.rates.<quality>` as the most it will cost: `regenerate` with `mode: "variation"` makes one per ratio (omitted `ratios` make three); `edit`, `exact` and `precision_edit` make one. |
-| `ads_creative_edit` `resize` | No dry run and no quality setting. Quote one image per placement × `credits_per_image` from a template dry run without `quality` (the default tier), as an estimate. `platforms` expands to every placement: meta 4, google 4, tiktok 2, linkedin 3, reddit 3, x 2; pass `targets` for fewer. |
+| `ads_creative_edit` `resize` | No dry run and no quality setting: it renders at the app's default tier (`high`). Quote one image per placement × `estimate.rates.high` as the most it will cost. `platforms` expands to every placement: meta 4, google 4, tiktok 2, linkedin 3, reddit 3, x 2; pass `targets` for fewer. |
 | `ads_creative_edit` `layerize` | No dry run. It holds about 80 credits while it runs and charges the actual cost of the split (usually less). Say so and get the yes before sending `layerize: { confirmed: true }`. |
 | `ads_approval_decide` approve | The `credits` that `request_campaign_generation` and `ads_creative_read { brand_id, view: "approvals", batch_id }` return for those plans. |
-| `data_call_provider` / `data_post_provider` | The calls a recipe will make × their price: a ScrapeCreators call costs 1 credit today, and each result reports what it charged. State the rough total for the whole recipe once, before its first paid call. |
+| `data_call_provider` / `data_post_provider` | The calls a recipe will make × their price: a ScrapeCreators call costs 1 credit today, and each result reports what it charged. A fal or ElevenLabs POST quotes free with the same call plus `query: { quote_only: true }`. State the rough total for the whole recipe once, before its first paid call. |
 
 ## Live MCP contract — inspect it before asking
 
@@ -385,7 +385,7 @@ proposal** — it mirrors the web app and keeps the human in the loop without an
      and let them choose. `mode: "competitor"` rows are research and inspiration, never proof that
      the user owns the ad.
    - **Community** → `ads_template_read { brand_id, mode: "query", query: "<the angle and look>" }`
-     ranks Community ads by meaning; each row's `sourceId` (with `title` and `imageUrl`) goes
+     ranks Community ads by meaning; each row's `sourceId` (with `title` and `thumbnailUrl`) goes
      in `source.community_ad_ids[].community_id`. To browse the feed instead, use `mode:
      "community"`: its rows carry `item_type`, and a `template` id goes in `source.template_ids`,
      a `creative` id in `source.community_ad_ids`. The backend snapshots a Community creative
@@ -485,11 +485,12 @@ catalog keep arriving until `enrichment.settled` is true.
    fact on the brand's own site** — if the site can't be read, say so and ask the user; never
    guess a category from the brand name alone.
 2. **Save what you improved.**
-   - **As proposals (the default, and the path in a chat app):** `brand_update { brand_id,
+   - **As proposals (the default):** `brand_update { brand_id,
      knowledge_intent: "agent_proposal", rationale, patch: { knowledge: { positioning?, audience?,
      voice?, brandType?, tagline?, valueProps? } } }`. They stay pending until the user accepts
      them in the app.
-   - **As the full research pack (only when you wrote all of it):** with `file_write`, under
+   - **As the full research pack (only when you wrote all of it; in a chat app, only for a brand
+     with no website, see below):** with `file_write`, under
      `agent-config/brands/<slug>/brand-research/`, write all four docs `brand-summary.md`,
      `visual-identity.md`, `audience.md` and `competitors.md` (real content, at least a few
      sentences each) plus `kit-patch.json`: `{ positioning?, audience?, voice?, brandType?,
