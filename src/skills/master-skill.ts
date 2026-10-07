@@ -1425,8 +1425,8 @@ contain a full picker independently of the item page.
 - A format whose card contradicts what they asked for is never Suggested. Never offer
   available_here:false as an executable choice. Relay not_available_here in one short line.
 - A row with \`fit.ok: false\` is ruled out for this brand. Never propose it unless the customer,
-  after hearing why, still asks for it (the street conversation preview is the one exception; see
-  the route check). When they ask about one, tell them why in plain words (its \`fit.reason\`),
+  after hearing why, still asks for it (when they asked for a street interview, the one-person
+  conversation preview is the one exception; see the route check). When they ask about one, tell them why in plain words (its \`fit.reason\`),
   never the field name.
 - \`suggested\` ranks a row for the brand; it never means the row makes the setup they named.
   Never tell the customer a row is "exactly" what they asked for beyond what its card says. A

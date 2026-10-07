@@ -109,7 +109,7 @@ describe('goose-video street-interview route check', () => {
     );
     const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
     expect(picker).toContain(
-      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it (the street conversation preview is the one exception; see the route check). When they ask about one, tell them why in plain words (its `fit.reason`), never the field name.',
+      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it (when they asked for a street interview, the one-person conversation preview is the one exception; see the route check). When they ask about one, tell them why in plain words (its `fit.reason`), never the field name.',
     );
   });
 
