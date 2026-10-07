@@ -226,12 +226,18 @@ template or custom, check the request against its routes:
 | Conversation (`mic-only`, `product-sample`, `concept-challenge`) | Interviewer and one person | No product photo, phone, screen or UI | A script and prompt preview only, no finished video yet |
 | Street testimonial (its own format) | One person talking to camera, no interviewer | The creator still its recipe prescribes | A finished video, when the catalog lists it |
 
+Neither interview route takes a photo of a person: people are described in text, so never
+propose putting a founder's or creator's face in one. Keep the customer's named setup: never
+change the interaction, mode or number of people just to make a check pass.
+
 - **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
 - **With a shell** (the customer's computer or the coworker sandbox), also run its free
-  selector, which makes no paid call:
-  1. Fetch `catalog_fetch { type: "skill", slug: "render-street-interview" }` (older clients:
-     `fetch_skill("render-street-interview")`). Save each `scripts` entry as
+  selector, which makes no paid call. If the fetch or the run fails, decide from the table.
+  1. Fetch the renderer to a file, not into the conversation: its inline package is over a
+     million characters. Use `gooseworks fetch render-street-interview > <file.json>`, or
+     `catalog_fetch { type: "skill", slug: "render-street-interview", delivery: "archive" }` and
+     extract the ZIP after checking its hashes. Save each `scripts` entry as
      `/tmp/gooseworks-scripts/render-street-interview/scripts/<name>` and each `files` entry at
      `/tmp/gooseworks-scripts/render-street-interview/<path>`; the selector reads
      `references/street-reference-library.json` from there.
@@ -239,31 +245,39 @@ template or custom, check the request against its routes:
      `product-guess`, or `conversation` with `mic-only`, `product-sample` or `concept-challenge`.
      `offering_type` is exactly `physical`, `service` or `digital` (software, SaaS and apps are
      `digital`). `participants` is a whole number: people interviewed on screen, not counting
-     the interviewer. When the customer named no interaction, run each mode that could fit.
+     the interviewer. Leave it out when the customer named no count; the selector then uses the
+     route's usual cast. When the customer named no interaction, run each mode that could fit.
   3. Run `python3 /tmp/gooseworks-scripts/render-street-interview/scripts/prepare_script_context.py --brief <brief.json> --out <context.json>`.
      Read `status` and `brief_gaps` in the output file, not the exit code: it exits 2 for every
-     status except `ready-for-writing`. A Python traceback means the brief is malformed, not a
-     verdict.
+     status except `ready-for-writing`. A Python traceback is not a verdict: the brief or the
+     saved files are wrong (for example the reference library in the wrong folder). Fix them and
+     run it again.
   4. A run with any `brief_gaps` has not checked the route. Fix every gap and run it again.
 
 **An unsupported setup is a stop.** `unsupported-route`, or a request the table rules out,
 means this setup can't be made. Tell the customer plainly, in one line, for example: "A
 three-person mic-only street interview isn't something we can make yet: that version takes one
 person, and the three-person version needs a physical product to hand over." Then offer the
-alternatives in plain words, each with how it differs: the same interview with one person, as a
-script preview only; one person talking to camera with no interviewer, if the catalog lists
-that format; or a custom video,
-untested, that keeps the street format's limits. Never use route names or the script's
-wording. Do not create the project or write a script for it. Go custom only if the customer
-picks it; a custom video keeps the street format's hard constraints, which make-custom-video
-lists.
+closest supported options in plain words, each with how it differs. With a shell, these are the
+selector's `alternatives`. Without one, take them from the table:
+
+- the same setup within its limit: guessing with up to four people, a finished video; or a
+  conversation with one person, a script preview only;
+- for something people can't hold (software, a service), a one-person conversation instead
+  of guessing;
+- one person talking to camera with no interviewer, if the catalog lists that format;
+- a custom video, untested, that keeps the street format's limits.
+
+Never use route names or the script's wording. Do not create the project or write a script for
+it. Go custom only if the customer picks it; a custom video keeps the street format's hard
+constraints, which make-custom-video lists.
 
 **A supported setup.** With empty `brief_gaps`, any other status means the route exists.
 `needs-reference` means no observed reference ad matched yet: it does not block proposing the
 format; carry it into the handoff so the script step resolves or reports it before script
-approval. Carry the route too (which one, how many people, finished video or preview only). A
-preview-only route makes a script and prompt preview, not a finished video: say so before the
-customer chooses it.
+approval. Carry the route too: which one, how many people, finished video or preview only, and
+no person photos. A preview-only route makes a script and prompt preview, not a finished video:
+say so before the customer chooses it.
 
 ## Route first: is this a new video?
 
