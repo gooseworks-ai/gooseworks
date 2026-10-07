@@ -93,10 +93,12 @@ describe('skills/installer', () => {
     it('downloads every file into a staging dir then atomically renames it into place', async () => {
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
-        if (value.includes('/git/trees/main?recursive=1')) {
+        if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
+        if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {
             ok: true,
             json: async () => ({
+              sha: 'a'.repeat(40),
               tree: [
                 { path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' },
                 { path: 'skills/composites/goose-graphics/scripts/render.py', type: 'blob' },
@@ -140,10 +142,12 @@ describe('skills/installer', () => {
       let rawCalls = 0;
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
-        if (value.includes('/git/trees/main?recursive=1')) {
+        if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
+        if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {
             ok: true,
             json: async () => ({
+              sha: 'a'.repeat(40),
               tree: [
                 { path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' },
                 { path: 'skills/composites/goose-graphics/scripts/render.py', type: 'blob' },
@@ -197,7 +201,8 @@ describe('skills/installer', () => {
       global.fetch = jest.fn(async () => ({
         ok: true,
         json: async () => ({
-          tree: [
+          sha: 'a'.repeat(40),
+              tree: [
             { path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' },
             { path: 'skills/composites/goose-aeo/SKILL.md', type: 'blob' },
           ],
@@ -212,10 +217,12 @@ describe('skills/installer', () => {
     it('reports progress while downloading standalone skill files', async () => {
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
-        if (value.includes('/git/trees/main?recursive=1')) {
+        if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
+        if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {
             ok: true,
             json: async () => ({
+              sha: 'a'.repeat(40),
               tree: [
                 { path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' },
                 { path: 'skills/composites/goose-graphics/styles/index.json', type: 'blob' },

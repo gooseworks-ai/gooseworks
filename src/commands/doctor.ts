@@ -3,6 +3,8 @@ import { spawnSync } from 'child_process';
 import { getCredentials } from '../auth/credentials';
 import * as logger from '../utils/logger';
 import { checkBrowserPreflight } from '../utils/browser-preflight';
+import { getEnvironment } from '../environment';
+import { stagingLaunch, inspectCodexSkills, inspectClaudeSkills } from '../agents/staging';
 
 /** Run a binary and capture its output; never throws. */
 function run(bin: string, args: string[]): { status: number | null; out: string } {
@@ -113,7 +115,15 @@ export function createDoctorCommand(): Command {
   .option('--json', 'Print the checks as JSON (for an agent to parse)')
   .option('--renderer-script <path>', 'Launch Chromium through the selected Node renderer’s Playwright installation')
   .option('--no-browser', 'Check common prerequisites only (for non-browser formats or before fetching a renderer)')
-  .action((opts: { json?: boolean; rendererScript?: string; browser?: boolean }, command: Command) => {
+  .option('--project <folder>', 'Check the isolated staging test project')
+  .option('--agent <name>', 'Staging agent to check (claude or codex)', 'codex')
+  .action(async (opts: { json?: boolean; rendererScript?: string; browser?: boolean; project?: string; agent: string }, command: Command) => {
+    if (getEnvironment() === 'staging') {
+      const launch = stagingLaunch(opts.project || '', opts.agent);
+      const inventory = opts.agent === 'codex' ? await inspectCodexSkills(launch) : await inspectClaudeSkills(launch);
+      console.log(JSON.stringify({ ok: true, environment: 'staging', project: launch.cwd, skills: inventory, mcp: 'gooseworks-staging' }, null, 2));
+      return;
+    }
     if (opts.browser === false && opts.rendererScript !== undefined) {
       command.error('--renderer-script cannot be combined with --no-browser');
     }

@@ -6,6 +6,7 @@ import { getCredentials } from '../auth/credentials';
 import { executeNextCaptionClaim } from '../lib/video-local-captions';
 import { createCaptionRuntime, createCaptionTransport } from '../lib/video-local-runtime';
 import * as logger from '../utils/logger';
+import { profileRoot } from '../environment';
 
 /**
  * Narrow local worker for server-rendered video orders (GOOSE-3718). Those
@@ -30,7 +31,7 @@ videoLocalCommand.command('captions')
       const result = await executeNextCaptionClaim({
         projectId,
         workerId: randomUUID(),
-        workRoot: path.join(os.homedir(), '.gooseworks', 'video-local'),
+        workRoot: path.join(profileRoot(), 'video-local'),
         transport: createCaptionTransport(creds.api_base, creds.api_key),
         runtime: createCaptionRuntime(),
       });

@@ -10,6 +10,7 @@ import * as logger from '../utils/logger';
 import { API_BASE } from '../config';
 import { recordAttributionRef } from '../auth/attribution';
 import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { assertConnection, getEnvironment } from '../environment';
 
 /**
  * Refresh vendored entry skills on login for users who have already set up
@@ -19,6 +20,7 @@ import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
  * Bootstrapping a first-time install stays the job of `gooseworks install`.
  */
 async function refreshEntrySkillsOnLogin(): Promise<void> {
+  if (getEnvironment() === 'staging') return;
   if (!getInstalledSkills().includes('gooseworks')) return;
   const freshness = await readEntryFreshnessReport();
   await reportEntrySkillFreshness(freshness);
@@ -40,6 +42,7 @@ async function refreshEntrySkillsOnLogin(): Promise<void> {
  * call, while `doctor` (creds-only) still passes — a confusing trap.
  */
 function syncMcpRegistration(): void {
+  if (getEnvironment() === 'staging') return;
   if (configureClaudeMcp()) {
     const creds = getCredentials();
     logger.info(`Synced the gooseworks MCP → ${creds?.mcp_server_url ?? 'the configured server'}`);
@@ -58,6 +61,7 @@ export const loginCommand = new Command('login')
   .option('--api-base <url>', 'API base URL', API_BASE)
   .option('--ref <code>', 'Referral or marketing campaign code for attribution')
   .action(async (opts) => {
+    assertConnection(opts.apiBase, 'api');
     const existing = getCredentials();
     if (existing) {
       logger.success(`Already logged in as ${existing.email}`);
@@ -87,6 +91,7 @@ export const loginCommand = new Command('login')
  * Returns credentials or exits the process.
  */
 export async function ensureLoggedIn(apiBase: string = API_BASE, ref?: string) {
+  assertConnection(apiBase, 'api');
   const existing = getCredentials();
   if (existing) {
     await recordAttributionRef(existing.api_base || apiBase, ref, existing.api_key);

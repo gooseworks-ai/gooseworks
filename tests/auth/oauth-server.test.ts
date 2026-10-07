@@ -2,6 +2,7 @@ import * as http from 'http';
 
 jest.mock('../../src/auth/credentials', () => ({
   saveCredentials: jest.fn(),
+  validateCredentials: jest.fn(),
 }));
 
 jest.mock('open', () => jest.fn().mockResolvedValue(undefined));
@@ -16,6 +17,7 @@ jest.mock('../../src/utils/logger', () => ({
 import open from 'open';
 import { saveCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
+import { selectEnvironment } from '../../src/environment';
 
 const mockOpen = open as jest.MockedFunction<typeof open>;
 const mockSaveCredentials = saveCredentials as jest.MockedFunction<typeof saveCredentials>;
@@ -56,8 +58,30 @@ async function waitForOpen(): Promise<string> {
 
 describe('auth/oauth-server', () => {
   beforeEach(() => {
+    selectEnvironment('production');
     jest.clearAllMocks();
     mockOpen.mockResolvedValue(undefined as any);
+  });
+  afterEach(() => selectEnvironment('production'));
+
+  it('refuses a staging callback that confirms the production API', async () => {
+    selectEnvironment('staging');
+    const flow = runOAuthFlow('https://api.staging.gooseworks.ai');
+    const failed = flow.catch(error => error);
+    const { port, state } = extractCallbackParams(await waitForOpen());
+    const response = await hitCallback(port, { token: 'fixture', email: 'test@gooseworks.ai', agent_id: 'fixture', state, api_base: 'https://api.gooseworks.ai' });
+    expect(response.status).toBe(400);
+    expect(await failed).toBeInstanceOf(Error);
+    expect(mockSaveCredentials).not.toHaveBeenCalled();
+  });
+
+  it('saves the API confirmed by a matching staging callback', async () => {
+    selectEnvironment('staging');
+    const flow = runOAuthFlow('https://api.staging.gooseworks.ai');
+    const { port, state } = extractCallbackParams(await waitForOpen());
+    const response = await hitCallback(port, { token: 'fixture', email: 'test@gooseworks.ai', agent_id: 'fixture', state, api_base: 'https://api.staging.gooseworks.ai', mcp_server_url: 'https://mcp.staging.gooseworks.ai/mcp' });
+    expect(response.status).toBe(200); await flow;
+    expect(mockSaveCredentials).toHaveBeenCalledWith(expect.objectContaining({ api_base: 'https://api.staging.gooseworks.ai', mcp_server_url: 'https://mcp.staging.gooseworks.ai/mcp' }));
   });
 
   it('completes the OAuth flow, saves credentials, and resolves', async () => {

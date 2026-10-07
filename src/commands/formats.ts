@@ -142,7 +142,7 @@ const publishCmd = new Command('publish')
       {
         manifestFilename: FORMAT_MANIFEST_FILENAME,
         validate: validateFormatManifest,
-        hubUrl: (slug) => `${HUB_URL}/formats/${slug}`,
+        hubUrl: (slug) => HUB_URL ? `${HUB_URL}/formats/${slug}` : '',
         searchHint: (slug) => `gooseworks formats search ${slug}`,
         label: 'format',
         upload: (manifest, files) => publishFormat(auth, manifest, files),
@@ -161,7 +161,7 @@ const updateCmd = new Command('update')
       {
         manifestFilename: FORMAT_MANIFEST_FILENAME,
         validate: validateFormatManifest,
-        hubUrl: (s) => `${HUB_URL}/formats/${s}`,
+        hubUrl: (s) => HUB_URL ? `${HUB_URL}/formats/${s}` : '',
         searchHint: (s) => `gooseworks formats search ${s}`,
         label: 'format',
         upload: (manifest, files) => updateFormat(auth, slug, manifest, files),

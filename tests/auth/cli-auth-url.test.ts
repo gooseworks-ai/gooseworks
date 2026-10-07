@@ -4,6 +4,7 @@ import * as http from 'http';
 // run without touching the real filesystem, browser, or logger.
 jest.mock('../../src/auth/credentials', () => ({
   saveCredentials: jest.fn(),
+  validateCredentials: jest.fn(),
 }));
 jest.mock('open', () => jest.fn().mockResolvedValue(undefined));
 jest.mock('../../src/utils/logger', () => ({
