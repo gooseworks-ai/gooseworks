@@ -80,13 +80,17 @@ async function publish() {
     let failure;
     try { execFileSync('npm', ['publish', artifact.file, '--tag', identity.tag, '--access', 'public', '--provenance', '--ignore-scripts'], { stdio: 'inherit' }); }
     catch (error) { failure = error; }
-    // Registry confirmation is required even after npm exits successfully.
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // npm can accept a publish before processing makes the version installable.
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (true) {
       existing = await metadata(artifact.version);
       if (existing) break;
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      console.log(`Waiting for npm to make ${artifact.version} available...`);
+      await new Promise(resolve => setTimeout(resolve, Math.min(10000, remaining)));
     }
-    if (!existing) throw failure || new Error('npm did not confirm the new release');
+    if (!existing) throw failure || new Error('npm accepted the release but it is still unavailable after 10 minutes. Check npm processing before retrying this workflow.');
     verify(existing);
   }
   output('published', 'true'); output('version', artifact.version);
