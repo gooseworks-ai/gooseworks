@@ -110,6 +110,20 @@ review set; do not add a separate approval round.
 
 The generic production phases run in the Growth sandbox or a connected agent with a shell. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
 
+## Execution preflight
+
+A connected agent with a working shell executes this custom project locally. Declare client:{shell:true} on format/catalog requests that accept it. Missing libass does not remove shell capability: fetch [[composes::caption-burn]], which uses Pillow and FFmpeg overlay. Fetch every selected specialist and the invoked harness step files before declaring a route unavailable.
+
+For MCP-owned runs set GW_MEDIA_VIA=mcp and GW_PROJECT_ID before running any helper, even if CLI credentials exist. Record the selected account_whoami public API origin as GW_EXPECTED_API_ORIGIN; never open credential files to discover it. Use HTTP only after verifying the matching origin through supported CLI diagnostics.
+
+Before taking over a delegated project, cancel its delegate task and read back that it is detached. Do not request another approval while a stale delegate remains attached. If cancellation is unsupported, save the blocker; a Stop followed by reapproval can wake the same delegate again.
+
+After a paid failure, reconcile the known job and actual charges. Stop after the first identical infrastructure failure; a failed coworker turn can still cost credits. Quotes are estimates, not actual spend. Preserve approved copy while changing cost explanations; show actual cumulative charges from the project ledger.
+
+Run helpers from the run's working directory with explicit absolute input/output paths. For footage, save inspected source in/out bounds and fit:width, including screen.fit:width. A planned creator image may be absent during free take planning; use plan_takes --plan-only instead of generating a placeholder.
+
+The writer's paid critic cannot run before custom script approval. Perform its rubric locally before script review and save that evidence. Only run an external critic when the host explicitly supports it in the current approved phase and budget; never bypass a spend gate or silently claim an independent critic ran.
+
 ## Check the connected tool contract first
 
 Inspect the tool parameters exposed by the selected connection before creating or changing a custom project. catalog_fetch returns skill packages, not tool schemas. Use the host's registered tool definitions (MCP tools/list when available); do not assume that fetching a newer skill updates a connector's saved schema.
@@ -479,7 +493,7 @@ custom_review returns script_drafts and plan_revision from the same saved snapsh
 
 A pending/processing/failed reference blocks script approval. If the customer explicitly chooses to continue from the brief without the reference, save that choice through the connected reference-review tool when exposed, or offer Studio's Continue from brief action when needed. This is a reference decision, not a requirement to approve in Chrome. Do not silently replace a requested reference with brief-only production.
 
-Custom provider submits require a positive server quote, including quantity, supported dimensions/audio and any provider estimate. The server must establish source duration for audio/video-driven routes from authorized media metadata or a bounded probe; do not add invented duration fields to the provider body to force a quote. A provider estimate permits production within the approved budget even when exact final billing is unavailable. Missing source duration or an unavailable provider estimate is a system blocker to resolve on the saved project, not a model allowlist or a new creative choice. A conservative reservation is released to actual charged spend when the provider result settles. Final output must be a confirmed, stored video_asset in this exact organization/project, and completion binds its media_id to the render. External hotlinks cannot be pinned as generated custom finals. The portable helper checks FFmpeg's libass capability before local captions, rejects clips shorter than their timeline and validates video-stream duration.
+Custom provider submits require a positive server quote, including quantity, supported dimensions/audio and any provider estimate. The server must establish source duration for audio/video-driven routes from authorized media metadata or a bounded probe; do not add invented duration fields to the provider body to force a quote. A provider estimate permits production within the approved budget even when exact final billing is unavailable. Missing source duration or an unavailable provider estimate is a system blocker to resolve on the saved project, not a model allowlist or a new creative choice. A conservative reservation is released to actual charged spend when the provider result settles. Final output must be a confirmed, stored video_asset in this exact organization/project, and completion binds its media_id to the render. External hotlinks cannot be pinned as generated custom finals. The portable assembly helper checks libass only when captions_ass is supplied; caption-burn uses Pillow overlays without libass, rejects clips shorter than their timeline and validates video-stream duration.
 
 ## Use uploaded footage
 

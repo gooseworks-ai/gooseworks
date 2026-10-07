@@ -21,9 +21,8 @@ function onPath(bin: string): boolean {
 }
 
 /**
- * Local video renders burn subtitles with libass and encode with libx264. An
- * ffmpeg without either passes a bare `which ffmpeg` and then fails mid-render,
- * so check the build, not the path.
+ * Common setup requires H.264 encoding. ASS captions additionally need libass;
+ * Pillow overlays do not. The selected caption renderer checks its own needs.
  */
 function ffmpegBuild(): { ok: boolean; detail: string } {
   if (!onPath('ffmpeg')) return { ok: false, detail: 'ffmpeg is not on PATH' };
@@ -31,8 +30,8 @@ function ffmpegBuild(): { ok: boolean; detail: string } {
   const filters = run('ffmpeg', ['-hide_banner', '-filters']).out;
   const hasX264 = /\blibx264\b/.test(encoders);
   const hasAss = /\bass\b/.test(filters);
-  if (hasX264 && hasAss) return { ok: true, detail: 'libx264 + libass present' };
-  const missing = [!hasX264 && 'libx264 encoder', !hasAss && 'libass `ass` filter'].filter(Boolean).join(' and ');
+  if (hasX264) return { ok: true, detail: hasAss ? 'libx264 + libass present' : 'libx264 present; ASS captions unavailable, Pillow overlays supported' };
+  const missing = 'libx264 encoder';
   return { ok: false, detail: `ffmpeg is installed but lacks ${missing}` };
 }
 
@@ -86,7 +85,7 @@ export function runDoctorChecks(opts: { includeAuth?: boolean; includeBrowser?: 
     { id: 'node', label: 'Node.js 18 or newer', ok: node.ok, detail: node.detail, fix: 'install Node 18+ (https://nodejs.org) or `nvm install 22`' },
     {
       id: 'ffmpeg',
-      label: 'ffmpeg with libx264 + libass',
+      label: 'ffmpeg with libx264',
       ok: ffmpeg.ok,
       detail: ffmpeg.detail,
       fix: 'brew install ffmpeg (macOS) / apt-get install ffmpeg (Linux)',
