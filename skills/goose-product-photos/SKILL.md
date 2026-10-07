@@ -91,8 +91,8 @@ If a tool named here is missing, the GooseWorks connection or its tool list is s
 user to reconnect or refresh GooseWorks in their app's connector settings. Installing or
 updating the `gooseworks` CLI never fixes a missing connector tool, so never send a chat-app
 user to a terminal for it. Only a terminal coding agent (Claude Code, Codex, Cursor) that has no
-GooseWorks tools at all connects them, in that terminal, with `gooseworks install --claude --mcp`
-and a restart.
+GooseWorks tools at all connects them, in that terminal, with `gooseworks install --mcp` plus
+`--claude`, `--codex` or `--cursor`, then a restart.
 
 Older notes or skill copies may name tools the connector no longer lists. Use the tool this skill
 names instead; `catalog_fetch { type: "skill", slug: "gooseworks-guide" }` maps every old name.
@@ -199,7 +199,8 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 - **Ask before spending.** State the dry-run credit total and get the user's explicit yes before
   the real `photos_generate` — it reserves credits.
 - **Poll, don't re-submit.** A generation that's still `running` is not stuck; re-submitting
-  double-bills. Only a `failed` generation should be retried.
+  double-bills. A `failed` generation may still hold `flagged` photos (shown, never billed):
+  show those first, and run again only after a new quote and the user's yes.
 - **Model imagery needs consent.** Only set a human model when the user asks, and pass
   `attestation_accepted: true`.
 - **Approval is the hand-off to ads.** Remind the user that only **approved** photos reach the brand

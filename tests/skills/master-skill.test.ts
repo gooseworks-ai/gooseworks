@@ -18,27 +18,45 @@ import { join } from 'node:path';
 // (snapshot in tests/fixtures/connector-tool-names.json). A chat agent told to call
 // a retired name cannot find it and tells the customer to update a terminal they do
 // not have. Every skill a chat agent loads names only served tools; a retired name
-// may appear only on a line labelled as an older-client/connection fallback.
+// may appear only on a line labelled "older client(s)" / "older connection(s)".
 const connector = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'connector-tool-names.json'), 'utf8'),
 ) as { served: string[]; retired: string[] };
 
-function connectorNameViolations(content: string): { retiredOutsideFallback: string[]; unservedCalls: string[] } {
+// Backticked identifiers that start like a connector tool (ads_, brand_, photos_,
+// job_, get_, ...) but are fields, values or statuses, not tools.
+const TOOL_SHAPED_FIELD = /_(id|ids|url|urls|kind|required|updates|in_progress)$/;
+const TOOL_SHAPED_NON_TOOLS = new Set(['save_progress', 'video_preferences', 'video_lab']);
+
+function connectorNameViolations(content: string): {
+  retiredOutsideFallback: string[];
+  unservedCalls: string[];
+  unknownToolNames: string[];
+} {
   const served = new Set(connector.served);
   const retired = new Set(connector.retired);
+  const toolPrefixes = new Set([...connector.served, ...connector.retired].map((name) => name.split('_')[0]));
   const retiredOutsideFallback: string[] = [];
   const unservedCalls: string[] = [];
+  const unknownToolNames: string[] = [];
   for (const line of content.split('\n')) {
-    const labelledFallback = /older (clients?|connections?)|fallback/i.test(line);
+    const labelledFallback = /older (clients?|connections?)/i.test(line);
     for (const [, name] of line.matchAll(/(?<![\w-])([a-z][a-z0-9_]*)(?![\w-])/g)) {
       if (retired.has(name) && !labelledFallback) retiredOutsideFallback.push(name);
     }
     for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)\s*\{/g)) {
       if (!served.has(name)) unservedCalls.push(name);
     }
+    // A misspelt tool in prose (`ads_templates_read`) is neither served nor retired.
+    for (const [, name] of line.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g)) {
+      if (served.has(name) || retired.has(name) || TOOL_SHAPED_FIELD.test(name) || TOOL_SHAPED_NON_TOOLS.has(name)) continue;
+      if (toolPrefixes.has(name.split('_')[0])) unknownToolNames.push(name);
+    }
   }
-  return { retiredOutsideFallback, unservedCalls };
+  return { retiredOutsideFallback, unservedCalls, unknownToolNames };
 }
+
+const NO_VIOLATIONS = { retiredOutsideFallback: [], unservedCalls: [], unknownToolNames: [] };
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -154,7 +172,7 @@ describe('skills/master-skill', () => {
       for (const retiredName of ['call_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
         expect(content).not.toContain(retiredName);
       }
-      expect(connectorNameViolations(content)).toEqual({ retiredOutsideFallback: [], unservedCalls: [] });
+      expect(connectorNameViolations(content)).toEqual(NO_VIOLATIONS);
     });
 
     it('gives every CLI-delivered route a chat-app path (QA-26)', () => {
@@ -273,7 +291,7 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toContain('`ads_template_read { brand_id, mode: "mine", filters: { relationship: "self" } }`');
     expect(ads).toMatch(/`ads_template_read \{ brand_id, mode: "query", query: "<the angle and look>" \}`/);
     // A Community row's item_type decides which ads_generate source it goes in.
-    expect(ads).toMatch(/a `template` id goes in `source\.template_ids`, a `creative` id in\s+`source\.community_ad_ids`/);
+    expect(ads).toMatch(/a `template` id goes in `source\.template_ids`,\s+a `creative` id in `source\.community_ad_ids`/);
     expect(ads).toMatch(/`ads_template_create \{ brand_id, source: \{ type: "media", media_id \} \}`/);
     expect(ads).toMatch(/`rights_attested: true` only after the user explicitly\s+confirms they own it/);
     expect(ads).toMatch(/ownership\/rights input/i);
@@ -299,6 +317,25 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/No dry run \(it returns `not_available`/);
     expect(ads).toContain('get the yes before sending `layerize: { confirmed: true }`');
     expect(ads).toContain('`credits.available_credits` from `account_whoami`');
+  });
+
+  it('treats analysis and brand-research data calls as paid', () => {
+    expect(ads).toMatch(/every\s+`data_call_provider` \/ `data_post_provider` call/);
+    expect(ads).toMatch(/their\s+data calls are paid/);
+    expect(ads).not.toMatch(/do NOT touch[\s\S]{0,40}credits/);
+  });
+
+  it('routes Community search rows by sourceId and feed rows by item_type', () => {
+    expect(ads).toMatch(/each row's `sourceId` \(with `title` and `imageUrl`\) goes\s+in `source\.community_ad_ids\[\]\.community_id`/);
+    expect(ads).toMatch(/`mode:\s+"community"`: its rows carry `item_type`/);
+  });
+
+  it('finalizes a research pack only when all four docs are written', () => {
+    for (const doc of ['brand-summary.md', 'visual-identity.md', 'audience.md', 'competitors.md', 'kit-patch.json']) {
+      expect(ads).toContain(doc);
+    }
+    expect(ads).toMatch(/finalize fails and marks the brand's research as failed/);
+    expect(ads).toMatch(/As proposals \(the default, and the path in a chat app\)/);
   });
 
   it('records the user’s reaction to a creative via ads_creative_update', () => {
@@ -384,13 +421,20 @@ describe.each([
   ['goose-product-photos', getGooseProductPhotosSkillContent()],
 ])('%s names only tools the GooseWorks connector lists (QA-26 / VWR14)', (_name, skill) => {
   it('names no retired tool outside a labelled fallback and calls only served tools', () => {
-    expect(connectorNameViolations(skill)).toEqual({ retiredOutsideFallback: [], unservedCalls: [] });
+    expect(connectorNameViolations(skill)).toEqual(NO_VIOLATIONS);
     for (const retiredName of [
       'submit_remix_batch', 'estimate_remix_batch', 'get_remix_batch', 'approve_ad_plan', 'list_ad_approvals',
       'surprise_me_templates', 'generate_product_photos', 'estimate_product_photos', 'get_ad_credits',
     ]) {
       expect(skill).not.toContain(retiredName);
     }
+  });
+
+  it('catches a retired name on a line that only says "fallback", and a misspelt tool', () => {
+    expect(connectorNameViolations(`${skill}\nThere is no HTTP or file fallback; call \`regenerate_creative\`.`).retiredOutsideFallback)
+      .toEqual(['regenerate_creative']);
+    expect(connectorNameViolations(`${skill}\nRead it with \`ads_templates_read\`.`).unknownToolNames).toEqual(['ads_templates_read']);
+    expect(connectorNameViolations(`${skill}\n\`estimate_remix_batch { items }\``).unservedCalls).toEqual(['estimate_remix_batch']);
   });
 
   it('asks a chat user to reconnect GooseWorks instead of sending them to a terminal', () => {
