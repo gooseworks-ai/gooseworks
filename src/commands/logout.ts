@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { clearCredentials, getCredentials } from '../auth/credentials';
 import { removeClaudeMcp } from '../agents/claude-mcp';
 import * as logger from '../utils/logger';
+import { getEnvironment } from '../environment';
 
 export const logoutCommand = new Command('logout')
   .description('Sign out and clear saved credentials')
@@ -17,6 +18,6 @@ export const logoutCommand = new Command('logout')
     // it lingers pointing at the logged-out backend with a now-dead token — the
     // classic "project not found" / wrong-org trap when you later log into a
     // different backend (e.g. local dev) without re-registering.
-    removeClaudeMcp();
+    if (getEnvironment() === 'production') removeClaudeMcp();
     logger.success(`Logged out (was ${existing.email}) — cleared credentials + MCP registration`);
   });

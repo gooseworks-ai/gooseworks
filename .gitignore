@@ -36,3 +36,6 @@ dist/
 .windsurf/
 .zencoder/
 skills-lock.json
+*.tgz
+packed.json
+release-artifact.json

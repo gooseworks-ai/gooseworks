@@ -2,9 +2,10 @@ import * as http from 'http';
 import * as net from 'net';
 import * as crypto from 'crypto';
 import open from 'open';
-import { saveCredentials, type Credentials } from './credentials';
+import { saveCredentials, validateCredentials, type Credentials } from './credentials';
 import * as logger from '../utils/logger';
 import { FRONTEND_URL } from '../config';
+import { getEnvironment } from '../environment';
 
 const OAUTH_TIMEOUT_MS = 120_000;
 
@@ -45,6 +46,7 @@ export async function runOAuthFlow(
         const scopeType = url.searchParams.get('scope_type') as 'agent' | 'user' | null;
         const defaultAgentId = url.searchParams.get('default_agent_id');
         const mcpServerUrl = url.searchParams.get('mcp_server_url');
+        const returnedApiBase = url.searchParams.get('api_base');
         const returnedState = url.searchParams.get('state');
 
         if (returnedState !== state) {
@@ -63,12 +65,24 @@ export async function runOAuthFlow(
           api_key: token,
           email,
           agent_id: agentId,
-          api_base: apiBase,
+          api_base: returnedApiBase || apiBase,
           ...(scopeType ? { scope_type: scopeType } : {}),
           ...(defaultAgentId ? { default_agent_id: defaultAgentId } : {}),
           ...(mcpServerUrl ? { mcp_server_url: mcpServerUrl } : {}),
         };
-        saveCredentials(creds);
+        try {
+          if (getEnvironment() === 'staging' && (!returnedApiBase || new URL(returnedApiBase).origin !== new URL(apiBase).origin)) throw new Error('The login callback did not confirm the staging API');
+          validateCredentials(creds); saveCredentials(creds);
+        }
+        catch (error) {
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('Connection did not match the selected GooseWorks environment.');
+          setTimeout(cleanup, 100);
+          process.removeListener('SIGINT', cleanup);
+          process.removeListener('SIGTERM', cleanup);
+          reject(error);
+          return;
+        }
 
         clearTimeout(timeout);
         process.removeListener('SIGINT', cleanup);

@@ -8,11 +8,14 @@ import * as fs from 'node:fs';
 import * as os from 'os';
 import * as path from 'node:path';
 import { getSkillsBasePath } from '../skills/installer';
+import { getEnvironment } from '../environment';
+import { stagingContent } from '../skills/staging-content';
 
 interface HostEntry { host: string; path: string; hash: string | null; location: 'managed_link' | 'linked_elsewhere' | 'independent' | 'unreadable' }
 
 /** A host can load a preserved real folder instead of our shared managed entry. */
 function inspectHostEntries(name: string): HostEntry[] {
+  if (getEnvironment() === 'staging') return [];
   return ['codex', 'claude'].flatMap((host): HostEntry[] => {
     const dir = path.join(os.homedir(), `.${host}`, 'skills', name);
     const file = path.join(dir, 'SKILL.md');
@@ -62,7 +65,8 @@ export function entryFreshnessReport(skills: EntrySkill[], runningVersion: strin
 export async function readEntryFreshnessReport() {
   let release: ReleasedSkills | undefined;
   try { release = await getReleasedSkills(); } catch { /* offline is unknown, never current */ }
-  return entryFreshnessReport(getEntrySkills(), getVersion(), release);
+  const skills = getEntrySkills().map(skill => getEnvironment() === 'staging' ? { ...skill, content: stagingContent(skill.content) } : skill);
+  return entryFreshnessReport(skills, getVersion(), release);
 }
 
 export async function reportEntrySkillFreshness(existing?: Awaited<ReturnType<typeof readEntryFreshnessReport>>): Promise<void> {
