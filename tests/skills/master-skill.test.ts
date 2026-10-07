@@ -345,12 +345,25 @@ describe('skills/goose-ads entry skill', () => {
   // gooseworks-app#1827: ads_generate (batch.links), job_get(kind: ads_batch)
   // (result.links) and ads_creative_read (app_url, brand_url) return app links.
   it('ends a run with the app links the tools return', () => {
+    // Where the links are: ads_generate's batch, job_get's result, creative reads.
+    expect(ads).toMatch(/and the\s+`batch`, which already carries its `links`/);
     expect(ads).toMatch(/`result\.links` holds the app links you end\s+the run with: `brand_url`/);
     expect(ads).toMatch(/`creative_links: \[\{\s+project_id, app_url \}\]`/);
+    expect(ads).toMatch(/each row has its `app_url` and the list has the\s+`brand_url`/);
+    // Make-ads hand-back: matched by creative id, finished creatives only.
     expect(ads).toMatch(/\*\*Hand back the ads with their links\.\*\*/);
-    expect(ads).toMatch(/`creative\.app_url` and\s+`creative\.brand_url`/);
-    expect(ads).toMatch(/never build an app URL yourself/);
-    expect(ads).not.toMatch(/return no app links/);
+    expect(ads).toMatch(/match\s+`creative_links\[\]\.project_id` to `result\.creatives\[\]\.id`/);
+    expect(ads).toMatch(/skip a creative whose renders all\s+failed/);
+    // Edits, campaign approvals and the rule.
+    expect(ads).toMatch(/`result\.links` from `job_get` for `regenerate`, `resize` and\s+`precision_edit`/);
+    expect(ads).toMatch(/`creative\.app_url` and `creative\.brand_url` from `ads_creative_read \{ brand_id,\s+creative_id \}` for `animate` and `layerize`/);
+    expect(ads).toMatch(/end with each batch's `result\.links`/);
+    expect(ads).toMatch(/\*\*Always end a successful run with the finished images and their links\*\*/);
+    // Prod can lag staging: a server without links gets images only, not a promise.
+    expect(ads).toMatch(/A server older than this skill returns no\s+`links`[\s\S]{0,120}hand back the images\s+only and don't mention links/);
+    expect(ads).not.toMatch(/return no app links|no app links, so/);
+    // The browse link follows the environment of a returned brand_url.
+    expect(ads).toMatch(/`<app>` is the start of a `brand_url` a tool returned/);
   });
 
   it('records the user’s reaction to a creative via ads_creative_update', () => {

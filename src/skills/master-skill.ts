@@ -915,8 +915,10 @@ Before each tool call:
   still points at the prior image). A render only failed when its \`status\` is \`"failed"\`: a slow
   render is healthy, and re-submitting it double-bills. \`result.links\` holds the app links you end
   the run with: \`brand_url\` (the brand's page, with all its ads) and \`creative_links: [{
-  project_id, app_url }]\` (each creative's page). A link is \`null\` (or the list empty) when the
-  brand has no app address yet or the link lookup failed; the ads are still made.
+  project_id, app_url }]\` (each creative's page). \`brand_url\` is \`null\` and the list empty only
+  if the link lookup failed; the ads are still made. A server older than this skill returns no
+  \`links\` (and no \`app_url\` / \`brand_url\` on creative reads): then hand back the images
+  only and don't mention links.
 - \`ads_creative_read { brand_id }\` — the brand's generated creatives, newest first (filter with
   \`batch_id\`, \`tags\`, \`approved_only\`); each row has its \`app_url\` and the list has the
   \`brand_url\`. \`creative_id\` reads one with its \`renders\`, plus \`creative.app_url\` and
@@ -1025,8 +1027,10 @@ proposal** — it mirrors the web app and keeps the human in the loop without an
      "surprise", count: 4 }\` picks remixable Community ads for the brand, shuffled so picks stay
      fresh. Every pick is a template: show them, and generate
      from the ones the user keeps (or from all of them if they said "just make them").
-   - **Browse in the app** → hand the user this URL, with the active brand's slug filled in:
-     \`https://make.gooseworks.ai/create?brand=<brand-slug>&cli=true\`
+   - **Browse in the app** → the one link you build yourself: \`<app>/create?brand=<brand-slug>&cli=true\`,
+     with the active brand's slug, where \`<app>\` is the start of a \`brand_url\` a tool returned
+     (for example from \`ads_creative_read { brand_id }\`), so it opens on the user's own
+     environment; if no tool returned a \`brand_url\`, use \`https://make.gooseworks.ai\`.
      In this mode the app shows a copyable remix prompt at the bottom (dismissable / switchable
      back to the UI composer). They browse their own and Community sources and copy the prompt.
 3. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app
@@ -1068,10 +1072,12 @@ catalog.
    quote and submit again.
 7. **Hand back the ads with their links.** Show every finished image (\`renders[].output_url\` of
    completed renders) and say in one line what failed, if anything. Then give the links from the
-   last \`job_get\`'s \`result.links\`, copied verbatim: each creative's \`app_url\` (from
-   \`creative_links\`, matched by \`project_id\` to the creative) and the \`brand_url\` where all
-   the brand's ads are. Skip a link that is \`null\`; never build an app URL yourself. Never end on
-   just "done" or a file path.
+   last \`job_get\`'s \`result.links\`, copied verbatim: the \`brand_url\` where all the brand's
+   ads are, and the \`app_url\` of each creative with a finished image (match
+   \`creative_links[].project_id\` to \`result.creatives[].id\`; skip a creative whose renders all
+   failed). For a big batch (more than about 8 creatives) give the \`brand_url\` and offer the
+   rest. Skip a missing or \`null\` link; never build an app URL yourself. Never end on just
+   "done" or a file path.
 
 ## Workflow — edit an existing ad
 
@@ -1174,9 +1180,11 @@ command.
   Relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
 - **No plan step for one-off ads.** Only a campaign's plans wait for approval
   (\`request_campaign_generation\` → \`ads_approval_decide\` with the user's words as \`user_quote\`).
-- **Always end a successful run with the finished images and their links** (\`result.links\`:
-  each creative's \`app_url\` and the \`brand_url\`), copied verbatim. Never end on just "done" or
-  a file path, and never build an app URL yourself.
+- **Always end a successful run with the finished images and their links**, copied verbatim:
+  each creative's \`app_url\` and the \`brand_url\` from \`result.links\`, or from the creative
+  read (\`creative.app_url\`, \`creative.brand_url\`) after \`animate\` or \`layerize\`. When the
+  server returns no links, end with the images only. Never end on just "done" or a file path, and
+  never build an app URL yourself (the one exception is the browse link below).
 - **Search the Brain before proposing.** After the brand read and before choosing an angle,
   claim or source — or asking for a brand fact — run the task's \`knowledge_search\` and carry
   its evidence brief. A failed or empty search is stated as such, never as "no evidence exists".
