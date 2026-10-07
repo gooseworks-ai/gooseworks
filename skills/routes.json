@@ -5,7 +5,7 @@
     {
       "skill": "goose-ads",
       "when": "Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks",
-      "how": "Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.",
+      "how": "In a chat app, fetch it with `catalog_fetch { type: \"skill\", slug: \"goose-ads\" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`.",
       "delivery": "entry"
     },
     {
@@ -35,13 +35,13 @@
     {
       "skill": "goose-product-photos",
       "when": "Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography",
-      "how": "Installed locally as an entry skill. Just use it. If unavailable, run `gooseworks install --claude`.",
+      "how": "In a chat app, fetch it with `catalog_fetch { type: \"skill\", slug: \"goose-product-photos\" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`.",
       "delivery": "entry"
     },
     {
       "skill": "animate-image",
       "when": "Animate an approved static ad or product image",
-      "how": "Fetch with `gooseworks fetch animate-image` and follow its GooseWorks MCP workflow.",
+      "how": "Fetch it (`catalog_fetch { type: \"skill\", slug: \"animate-image\" }` in a chat app, `gooseworks fetch animate-image` in a terminal) and follow its GooseWorks MCP workflow.",
       "delivery": "fetch"
     }
   ],

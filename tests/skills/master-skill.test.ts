@@ -10,6 +10,9 @@ import {
   RENDER_OPEN_ARGS,
   RENDER_UPDATE_KEY,
 } from '../../src/skills/master-skill';
+import { DOMAIN_ROUTES } from '../../src/skills/routes';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('skills/master-skill', () => {
   const content = getMasterSkillContent();
@@ -104,12 +107,57 @@ describe('skills/master-skill', () => {
     });
 
     it('routes ScrapeCreators through MCP in terminal-free clients', () => {
-      expect(content).toContain('call_data_provider');
+      expect(content).toContain('data_call_provider');
+      expect(content).toContain('data_post_provider');
       expect(content).toMatch(/Choose the available runtime.*MCP first/i);
       expect(content).toMatch(/environment-neutral operation/i);
       expect(content).toMatch(/Do not shell out.*separate provider key/i);
       expect(content).toMatch(/gooseworks call <provider> <path>/i);
       expect(content).not.toMatch(/paid data[\s\S]*still requires the CLI for now/i);
+    });
+
+    // QA-26: the connector lists only canonical tool names. A chat agent told to
+    // call a retired name cannot find it and tells the customer to update a
+    // terminal they do not have. Legacy brand reads stay only as a labelled fallback.
+    it('names only tools the GooseWorks connector lists for the no-CLI path (QA-26)', () => {
+      expect(content).toContain('`gooseworks search <q>` → **`catalog_search { type: "skill", query: "<q>" }`**');
+      expect(content).toContain('`gooseworks fetch <slug>` → **`catalog_fetch { type: "skill", slug: "<slug>" }`**');
+      expect(content).toContain('`gooseworks credits` → **`account_whoami`**');
+      expect(content).toMatch(/never send a chat-app user to a terminal for it/);
+
+      const connector = JSON.parse(
+        readFileSync(join(__dirname, '..', 'fixtures', 'connector-tool-names.json'), 'utf8'),
+      ) as { served: string[]; retired: string[] };
+      const served = new Set(connector.served);
+      const retired = new Set(connector.retired);
+      const retiredOutsideFallback: string[] = [];
+      const unservedCalls: string[] = [];
+      for (const retiredName of ['call_data_provider', 'search_skills', 'fetch_skill', 'get_ad_credits']) {
+        expect(content).not.toContain(retiredName);
+      }
+      for (const line of content.split('\n')) {
+        const labelledFallback = /older (clients?|connections?)|fallback/i.test(line);
+        for (const [, name] of line.matchAll(/(?<![\w-])([a-z][a-z0-9_]*)(?![\w-])/g)) {
+          if (retired.has(name) && !labelledFallback) retiredOutsideFallback.push(name);
+        }
+        for (const [, name] of line.matchAll(/`([a-z][a-z0-9_]*)\s*\{/g)) {
+          if (!served.has(name)) unservedCalls.push(name);
+        }
+      }
+      expect(retiredOutsideFallback).toEqual([]);
+      expect(unservedCalls).toEqual([]);
+    });
+
+    it('gives every CLI-delivered route a chat-app path (QA-26)', () => {
+      // goose-graphics runs the styles/formats CLI and Playwright locally, so it
+      // has no chat-app path yet; a catalog_fetch line would send chat agents
+      // into terminal-only steps.
+      const terminalOnly = new Set(['goose-graphics']);
+      for (const route of DOMAIN_ROUTES) {
+        if (!terminalOnly.has(route.skill) && /gooseworks (install|fetch)/.test(route.how)) {
+          expect(route.how).toContain(`catalog_fetch { type: "skill", slug: "${route.skill}" }`);
+        }
+      }
     });
   });
 
