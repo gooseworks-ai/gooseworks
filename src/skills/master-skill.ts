@@ -1028,9 +1028,11 @@ proposal** — it mirrors the web app and keeps the human in the loop without an
      fresh. Every pick is a template: show them, and generate
      from the ones the user keeps (or from all of them if they said "just make them").
    - **Browse in the app** → the one link you build yourself: \`<app>/create?brand=<brand-slug>&cli=true\`,
-     with the active brand's slug, where \`<app>\` is the start of a \`brand_url\` a tool returned
-     (for example from \`ads_creative_read { brand_id }\`), so it opens on the user's own
-     environment; if no tool returned a \`brand_url\`, use \`https://make.gooseworks.ai\`.
+     with the active brand's slug, where \`<app>\` is the origin of a \`brand_url\` a tool returned
+     (the part before \`/?brand=\`: \`https://ads-staging.gooseworks.ai/?brand=acme\` gives
+     \`https://ads-staging.gooseworks.ai\`), so it opens on the user's own environment. Reuse a
+     \`brand_url\` you already have from this run, or read one cheaply with
+     \`ads_creative_read { brand_id, limit: 1 }\`; if none comes back, use \`https://make.gooseworks.ai\`.
      In this mode the app shows a copyable remix prompt at the bottom (dismissable / switchable
      back to the UI composer). They browse their own and Community sources and copy the prompt.
 3. **Close the loop.** When the user **pastes back the copyable remix prompt** from the app

@@ -363,7 +363,8 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/A server older than this skill returns no\s+`links`[\s\S]{0,120}hand back the images\s+only and don't mention links/);
     expect(ads).not.toMatch(/return no app links|no app links, so/);
     // The browse link follows the environment of a returned brand_url.
-    expect(ads).toMatch(/`<app>` is the start of a `brand_url` a tool returned/);
+    expect(ads).toMatch(/`<app>` is the origin of a `brand_url` a tool returned\s+\(the part before `\/\?brand=`/);
+    expect(ads).toContain('`ads_creative_read { brand_id, limit: 1 }`');
   });
 
   it('records the user’s reaction to a creative via ads_creative_update', () => {
