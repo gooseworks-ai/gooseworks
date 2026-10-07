@@ -795,7 +795,7 @@ description: >
   app uses) — credits are reserved and billed server-side. Analytics recipes are fetched from
   goose-skills on demand.
 category: ads
-version: 2.6.0
+version: 2.6.1
 author: GooseWorks
 tags: [gooseworks, ads, remix, static-ad, brand, creative, image, analytics, meta-ads, performance]
 ---
@@ -903,7 +903,8 @@ Before each tool call:
   them), or \`creative_ids: [{ project_id, render_id?, variants?, ratios }]\` (remix the user's own
   finished ads). Optional: \`product_name\` (a real product), \`prompt\` (a short steering note),
   \`reference_image_urls\`, \`quality\`. \`dry_run: true\` quotes template sources and reserves
-  nothing. A real call GENERATES at once and returns \`{ job_id }\` (\`kind: "ads_batch"\`). If the
+  nothing. A real call GENERATES at once and returns \`{ job_id }\` (\`kind: "ads_batch"\`) and the
+  \`batch\`, which already carries its \`links\` (below). If the
   brand's research is still running the batch is \`queued\` and starts on its own when research
   finishes: tell the user it'll appear shortly, don't error.
 - \`job_get { job_id, kind: "ads_batch" }\` — poll a batch. \`status\` is \`queued\`, \`running\`,
@@ -912,9 +913,14 @@ Before each tool call:
   \`ratio\`, \`output_url\`, \`age_seconds\` since queued, \`elapsed_seconds\` generating). A creative
   is done when its \`pending\` is 0, NOT when \`current_render_url\` is set (during a regenerate it
   still points at the prior image). A render only failed when its \`status\` is \`"failed"\`: a slow
-  render is healthy, and re-submitting it double-bills.
+  render is healthy, and re-submitting it double-bills. \`result.links\` holds the app links you end
+  the run with: \`brand_url\` (the brand's page, with all its ads) and \`creative_links: [{
+  project_id, app_url }]\` (each creative's page). A link is \`null\` (or the list empty) when the
+  brand has no app address yet or the link lookup failed; the ads are still made.
 - \`ads_creative_read { brand_id }\` — the brand's generated creatives, newest first (filter with
-  \`batch_id\`, \`tags\`, \`approved_only\`); \`creative_id\` reads one with its \`renders\`.
+  \`batch_id\`, \`tags\`, \`approved_only\`); each row has its \`app_url\` and the list has the
+  \`brand_url\`. \`creative_id\` reads one with its \`renders\`, plus \`creative.app_url\` and
+  \`creative.brand_url\`.
 - \`ads_template_read\` — find or inspect a source (see "Picking source ads"). \`template_id\` reads one.
 - \`ads_creative_edit { brand_id, creative_id, action }\` — every paid edit of one creative, one
   \`action\` per call: \`regenerate\` (\`regenerate: { mode: "variation" }\` for another take;
@@ -949,7 +955,8 @@ for a campaign's concepts (planned with \`campaign_read\`, \`campaign_upsert\` a
    \`awaiting_approval\` and none is \`composing\`. If its credit total differs from what they
    agreed to, state the new total and ask again.
 4. \`ads_approval_decide { brand_id, decision: "approve", batch_id, user_quote: "<their exact words>" }\`
-   for each batch, then poll the batch ids it returns with \`job_get\` (\`kind: "ads_batch"\`).
+   for each batch, then poll the batch ids it returns with \`job_get\` (\`kind: "ads_batch"\`) and
+   end with each batch's \`result.links\`, as in step 7 of the workflow below.
 
 Before approving, a steer is free: \`ads_approval_decide { brand_id, creative_id, decision: "revise",
 revise: { message } }\` recomposes that plan (read the approvals view again), and
@@ -1059,9 +1066,12 @@ catalog.
    thinking it stalled (that double-bills). If \`ads_generate\` refused with
    \`brand_research_required\`, the brand was never researched: run "Brand research" below, then
    quote and submit again.
-7. **Hand back the ads.** Show every finished image (\`renders[].output_url\` of completed renders)
-   and say in one line what failed, if anything. These tools return no app links, so don't promise
-   one and never build an app URL yourself. Never end on just "done" or a file path.
+7. **Hand back the ads with their links.** Show every finished image (\`renders[].output_url\` of
+   completed renders) and say in one line what failed, if anything. Then give the links from the
+   last \`job_get\`'s \`result.links\`, copied verbatim: each creative's \`app_url\` (from
+   \`creative_links\`, matched by \`project_id\` to the creative) and the \`brand_url\` where all
+   the brand's ads are. Skip a link that is \`null\`; never build an app URL yourself. Never end on
+   just "done" or a file path.
 
 ## Workflow — edit an existing ad
 
@@ -1072,7 +1082,9 @@ from their request: another take (\`regenerate\`, \`mode: "variation"\`), a targ
 instructed change (\`mode: "exact"\`), new placements (\`resize\`), editable layers (\`layerize\`) or a
 short video (\`animate\`). Ask only for a required source or instruction that is still missing,
 state the credit total from the credits table, get the yes, submit, poll as above, and hand back
-the new images.
+the new images with their links: \`result.links\` from \`job_get\` for \`regenerate\`, \`resize\` and
+\`precision_edit\`; \`creative.app_url\` and \`creative.brand_url\` from \`ads_creative_read { brand_id,
+creative_id }\` for \`animate\` and \`layerize\`.
 
 ## Brand research
 
@@ -1162,8 +1174,9 @@ command.
   Relay \`insufficient_credits\` plainly if the submit is rejected — don't retry blindly.
 - **No plan step for one-off ads.** Only a campaign's plans wait for approval
   (\`request_campaign_generation\` → \`ads_approval_decide\` with the user's words as \`user_quote\`).
-- **Always end a successful run with the finished images.** Never end on just "done" or a file
-  path, and never build an app URL yourself.
+- **Always end a successful run with the finished images and their links** (\`result.links\`:
+  each creative's \`app_url\` and the \`brand_url\`), copied verbatim. Never end on just "done" or
+  a file path, and never build an app URL yourself.
 - **Search the Brain before proposing.** After the brand read and before choosing an angle,
   claim or source — or asking for a brand fact — run the task's \`knowledge_search\` and carry
   its evidence brief. A failed or empty search is stated as such, never as "no evidence exists".

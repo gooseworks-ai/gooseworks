@@ -342,6 +342,17 @@ describe('skills/goose-ads entry skill', () => {
     expect(ads).toMatch(/in a chat app, only for a brand\s+with no website/);
   });
 
+  // gooseworks-app#1827: ads_generate (batch.links), job_get(kind: ads_batch)
+  // (result.links) and ads_creative_read (app_url, brand_url) return app links.
+  it('ends a run with the app links the tools return', () => {
+    expect(ads).toMatch(/`result\.links` holds the app links you end\s+the run with: `brand_url`/);
+    expect(ads).toMatch(/`creative_links: \[\{\s+project_id, app_url \}\]`/);
+    expect(ads).toMatch(/\*\*Hand back the ads with their links\.\*\*/);
+    expect(ads).toMatch(/`creative\.app_url` and\s+`creative\.brand_url`/);
+    expect(ads).toMatch(/never build an app URL yourself/);
+    expect(ads).not.toMatch(/return no app links/);
+  });
+
   it('records the user’s reaction to a creative via ads_creative_update', () => {
     expect(ads).toContain('`ads_creative_update { brand_id, creative_id, patch }`');
     expect(ads).toMatch(/`patch\.feedback: \{ render_id, rating:/);
