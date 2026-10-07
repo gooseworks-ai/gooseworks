@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
+import { getEnvironment } from '../environment';
+import { stagingContent } from './staging-content';
 
 export function skillContentHash(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
@@ -37,7 +39,7 @@ async function boundedResponse(url: string, signal: AbortSignal, limit: number):
 }
 
 /** Reads selected regular files in memory; never extracts paths onto disk. */
-export function readReleasedSkillHashes(archive: Buffer, version: string): Record<string, string> {
+export function readReleasedSkillHashes(archive: Buffer, version: string, transform?: (content: string) => string): Record<string, string> {
   const tar = gunzipSync(archive, { maxOutputLength: MAX_UNPACKED });
   const files = new Map<string, Buffer>();
   for (let offset = 0; offset + 512 <= tar.length;) {
@@ -74,6 +76,7 @@ export function readReleasedSkillHashes(archive: Buffer, version: string): Recor
   // Older releases have no manifest: derive it from the integrity-verified
   // release files. New manifests must match those same actual shipped bytes.
   const manifestFile = files.get('package/skills/manifest.json');
+  const adjustedHashes = () => transform ? Object.fromEntries(Object.keys(hashes).map(name => [name, skillContentHash(transform(files.get(`package/skills/${name}/SKILL.md`)!.toString('utf8')))])) : hashes;
   if (manifestFile) {
     const manifest = JSON.parse(manifestFile.toString('utf8'));
     if (manifest.package !== 'gooseworks' || manifest.version !== version || !manifest.entries || typeof manifest.entries !== 'object') throw new Error('Invalid published skill manifest');
@@ -81,9 +84,9 @@ export function readReleasedSkillHashes(archive: Buffer, version: string): Recor
       if (hashes[name] !== hash) throw new Error(`Published manifest mismatch for ${name}`);
     }
     if (!manifest.entries.gooseworks) throw new Error('Published manifest has no entry skill');
-    return { ...manifest.entries };
+    return transform ? adjustedHashes() : { ...manifest.entries };
   }
-  return hashes;
+  return adjustedHashes();
 }
 
 /** Checks npm's release, never GitHub main. One timeout covers metadata + body. */
@@ -91,14 +94,14 @@ export async function getReleasedSkills(timeoutMs = 5000): Promise<ReleasedSkill
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const meta = JSON.parse((await boundedResponse(`${REGISTRY}/gooseworks/latest`, controller.signal, 1024 * 1024)).toString('utf8'));
+    const meta = JSON.parse((await boundedResponse(`${REGISTRY}/gooseworks/${getEnvironment() === 'staging' ? 'next' : 'latest'}`, controller.signal, 1024 * 1024)).toString('utf8'));
     if (meta.name !== 'gooseworks' || typeof meta.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(meta.version)) throw new Error('Invalid published package metadata');
     const source = `${REGISTRY}/gooseworks/-/gooseworks-${meta.version}.tgz`;
     if (meta.dist?.tarball !== source || typeof meta.dist?.integrity !== 'string' || !/^sha512-[A-Za-z0-9+/]+=*$/.test(meta.dist.integrity)) throw new Error('Invalid published package integrity');
     const archive = await boundedResponse(source, controller.signal, MAX_ARCHIVE);
     const integrity = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
     if (integrity !== meta.dist.integrity) throw new Error('Published package integrity mismatch');
-    return { version: meta.version, hashes: readReleasedSkillHashes(archive, meta.version), source };
+    return { version: meta.version, hashes: readReleasedSkillHashes(archive, meta.version, getEnvironment() === 'staging' ? stagingContent : undefined), source };
   } finally {
     clearTimeout(timer);
   }

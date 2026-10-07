@@ -12,6 +12,8 @@ import { API_BASE } from '../config';
 import { getVersion } from '../version';
 import { runDoctorChecks } from './doctor';
 import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { getEnvironment } from '../environment';
+import { assertCleanProject, installStagingProject, projectProfile, stagingContent } from '../agents/staging';
 
 interface InstallOptions {
   claude?: boolean;
@@ -23,6 +25,7 @@ interface InstallOptions {
   with?: string[];
   ref?: string;
   overwriteModified?: boolean;
+  project?: string;
 }
 
 export function createInstallCommand(): Command {
@@ -41,10 +44,24 @@ Examples:
   .option('--with <skill-slug>', 'Also install a standalone GooseWorks skill (repeatable)', collectSkillSlug, [])
   .option('--api-base <url>', 'API base URL', API_BASE)
   .option('--ref <code>', 'Referral or marketing campaign code for attribution')
+  .option('--project <folder>', 'Required staging test folder; used only by gooseworks launch')
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
 
     const targetAgents = resolveTargetAgents(opts);
+    if (getEnvironment() === 'staging') {
+      if (targetAgents.some(agent => agent === 'cursor')) throw new Error('Cursor staging isolation is not verified. Use --claude or --codex.');
+      assertCleanProject(projectProfile(opts.project || '').project);
+      await ensureLoggedIn(opts.apiBase, opts.ref);
+      const entries = getEntrySkills().map(skill => ({ ...skill, content: stagingContent(skill.content) }));
+      const results = installManagedEntrySkills(entries, { overwriteModified: opts.overwriteModified });
+      if (results.some(result => result.action === 'preserved')) throw new Error('Staging entry has edits. Review/back up the files before --overwrite-modified.');
+      for (const slug of opts.with || []) await installStandaloneSkill(slug, { overwriteModified: opts.overwriteModified });
+      installStagingProject(opts.project!, targetAgents);
+      logger.done(`Staging installed. Start a new isolated session: gooseworks --env staging launch --agent ${targetAgents[0]} --project ${JSON.stringify(opts.project)}`);
+      return;
+    }
+    if (opts.project) throw new Error('--project is for isolated staging installs; omit it for the normal production install');
     if (targetAgents.length === 0) {
       logger.error('No agent specified. Use --claude, --codex, --cursor, or --all');
       process.exit(1);

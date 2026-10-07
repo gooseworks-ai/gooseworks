@@ -21,8 +21,8 @@ import {
   type Credentials,
 } from '../../src/auth/credentials';
 
-const CREDS_DIR = '/mock-home/.gooseworks';
-const CREDS_FILE = '/mock-home/.gooseworks/credentials.json';
+const CREDS_DIR = '/mock-home/.gooseworks/profiles/production';
+const CREDS_FILE = '/mock-home/.gooseworks/profiles/production/credentials.json';
 
 const validCreds: Credentials = {
   api_key: 'cal_test123456789',

@@ -9,11 +9,27 @@ import { isAgentInstalled } from '../agents/detect';
 import { getEntrySkills } from '../skills/master-skill';
 import * as logger from '../utils/logger';
 import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { getEnvironment } from '../environment';
+import { installStagingProject, stagingContent, stagingLaunch } from '../agents/staging';
 
 export const updateCommand = new Command('update')
   .description('Refresh entry skills from this installed CLI; preserve edited files and saved recipes')
   .option('--overwrite-modified', 'Replace edited or untracked managed entry files after you back them up')
-  .action(async (opts: { overwriteModified?: boolean }) => {
+  .option('--project <folder>', 'Required for the staging installation to refresh')
+  .action(async (opts: { overwriteModified?: boolean; project?: string }) => {
+    if (getEnvironment() === 'staging') {
+      if (!opts.project) throw new Error('Staging update requires --project <folder>');
+      const { projectProfile } = await import('../agents/staging');
+      const fs = await import('node:fs');
+      const manifest = JSON.parse(fs.readFileSync(projectProfile(opts.project).manifest, 'utf8'));
+      for (const agent of manifest.agents) stagingLaunch(opts.project, agent);
+      const results = installManagedEntrySkills(getEntrySkills().map(skill => ({ ...skill, content: stagingContent(skill.content) })), { overwriteModified: opts.overwriteModified });
+      if (results.some(result => result.action === 'preserved')) throw new Error('Review/back up edited staging entry files before --overwrite-modified');
+      installStagingProject(opts.project, manifest.agents);
+      logger.done('Staging updated. Close the previous staging session and launch a fresh one.');
+      return;
+    }
+    if (opts.project) throw new Error('This is a staging project install. Pass --env staging update --project <folder>.');
     const creds = getCredentials();
     if (!creds) {
       logger.error('Not logged in. Run "gooseworks login" first.');

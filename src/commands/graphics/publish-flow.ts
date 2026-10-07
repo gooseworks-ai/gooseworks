@@ -138,7 +138,7 @@ async function runWriteFlow(
   const hint = cfg.searchHint ? `Find it: ${cfg.searchHint(result.slug)}\n` : '';
   process.stdout.write(
     `${cfg.label === 'style' ? 'Published style' : 'Published format'}: ${result.slug}\n` +
-      `${cfg.hubUrl(result.slug)}\n` +
+      (cfg.hubUrl(result.slug) ? `${cfg.hubUrl(result.slug)}\n` : '') +
       hint
   );
 }

@@ -1,0 +1,72 @@
+name: CLI release
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cli-release-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  version:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1
+        id: changesets
+        with:
+          version: npm run version-packages
+          title: Release GooseWorks CLI
+          commit: 'chore: version GooseWorks CLI'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check the bot's release PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        run: gh workflow run ci.yml --ref changeset-release/main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment: npm-release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - id: plan
+        run: node scripts/release.cjs prepare
+      - if: steps.plan.outputs.publish == 'true'
+        run: npm run generate:skills && npm run build && npm test -- --runInBand
+      - if: steps.plan.outputs.publish == 'true'
+        id: pack
+        run: node scripts/release.cjs pack
+      - if: steps.plan.outputs.publish == 'true'
+        run: node scripts/pack-smoke.cjs
+      - if: steps.plan.outputs.publish == 'true'
+        id: publish
+        run: node scripts/release.cjs publish
+      - name: Record the stable release
+        if: github.ref_name == 'main' && steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-github.cjs

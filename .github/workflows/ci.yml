@@ -1,0 +1,28 @@
+name: CLI checks
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/check-changeset.cjs
+      - run: npm run generate:skills
+      - run: git diff --exit-code -- skills
+      - run: npm run build
+      - run: npm test -- --runInBand
+      - name: Test the shipped package
+        run: |
+          npm pack --ignore-scripts --json > packed.json
+          node scripts/pack-smoke.cjs "$(node -p 'require("./packed.json")[0].filename')"

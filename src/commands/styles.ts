@@ -145,7 +145,7 @@ const publishCmd = new Command('publish')
       {
         manifestFilename: STYLE_MANIFEST_FILENAME,
         validate: validateStyleManifest,
-        hubUrl: (slug) => `${HUB_URL}/styles/${slug}`,
+        hubUrl: (slug) => HUB_URL ? `${HUB_URL}/styles/${slug}` : '',
         searchHint: (slug) => `gooseworks styles search ${slug}`,
         label: 'style',
         upload: (manifest, files) => publishStyle(auth, manifest, files),
@@ -164,7 +164,7 @@ const updateCmd = new Command('update')
       {
         manifestFilename: STYLE_MANIFEST_FILENAME,
         validate: validateStyleManifest,
-        hubUrl: (s) => `${HUB_URL}/styles/${s}`,
+        hubUrl: (s) => HUB_URL ? `${HUB_URL}/styles/${s}` : '',
         searchHint: (s) => `gooseworks styles search ${s}`,
         label: 'style',
         upload: (manifest, files) => updateStyle(auth, slug, manifest, files),
