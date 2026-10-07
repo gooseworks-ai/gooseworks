@@ -8,7 +8,7 @@ description: >
   Capture founder answers, brand rules, audience depth, and video taste in the existing brand.
   Use it as the single GooseWorks entry point for brand growth, B2B, sales, research, and GTM work.
 category: general
-version: 1.1.1
+version: 1.1.2
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, reddit, twitter, linkedin, email, people, research, gtm, leads, prospecting]
 ---
@@ -205,6 +205,10 @@ the first available runtime:
    their own key. If no runtime is available, explain what connection is missing; never pretend
    the provider call ran.
 
+Managed provider calls are paid on the MCP and CLI runtimes alike (a ScrapeCreators call costs 1
+credit today, and each result reports what it charged). Before a skill's first paid call, tell the
+user roughly how many calls it will make and the credit total, and get their yes.
+
 The same selection applies to catalog and account operations. When the CLI is unavailable but the
 GooseWorks MCP tools are connected, use these equivalents. Match on the tool name: a coding agent
 may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat app may not.
@@ -290,8 +294,9 @@ by the tools. Do not promise an unavailable evidence, claims or plan write.
 ## Save durable brand answers, then verify them
 
 Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
-(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
-research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+(older clients: `brand_get_context` with the same sections, only when that tool is advertised).
+Keep founder answers, user corrections, research and your own hypotheses distinct. Reuse
+matching saved answers; ask only about gaps.
 
 When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
 standing fact, save that answer in the same turn. The capture request authorizes those answers;
@@ -535,7 +540,7 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
-2. **Before paid operations**, tell the user the estimated credit cost
+2. **Before paid operations**, tell the user the estimated credit cost and get their yes
 3. **If a `gooseworks` command exits with "Not logged in"**: tell the user to run `npx gooseworks login`
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to `/tmp/gooseworks-scripts/`, install pip deps, then execute. NEVER pollute the user's project directory

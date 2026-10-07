@@ -11,7 +11,7 @@ description: >
   video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.6
+version: 0.6.7
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -880,8 +880,9 @@ in the SAME turn, before anything else:
 ## Save durable brand answers, then verify them
 
 Read the selected brand with `brand_read { brand_id, sections: ["summary", "kit", "products", "learnings", "onboarding"] }`
-(fallback: `brand_get_context` with the same sections). Keep founder answers, user corrections,
-research and your own hypotheses distinct. Reuse matching saved answers; ask only about gaps.
+(older clients: `brand_get_context` with the same sections, only when that tool is advertised).
+Keep founder answers, user corrections, research and your own hypotheses distinct. Reuse
+matching saved answers; ask only about gaps.
 
 When the user asks to remember a rule, answers a brand interview, or explicitly corrects a
 standing fact, save that answer in the same turn. The capture request authorizes those answers;
