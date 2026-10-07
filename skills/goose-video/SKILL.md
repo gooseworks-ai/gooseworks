@@ -218,30 +218,52 @@ A catalog row says what a format is best for and ranks it for the brand. It does
 the format can make the setup the customer asked for (how many people, mic only, no product).
 Some renderers declare a route selector that decides that; today that is the street interview
 (`render-street-interview`). Before you propose, script or create a street-interview project,
-template or custom, run its check:
+template or custom, check the request against its routes:
 
-1. Fetch `catalog_fetch { type: "skill", slug: "render-street-interview" }` (older clients:
-   `fetch_skill("render-street-interview")`) and save its scripts and files under
-   `/tmp/gooseworks-scripts/render-street-interview/`.
-2. With a shell, write a brief JSON with `mode` (`product-guess` or `conversation`),
-   `offering_type` (`physical`, `service` or `digital`, from the brand kit),
-   `interaction_type` (`product-guess`, `mic-only`, `product-sample` or
-   `concept-challenge`) and `participants` (people interviewed on screen, not counting the
-   interviewer). Run its free dry run, which makes no paid call:
-   `python3 /tmp/gooseworks-scripts/render-street-interview/scripts/prepare_script_context.py --brief <brief.json> --out <context.json>`.
-   Without a shell, apply the route table in its instructions the same way.
-3. **`unsupported-route` is a stop.** The script exits 2 and prints each `route gap:` and
-   `alternative:`. Tell the customer plainly, in one line, that this setup isn't supported and
-   why (for example: "A three-person street interview isn't something we can make for software
-   yet: the guessing version needs a physical product to hand over, and the mic-only version
-   takes one person."). Then offer its alternatives, each with how it differs. Do not create the
-   project or write a script for it. Go custom only if the customer picks it; custom keeps every
-   route constraint.
-4. Any other status means the route exists. Fix any `brief_gaps` and run it again;
-   `needs-reference` is a script-research gap for later, not a route problem. Carry the
-   `route` (support, participant limit, person-reference rule) into the plan. A
-   `preview-only` route makes a script and prompt preview, not a finished video: say so before
-   the customer chooses it.
+| Street route | On screen | Needs | Makes |
+| --- | --- | --- | --- |
+| Guessing (`product-guess`) | Interviewer and up to four people | A physical product to hand over, photographed on its own | A finished video |
+| Conversation (`mic-only`, `product-sample`, `concept-challenge`) | Interviewer and one person | No product photo, phone, screen or UI | A script and prompt preview only, no finished video yet |
+| Street testimonial (its own format) | One person talking to camera, no interviewer | The creator still its recipe prescribes | A finished video, when the catalog lists it |
+
+- **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
+  package is far too large for a chat.
+- **With a shell** (the customer's computer or the coworker sandbox), also run its free
+  selector, which makes no paid call:
+  1. Fetch `catalog_fetch { type: "skill", slug: "render-street-interview" }` (older clients:
+     `fetch_skill("render-street-interview")`). Save each `scripts` entry as
+     `/tmp/gooseworks-scripts/render-street-interview/scripts/<name>` and each `files` entry at
+     `/tmp/gooseworks-scripts/render-street-interview/<path>`; the selector reads
+     `references/street-reference-library.json` from there.
+  2. Write a brief JSON. `mode` and `interaction_type` go in pairs: `product-guess` with
+     `product-guess`, or `conversation` with `mic-only`, `product-sample` or `concept-challenge`.
+     `offering_type` is exactly `physical`, `service` or `digital` (software, SaaS and apps are
+     `digital`). `participants` is a whole number: people interviewed on screen, not counting
+     the interviewer. When the customer named no interaction, run each mode that could fit.
+  3. Run `python3 /tmp/gooseworks-scripts/render-street-interview/scripts/prepare_script_context.py --brief <brief.json> --out <context.json>`.
+     Read `status` and `brief_gaps` in the output file, not the exit code: it exits 2 for every
+     status except `ready-for-writing`. A Python traceback means the brief is malformed, not a
+     verdict.
+  4. A run with any `brief_gaps` has not checked the route. Fix every gap and run it again.
+
+**An unsupported setup is a stop.** `unsupported-route`, or a request the table rules out,
+means this setup can't be made. Tell the customer plainly, in one line, for example: "A
+three-person mic-only street interview isn't something we can make yet: that version takes one
+person, and the three-person version needs a physical product to hand over." Then offer the
+alternatives in plain words, each with how it differs: the same interview with one person, as a
+script preview only; one person talking to camera with no interviewer, if the catalog lists
+that format; or a custom video,
+untested, that keeps the street format's limits. Never use route names or the script's
+wording. Do not create the project or write a script for it. Go custom only if the customer
+picks it; a custom video keeps the street format's hard constraints, which make-custom-video
+lists.
+
+**A supported setup.** With empty `brief_gaps`, any other status means the route exists.
+`needs-reference` means no observed reference ad matched yet: it does not block proposing the
+format; carry it into the handoff so the script step resolves or reports it before script
+approval. Carry the route too (which one, how many people, finished video or preview only). A
+preview-only route makes a script and prompt preview, not a finished video: say so before the
+customer chooses it.
 
 ## Route first: is this a new video?
 
@@ -484,7 +506,8 @@ contain a full picker independently of the item page.
 ### 5. Create the project and hand it off, in this session
 
 1. `video_project_upsert { brand_id, name, format: <template_id> }` with no brief (a brief creates
-   a concept batch). Include client:{shell:true} only for real local execution. Default
+   a concept batch). A street interview is created only after its route check found a supported
+   setup. Include client:{shell:true} only for real local execution. Default
    creation_intent:"format" keeps the style with this brand's content; source_remix requires an
    explicit choice to use source content.
    If they already chose a campaign/concept, include its verified campaign_id and optional
@@ -492,9 +515,10 @@ contain a full picker independently of the item page.
    to it. Omit unknown IDs and never infer a link or create a campaign solely to file a video.
 2. **Verified local shell or coworker sandbox:** load
    `catalog_fetch { type: "skill", slug: "goose-video-local" }` and follow it on the same project_id.
-   Carry the customer's words, verified defaults, campaign and selected angle into its brief.
+   Carry the customer's words, verified defaults, campaign, selected angle and a street
+   interview's route check result into its brief.
 3. **Chat host:** `goose_run_task { brand_id, project_id, message }` with the request, selected
-   format and defaults. Keep task_id. Continue questions/edits with the same task and project.
+   format, defaults and a street interview's route check result. Keep task_id. Continue questions/edits with the same task and project.
    A saved free draft is not a started worker or a complete plan. Follow actual saved state.
 4. When follow.card_follows is true, the card follows progress: do not re-read it in a loop.
    Read again on a customer reply, card action or requested update. A failure or missing saved
