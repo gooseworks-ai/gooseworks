@@ -82,6 +82,19 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain('A preview-only route makes a script and prompt preview, not a finished video');
   });
 
+  // T-STR-3 re-run: an agent floated the guessing format for software with a
+  // laptop or phone as the prop.
+  it('never offers guessing to a software or service brand, not even with a device as the prop', () => {
+    expect(block).toContain('**Never offer guessing to software or a service.**');
+    expect(block).toContain(
+      'For a software, app or service brand, never offer or script it, not even with a laptop, phone or other device showing the app as the prop',
+    );
+    expect(block).toContain("Offer the table's real alternatives instead");
+    // The catalog's own verdict wins over any older instructions.
+    expect(block).toContain('A catalog row marked `fit.ok: false` is ruled out for this brand');
+    expect(block).toContain('tell them why in plain words (its `fit.reason`)');
+  });
+
   it('never reads a suggested row as a match for the setup the customer named', () => {
     const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
     expect(picker).toContain('`suggested` ranks a row for the brand; it never means the row makes the setup they named.');

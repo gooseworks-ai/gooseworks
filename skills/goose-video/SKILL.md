@@ -7,7 +7,7 @@ description: >
   goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
   one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.5
+version: 3.0.6
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -229,6 +229,14 @@ template or custom, check the request against its routes:
 Neither interview route takes a photo of a person: people are described in text, so never
 propose putting a founder's or creator's face in one. Keep the customer's named setup: never
 change the interaction, mode or number of people just to make a check pass.
+
+**Never offer guessing to software or a service.** The guessing route needs a physical product
+to hand over. For a software, app or service brand, never offer or script it, not even with a
+laptop, phone or other device showing the app as the prop: a device is not their product, and
+the selector still says unsupported. Offer the table's real alternatives instead (a one-person
+conversation, the street testimonial if the catalog lists it, or custom). A catalog row marked
+`fit.ok: false` is ruled out for this brand: never propose it unless the customer insists, and
+tell them why in plain words (its `fit.reason`).
 
 - **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
