@@ -9,10 +9,13 @@
 // range is refused. Nothing is imported until every check has passed, so a
 // refused part never runs and nothing is spent.
 //
-// Files are cached under <home>/kit/parts/<id>/<version>/ and re-hashed on
-// every load; a cached file that no longer matches is downloaded again, and a
-// file the lock does not list is removed from the folder, so a part can only
-// ever see the files the lock vouches for.
+// Each verified copy is a folder of its own, keyed by the part and the exact
+// file hashes the lock gives it: <home>/kit/parts/<id>/<version>/<key>/. It is
+// written in a temporary folder and renamed into place whole, never changed
+// afterwards, and re-hashed on every load; a copy that no longer matches, or
+// holds a file the lock does not list, is replaced. So two runs with
+// different locks never share a folder, and a part only ever sees the files
+// its lock vouches for. No link is followed below the kit home.
 //
 // GOOSE_KIT_PARTS_DIR (a local goose-skills checkout) loads parts from disk
 // without the lock's hashes, for building parts during the sprint. It works
@@ -56,6 +59,7 @@ export type PartLoadCode =
   | 'too_large'
   | 'unreachable'
   | 'dev_refused'
+  | 'bad_cache'
   | 'bad_part';
 
 /** A part that must not run. The message is plain and names the part; nothing was spent. */
@@ -166,37 +170,70 @@ function exportedRun(ref: PartRef, mod: unknown): PartRun {
   return run as PartRun;
 }
 
-async function readIfRegular(file: string): Promise<Buffer | null> {
-  const stat = await fs.lstat(file).catch(() => null);
-  if (!stat) return null;
-  if (!stat.isFile()) {
-    await fs.rm(file, { recursive: true, force: true });
-    return null;
-  }
-  return fs.readFile(file);
-}
+const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 
-/** Every path under `dir` that is not a locked file is removed, links included. */
-async function removeStrays(dir: string, keep: Set<string>, rel = ''): Promise<void> {
-  const entries = await fs.readdir(path.join(dir, rel), { withFileTypes: true });
-  for (const entry of entries) {
-    const child = rel ? `${rel}/${entry.name}` : entry.name;
-    const full = path.join(dir, child);
-    if (entry.isDirectory()) {
-      const prefix = `${child}/`;
-      if ([...keep].some((file) => file.startsWith(prefix))) await removeStrays(dir, keep, child);
-      else await fs.rm(full, { recursive: true, force: true });
-    } else if (!entry.isFile() || !keep.has(child)) {
-      await fs.rm(full, { recursive: true, force: true });
+/**
+ * `base`/`segments…` as real folders, made when missing. A link or a file in
+ * the way is refused, so nothing is ever written outside the kit home.
+ */
+async function realFolder(base: string, segments: string[]): Promise<string> {
+  let dir = base;
+  for (const segment of segments) {
+    dir = path.join(dir, segment);
+    let stat = await fs.lstat(dir).catch((error) => (isMissing(error) ? null : Promise.reject(error)));
+    if (!stat) {
+      await fs.mkdir(dir, { mode: 0o700 }).catch((error) => ((error as NodeJS.ErrnoException).code === 'EEXIST' ? undefined : Promise.reject(error)));
+      stat = await fs.lstat(dir);
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new PartLoadError('bad_cache', `${dir} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
     }
   }
+  return dir;
 }
 
-/** A real folder at `dir` (an existing link is replaced), private to this user. */
-async function ensureFolder(dir: string): Promise<void> {
-  const stat = await fs.lstat(dir).catch(() => null);
-  if (stat && !stat.isDirectory()) await fs.rm(dir, { recursive: true, force: true });
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+/**
+ * The files of a stored copy, each checked against its hash, or null when the
+ * copy is missing, holds anything the lock does not list, holds a link, or
+ * has a file that does not match.
+ */
+async function readCopy(dir: string, files: Record<string, string>): Promise<Map<string, Buffer> | null> {
+  const top = await fs.lstat(dir).catch(() => null);
+  if (!top || !top.isDirectory()) return null;
+  const wantDirs = new Set<string>();
+  for (const file of Object.keys(files)) {
+    const segments = file.split('/');
+    for (let i = 1; i < segments.length; i++) wantDirs.add(segments.slice(0, i).join('/'));
+  }
+  const seen = new Map<string, Buffer>();
+  let total = 0;
+  const walk = async (rel: string): Promise<boolean> => {
+    for (const entry of await fs.readdir(path.join(dir, rel), { withFileTypes: true })) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (!wantDirs.has(child) || !(await walk(child))) return false;
+      } else if (entry.isFile() && Object.prototype.hasOwnProperty.call(files, child)) {
+        const full = path.join(dir, ...child.split('/'));
+        const stat = await fs.lstat(full);
+        total += stat.size;
+        if (total > MAX_FOLDER_BYTES || (child === 'part.mjs' && stat.size > MAX_ENTRY_BYTES)) return false;
+        const bytes = await fs.readFile(full);
+        if (sha256(bytes) !== files[child]) return false;
+        seen.set(child, bytes);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!(await walk(''))) return null;
+  return seen.size === Object.keys(files).length ? seen : null;
+}
+
+/** The copy's folder name: the part, its version and every locked file hash. */
+function copyKey(ref: PartRef, files: Record<string, string>): string {
+  const listed = Object.keys(files).sort().map((file) => [file, files[file]]);
+  return sha256(Buffer.from(JSON.stringify([ref.id, ref.version, listed]))).slice(0, 32);
 }
 
 export function createPartLoader(options: PartLoaderOptions): PartLoader {
@@ -245,53 +282,64 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
       throw new PartLoadError('index_mismatch', `${named(ref)} in this video’s parts list does not match the published part.`);
     }
 
-    const partsRoot = path.join(request.home, 'kit', 'parts');
-    const dir = path.join(partsRoot, ref.id, ref.version);
-    const tmpRoot = path.join(partsRoot, '.tmp');
-    await ensureFolder(path.join(partsRoot, ref.id));
-    await ensureFolder(dir);
+    await fs.mkdir(request.home, { recursive: true, mode: 0o700 });
+    const home = await fs.realpath(request.home);
+    const versionDir = await realFolder(home, ['kit', 'parts', ref.id, ref.version]);
+    const tmpRoot = await realFolder(home, ['kit', 'parts', '.tmp']);
+    const dir = path.join(versionDir, copyKey(ref, locked.files));
 
-    // Verify every file before anything is imported. The two files the core
-    // reads are kept as the bytes that were hashed.
-    let total = 0;
-    const verified = new Map<string, Buffer>();
-    for (const file of Object.keys(locked.files).sort()) {
-      const want = locked.files[file];
-      const target = path.join(dir, ...file.split('/'));
-      let bytes = await readIfRegular(target);
-      if (bytes && sha256(bytes) !== want) {
-        await fs.rm(target, { force: true });
-        bytes = null;
-      }
-      if (!bytes) {
-        const remaining = MAX_FOLDER_BYTES - total;
-        const limit = file === 'part.mjs' ? Math.min(MAX_ENTRY_BYTES, remaining) : remaining;
+    let verified = await readCopy(dir, locked.files);
+    if (!verified) {
+      // Download and check every file in memory, then publish the copy whole.
+      const downloaded = new Map<string, Buffer>();
+      let total = 0;
+      for (const file of Object.keys(locked.files).sort()) {
+        const limit = file === 'part.mjs' ? Math.min(MAX_ENTRY_BYTES, MAX_FOLDER_BYTES - total) : MAX_FOLDER_BYTES - total;
+        if (limit <= 0) throw new PartLoadError('too_large', `${named(ref)} is larger than a part may be.`);
         const url = `${source.rawBase}/parts/${ref.id}/${ref.version}/${file.split('/').map(encodeURIComponent).join('/')}`;
+        let bytes: Buffer;
         try {
           bytes = await fetchBytes(fetchImpl, url, { maxBytes: limit, timeoutMs, signal: request.signal, what: `${ref.id} ${ref.version} ${file}` });
         } catch (error) {
-          throw new PartLoadError('unreachable', error instanceof CatalogError ? error.message : `Could not download ${ref.id} ${ref.version}.`);
+          const tooLarge = error instanceof CatalogError && /larger than a part may be/.test(error.message);
+          throw new PartLoadError(tooLarge ? 'too_large' : 'unreachable', error instanceof CatalogError ? error.message : `Could not download ${ref.id} ${ref.version}.`);
         }
-        if (sha256(bytes) !== want) {
+        if (sha256(bytes) !== locked.files[file]) {
           throw new PartLoadError('hash_mismatch', `${named(ref)} does not match this video’s parts list (${file}), so it can’t run.`);
         }
-        await ensureFolder(tmpRoot);
-        const tmp = path.join(tmpRoot, `${ref.id}-${ref.version}-${randomBytes(6).toString('hex')}`);
-        await fs.writeFile(tmp, bytes, { mode: 0o600 });
-        await ensureFolder(path.dirname(target));
-        await fs.rename(tmp, target);
+        total += bytes.length;
+        downloaded.set(file, bytes);
       }
-      total += bytes.length;
-      if (total > MAX_FOLDER_BYTES || (file === 'part.mjs' && bytes.length > MAX_ENTRY_BYTES)) {
-        throw new PartLoadError('too_large', `${named(ref)} is larger than a part may be.`);
+      const staging = await fs.mkdtemp(path.join(tmpRoot, `${ref.id}-${ref.version}-`));
+      try {
+        for (const [file, bytes] of downloaded) {
+          const target = path.join(staging, ...file.split('/'));
+          await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+          await fs.writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+        }
+        // A damaged copy is moved aside first; a folder cannot be renamed over another.
+        if (await fs.lstat(dir).catch(() => null)) {
+          const stale = path.join(tmpRoot, `stale-${randomBytes(6).toString('hex')}`);
+          await fs.rename(dir, stale).catch(() => undefined);
+          await fs.rm(stale, { recursive: true, force: true });
+        }
+        await fs.rename(staging, dir).catch((error) => {
+          // Another run published the same copy first; it is checked below.
+          if (!['EEXIST', 'ENOTEMPTY', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+        });
+      } finally {
+        await fs.rm(staging, { recursive: true, force: true });
       }
-      if (file === 'part.json' || file === 'part.mjs') verified.set(file, bytes);
+      verified = await readCopy(dir, locked.files);
+      if (!verified) {
+        throw new PartLoadError('hash_mismatch', `${named(ref)} changed on this computer while it was being stored. Run the same command again.`);
+      }
     }
-    await removeStrays(dir, new Set(Object.keys(locked.files)));
 
     const manifest = checkManifest(ref, verified.get('part.json')!, locked);
     const entry = path.join(dir, 'part.mjs');
-    // The hash in the address ties Node's module cache to these exact bytes.
+    // The folder is keyed by the lock's hashes and the address by the entry's,
+    // so Node's module cache can only hand back these exact bytes.
     const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${locked.files['part.mjs']}`);
     return { manifest, dir, run: exportedRun(ref, mod), source: 'published' };
   }

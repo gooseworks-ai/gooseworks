@@ -7,6 +7,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import type { PartsLock } from '../../../src/kit/part-interface';
 import { createPartLoader, PartLoadError } from '../../../src/kit/parts/loader';
 
@@ -82,7 +83,9 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
   throw new Error('the part was loaded');
 }
 
-const cached = (file: string) => path.join(home, 'kit', 'parts', 'music-elevenlabs', '1.2.0', file);
+const versionDir = () => path.join(home, 'kit', 'parts', 'music-elevenlabs', '1.2.0');
+/** Every stored copy of the part (one folder per set of locked hashes). */
+const copies = () => (fs.existsSync(versionDir()) ? fs.readdirSync(versionDir()).map((name) => path.join(versionDir(), name)) : []);
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-parts-'));
@@ -94,31 +97,85 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
 
-it('loads a part whose files, models and kit range all match, and drops files the lock does not list', async () => {
-  fs.mkdirSync(path.dirname(cached('x')), { recursive: true });
-  fs.writeFileSync(cached('planted.js'), 'not in the lock');
+it('loads a part whose files, models and kit range all match, and replaces a copy holding a file the lock does not list', async () => {
   const loaded = await load(lockWith());
   expect(loaded.manifest.id).toBe('music-elevenlabs');
   expect(importModule).toHaveBeenCalledTimes(1);
   expect(importModule.mock.calls[0][0]).toContain(`part.mjs?sha256=${sha(files['part.mjs'])}`);
-  expect(fs.readFileSync(cached('assets/fade.json'), 'utf8')).toBe(files['assets/fade.json']);
-  expect(fs.existsSync(cached('planted.js'))).toBe(false);
+  expect(fs.readFileSync(path.join(loaded.dir, 'assets', 'fade.json'), 'utf8')).toBe(files['assets/fade.json']);
+  fs.writeFileSync(path.join(loaded.dir, 'planted.js'), 'not in the lock');
+  const again = await load(lockWith());
+  expect(again.dir).toBe(loaded.dir);
+  expect(fs.existsSync(path.join(again.dir, 'planted.js'))).toBe(false);
 });
 
 it('refuses a part whose bytes do not match the lock before it is imported, and keeps no bad file', async () => {
   tampered['part.mjs'] = 'export async function run() { steal(); }';
   expect(await refusal(load(lockWith()))).toBe('hash_mismatch');
   expect(importModule).not.toHaveBeenCalled();
-  expect(fs.existsSync(cached('part.mjs'))).toBe(false);
+  expect(copies()).toEqual([]);
 });
 
-it('re-checks a cached file on every load', async () => {
-  await load(lockWith());
+it('re-checks a stored copy on every load', async () => {
+  const loaded = await load(lockWith());
   importModule.mockClear();
-  fs.writeFileSync(cached('part.mjs'), 'export async function run() { steal(); }');
+  fs.writeFileSync(path.join(loaded.dir, 'part.mjs'), 'export async function run() { steal(); }');
   tampered['part.mjs'] = 'export async function run() { steal(); }';
   expect(await refusal(load(lockWith()))).toBe('hash_mismatch');
   expect(importModule).not.toHaveBeenCalled();
+});
+
+it('never stores parts through a link below the kit home', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-outside-'));
+  try {
+    fs.mkdirSync(path.join(home, 'kit'), { recursive: true });
+    fs.symlinkSync(outside, path.join(home, 'kit', 'parts'));
+    expect(await refusal(load(lockWith()))).toBe('bad_cache');
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect(importModule).not.toHaveBeenCalled();
+  } finally {
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+it('refuses a lock whose paths collide with one another, before writing anything', async () => {
+  const colliding = { ...hashes(), 'assets/data': sha('a'), 'assets/data/helper.mjs': sha('b') };
+  expect(await refusal(load(lockWith({ files: colliding })))).toBe('not_locked');
+  expect(fs.existsSync(path.join(home, 'kit'))).toBe(false);
+});
+
+it('keeps runs with different locks apart, so one cannot swap the code another imports', async () => {
+  const RAW_B = 'https://raw.example.test/fork/goose-skills/main';
+  const filesB = { ...files, 'part.mjs': 'export async function run() { return { other: true }; }\n' };
+  const hashesB = Object.fromEntries(Object.entries(filesB).map(([f, body]) => [f, sha(body)]));
+  const lockB = lockWith({ files: hashesB });
+  const indexB = { interface: 1, parts: [{ id: 'music-elevenlabs', version: '1.2.0', kind: 'generate_music', kit: manifest.kit, files: hashesB, models: manifest.needs.models }] };
+  const both = async (url: string) => {
+    if (!url.startsWith(RAW_B)) return fetchImpl(url);
+    const rest = url.slice(RAW_B.length);
+    if (rest === '/parts/index.json') return new Response(JSON.stringify(indexB));
+    if (rest === '/parts/withdrawn.json') return new Response(JSON.stringify(withdrawn));
+    return new Response(filesB[decodeURIComponent(rest.slice('/parts/music-elevenlabs/1.2.0/'.length)) as keyof typeof filesB]);
+  };
+  // The first run imports only after the second has stored its own copy.
+  let secondStored!: () => void;
+  const stored = new Promise<void>((resolve) => { secondStored = resolve; });
+  const imported: Array<{ wanted: string; got: string }> = [];
+  let calls = 0;
+  const importer = jest.fn(async (url: string) => {
+    if (calls++ === 0) await stored;
+    else secondStored();
+    const wanted = new URL(url).searchParams.get('sha256')!;
+    imported.push({ wanted, got: sha(fs.readFileSync(fileURLToPath(url.split('?')[0]), 'utf8')) });
+    return { run: async () => ({}) };
+  });
+  const loader = createPartLoader({ kitVersion: '1.0.0', fetch: both, importModule: importer });
+  const request = (lock: PartsLock, raw: string) => loader.load({ ref: { id: 'music-elevenlabs', version: '1.2.0' }, lock, dev: false, home, env: { GOOSE_SKILLS_RAW_BASE: raw }, signal: new AbortController().signal });
+  const first = request(lockWith(), RAW);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await Promise.all([first, request(lockB, RAW_B)]);
+  expect(imported).toHaveLength(2);
+  for (const { wanted, got } of imported) expect(got).toBe(wanted);
 });
 
 it('refuses a withdrawn version before downloading or importing it', async () => {
