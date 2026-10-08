@@ -36,6 +36,8 @@ export interface LineScript {
   upload?: 'pass' | 'fail';
   /** The style the package carries (default: `style`). */
   style?: Record<string, unknown>;
+  /** Changes the frozen plan's body before it is handed over. */
+  planBody?: (body: any) => any;
   /** Changes the hand-over's `line` before it is sent. */
   handOver?: (line: any) => any;
   /** Answer for one PUT to storage; default: stored. Throwing simulates a lost answer. */
@@ -163,7 +165,7 @@ export function fakeLine(script: LineScript = {}) {
         lease: '00000000-0000-4000-8000-000000000001',
         stage: 'making',
         credits: { used: 0, cap: 1000 },
-        plan: plan(pinned),
+        plan: script.planBody ? { ...plan(pinned), body: script.planBody(plan(pinned).body) } : plan(pinned),
         parts_lock: lock,
         style_package: { style_id: style.id, version: style.version, style_hash: canonicalHash(pinned), url: `${API}/pkg/view`, sha256: pkg.view.sha256 },
       };
@@ -189,6 +191,8 @@ export function fakeLine(script: LineScript = {}) {
         result: { json: { ok: true }, file_url: `https://files.test/${body.piece_key}.mp4?X-Amz-Signature=abc` },
       });
     }
+    const hosted = /^\/files\/([A-Za-z0-9_-]+)$/.exec(p);
+    if (hosted && (init.method ?? 'GET') === 'GET') return json(200, { file_id: hosted[1], url: `https://files.test/hosted/${hosted[1]}?X-Amz-Signature=s`, expires_at: '' });
     if (p === '/progress') return json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 });
     if (p === '/upload') return json(200, { upload_id: 'up_1', attempt: 1, put: { url: 'https://store.test/up_1?X-Amz-Signature=s', headers: { 'x-amz-checksum-sha256': 'x' } }, expires_at: '' });
     if (p === '/upload/up_1/done') {

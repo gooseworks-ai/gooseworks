@@ -216,6 +216,13 @@ export class VideoLine {
     return done.ref;
   }
 
+  /** A fresh short-lived link to a file the line hosts for this video (a plan's image or footage). */
+  async hostedFileLink(projectId: string, fileId: string, signal?: AbortSignal): Promise<string> {
+    const answer = await this.call<{ url?: unknown }>(`${LINE_PREFIX}/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`, undefined, 'token', MINUTE, signal, 'GET');
+    if (typeof answer.url !== 'string' || !/^https?:\/\//i.test(answer.url)) throw new Error('The line sent no link for a plan file.');
+    return answer.url;
+  }
+
   /** (d) A slot for the finished file. */
   openUpload(projectId: string, request: UploadRequest, signal?: AbortSignal): Promise<UploadSlot> {
     return this.call<UploadSlot>(`${LINE_PREFIX}/${encodeURIComponent(projectId)}/upload`, request, 'token', MINUTE, signal);
@@ -301,7 +308,7 @@ export class VideoLine {
     return headers;
   }
 
-  private async call<T>(pathname: string, body: unknown, auth: Auth, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  private async call<T>(pathname: string, body: unknown, auth: Auth, timeoutMs: number, signal?: AbortSignal, method: 'POST' | 'GET' = 'POST'): Promise<T> {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const headers = this.headers(auth, payload !== undefined);
     for (let attempt = 0; ; attempt++) {
@@ -309,7 +316,7 @@ export class VideoLine {
       let refusal: LineError;
       try {
         const res = await this.fetchImpl(`${this.origin}${pathname}`, {
-          method: 'POST',
+          method,
           headers,
           body: payload,
           signal: link.signal,

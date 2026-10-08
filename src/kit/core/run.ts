@@ -334,9 +334,19 @@ class Maker {
     await this.loadParts(!!dev.parts);
 
     // The plan's files, checked against the hashes frozen at the yes.
-    const download = (u: string, m: number) => deps.line.download(u, m, this.stop.signal);
-    this.planScope = await materialize(plan.body, this.layout.inputs, download);
-    this.brand = brandKit(await materialize(plan.brand, this.layout.inputs, download));
+    const planFiles = {
+      dir: this.layout.inputs,
+      download: (u: string, m: number) => deps.line.download(u, m, this.stop.signal),
+      hostedLink: (fileId: string) =>
+        deps.line.hostedFileLink(this.videoId, fileId, this.stop.signal).catch((error: unknown) => {
+          if (error instanceof LineError) throw new KitStop(`${lineWords(error)} Nothing was spent.`, error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
+          throw error;
+        }),
+      // A hosted plan file goes into a payload as the line already knows it.
+      onHosted: (sha256: string, ref: string) => this.hosted.set(sha256, ref),
+    };
+    this.planScope = await materialize(plan.body, planFiles);
+    this.brand = brandKit(await materialize(plan.brand, planFiles));
 
     this.book.note = 'Making your video';
     this.book.plan([

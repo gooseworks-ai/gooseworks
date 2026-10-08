@@ -5,6 +5,7 @@ import { createReadStream, existsSync } from 'fs';
 import { mkdir, stat } from 'fs/promises';
 import * as path from 'path';
 import type { FileRef, MediaInfo, MediaKind } from '../part-interface';
+import { KitStop } from './errors';
 import { atomicWrite } from './save';
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -101,40 +102,91 @@ export function isFrozenFile(value: unknown): value is FrozenFile {
   return keys === 'bytes,mime,sha256,url' && typeof v.url === 'string' && typeof v.sha256 === 'string' && /^[a-f0-9]{64}$/.test(v.sha256) && typeof v.bytes === 'number' && typeof v.mime === 'string';
 }
 
+/**
+ * A file the line hosts for this video, frozen with the plan:
+ * { file_id, ref: "gooseworks-file:<file_id>", sha256, bytes, mime }.
+ */
+export interface LineFile {
+  file_id: string;
+  ref: string;
+  sha256: string;
+  bytes: number;
+  mime: string;
+}
+
+export function isLineFile(value: unknown): value is LineFile {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const keys = Object.keys(v).sort().join(',');
+  return (
+    keys === 'bytes,file_id,mime,ref,sha256' &&
+    typeof v.file_id === 'string' &&
+    /^[A-Za-z0-9_-]{1,64}$/.test(v.file_id) &&
+    v.ref === `gooseworks-file:${v.file_id}` &&
+    typeof v.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(v.sha256) &&
+    typeof v.bytes === 'number' &&
+    typeof v.mime === 'string'
+  );
+}
+
 const MAX_INPUT_BYTES = 200 * 1024 * 1024;
 
+export interface PlanFiles {
+  dir: string;
+  /** Downloads a link (a frozen file's, or a hosted file's fresh link). */
+  download: (url: string, maxBytes: number) => Promise<Buffer>;
+  /** A fresh short-lived link to a file the line hosts for this video. */
+  hostedLink: (fileId: string) => Promise<string>;
+  /** Told about each hosted file once its bytes are checked, so payloads can name it as it is. */
+  onHosted?: (sha256: string, ref: string) => void;
+  probe?: Probe;
+}
+
+const mismatch = () => new KitStop('A file in the plan does not match the one approved, so nothing was made and nothing was spent.', 'refused');
+
+/** The bytes of one plan file, checked against its size and hash; fetched once per sha256. */
+async function checkedFile(files: PlanFiles, file: { sha256: string; bytes: number; mime: string }, fetch: () => Promise<Buffer>): Promise<FileRef> {
+  await mkdir(files.dir, { recursive: true, mode: 0o700 });
+  const target = path.join(files.dir, `${file.sha256}.${EXT_BY_MIME[file.mime] ?? 'bin'}`);
+  const have = existsSync(target) ? await hashFile(target) : null;
+  if (!have || have.sha256 !== file.sha256 || have.bytes !== file.bytes) {
+    if (file.bytes > MAX_INPUT_BYTES) throw new KitStop('A file in the plan is larger than the kit allows. Nothing was spent.', 'refused');
+    const data = await fetch();
+    if (data.length !== file.bytes || createHash('sha256').update(data).digest('hex') !== file.sha256) throw mismatch();
+    await atomicWrite(target, data);
+  }
+  return fileRef(target, mediaOfMime(file.mime), files.probe, file.mime);
+}
+
 /**
- * The value with every frozen file downloaded into `dir` (once per sha256),
- * checked against its hash and size, and swapped for its FileRef.
+ * The value with every plan file (a frozen link, or a file the line hosts)
+ * downloaded into the run folder, checked against its hash and size, and
+ * swapped for its FileRef. One file that fails its check stops the run.
  */
-export async function materialize(
-  value: unknown,
-  dir: string,
-  download: (url: string, maxBytes: number) => Promise<Buffer>,
-  probe?: Probe,
-): Promise<unknown> {
-  if (isFrozenFile(value)) {
-    await mkdir(dir, { recursive: true, mode: 0o700 });
-    const target = path.join(dir, `${value.sha256}.${EXT_BY_MIME[value.mime] ?? 'bin'}`);
-    const have = existsSync(target) ? await hashFile(target) : null;
-    if (!have || have.sha256 !== value.sha256) {
-      if (value.bytes > MAX_INPUT_BYTES) throw new Error('A file in the plan is larger than the kit allows.');
-      const data = await download(value.url, MAX_INPUT_BYTES);
-      if (data.length !== value.bytes || createHash('sha256').update(data).digest('hex') !== value.sha256) {
-        throw new Error('A file in the plan does not match the one approved. Nothing was spent.');
+export async function materialize(value: unknown, files: PlanFiles): Promise<unknown> {
+  if (isFrozenFile(value)) return checkedFile(files, value, () => files.download(value.url, MAX_INPUT_BYTES));
+  if (isLineFile(value)) {
+    const ref = await checkedFile(files, value, async () => {
+      // A hosted file's link lives a few minutes: a failed download asks for a fresh one once.
+      try {
+        return await files.download(await files.hostedLink(value.file_id), MAX_INPUT_BYTES);
+      } catch (error) {
+        if (error instanceof KitStop) throw error;
+        return files.download(await files.hostedLink(value.file_id), MAX_INPUT_BYTES);
       }
-      await atomicWrite(target, data);
-    }
-    return fileRef(target, mediaOfMime(value.mime), probe, value.mime);
+    });
+    files.onHosted?.(value.sha256, value.ref);
+    return ref;
   }
   if (Array.isArray(value)) {
     const out: unknown[] = [];
-    for (const item of value) out.push(await materialize(item, dir, download, probe));
+    for (const item of value) out.push(await materialize(item, files));
     return out;
   }
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = await materialize(v, dir, download, probe);
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = await materialize(v, files);
     return out;
   }
   return value;
