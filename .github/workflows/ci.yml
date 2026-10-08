@@ -71,6 +71,10 @@ jobs:
         run: |
           npx --no playwright-core install --with-deps --only-shell chromium
           sudo apt-get install -y --no-install-recommends ffmpeg
+          # Ubuntu 24.04 runners block unprivileged user namespaces through
+          # AppArmor, which Chromium's sandbox needs. The kit keeps the sandbox
+          # on, so lift the block on this throwaway runner rather than turn it off.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       - name: Run the maker tests (none may skip)
