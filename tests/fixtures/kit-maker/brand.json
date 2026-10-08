@@ -1,0 +1,8 @@
+{
+  "name": "Example Brand",
+  "logo": "media/brand-icon.svg",
+  "colors": { "primary": "#1d3557", "background": "#e9e4dc", "text": "#14213d" },
+  "fonts": {},
+  "pronunciations": [],
+  "cta": { "text": "Try it free at example.com", "url": "https://example.com" }
+}

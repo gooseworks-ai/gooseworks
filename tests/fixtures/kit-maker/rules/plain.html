@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  html, body { margin: 0; width: var(--kit-width); height: var(--kit-height); overflow: hidden; background: var(--brand-background, #222); }
+  #box { position: absolute; left: 0; top: 0; width: 25%; height: 25%; background: var(--brand-primary, #e63946); }
+  #label { position: absolute; left: 5%; bottom: 8%; color: #fff; font: 700 72px sans-serif; }
+</style>
+</head>
+<body>
+  <div id="box"></div>
+  <div id="label"></div>
+  <script>
+    kit.render(function (t, frame) {
+      var box = document.getElementById('box');
+      box.style.transform = 'translate(' + (t / kit.duration_s) * (kit.width * 0.75) + 'px,' + (t / kit.duration_s) * (kit.height * 0.75) + 'px)';
+      document.getElementById('label').textContent = frame.scene.scene.on_screen || '';
+    });
+  </script>
+</body>
+</html>

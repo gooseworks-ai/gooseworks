@@ -1,0 +1,10 @@
+{
+  "aspect": "9:16",
+  "scenes": [
+    { "id": "s1", "line": null, "on_screen": "Gift Dad better sleep", "picture": null },
+    { "id": "s2", "line": null, "on_screen": "This weekend only, with code", "picture": null }
+  ],
+  "products": [
+    { "id": "p1", "name": "Band", "images": ["media/product-2.svg", "media/product-4.svg", "media/product-6.svg"] }
+  ]
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #101820; color: #fff; font: 600 64px sans-serif; overflow: hidden; }
+  #spin { position: absolute; left: 80px; top: 120px; width: 200px; height: 200px; background: #f2aa4c; animation: spin 1.3s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg) translateX(40px); } }
+  #late { position: absolute; left: 80px; top: 420px; width: 0; height: 60px; background: #4cc9f2; }
+  #late.go { animation: grow 0.7s ease-out forwards; }
+  @keyframes grow { to { width: 800px; } }
+  #fade { position: absolute; right: 80px; top: 120px; width: 160px; height: 160px; background: #e84a5f; opacity: 1; transition: opacity 0.5s linear; }
+  #text { position: absolute; left: 40px; bottom: 120px; white-space: pre; font-size: 30px; }
+</style>
+</head>
+<body>
+  <div id="spin"></div>
+  <div id="late"></div>
+  <div id="fade"></div>
+  <svg width="300" height="300" style="position:absolute; right:60px; bottom:420px">
+    <circle cx="150" cy="150" r="40" fill="#9b5de5"><animate attributeName="r" values="40;140;40" dur="0.9s" repeatCount="indefinite" /></circle>
+  </svg>
+  <div id="text"></div>
+  <script>
+    // Every clock and every source of chance a page could read.
+    var ticks = 0;
+    setInterval(function () { ticks++; }, 70);
+    setTimeout(function () { document.getElementById('late').className = 'go'; }, 400);
+    setTimeout(function () { document.getElementById('fade').style.opacity = '0.1'; }, 250);
+    var bytes = new Uint8Array(4);
+    var other = new Uint8Array(4);
+    // Ways a page could reach the computer's own clock or chance past the plain globals.
+    function nowVia(C) { return typeof C === 'function' && typeof C.now === 'function' ? C.now() % 100000 : '-'; }
+    function escapes() {
+      Crypto.prototype.getRandomValues.call(crypto, other);
+      var temporal = typeof Temporal === 'object' && Temporal.Now ? String(Temporal.Now.instant().epochMilliseconds % 100000) : '-';
+      return [
+        nowVia(Object.getPrototypeOf(Date.prototype).constructor),
+        nowVia(Object.getPrototypeOf(Date)),
+        nowVia(Date.prototype.constructor),
+        new (Date.prototype.constructor)().getTime() % 100000,
+        Performance.prototype.now.call(performance).toFixed(1),
+        new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }).format(),
+        performance.mark('m').startTime.toFixed(1),
+        (performance.timeOrigin % 100000).toFixed(1),
+        document.lastModified,
+        other.join('.'),
+        crypto.randomUUID().slice(0, 8),
+        temporal
+      ].join(' ');
+    }
+    function draw() {
+      crypto.getRandomValues(bytes);
+      document.getElementById('text').textContent =
+        'now ' + Date.now() % 100000 + '\nperf ' + performance.now().toFixed(1) +
+        '\nrandom ' + Math.random().toFixed(6) + ' ' + bytes.join('.') +
+        '\nticks ' + ticks + ' ' + new Date().toISOString().slice(11, 23) +
+        '\n' + escapes();
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
