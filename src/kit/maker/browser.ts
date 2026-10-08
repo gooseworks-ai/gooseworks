@@ -110,6 +110,10 @@ const LOCKDOWN = `(() => {
   for (const name of ['WebSocket', 'Worker', 'SharedWorker']) {
     try { Object.defineProperty(window, name, { value: refuse(name), writable: false, configurable: false }); } catch (e) {}
   }
+  // A page rewritten with document.open or write would lose what the kit put first in it.
+  for (const name of ['open', 'write', 'writeln']) {
+    try { Object.defineProperty(Document.prototype, name, { value: refuse('document.' + name), writable: true, configurable: true }); } catch (e) {}
+  }
 })();`;
 
 const MAX_SIDE = 4096;
