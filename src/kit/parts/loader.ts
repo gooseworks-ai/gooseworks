@@ -11,11 +11,14 @@
 //
 // Each verified copy is a folder of its own, keyed by the part and the exact
 // file hashes the lock gives it: <home>/kit/parts/<id>/<version>/<key>/. It is
-// written in a temporary folder and renamed into place whole, never changed
-// afterwards, and re-hashed on every load; a copy that no longer matches, or
-// holds a file the lock does not list, is replaced. So two runs with
-// different locks never share a folder, and a part only ever sees the files
-// its lock vouches for. No link is followed below the kit home.
+// written in a staging folder next to it and renamed into place whole, never
+// changed afterwards, and re-hashed on every load. One run at a time
+// publishes a copy (a lock file beside it, respected across processes); a
+// run that finds a good copy already published uses it. A copy that no
+// longer matches, or holds a file the lock does not list, is moved to a
+// quarantine folder and deleted there without following links. So two runs
+// with different locks never share a folder, and a part only ever sees the
+// files its lock vouches for. No link is followed below the kit home.
 //
 // GOOSE_KIT_PARTS_DIR (a local goose-skills checkout) loads parts from disk
 // without the lock's hashes, for building parts during the sprint. It works
@@ -41,6 +44,7 @@ import {
   type FetchLike,
   type PartsCatalog,
 } from './catalog';
+import { LockTimeout, NotAFolder, realFolder, removeTree, withFolderLock } from './fs-safe';
 import { isExactVersion, satisfiesKitRange } from './semver';
 
 /** part-interface.md section 4, rule 7. */
@@ -170,28 +174,6 @@ function exportedRun(ref: PartRef, mod: unknown): PartRun {
   return run as PartRun;
 }
 
-const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
-
-/**
- * `base`/`segments…` as real folders, made when missing. A link or a file in
- * the way is refused, so nothing is ever written outside the kit home.
- */
-async function realFolder(base: string, segments: string[]): Promise<string> {
-  let dir = base;
-  for (const segment of segments) {
-    dir = path.join(dir, segment);
-    let stat = await fs.lstat(dir).catch((error) => (isMissing(error) ? null : Promise.reject(error)));
-    if (!stat) {
-      await fs.mkdir(dir, { mode: 0o700 }).catch((error) => ((error as NodeJS.ErrnoException).code === 'EEXIST' ? undefined : Promise.reject(error)));
-      stat = await fs.lstat(dir);
-    }
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      throw new PartLoadError('bad_cache', `${dir} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
-    }
-  }
-  return dir;
-}
-
 /**
  * The files of a stored copy, each checked against its hash, or null when the
  * copy is missing, holds anything the lock does not list, holds a link, or
@@ -226,7 +208,8 @@ async function readCopy(dir: string, files: Record<string, string>): Promise<Map
     }
     return true;
   };
-  if (!(await walk(''))) return null;
+  // A copy being replaced by another run can vanish mid-read; that is a miss.
+  if (!(await walk('').catch(() => false))) return null;
   return seen.size === Object.keys(files).length ? seen : null;
 }
 
@@ -284,13 +267,23 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
 
     await fs.mkdir(request.home, { recursive: true, mode: 0o700 });
     const home = await fs.realpath(request.home);
-    const versionDir = await realFolder(home, ['kit', 'parts', ref.id, ref.version]);
-    const tmpRoot = await realFolder(home, ['kit', 'parts', '.tmp']);
-    const dir = path.join(versionDir, copyKey(ref, locked.files));
+    const key = copyKey(ref, locked.files);
+    let versionDir: string;
+    let quarantine: string;
+    try {
+      versionDir = await realFolder(home, ['kit', 'parts', ref.id, ref.version]);
+      quarantine = await realFolder(versionDir, ['.quarantine']);
+    } catch (error) {
+      if (error instanceof NotAFolder) {
+        throw new PartLoadError('bad_cache', `${error.at} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
+      }
+      throw error;
+    }
+    const dir = path.join(versionDir, key);
 
     let verified = await readCopy(dir, locked.files);
     if (!verified) {
-      // Download and check every file in memory, then publish the copy whole.
+      // Download and check every file in memory first; nothing is written yet.
       const downloaded = new Map<string, Buffer>();
       let total = 0;
       for (const file of Object.keys(locked.files).sort()) {
@@ -310,27 +303,35 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
         total += bytes.length;
         downloaded.set(file, bytes);
       }
-      const staging = await fs.mkdtemp(path.join(tmpRoot, `${ref.id}-${ref.version}-`));
       try {
-        for (const [file, bytes] of downloaded) {
-          const target = path.join(staging, ...file.split('/'));
-          await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-          await fs.writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
-        }
-        // A damaged copy is moved aside first; a folder cannot be renamed over another.
-        if (await fs.lstat(dir).catch(() => null)) {
-          const stale = path.join(tmpRoot, `stale-${randomBytes(6).toString('hex')}`);
-          await fs.rename(dir, stale).catch(() => undefined);
-          await fs.rm(stale, { recursive: true, force: true });
-        }
-        await fs.rename(staging, dir).catch((error) => {
-          // Another run published the same copy first; it is checked below.
-          if (!['EEXIST', 'ENOTEMPTY', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+        verified = await withFolderLock(versionDir, `.${key}`, { timeoutMs, signal: request.signal }, async () => {
+          // Another run may have published this copy while we downloaded it.
+          const published = await readCopy(dir, locked.files);
+          if (published) return published;
+          // Staging and quarantine sit in the version folder, so every rename stays on one disk.
+          const staging = await fs.mkdtemp(path.join(versionDir, '.staging-'));
+          try {
+            for (const [file, bytes] of downloaded) {
+              const target = path.join(staging, ...file.split('/'));
+              await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+              await fs.writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+            }
+            if (await fs.lstat(dir).catch(() => null)) {
+              // A damaged copy: moved aside whole (a link is moved, not followed), then deleted there.
+              const aside = path.join(quarantine, `${key}-${randomBytes(6).toString('hex')}`);
+              await fs.rename(dir, aside);
+              await removeTree(aside);
+            }
+            await fs.rename(staging, dir);
+          } finally {
+            await removeTree(staging);
+          }
+          return readCopy(dir, locked.files);
         });
-      } finally {
-        await fs.rm(staging, { recursive: true, force: true });
+      } catch (error) {
+        if (error instanceof LockTimeout) throw new PartLoadError('bad_cache', `Another run is storing ${ref.id} ${ref.version}. Run the same command again in a moment.`);
+        throw error;
       }
-      verified = await readCopy(dir, locked.files);
       if (!verified) {
         throw new PartLoadError('hash_mismatch', `${named(ref)} changed on this computer while it was being stored. Run the same command again.`);
       }
