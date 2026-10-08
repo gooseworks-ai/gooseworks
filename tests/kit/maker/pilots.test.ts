@@ -13,7 +13,7 @@ type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /** The plan's and brand's file names become files, as the core downloads and hands them over. */
 function withFiles(value: Json, key = ''): unknown {
-  if (typeof value === 'string' && /^media\/.+\.svg$/.test(value) && ['images', 'picture', 'logo'].includes(key)) return fileRef(path.join(FIXTURES, value));
+  if (typeof value === 'string' && /^media\/.+\.svg$/.test(value) && ['images', 'picture', 'image', 'logo'].includes(key)) return fileRef(path.join(FIXTURES, value));
   if (Array.isArray(value)) return value.map((item) => withFiles(item, key));
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withFiles(v, k)]));
   return value;

@@ -1,13 +1,43 @@
 {
   "id": "card",
-  "part": { "id": "html-frames", "version": "1.0.0" },
+  "part": {
+    "id": "html-frames",
+    "version": "1.0.0"
+  },
   "inputs": {
-    "template": { "asset": "frames/card.html" },
-    "scenes": { "from": "plan.scenes" },
-    "brand": { "from": "brand" },
-    "aspect": { "from": "plan.aspect" },
+    "template": {
+      "asset": "frames/card.html"
+    },
+    "scenes": {
+      "from": "plan.scenes"
+    },
+    "brand": {
+      "name": {
+        "from": "brand.name"
+      },
+      "logo": {
+        "from": "brand.logo"
+      },
+      "colors": {
+        "from": "brand.colors"
+      },
+      "fonts": {
+        "from": "brand.fonts"
+      },
+      "cta": {
+        "from": "brand.cta"
+      }
+    },
+    "aspect": {
+      "from": "plan.aspect"
+    },
     "max_words": 8,
     "duration_s": 7,
-    "values": { "cta_reveal_s": 2 }
+    "values": {
+      "cta_reveal_s": 2,
+      "answers": {
+        "from": "plan.answers"
+      }
+    }
   }
 }

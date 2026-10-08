@@ -1,19 +1,54 @@
 {
   "id": "frames",
-  "part": { "id": "html-frames", "version": "1.0.0" },
+  "part": {
+    "id": "html-frames",
+    "version": "1.0.0"
+  },
   "inputs": {
-    "template": { "asset": "frames/search-grid.html" },
+    "template": {
+      "asset": "frames/search-grid.html"
+    },
     "frames": [
-      { "asset": "frames/search-grid.css" },
-      { "asset": "frames/search-grid.js" },
-      { "asset": "frames/magnifier.svg" }
+      {
+        "asset": "frames/search-grid.css"
+      },
+      {
+        "asset": "frames/search-grid.js"
+      },
+      {
+        "asset": "frames/magnifier.svg"
+      }
     ],
-    "scenes": { "from": "plan.scenes" },
-    "products": { "from": "plan.products" },
-    "brand": { "from": "brand" },
-    "aspect": { "from": "plan.aspect" },
+    "scenes": {
+      "from": "plan.scenes"
+    },
+    "products": {
+      "from": "plan.products"
+    },
+    "brand": {
+      "name": {
+        "from": "brand.name"
+      },
+      "logo": {
+        "from": "brand.logo"
+      },
+      "colors": {
+        "from": "brand.colors"
+      },
+      "fonts": {
+        "from": "brand.fonts"
+      },
+      "cta": {
+        "from": "brand.cta"
+      }
+    },
+    "aspect": {
+      "from": "plan.aspect"
+    },
     "max_words": 8,
     "duration_s": 15,
-    "values": { "placeholder": "Search for anything" }
+    "values": {
+      "placeholder": "Search for anything"
+    }
   }
 }
