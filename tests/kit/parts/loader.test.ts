@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { PartsLock } from '../../../src/kit/part-interface';
+import { removeTree } from '../../../src/kit/parts/fs-safe';
 import { createPartLoader, PartLoadError } from '../../../src/kit/parts/loader';
 
 const RAW = 'https://raw.example.test/goose-skills/video-merged';
@@ -85,7 +86,7 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 
 const versionDir = () => path.join(home, 'kit', 'parts', 'music-elevenlabs', '1.2.0');
 /** Every stored copy of the part (one folder per set of locked hashes). */
-const copies = () => (fs.existsSync(versionDir()) ? fs.readdirSync(versionDir()).map((name) => path.join(versionDir(), name)) : []);
+const copies = () => (fs.existsSync(versionDir()) ? fs.readdirSync(versionDir()).filter((name) => !name.startsWith('.')).map((name) => path.join(versionDir(), name)) : []);
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-parts-'));
@@ -176,6 +177,59 @@ it('keeps runs with different locks apart, so one cannot swap the code another i
   await Promise.all([first, request(lockB, RAW_B)]);
   expect(imported).toHaveLength(2);
   for (const { wanted, got } of imported) expect(got).toBe(wanted);
+});
+
+it('reuses a copy another run published while this one downloaded, instead of replacing it', async () => {
+  // The second run's downloads finish only once the first run is importing its copy.
+  let firstImporting!: () => void;
+  const importing = new Promise<void>((resolve) => { firstImporting = resolve; });
+  let secondDone!: () => void;
+  const done = new Promise<void>((resolve) => { secondDone = resolve; });
+  const slow = async (url: string) => {
+    if (url.includes('/music-elevenlabs/1.2.0/')) await importing;
+    return fetchImpl(url);
+  };
+  let before: number | undefined;
+  let after: number | undefined;
+  const first = createPartLoader({
+    kitVersion: '1.0.0',
+    fetch: fetchImpl,
+    importModule: async (url: string) => {
+      const dir = path.dirname(fileURLToPath(url.split('?')[0]));
+      before = fs.statSync(dir).ino;
+      firstImporting();
+      await done;
+      after = fs.existsSync(path.join(dir, 'part.mjs')) ? fs.statSync(dir).ino : undefined;
+      return { run: async () => ({}) };
+    },
+  });
+  const second = createPartLoader({ kitVersion: '1.0.0', fetch: slow, importModule: async () => ({ run: async () => ({}) }) });
+  const request = { ref: { id: 'music-elevenlabs', version: '1.2.0' }, lock: lockWith(), dev: false, home, env: { GOOSE_SKILLS_RAW_BASE: RAW }, signal: new AbortController().signal };
+  const later = second.load(request).finally(() => secondDone());
+  await first.load(request);
+  await later;
+  expect(before).toBeDefined();
+  expect(after).toBe(before);
+});
+
+it('deletes a damaged copy without following a folder swapped for a link mid-way', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-outside-'));
+  try {
+    fs.writeFileSync(path.join(outside, 'keep.txt'), 'not the kit\'s');
+    const doomed = path.join(home, 'doomed');
+    fs.mkdirSync(path.join(doomed, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(doomed, 'assets', 'keep.txt'), 'old copy');
+    await removeTree(doomed, {
+      beforeList: async (dir) => {
+        if (path.basename(dir) !== 'assets') return;
+        fs.rmSync(dir, { recursive: true });
+        fs.symlinkSync(outside, dir);
+      },
+    });
+    expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('not the kit\'s');
+  } finally {
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });
 
 it('refuses a withdrawn version before downloading or importing it', async () => {
