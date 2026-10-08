@@ -107,7 +107,9 @@ npx gooseworks login
 3. You sign in with Google
 4. Token saved to `~/.gooseworks/credentials.json`
 
-Timeout: 120 seconds. If the browser doesn't complete, re-run the command.
+Timeout: 5 minutes. The sign-in link is always printed, so you can open it yourself if no browser opens.
+
+**Cloud agents, SSH and CI** (the browser is on another device): run `npx gooseworks login --device`. It prints a link and a code; open the link on any device, sign in and tap **Approve**, and the CLI finishes on its own. The CLI picks this mode by itself over SSH, in CI, in containers and on Linux with no display (`--browser` forces the browser flow). Agents whose shell only shows output when a command exits should add `--no-wait`: it prints the link and exits, and the next `gooseworks login` or `gooseworks install --skills-only` finishes the sign-in once you approve.
 
 ### `logout`
 

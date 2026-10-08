@@ -7,9 +7,11 @@ import * as logger from '../utils/logger';
 import { FRONTEND_URL } from '../config';
 import { getEnvironment } from '../environment';
 
-const OAUTH_TIMEOUT_MS = 120_000;
+// Five minutes (GOOSE-3937). The timeout message points remote shells at
+// `gooseworks login --device`, which does not need this local callback.
+export const OAUTH_TIMEOUT_MS = 300_000;
 
-interface OAuthResult {
+export interface OAuthResult {
   api_key: string;
   email: string;
   agent_id: string;
@@ -151,6 +153,10 @@ export async function runOAuthFlow(
       }
 
       logger.info('Opening browser for Google sign-in...');
+      // Always print the link: open() resolves even when no browser exists
+      // (it spawns xdg-open detached), and an agent's shell may be on another
+      // machine than the user's browser.
+      logger.info(`If no browser opened, open this link to sign in:\n      ${authUrl}`);
       open(authUrl).catch(() => {
         logger.warn(`Could not open browser. Please visit:\n      ${authUrl}`);
       });
@@ -158,7 +164,7 @@ export async function runOAuthFlow(
 
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error('Authentication timed out after 120 seconds. Please try again.'));
+      reject(new Error('Sign-in timed out after 5 minutes. If your browser is on a different device (cloud agent, SSH), run: gooseworks login --device'));
     }, OAUTH_TIMEOUT_MS);
 
     const cleanup = () => {

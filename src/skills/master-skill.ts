@@ -484,7 +484,7 @@ ${BRAIN_FIRST_ENTRY}
 
 ## Setup
 
-All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. To log out: \`npx gooseworks logout\`.
+All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. In a cloud sandbox or over SSH, sign in with a code instead: run \`npx gooseworks login --device --no-wait\` yourself, show the user the link and code it prints, and run \`npx gooseworks login --device\` once they have approved. To log out: \`npx gooseworks logout\`.
 
 ### Choose the available runtime — MCP first, then CLI
 
@@ -734,7 +734,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost and get their yes
-3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
+3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\` (in a cloud sandbox or over SSH, use the code sign-in described in Setup)
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to \`/tmp/gooseworks-scripts/\`, install pip deps, then execute. NEVER pollute the user's project directory
 6. **Output files default to \`~/Gooseworks/\`** — always confirm with the user before saving
