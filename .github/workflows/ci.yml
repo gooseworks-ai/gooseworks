@@ -1,7 +1,7 @@
 name: CLI checks
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, video-merged, 'video/**']
   workflow_dispatch:
 permissions:
   contents: read
