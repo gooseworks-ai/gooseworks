@@ -100,6 +100,17 @@ function pointerValue(root: unknown, pointer: string): unknown {
   return node;
 }
 
+/**
+ * A model id or provider path as the lock and the line compare it: no leading
+ * slash, the first segment (the model's owner) in lower case. Everything else
+ * must match exactly.
+ */
+function modelKey(value: string): string {
+  const trimmed = value.trim().replace(/^\/+/, '');
+  const slash = trimmed.indexOf('/');
+  return slash < 0 ? trimmed.toLowerCase() : `${trimmed.slice(0, slash).toLowerCase()}${trimmed.slice(slash)}`;
+}
+
 function topStrings(body: PayloadValue): string[] {
   if (!body || typeof body !== 'object' || Array.isArray(body) || isFileRef(body)) return [];
   return Object.values(body).filter((v): v is string => typeof v === 'string');
@@ -213,7 +224,8 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
     if (typeof order.path !== 'string' || !order.path || order.path.length > 300) throw new PartError('bad_input', 'a piece needs a provider path');
     const allowed = ctx.models.filter((m) => m.provider === order.provider);
     if (!allowed.length) throw new PartError('bad_input', `this part may not order from ${String(order.provider)}`);
-    if (!allowed.some((m) => m.model === order.path || topStrings(order.body).includes(m.model))) {
+    const named = [order.path, ...topStrings(order.body)].map(modelKey);
+    if (!allowed.some((m) => named.includes(modelKey(m.model)))) {
       throw new PartError('bad_input', 'a piece must name one of its part’s models, as its path or in its payload');
     }
     if (!order.body || typeof order.body !== 'object' || Array.isArray(order.body) || isFileRef(order.body)) throw new PartError('bad_input', 'a piece payload must be an object');
