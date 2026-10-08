@@ -1,8 +1,9 @@
 // Rule: one make of a video at a time on this computer. A lock is taken over
 // only from a process that is gone, never from one that is still starting.
-import { writeFileSync } from 'fs';
+import { utimesSync, writeFileSync } from 'fs';
+import * as os from 'os';
 import { runLayout } from '../../src/kit/core/paths';
-import { takeRunLock } from '../../src/kit/core/save';
+import { takeoverPrefix, takeRunLock } from '../../src/kit/core/save';
 import { tempHome } from './harness';
 
 describe('the run lock', () => {
@@ -16,6 +17,19 @@ describe('the run lock', () => {
     const layout = runLayout(tempHome(), 'vid_1');
     await takeRunLock(layout, new Date()).then((release) => release());
     writeFileSync(layout.lock, '');
+    await expect(takeRunLock(layout, new Date())).rejects.toThrow(/already being made/);
+  });
+
+  it('never takes over a stale lock while another live run is taking it over', async () => {
+    const layout = runLayout(tempHome(), 'vid_1');
+    await takeRunLock(layout, new Date()).then((release) => release());
+    const dead = JSON.stringify({ pid: 2 ** 22 + 4242, host: os.hostname(), started_at: '', holder: 'gone' });
+    writeFileSync(layout.lock, dead);
+    // A live run (this one) claimed the takeover long ago and is still at it.
+    const claim = `${takeoverPrefix(layout.lock, dead)}.0`;
+    writeFileSync(claim, JSON.stringify({ pid: process.pid, host: os.hostname(), at: '' }));
+    const old = new Date(Date.now() - 600_000);
+    utimesSync(claim, old, old);
     await expect(takeRunLock(layout, new Date())).rejects.toThrow(/already being made/);
   });
 

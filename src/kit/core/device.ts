@@ -2,11 +2,12 @@
 // id) and the device report `video check` and the hand-over send.
 import { randomUUID } from 'crypto';
 import { existsSync, readdirSync, statSync } from 'fs';
-import { mkdir, statfs } from 'fs/promises';
+import { mkdir, readFile, statfs } from 'fs/promises';
 import * as path from 'path';
 import type { DeviceReport, ToolReport } from '../line/types';
 import { devicePath, partsCacheDir } from './paths';
-import { createExclusive, readJson, writeJson } from './save';
+import { sha256Hex } from './canonical';
+import { atomicWrite, claimJob, createExclusive } from './save';
 import { isExactVersion, KIT_INTERFACES, KIT_VERSION } from './version';
 import type { Toolchain } from './toolchain';
 
@@ -16,17 +17,35 @@ const PART_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 /** The device id kept in ~/.gooseworks/kit/device.json, made on first use. */
 export async function deviceId(home: string): Promise<string> {
   const file = devicePath(home);
-  const saved = await readJson<{ device_id?: unknown }>(file);
-  if (typeof saved?.device_id === 'string' && DEVICE_ID.test(saved.device_id)) return saved.device_id;
-  const id = randomUUID();
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const record = { device_id: id, created_at: new Date().toISOString() };
-  if (await createExclusive(file, JSON.stringify(record, null, 2) + '\n')) return id;
-  // The file is there: another run made it first (use its id), or it is damaged (replace it).
-  const winner = await readJson<{ device_id?: unknown }>(file);
-  if (typeof winner?.device_id === 'string' && DEVICE_ID.test(winner.device_id)) return winner.device_id;
-  await writeJson(file, record);
-  return id;
+  for (let tries = 0; tries < 100; tries++) {
+    const raw = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => (error.code === 'ENOENT' ? null : Promise.reject(error)));
+    const saved = raw === null ? null : parseDevice(raw);
+    if (saved) return saved;
+    const record = JSON.stringify({ device_id: randomUUID(), created_at: new Date().toISOString() }, null, 2) + '\n';
+    if (raw === null) {
+      // The first run to create it wins; everyone reads back what was saved.
+      await createExclusive(file, record);
+      continue;
+    }
+    // Damaged: one run repairs it; the others wait and read what it saved.
+    if ((await claimJob(`${file}.repair.${sha256Hex(raw).slice(0, 32)}`)) === 'mine') {
+      const again = await readFile(file, 'utf8').catch(() => null);
+      if (again === raw) await atomicWrite(file, record);
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('This computer’s video kit id could not be read.');
+}
+
+function parseDevice(raw: string): string | null {
+  try {
+    const id = (JSON.parse(raw) as { device_id?: unknown }).device_id;
+    return typeof id === 'string' && DEVICE_ID.test(id) ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 function hasCopy(versionDir: string): boolean {

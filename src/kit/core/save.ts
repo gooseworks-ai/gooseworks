@@ -4,10 +4,11 @@
 // token, a login or a signed link is refused.
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import { link, mkdir, open, readFile, rename, stat, unlink } from 'fs/promises';
+import { link, mkdir, open, readdir, readFile, rename, stat, unlink } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { RunRecord, StepRecord } from '../part-interface';
+import { sha256Hex } from './canonical';
 import { holdsSecret } from './secrets';
 import { stepFolder, type RunLayout } from './paths';
 
@@ -83,9 +84,42 @@ function processAlive(pid: number): boolean {
   }
 }
 
-interface LockFile {
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+interface Owner {
   pid: number;
   host: string;
+  at: string;
+}
+
+/**
+ * Claims one job (taking over one stale lock, repairing one damaged file) for
+ * this process. Claims are files `<prefix>.0`, `<prefix>.1`, … made with
+ * createExclusive and never deleted while the job is open: a claim is skipped
+ * only when the process that made it is gone, so at most one live process
+ * holds the job, however long it takes. Nothing here goes by file age.
+ */
+export async function claimJob(prefix: string): Promise<'mine' | 'taken'> {
+  const me: Owner = { pid: process.pid, host: os.hostname(), at: new Date().toISOString() };
+  for (let k = 0; k < 32; k++) {
+    const file = `${prefix}.${k}`;
+    if (await createExclusive(file, JSON.stringify(me) + '\n')) return 'mine';
+    const owner = await readJson<Owner>(file);
+    if (!owner || typeof owner.pid !== 'number' || owner.host !== me.host || processAlive(owner.pid)) return 'taken';
+  }
+  return 'taken';
+}
+
+/** The claim files of `<dir>` whose names start with `<base>.`, removed once their job is done. */
+async function dropClaims(file: string, kind: string): Promise<void> {
+  const dir = path.dirname(file);
+  const start = `${path.basename(file)}.${kind}.`;
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    if (name.startsWith(start)) await unlink(path.join(dir, name)).catch(() => undefined);
+  }
+}
+
+interface LockFile extends Owner {
   started_at: string;
   /** This holder's own mark, so a release never removes another holder's lock. */
   holder: string;
@@ -93,8 +127,6 @@ interface LockFile {
 
 /** A lock nobody can read is treated as held until it is this old. */
 const UNREADABLE_LOCK_MS = 60_000;
-/** A stale-lock recovery that takes longer than this was left by a crash. */
-const RECOVERY_MS = 30_000;
 
 type LockState = { state: 'free' } | { state: 'live' } | { state: 'elsewhere' } | { state: 'stale'; raw: string };
 
@@ -121,19 +153,24 @@ async function lockState(file: string, host: string): Promise<LockState> {
   return processAlive(held.pid) ? { state: 'live' } : { state: 'stale', raw };
 }
 
+/** The claim prefix for taking over one stale lock: one job per stale lock's exact bytes. */
+export function takeoverPrefix(lockFile: string, raw: string): string {
+  return `${lockFile}.claim.${sha256Hex(raw).slice(0, 32)}`;
+}
+
 /**
  * Takes run.lock. A lock left by a process that is gone on this computer is
  * taken over, so "run the same command again" works after a crash; a live one,
- * or one from another computer sharing the folder, is refused. Taking over a
- * stale lock happens under a second, short-lived lock, so two runs that both
- * find it stale never both take it.
+ * or one from another computer sharing the folder, is refused. Only the one
+ * process that claims a stale lock (claimJob) may remove it, and only while it
+ * is still the same stale lock.
  */
 export async function takeRunLock(layout: RunLayout, now: Date): Promise<() => Promise<void>> {
   await mkdir(layout.root, { recursive: true, mode: 0o700 });
-  const mine: LockFile = { pid: process.pid, host: os.hostname(), started_at: now.toISOString(), holder: randomUUID() };
-  const guard = `${layout.lock}.recover`;
-  for (let tries = 0; tries < 50; tries++) {
+  const mine: LockFile = { pid: process.pid, host: os.hostname(), at: now.toISOString(), started_at: now.toISOString(), holder: randomUUID() };
+  for (let tries = 0; tries < 40; tries++) {
     if (await createExclusive(layout.lock, JSON.stringify(mine) + '\n')) {
+      await dropClaims(layout.lock, 'claim');
       return async () => {
         const held = await readJson<LockFile>(layout.lock);
         if (held && held.holder === mine.holder) await unlink(layout.lock).catch(() => undefined);
@@ -143,19 +180,13 @@ export async function takeRunLock(layout: RunLayout, now: Date): Promise<() => P
     if (found.state === 'free') continue;
     if (found.state === 'elsewhere') throw new Error('This video is being made on another computer that shares this folder.');
     if (found.state === 'live') throw new Error('This video is already being made in another window on this computer.');
-    if (!(await createExclusive(guard, JSON.stringify(mine)))) {
-      const since = await stat(guard).then((s) => Date.now() - s.mtimeMs).catch(() => 0);
-      if (since > RECOVERY_MS) await unlink(guard).catch(() => undefined);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    if ((await claimJob(takeoverPrefix(layout.lock, found.raw))) === 'taken') {
+      // Another live run is taking it over; the next look sees its lock.
+      await pause(50);
       continue;
     }
-    try {
-      // Under the guard, remove the lock only if it is still the same stale one.
-      const again = await lockState(layout.lock, mine.host);
-      if (again.state === 'stale' && again.raw === found.raw) await unlink(layout.lock).catch(() => undefined);
-    } finally {
-      await unlink(guard).catch(() => undefined);
-    }
+    const again = await lockState(layout.lock, mine.host);
+    if (again.state === 'stale' && again.raw === found.raw) await unlink(layout.lock).catch(() => undefined);
   }
   throw new Error('This video is already being made in another window on this computer.');
 }

@@ -23,3 +23,18 @@ describe('the device report’s parts', () => {
     expect(cachedParts(home)).toEqual([{ id: 'html-frames', versions: ['1.0.0', '1.1.0'] }]);
   });
 });
+
+describe('the device id', () => {
+  it('is one id for every run that starts at once, even over a damaged file', async () => {
+    const { deviceId } = await import('../../src/kit/core/device');
+    for (const damaged of [false, true]) {
+      const home = tempHome();
+      if (damaged) {
+        mkdirSync(path.join(home, 'kit'), { recursive: true });
+        writeFileSync(path.join(home, 'kit', 'device.json'), '{"device_id": ');
+      }
+      const ids = await Promise.all(Array.from({ length: 8 }, () => deviceId(home)));
+      expect(new Set(ids).size).toBe(1);
+    }
+  });
+});
