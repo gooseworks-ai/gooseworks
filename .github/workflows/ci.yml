@@ -17,11 +17,19 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The kit's web maker renders in Chromium's headless shell; its media tests
+      # run only where that browser exists, found through PLAYWRIGHT_BROWSERS_PATH.
+      - name: Install the video browser
+        run: npx playwright-core install --with-deps --only-shell chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       - run: node scripts/check-changeset.cjs
       - run: npm run generate:skills
       - run: git diff --exit-code -- skills
       - run: npm run build
       - run: npm test -- --runInBand
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       - name: Test the shipped package
         run: |
           npm pack --ignore-scripts --json > packed.json
