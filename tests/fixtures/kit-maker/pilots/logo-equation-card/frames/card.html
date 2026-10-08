@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: var(--kit-width); height: var(--kit-height); overflow: hidden; background: #000; color: #fff; }
+  #card { position: absolute; left: 0; top: 0; width: 1080px; height: 672px; background: #000; }
+  .icon { position: absolute; top: 150px; width: 180px; height: 180px; border-radius: 38px; overflow: hidden; background: #fff; }
+  .icon img { width: 100%; height: 100%; object-fit: cover; }
+  #partner { left: calc(540px - 43px - 180px); } #mine { left: calc(540px + 44px); }
+  #plus { position: absolute; top: 200px; left: 0; right: 0; text-align: center; font: 700 58px brand-heading, sans-serif; }
+  #headline { position: absolute; top: 352px; left: 182px; right: 182px; text-align: center; font: 700 40px/48px brand-heading, sans-serif; }
+  #steps { position: absolute; top: 470px; left: 136px; right: 136px; font: 400 30px/38px brand-body, sans-serif; color: #f0f0f0; list-style: none; }
+  #cta { position: absolute; top: 628px; left: 0; right: 0; text-align: center; font: italic 400 26px brand-body, sans-serif; color: #c8c8c8; opacity: 0; animation: cta 1ms steps(1, end) forwards; animation-delay: var(--cta-at); }
+  @keyframes cta { to { opacity: 1; } }
+  /* The footage band: the style's next step lays the brand's own sped-up footage here. */
+  #band { position: absolute; left: 0; top: 672px; width: 1080px; height: 1248px; background: linear-gradient(120deg, var(--brand-primary, #1d3557), #457b9d, #a8dadc, var(--brand-primary, #1d3557)); background-size: 300% 300%; animation: drift 2.4s linear infinite; }
+  @keyframes drift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+</style>
+</head>
+<body>
+  <div id="card">
+    <div class="icon" id="partner"><img id="partner-img" alt=""></div>
+    <div id="plus">+</div>
+    <div class="icon" id="mine"><img id="mine-img" alt=""></div>
+    <div id="headline"></div>
+    <ol id="steps"></ol>
+    <div id="cta"></div>
+  </div>
+  <div id="band"></div>
+  <script>
+    // A static card whose only event is the call to action hard-cutting in.
+    // That cut is a CSS animation, so the maker's virtual clock times it.
+    document.documentElement.style.setProperty('--cta-at', (kit.values.cta_reveal_s || 2) + 's');
+    var first = kit.scenes[0];
+    if (first.picture) document.getElementById('partner-img').src = first.picture;
+    if (kit.brand && kit.brand.logo) document.getElementById('mine-img').src = kit.brand.logo;
+    document.getElementById('headline').textContent = first.on_screen || '';
+    kit.scenes.slice(1, 5).forEach(function (scene, i) {
+      var li = document.createElement('li');
+      li.textContent = (i + 1) + '. ' + (scene.on_screen || '');
+      document.getElementById('steps').appendChild(li);
+    });
+    document.getElementById('cta').textContent = kit.brand && kit.brand.cta ? kit.brand.cta.text : '';
+  </script>
+</body>
+</html>
