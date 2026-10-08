@@ -120,7 +120,7 @@ export async function buildPage(
     bytes += size;
   };
   const still = (ref: FileRef, data: Buffer) => {
-    if (isAnimatedImage(data, ref.mime)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
+    if (isAnimatedImage(data)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
   };
 
 

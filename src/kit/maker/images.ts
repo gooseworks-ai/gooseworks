@@ -1,7 +1,8 @@
-// Moving pictures in an <img> or a CSS background play on the computer's
-// own clock, not the maker's, so the maker refuses them: animated GIF, APNG,
-// animated WebP, AVIF sequences and SVG files with animations. Reads only the
-// file's own structure. Bundled into the part.
+// Moving pictures in an <img>, an SVG <image> or a CSS background play on the
+// computer's own clock, not the maker's, so the maker refuses them: animated
+// GIF, APNG, animated WebP, AVIF sequences and SVG files with animations. The
+// format is read from the file's bytes, never from its name or label. Bundled
+// into the part.
 
 function gifFrames(data: Uint8Array): number {
   if (data.length < 13) return 0;
@@ -44,12 +45,14 @@ function pngIsAnimated(data: Uint8Array): boolean {
   return false;
 }
 
+function text(data: Uint8Array, start: number, n: number): string {
+  return String.fromCharCode(...data.subarray(start, start + n));
+}
+
 function webpIsAnimated(data: Uint8Array): boolean {
-  const text = (start: number, n: number) => String.fromCharCode(...data.subarray(start, start + n));
-  if (text(0, 4) !== 'RIFF' || text(8, 4) !== 'WEBP') return false;
   let at = 12;
   while (at + 8 <= data.length) {
-    const type = text(at, 4);
+    const type = text(data, at, 4);
     const size = data[at + 4] | (data[at + 5] << 8) | (data[at + 6] << 16) | (data[at + 7] << 24);
     if (type === 'VP8X' && data[at + 8] & 0x02) return true;
     if (type === 'ANIM' || type === 'ANMF') return true;
@@ -58,28 +61,25 @@ function webpIsAnimated(data: Uint8Array): boolean {
   return false;
 }
 
-function avifIsSequence(data: Uint8Array): boolean {
-  const head = String.fromCharCode(...data.subarray(4, Math.min(data.length, 64)));
-  return head.startsWith('ftyp') && /avis|msf1/.test(head);
+/** SVG as text, in the encoding its bytes say: UTF-16 with a byte order mark, else UTF-8. */
+function svgText(data: Uint8Array): string {
+  if (data[0] === 0xff && data[1] === 0xfe) return new TextDecoder('utf-16le').decode(data);
+  if (data[0] === 0xfe && data[1] === 0xff) return new TextDecoder('utf-16be').decode(data);
+  return new TextDecoder('utf-8').decode(data);
 }
 
-const SVG_MOTION = /<(animate|animateTransform|animateMotion|set)\b|@keyframes|\banimation(-name)?\s*:/i;
+/** SMIL elements with or without a namespace prefix, and CSS animations. */
+const SVG_MOTION = /<([A-Za-z_][\w.-]*:)?(animate|animateTransform|animateMotion|animateColor|set)\b|@keyframes|\banimation(-name)?\s*:/i;
 
-/** True when the picture moves on its own. */
-export function isAnimatedImage(data: Uint8Array, mime: string): boolean {
-  switch (mime) {
-    case 'image/gif':
-      return gifFrames(data) > 1;
-    case 'image/png':
-    case 'image/apng':
-      return pngIsAnimated(data);
-    case 'image/webp':
-      return webpIsAnimated(data);
-    case 'image/avif':
-      return avifIsSequence(data);
-    case 'image/svg+xml':
-      return SVG_MOTION.test(new TextDecoder().decode(data));
-    default:
-      return false;
+/** True when the picture moves on its own, whatever its file name or label says. */
+export function isAnimatedImage(data: Uint8Array): boolean {
+  if (data.length >= 6 && /^GIF8[79]a$/.test(text(data, 0, 6))) return gifFrames(data) > 1;
+  if (data.length >= 8 && data[0] === 0x89 && text(data, 1, 3) === 'PNG') return pngIsAnimated(data);
+  if (data.length >= 12 && text(data, 0, 4) === 'RIFF' && text(data, 8, 4) === 'WEBP') return webpIsAnimated(data);
+  if (data.length >= 12 && text(data, 4, 4) === 'ftyp') return /avis|msf1/.test(text(data, 8, Math.min(56, data.length - 8)));
+  const head = svgText(data.subarray(0, 4096)).replace(/^\uFEFF/, '');
+  if (/^\s*(<\?xml|<!--|<!doctype svg|<svg|<[A-Za-z_][\w.-]*:svg)/i.test(head) || /<([A-Za-z_][\w.-]*:)?svg[\s>]/i.test(head)) {
+    return SVG_MOTION.test(svgText(data));
   }
+  return false;
 }
