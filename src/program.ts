@@ -16,6 +16,7 @@ import { doctorCommand } from './commands/doctor';
 import { logCommand } from './commands/log';
 import { videoLocalCommand } from './commands/video-local';
 import { videoSaveCommand } from './commands/video-save';
+import { videoCommand } from './commands/video';
 import { getVersion } from './version';
 import { skillsCommand } from './commands/skills';
 import { launchCommand } from './commands/launch';
@@ -43,11 +44,13 @@ program.addCommand(callCommand);
 program.addCommand(orthogonalCommand);
 program.addCommand(stylesCommand);
 program.addCommand(formatsCommand);
-program.addCommand(doctorCommand);
+// Hidden: replaced by `gooseworks video check`; kept one release for old instructions.
+program.addCommand(doctorCommand, { hidden: true });
 program.addCommand(logCommand);
 // Hidden: serves only paused server video orders (see commands/video-local.ts).
 program.addCommand(videoLocalCommand, { hidden: true });
 program.addCommand(videoSaveCommand);
+program.addCommand(videoCommand);
 
 await program.parseAsync(args, { from: 'user' });
 }

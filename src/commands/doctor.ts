@@ -111,7 +111,7 @@ export function runDoctorChecks(opts: { includeAuth?: boolean; includeBrowser?: 
  */
 export function createDoctorCommand(): Command {
   return new Command('doctor')
-  .description('Check local prerequisites for video ad rendering (ffmpeg, Playwright Chromium, Node) + auth/MCP')
+  .description('Replaced by "gooseworks video check", which also sets up what is missing')
   .option('--json', 'Print the checks as JSON (for an agent to parse)')
   .option('--renderer-script <path>', 'Launch Chromium through the selected Node renderer’s Playwright installation')
   .option('--no-browser', 'Check common prerequisites only (for non-browser formats or before fetching a renderer)')
@@ -127,6 +127,7 @@ export function createDoctorCommand(): Command {
     if (opts.browser === false && opts.rendererScript !== undefined) {
       command.error('--renderer-script cannot be combined with --no-browser');
     }
+    if (!opts.json) logger.warn('doctor is replaced by "gooseworks video check", which checks this computer and sets up what is missing.');
     const checks = runDoctorChecks({ includeBrowser: opts.browser, rendererScript: opts.rendererScript });
     const allOk = checks.every((c) => c.ok);
 
