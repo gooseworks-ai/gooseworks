@@ -10,10 +10,11 @@
 // routed through an allow-list, and DNS and proxying lead nowhere.
 import { spawn } from 'child_process';
 import { existsSync, readFileSync, realpathSync } from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import type { KitBrowser, KitBrowserProvider, KitPage } from '../part-interface';
+import type { BrowserSupport } from '../core/host';
+import { kitHome } from '../core/paths';
+import type { KitBrowser, KitPage } from '../part-interface';
 
 // The few Playwright calls the kit makes, typed here so the kit builds
 // without Playwright's own types.
@@ -43,32 +44,6 @@ interface PwBrowser {
 }
 interface PwChromium {
   launch(options: Record<string, unknown>): Promise<PwBrowser>;
-}
-
-/** The same shape as the core's ToolReport, plus a plain problem. */
-export interface BrowserReport {
-  ok: boolean;
-  version: string | null;
-  bundled: boolean;
-  problem?: string;
-}
-
-export interface BrowserCheckOptions {
-  home: string;
-  setup: boolean;
-  env: NodeJS.ProcessEnv;
-  say: (line: string) => void;
-}
-
-export interface BrowserProviderOptions {
-  allowDirs: string[];
-  signal: AbortSignal;
-}
-
-/** What the core asks of the browser (C1's BrowserSupport). */
-export interface KitBrowserSupport {
-  check(opts: BrowserCheckOptions): Promise<BrowserReport>;
-  provider(opts: BrowserProviderOptions): KitBrowserProvider;
 }
 
 export interface KitBrowserSupportOptions {
@@ -108,11 +83,6 @@ const LOCKDOWN = `(() => {
 })();`;
 
 const MAX_SIDE = 4096;
-
-function kitHomeOf(env: NodeJS.ProcessEnv): string {
-  if (env.GOOSE_KIT_HOME) return path.resolve(env.GOOSE_KIT_HOME);
-  return path.join(env.GOOSEWORKS_USER_HOME || os.homedir(), '.gooseworks');
-}
 
 /** Where the browser lives: the image's folder (not bundled) or the kit's own. */
 export function browsersFolder(home: string, env: NodeJS.ProcessEnv): { dir: string; bundled: boolean } {
@@ -212,7 +182,8 @@ function childEnvFor(env: NodeJS.ProcessEnv): Record<string, string> {
   return out;
 }
 
-export function createKitBrowserSupport(options: KitBrowserSupportOptions = {}): KitBrowserSupport {
+/** The kit's BrowserSupport for the core (src/kit/core/host.ts). */
+export function createKitBrowserSupport(options: KitBrowserSupportOptions = {}): BrowserSupport {
   const load = options.loadPlaywright ?? (() => require('playwright-core') as { chromium: PwChromium });
   let found: string | null = options.executablePath ?? null;
 
@@ -342,7 +313,7 @@ export function createKitBrowserSupport(options: KitBrowserSupportOptions = {}):
           let exe = found;
           if (!exe) {
             const env = process.env;
-            exe = locate(kitHomeOf(env), env).exe;
+            exe = locate(kitHome(env), env).exe;
           }
           if (!exe) throw refuse('The video browser is not set up yet.');
           const browser = await launch(exe, process.env);
