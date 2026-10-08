@@ -250,6 +250,32 @@ here and I'll make the full video (about N credits)."
 
 ${SKILL_FRESHNESS}`;
 
+// GOOSE-3937: a cloud agent's sandbox (ChatGPT agent, Meta AI, Grok) has a
+// shell but no GooseWorks connector, because those apps load tools from their
+// own settings. `gooseworks tool` calls the same MCP tools with the CLI login.
+const CLI_TOOL_BRIDGE = `## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example \`account_whoami\`, \`brand_onboarding\`,
+\`brand_read\`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the \`gooseworks\` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+\`\`\`bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+\`\`\`
+
+- Run \`npx gooseworks tool --list\` once first. It prints the server's rules for using the tools
+  and every tool name; \`npx gooseworks tool <name> --schema\` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as \`next_step\` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run \`npx gooseworks login --device --no-wait\`, show the
+  user the link and code it prints, and run \`npx gooseworks login --device\` once they approve.
+
+When the tools are registered in this session, call them directly instead.`;
+
 const ENVIRONMENT_IDENTITY = `## Keep the selected connection for the whole run
 
 Call \`account_whoami\` on the connection that owns the brand/project before the first write.
@@ -445,6 +471,8 @@ This skill is also the **parent router** for the GooseWorks family. Data/GTM wor
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ## Route to the right skill FIRST
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
@@ -497,7 +525,7 @@ ${BRAIN_FIRST_ENTRY}
 
 ## Setup
 
-All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. To log out: \`npx gooseworks logout\`.
+All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. In a cloud sandbox or over SSH, sign in with a code instead: run \`npx gooseworks login --device --no-wait\` yourself, show the user the link and code it prints, and run \`npx gooseworks login --device\` once they have approved. To log out: \`npx gooseworks logout\`.
 
 ### Choose the available runtime — MCP first, then CLI
 
@@ -529,7 +557,9 @@ may show a server prefix (for example \`mcp__gooseworks__catalog_search\`), a ch
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
 user to reconnect or refresh GooseWorks. Installing or updating the \`gooseworks\` CLI never fixes
-a missing connector tool, so never send a chat-app user to a terminal for it.
+a missing connector tool, so never send a chat-app user to a terminal for it. An agent that has
+its own shell and a signed-in CLI can call the tool with \`npx gooseworks tool\` instead (see
+"No GooseWorks tools in this session?" above).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -747,7 +777,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost and get their yes
-3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
+3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\` (in a cloud sandbox or over SSH, use the code sign-in described in Setup)
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to \`/tmp/gooseworks-scripts/\`, install pip deps, then execute. NEVER pollute the user's project directory
 6. **Output files default to \`~/Gooseworks/\`** — always confirm with the user before saving
@@ -830,6 +860,8 @@ It works the same in a chat app (ChatGPT, claude.ai, Cowork) and in a terminal c
 everything except the few steps labelled terminal-only goes through the connector's tools.
 
 ${CUSTOMER_TALK}
+
+${CLI_TOOL_BRIDGE}
 
 ${connectorPrerequisite('ads_generate', ' There is no HTTP or file fallback: the REST ad\nendpoints are session-cookie-only and reject your token.')}
 
@@ -1247,6 +1279,8 @@ tags: [gooseworks, ads, video, local-render, coworker, chat]
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ## Purpose
 
 Resolve the brand, show supported formats and create one saved project. This is agent
@@ -1558,6 +1592,8 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 # GooseWorks Video Ads — local remix runtime
 
 ${CUSTOMER_TALK}
+
+${CLI_TOOL_BRIDGE}
 
 ${videoEntryPreparation('goose-video-local')}
 
@@ -2862,6 +2898,8 @@ screenshot or an app mockup is not a product photo: that is an image edit, not t
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ${connectorPrerequisite('photos_generate')}
 
 ## Start from the brand context — don't re-ask what it already answers
@@ -2977,5 +3015,5 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 /** Thin GooseWorks connection to the catalog-published production harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${videoEntryPreparation('make-custom-video')}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${CLI_TOOL_BRIDGE}\n\n${videoEntryPreparation('make-custom-video')}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
 }

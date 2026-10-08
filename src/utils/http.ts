@@ -3,11 +3,17 @@ import * as http from 'http';
 
 export interface RequestOpts {
   apiBase: string;
-  apiKey: string;
+  /** Omit (or pass '') for unauthenticated calls such as device sign-in. */
+  apiKey?: string;
   method?: string;
   path: string;
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
+  /**
+   * Abort the request after this many ms with `HttpError('Request timed out', 0)`.
+   * Only short sign-in calls pass it; proxy calls can legitimately run for minutes.
+   */
+  timeoutMs?: number;
 }
 
 export class HttpError extends Error {
@@ -45,9 +51,9 @@ export function requestJson<T = unknown>(opts: RequestOpts): Promise<T> {
     const client = url.protocol === 'https:' ? https : http;
     const method = (opts.method ?? (opts.body !== undefined ? 'POST' : 'GET')).toUpperCase();
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${opts.apiKey}`,
       'Accept': 'application/json',
     };
+    if (opts.apiKey) headers['Authorization'] = `Bearer ${opts.apiKey}`;
     let bodyStr: string | undefined;
     if (opts.body !== undefined && method !== 'GET' && method !== 'HEAD') {
       bodyStr = JSON.stringify(opts.body);
@@ -73,6 +79,9 @@ export function requestJson<T = unknown>(opts: RequestOpts): Promise<T> {
       res.on('error', reject);
     });
     req.on('error', reject);
+    if (opts.timeoutMs !== undefined) {
+      req.setTimeout(opts.timeoutMs, () => req.destroy(new HttpError('Request timed out', 0)));
+    }
     if (bodyStr) req.write(bodyStr);
     req.end();
   });

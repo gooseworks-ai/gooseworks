@@ -66,6 +66,29 @@ and approval before spending. Hosted installed snapshots use the existing Skills
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
 
+## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example `account_whoami`, `brand_onboarding`,
+`brand_read`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the `gooseworks` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+```bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+```
+
+- Run `npx gooseworks tool --list` once first. It prints the server's rules for using the tools
+  and every tool name; `npx gooseworks tool <name> --schema` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as `next_step` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run `npx gooseworks login --device --no-wait`, show the
+  user the link and code it prints, and run `npx gooseworks login --device` once they approve.
+
+When the tools are registered in this session, call them directly instead.
+
 ## Purpose
 
 Resolve the brand, show supported formats and create one saved project. This is agent
