@@ -17,6 +17,12 @@ it.each([
   'https://user:secret@raw.githubusercontent.com/gooseworks-ai/goose-skills/main',
   'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main?token=abc',
   'https://raw.githubusercontent.com/gooseworks-ai',
+  'http://localhost:8080/goose-skills',
 ])('refuses %s', (value) => {
-  expect(() => gooseSkillsSource({ GOOSE_SKILLS_RAW_BASE: value })).toThrow();
+  expect(() => gooseSkillsSource({ GOOSE_SKILLS_RAW_BASE: value, GOOSEWORKS_API_BASE: 'https://api.gooseworks.ai' })).toThrow();
+});
+
+it('allows plain http on this computer only while the CLI talks to a local server', () => {
+  const env = { GOOSE_SKILLS_RAW_BASE: 'http://localhost:8080/goose-skills', GOOSEWORKS_API_BASE: 'http://localhost:5999' };
+  expect(gooseSkillsSource(env).rawBase).toBe('http://localhost:8080/goose-skills');
 });

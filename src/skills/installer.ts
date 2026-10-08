@@ -6,6 +6,7 @@ import type { EntrySkill } from './master-skill';
 import { skillContentHash } from './releases';
 import { getEnvironment, profileRoot, sourceBranch } from '../environment';
 import { stagingContent } from './staging-content';
+import { apiEnvironment, kitApiBase } from '../kit/env';
 
 /** The goose-skills repository the CLI installs skills and loads kit parts from. */
 export const GOOSE_SKILLS_REPO = 'gooseworks-ai/goose-skills';
@@ -23,8 +24,9 @@ export interface GooseSkillsSource {
 
 /**
  * Where goose-skills files come from: GOOSE_SKILLS_RAW_BASE when set, else the
- * selected environment's branch. The override must be https (plain http only
- * on this computer) with no credentials, query or fragment.
+ * selected environment's branch. The override must be https with no
+ * credentials, query or fragment; plain http is allowed only for this
+ * computer while the CLI itself talks to a local server.
  */
 export function gooseSkillsSource(env: NodeJS.ProcessEnv = process.env): GooseSkillsSource {
   const raw = env[GOOSE_SKILLS_RAW_BASE_ENV]?.trim();
@@ -38,7 +40,7 @@ export function gooseSkillsSource(env: NodeJS.ProcessEnv = process.env): GooseSk
   } catch {
     throw new Error(`${GOOSE_SKILLS_RAW_BASE_ENV} is not a web address.`);
   }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && apiEnvironment(kitApiBase(env)) === 'local';
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw new Error(`${GOOSE_SKILLS_RAW_BASE_ENV} must use https.`);
   if (url.username || url.password || url.search || url.hash) throw new Error(`${GOOSE_SKILLS_RAW_BASE_ENV} must be a plain address with no login, query or fragment.`);
   const rawBase = `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
