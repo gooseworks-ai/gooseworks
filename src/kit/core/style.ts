@@ -83,13 +83,22 @@ interface PackageManifest {
   files: Array<{ path: string; sha256: string; bytes: number }>;
 }
 
-async function assetRefs(style: StyleFile, dir: string): Promise<Map<string, FileRef>> {
+/**
+ * Every asset the style lists, as a FileRef. With a verified manifest, each
+ * one must be in it and match its hash: a file that only happens to be in the
+ * folder is never used.
+ */
+async function assetRefs(style: StyleFile, dir: string, manifest: Map<string, { sha256: string; bytes: number }> | null): Promise<Map<string, FileRef>> {
   const assets = new Map<string, FileRef>();
   for (const p of [...(style.assets?.fonts ?? []), ...(style.assets?.frames ?? [])]) {
     const file = path.join(dir, safeRelative(p));
     if (!isInside(dir, file) || !existsSync(file)) refuse(`The style package is missing ${p}.`);
+    const listed = manifest?.get(p);
+    if (manifest && !listed) refuse(`The style lists ${p}, which its package does not carry.`);
     const mime = mimeOf(file);
-    assets.set(p, await fileRef(file, mediaOfMime(mime), undefined, mime));
+    const ref = await fileRef(file, mediaOfMime(mime), undefined, mime);
+    if (listed && (ref.sha256 !== listed.sha256 || ref.bytes !== listed.bytes)) refuse(`The style file ${p} does not match its checksum.`);
+    assets.set(p, ref);
   }
   return assets;
 }
@@ -127,7 +136,8 @@ export async function fetchStyle(opts: FetchStyle): Promise<LoadedStyle> {
     version: opts.ref.version,
     hash: opts.ref.style_hash,
   });
-  return { style, assets: await assetRefs(style, opts.dir) };
+  const verified = new Map(manifest.files.map((f) => [f.path, { sha256: f.sha256, bytes: f.bytes }]));
+  return { style, assets: await assetRefs(style, opts.dir, verified) };
 }
 
 /** Off production only: the style from a local styles folder, still checked against the pinned hash. */
@@ -136,5 +146,5 @@ export async function readLocalStyle(stylesDir: string, pin: { id: string; versi
   const file = path.join(dir, 'style.json');
   if (!existsSync(file)) refuse(`There is no ${pin.id} style in the local styles folder.`);
   const style = checkStyle(JSON.parse(await readFile(file, 'utf8')), pin);
-  return { style, assets: await assetRefs(style, dir) };
+  return { style, assets: await assetRefs(style, dir, null) };
 }

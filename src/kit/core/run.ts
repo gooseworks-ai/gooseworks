@@ -323,7 +323,11 @@ class Maker {
     await this.saveRun();
 
     // The style, then every part: all checked before anything is spent.
-    const pin = { id: plan.style_id, version: plan.style_version, hash: handed.style_package.style_hash || plan.style_hash };
+    // The style must be exactly the one approved: the package's hash and the plan's must agree.
+    if (!plan.style_hash || handed.style_package.style_hash !== plan.style_hash) {
+      throw new KitStop('The style handed over is not the one approved for this video. Nothing was spent.', 'change_request');
+    }
+    const pin = { id: plan.style_id, version: plan.style_version, hash: plan.style_hash };
     this.style = dev.styles
       ? await readLocalStyle(dev.styles, pin)
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal) });
