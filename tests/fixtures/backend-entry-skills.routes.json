@@ -3,7 +3,7 @@
   "source_repo": "gooseworks-app",
   "source_file": "apps/api/src/services/entry-skills.ts",
   "source_symbol": "ENTRY_SKILLS (entries without hidden: true)",
-  "source_ref": "video/a5-playbooks @ a6a8fb5b3",
+  "source_ref": "video-merged @ f6775132e",
   "captured": "2026-10-08",
   "entry_skills": [
     "goose-ads",
