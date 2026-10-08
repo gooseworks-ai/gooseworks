@@ -190,7 +190,7 @@ class Maker {
   private brand!: BrandKit;
   private readonly parts = new Map<string, LoadedPart>();
   private readonly hosted = new Map<string, string>();
-  private readonly made = new Map<string, string>();
+  private readonly pieceLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
@@ -505,7 +505,6 @@ class Maker {
     if (saved && saved.status === 'done' && saved.step_hash === hash && saved.outputs && this.run.steps[spec.id]?.status === 'done') {
       const files = fileRefsIn(saved.outputs);
       if ((await Promise.all(files.map(intact))).every(Boolean)) {
-        files.forEach((f) => this.made.set(f.path, f.sha256));
         this.book.finish(spec.id);
         return saved.outputs as Record<string, unknown>;
       }
@@ -589,17 +588,15 @@ class Maker {
   private async checkOutputFiles(outputs: unknown, partDir: string): Promise<void> {
     for (const ref of fileRefsIn(outputs)) {
       if (!isInside(this.layout.root, ref.path) && !isInside(partDir, ref.path)) throw new PartError('output_invalid', 'an output file is outside this video’s folder');
-      if (this.made.get(ref.path) === ref.sha256) continue;
+      // Every output is hashed again once the part returns, even one it registered.
       const actual = await hashFile(ref.path).catch(() => null);
       if (!actual || actual.sha256 !== ref.sha256 || actual.bytes !== ref.bytes) throw new PartError('output_invalid', 'an output file does not match its hash');
-      this.made.set(ref.path, ref.sha256);
     }
   }
 
   private context(spec: StepSpec, attempt: 1 | 2, workDir: string, tmpDir: string, signal: AbortSignal, record: StepRecord): PartContext {
     const { manifest } = spec.loaded;
     const tools = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, signal);
-    const register = (ref: FileRef) => this.made.set(ref.path, ref.sha256);
     const seedInput = spec.inputs.seed ?? null;
     const order = manifest.needs.network
       ? pieceOrderer({
@@ -615,7 +612,7 @@ class Maker {
           sleep: this.sleep,
           probe: tools.probe,
           hosted: this.hosted,
-          register,
+          locks: this.pieceLocks,
           onWait: () => void this.reporter.send(),
           onPiece: async (piece) => {
             record.pieces.push(piece);
@@ -658,9 +655,7 @@ class Maker {
       file: async (relativePath, media) => {
         const target = path.resolve(workDir, relativePath);
         if (!isInside(workDir, target)) throw new PartError('bad_input', 'a part may register only files in its own folder');
-        const ref = await fileRef(target, media, tools.probe);
-        register(ref);
-        return ref;
+        return fileRef(target, media, tools.probe);
       },
       error: (code, detail) => new PartError(code, detail),
       signal,

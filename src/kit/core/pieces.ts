@@ -121,11 +121,12 @@ export interface PieceLine {
   probe?: Probe;
   /** Hosted files by sha256, shared by the whole run. */
   hosted: Map<string, string>;
+  /** One order at a time per piece hash, shared by the whole run. */
+  locks: Map<string, Promise<void>>;
   /** Called after every piece, with the piece's record, once its files are saved. */
   onPiece: (record: { piece: string; piece_key: string; inputs_hash: string; idempotency_key: string; attempt: 1 | 2; reused: boolean; credits?: number }) => Promise<void>;
   /** Called while a piece is still running at the provider. */
   onWait: () => void;
-  register: (ref: FileRef) => void;
 }
 
 function stopFor(body: { code: string; error: string; fix: string; next: string }): KitStop {
@@ -185,8 +186,23 @@ async function placeResult(ctx: PieceLine, hash: string, sha: string, name: stri
   await copyFile(ctx.cache.fileOf(hash, sha), target);
   const ref = await fileRef(target, media, ctx.probe);
   if (ref.sha256 !== sha) throw new PartError('tool_failed', 'a saved piece changed on disk');
-  ctx.register(ref);
   return ref;
+}
+
+/** Runs `work` alone for this key: calls with the same key wait their turn. */
+async function alone<T>(locks: Map<string, Promise<void>>, key: string, work: () => Promise<T>): Promise<T> {
+  const before = locks.get(key) ?? Promise.resolve();
+  let done!: () => void;
+  const mine = new Promise<void>((resolve) => (done = resolve));
+  const tail = before.then(() => mine);
+  locks.set(key, tail);
+  await before;
+  try {
+    return await work();
+  } finally {
+    done();
+    if (locks.get(key) === tail) locks.delete(key);
+  }
 }
 
 /** ctx.line.order for one step run. */
@@ -206,114 +222,123 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
     }
 
     const inputs_hash = pieceHash({ part: ctx.part, provider: order.provider, path: order.path, body: order.body });
-    const piece_key = `${ctx.stepId}.${order.piece}`;
-    const keyFor = (attempt: number) => `${piece_key}:${inputs_hash}:${attempt}`;
+    // Two calls for the same piece (even under two names) take turns, so the
+    // second finds the first's result instead of ordering it again.
+    return alone(ctx.locks, inputs_hash, async () => {
+      // The journal names the paid piece by the first name it was ordered under.
+      const state: OrderState = (await ctx.cache.readOrder(inputs_hash)) ?? { inputs_hash, piece_key: `${ctx.stepId}.${order.piece}`, attempts: [] };
+      const piece_key = state.piece_key;
+      const keyFor = (attempt: number) => `${piece_key}:${inputs_hash}:${attempt}`;
+      const last = state.attempts[state.attempts.length - 1];
 
-    // A piece this video already has is never ordered again.
-    const cached = await ctx.cache.lookup(inputs_hash, order.results);
-    const state: OrderState = (await ctx.cache.readOrder(inputs_hash)) ?? { inputs_hash, piece_key, attempts: [] };
-    const last = state.attempts[state.attempts.length - 1];
-    if (cached) {
-      const files: Record<string, FileRef> = {};
-      for (const r of order.results) files[r.name] = await placeResult(ctx, inputs_hash, cached.files[r.pointer].sha256, r.name, r.media);
-      const attempt = (last?.attempt ?? 1) as 1 | 2;
-      await ctx.onPiece({ piece: order.piece, piece_key, inputs_hash, idempotency_key: last?.key ?? keyFor(1), attempt, reused: true });
-      return { json: (cached.json ?? null) as JsonValue, files, reused: true };
-    }
+      // A piece this video already has is never ordered again.
+      const cached = await ctx.cache.lookup(inputs_hash, order.results);
+      if (cached) {
+        const files: Record<string, FileRef> = {};
+        for (const r of order.results) files[r.name] = await placeResult(ctx, inputs_hash, cached.files[r.pointer].sha256, r.name, r.media);
+        const attempt = (last?.attempt ?? 1) as 1 | 2;
+        await ctx.onPiece({ piece: order.piece, piece_key, inputs_hash, idempotency_key: last?.key ?? keyFor(1), attempt, reused: true });
+        return { json: (cached.json ?? null) as JsonValue, files, reused: true };
+      }
 
-    // The key: the last one again while its piece may be running or is done,
-    // or when the line's answer to it was anything but retry (asking again is
-    // free and gets the line's answer anew). A new attempt only after a failure
-    // the line said to retry, and only one.
-    let current: OrderState['attempts'][number];
-    const retryable = last?.outcome === 'failed' && (last.failure?.next ?? 'retry') === 'retry' && last.failure?.code !== 'provider_rejected';
-    if (last && !retryable) current = last;
-    else if (last && last.attempt >= 2) throw new KitStop([last.failure?.error, last.failure?.fix].filter(Boolean).join(' ') || 'This part of the video failed twice.', 'failed', last.failure?.code);
-    else {
-      current = { attempt: last ? last.attempt + 1 : 1, key: keyFor(last ? last.attempt + 1 : 1), outcome: 'sent' };
-      state.attempts.push(current);
-    }
+      // The key: the last one again while its piece may be running or is done.
+      // A saved failure is acted on as the line said, before anything is sent:
+      // only a failure the line said to retry earns a new attempt, and only one.
+      let current: OrderState['attempts'][number];
+      if (last?.outcome === 'failed') {
+        const saved = last.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
+        if (saved.next !== 'retry' || saved.code === 'provider_rejected') throw failureFor(saved);
+        if (last.attempt >= 2) throw new KitStop([saved.error, saved.fix].filter(Boolean).join(' ') || 'This part of the video failed twice.', 'failed', saved.code);
+        current = { attempt: last.attempt + 1, key: keyFor(last.attempt + 1), outcome: 'sent' };
+        state.attempts.push(current);
+      } else if (last) {
+        current = last;
+      } else {
+        current = { attempt: 1, key: keyFor(1), outcome: 'sent' };
+        state.attempts.push(current);
+      }
 
-    if (ctx.signal.aborted) throw new PartError('stopped');
-    const body = (await hostPayload(order.body, ctx)) as Record<string, unknown>;
-    const ask = async (): Promise<PieceAnswer> => {
+      if (ctx.signal.aborted) throw new PartError('stopped');
+      const body = (await hostPayload(order.body, ctx)) as Record<string, unknown>;
+      const ask = async (): Promise<PieceAnswer> => {
+        await ctx.cache.saveOrder(state);
+        let busy = 0;
+        for (;;) {
+          let answer: PieceAnswer;
+          const request: PieceRequest = { idempotency_key: current.key, piece_key, part: { id: ctx.part.id, version: ctx.part.version }, inputs_hash, call: { provider: order.provider, path: order.path, body } };
+          try {
+            answer = await ctx.line.orderPiece(ctx.videoId, request, ctx.signal);
+          } catch (error) {
+            if (ctx.signal.aborted) throw new PartError('stopped');
+            if (!(error instanceof LineError)) throw error;
+            if (error.code !== 'piece_busy' || error.next !== 'retry' || ++busy > 30) throw lineStop(error);
+            // Join the running attempt only when it is this same piece with these same inputs.
+            const running = error.details?.idempotency_key;
+            const prefix = `${piece_key}:${inputs_hash}:`;
+            const runningAttempt = typeof running === 'string' && running.startsWith(prefix) ? running.slice(prefix.length) : null;
+            const match = runningAttempt === '1' || runningAttempt === '2';
+            if (match && running !== current.key) {
+              current = { attempt: Number(runningAttempt), key: running as string, outcome: 'sent' };
+              state.attempts.push(current);
+              await ctx.cache.saveOrder(state);
+            }
+            await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
+            continue;
+          }
+          if (answer.status !== 'running') return answer;
+          ctx.onWait();
+          await ctx.sleep(waitSeconds(answer.retry_after_seconds, 10), ctx.signal);
+        }
+      };
+
+      let answer = await ask();
+      if (answer.status === 'failed') {
+        const failure = answer.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
+        current.outcome = 'failed';
+        current.failure = { code: failure.code, error: failure.error, fix: failure.fix, next: failure.next };
+        await ctx.cache.saveOrder(state);
+        throw failureFor(failure);
+      }
+      current.outcome = 'done';
       await ctx.cache.saveOrder(state);
-      let busy = 0;
-      for (;;) {
-        let answer: PieceAnswer;
-        const request: PieceRequest = { idempotency_key: current.key, piece_key, part: { id: ctx.part.id, version: ctx.part.version }, inputs_hash, call: { provider: order.provider, path: order.path, body } };
+
+      // The piece is made and paid for. A failed download asks the line again
+      // under the same key (a replay, free) for fresh links; it never orders anew.
+      let record: CachedPiece = { inputs_hash, json: null, files: {} };
+      const files: Record<string, FileRef> = {};
+      for (let round = 0; ; round++) {
+        const result = { json: answer.result?.json, file_url: answer.result?.file_url };
+        record = { inputs_hash, json: withoutSignedLinks(result.json ?? null), files: {} };
         try {
-          answer = await ctx.line.orderPiece(ctx.videoId, request, ctx.signal);
+          for (const r of order.results) {
+            const url = pointerValue(result, r.pointer);
+            if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new PartError('output_invalid', `the piece's answer has no file at ${r.pointer}`);
+            const data = await ctx.line.download(url, MAX_RESULT_BYTES, ctx.signal);
+            const sha = await ctx.cache.saveFile(inputs_hash, data);
+            record.files[r.pointer] = { sha256: sha, bytes: data.length, mime: mimeOf(r.name), media: r.media };
+            files[r.name] = await placeResult(ctx, inputs_hash, sha, r.name, r.media);
+          }
+          break;
         } catch (error) {
           if (ctx.signal.aborted) throw new PartError('stopped');
-          if (!(error instanceof LineError)) throw error;
-          if (error.code !== 'piece_busy' || error.next !== 'retry' || ++busy > 30) throw lineStop(error);
-          // Join the running attempt only when it is this same piece with these same inputs.
-          const running = error.details?.idempotency_key;
-          const prefix = `${piece_key}:${inputs_hash}:`;
-          const runningAttempt = typeof running === 'string' && running.startsWith(prefix) ? running.slice(prefix.length) : null;
-          const match = runningAttempt === '1' || runningAttempt === '2';
-          if (match && running !== current.key) {
-            current = { attempt: Number(runningAttempt), key: running as string, outcome: 'sent' };
-            state.attempts.push(current);
-            await ctx.cache.saveOrder(state);
-          }
-          await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
-          continue;
+          if (error instanceof PartError && error.code === 'output_invalid') throw error;
+          if (round >= 1) throw new PartError('tool_failed', `a made piece could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
+          answer = await ask();
+          if (answer.status !== 'done') throw new PartError('tool_failed', 'a made piece is no longer available to download');
         }
-        if (answer.status !== 'running') return answer;
-        ctx.onWait();
-        await ctx.sleep(waitSeconds(answer.retry_after_seconds, 10), ctx.signal);
       }
-    };
-
-    let answer = await ask();
-    if (answer.status === 'failed') {
-      const failure = answer.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
-      current.outcome = 'failed';
-      current.failure = { code: failure.code, error: failure.error, fix: failure.fix, next: failure.next };
-      await ctx.cache.saveOrder(state);
-      throw failureFor(failure);
-    }
-    current.outcome = 'done';
-    await ctx.cache.saveOrder(state);
-
-    // The piece is made and paid for. A failed download asks the line again
-    // under the same key (a replay, free) for fresh links; it never orders anew.
-    let record: CachedPiece = { inputs_hash, json: null, files: {} };
-    const files: Record<string, FileRef> = {};
-    for (let round = 0; ; round++) {
-      const result = { json: answer.result?.json, file_url: answer.result?.file_url };
-      record = { inputs_hash, json: withoutSignedLinks(result.json ?? null), files: {} };
-      try {
-        for (const r of order.results) {
-          const url = pointerValue(result, r.pointer);
-          if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new PartError('output_invalid', `the piece's answer has no file at ${r.pointer}`);
-          const data = await ctx.line.download(url, MAX_RESULT_BYTES, ctx.signal);
-          const sha = await ctx.cache.saveFile(inputs_hash, data);
-          record.files[r.pointer] = { sha256: sha, bytes: data.length, mime: mimeOf(r.name), media: r.media };
-          files[r.name] = await placeResult(ctx, inputs_hash, sha, r.name, r.media);
-        }
-        break;
-      } catch (error) {
-        if (ctx.signal.aborted) throw new PartError('stopped');
-        if (error instanceof PartError && error.code === 'output_invalid') throw error;
-        if (round >= 1) throw new PartError('tool_failed', `a made piece could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
-        answer = await ask();
-        if (answer.status !== 'done') throw new PartError('tool_failed', 'a made piece is no longer available to download');
-      }
-    }
-    await ctx.cache.saveRecord(record);
-    await ctx.onPiece({
-      piece: order.piece,
-      piece_key,
-      inputs_hash,
-      idempotency_key: current.key,
-      attempt: current.attempt as 1 | 2,
-      reused: answer.replayed,
-      credits: answer.piece_credits,
+      await ctx.cache.saveRecord(record);
+      await ctx.onPiece({
+        piece: order.piece,
+        piece_key,
+        inputs_hash,
+        idempotency_key: current.key,
+        attempt: current.attempt as 1 | 2,
+        reused: answer.replayed,
+        credits: answer.piece_credits,
+      });
+      return { json: record.json as JsonValue, files, reused: answer.replayed };
     });
-    return { json: record.json as JsonValue, files, reused: answer.replayed };
   };
 }
 
