@@ -104,3 +104,12 @@ videoCommand
     }
   });
 
+/** The old save step: `video make` now uploads the finished video and gets it checked. */
+export const videoSaveMovedCommand = new Command('video-save')
+  .description('Replaced by "gooseworks video make <id>", which uploads the finished video itself')
+  .allowUnknownOption(true)
+  .allowExcessArguments(true)
+  .action(() => {
+    console.log('Saving is part of "gooseworks video make <id>" now: run it again and it sends the finished video for its check.');
+    process.exitCode = 1;
+  });
