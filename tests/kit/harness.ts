@@ -34,6 +34,10 @@ export interface LineScript {
   token?: string;
   lock?: (lock: any) => any;
   upload?: 'pass' | 'fail';
+  /** Answer for one PUT to storage; default: stored. Throwing simulates a lost answer. */
+  put?: (n: number) => Response;
+  /** Answer for one upload done call; default: the check's result. */
+  uploadDone?: (n: number) => Response | undefined;
   /** Answer for one download of a made piece's file; default: the file. */
   download?: (url: URL, n: number) => Response | undefined;
 }
@@ -129,6 +133,8 @@ export function fakeLine(script: LineScript = {}) {
   const token = script.token ?? 'vl1_q_1.4102444800.handedsignature0123456789';
   let pieceCount = 0;
   let downloadCount = 0;
+  let putCount = 0;
+  let doneCount = 0;
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = String(input);
     const headers: Record<string, string> = {};
@@ -136,7 +142,7 @@ export function fakeLine(script: LineScript = {}) {
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
     seen.push({ url, method: init.method ?? 'GET', headers, body });
     const u = new URL(url);
-    if (u.origin === 'https://store.test') return new Response(null, { status: 200 });
+    if (u.origin === 'https://store.test') return script.put ? script.put(putCount++) : new Response(null, { status: 200 });
     if (u.origin === 'https://files.test') return script.download?.(u, downloadCount++) ?? new Response(Buffer.from(`clip ${u.pathname}`), { status: 200 });
     if (u.pathname === '/pkg/view') return json(200, { package: pkg.view });
     if (u.pathname === '/pkg/manifest') return new Response(pkg.manifest, { status: 200 });
@@ -180,6 +186,8 @@ export function fakeLine(script: LineScript = {}) {
     if (p === '/progress') return json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 });
     if (p === '/upload') return json(200, { upload_id: 'up_1', attempt: 1, put: { url: 'https://store.test/up_1?X-Amz-Signature=s', headers: { 'x-amz-checksum-sha256': 'x' } }, expires_at: '' });
     if (p === '/upload/up_1/done') {
+      const scripted = script.uploadDone?.(doneCount++);
+      if (scripted) return scripted;
       const pass = (script.upload ?? 'pass') === 'pass';
       return json(200, { upload_id: 'up_1', attempt: 1, result: pass ? 'pass' : 'fail', reasons: [], fixes_left: 0, stage: pass ? 'done' : 'failed', fee_credits: 0, credits: { used: 0, cap: 1000 } });
     }

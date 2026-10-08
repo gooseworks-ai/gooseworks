@@ -237,21 +237,22 @@ class Maker {
 
     this.layout = runLayout(deps.home, this.videoId);
     const release = await takeRunLock(this.layout, this.now());
-    deps.log.attach(this.layout.log);
-    deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION });
-    this.store = new RunStore(this.layout);
-    this.cache = new PieceCache(this.layout.pieces);
-    this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
-    // Reports start now, so checking the style and parts never looks quiet.
-    this.reporter.start();
-    void this.reporter.send(true);
+    // From here on the lock is always given back, whatever fails.
     try {
+      deps.log.attach(this.layout.log);
+      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION });
+      this.store = new RunStore(this.layout);
+      this.cache = new PieceCache(this.layout.pieces);
+      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
+      // Reports start now, so checking the style and parts never looks quiet.
+      this.reporter.start();
+      void this.reporter.send(true);
       return await this.makeHandedOver(dev);
     } catch (error) {
       return await this.ended(error);
     } finally {
-      this.reporter.stopTimer();
-      await this.reporter.flush().catch(() => undefined);
+      this.reporter?.stopTimer();
+      await this.reporter?.flush().catch(() => undefined);
       await release();
     }
   }
@@ -786,8 +787,18 @@ class Maker {
       await this.store.writeUpload(saved);
       return check;
     };
-    const sent = [...saved.uploads].reverse().find((u) => u.sha256 === sha256 && u.quote_id === this.handed.quote_id && (u.stage === 'put' || u.stage === 'done'));
-    if (sent) return finish(sent);
+    // Bytes sent before (or maybe sent: a crash can land between the PUT and
+    // the journal) are asked about first; they are sent again only when the
+    // line says the slot holds no such file.
+    const sent = [...saved.uploads].reverse().find((u) => u.sha256 === sha256 && u.quote_id === this.handed.quote_id);
+    if (sent) {
+      try {
+        return await finish(sent);
+      } catch (error) {
+        if (!(sent.stage === 'requested' && error instanceof LineError && error.code === 'file_mismatch')) throw error;
+        this.reporter.resume();
+      }
+    }
     const slot = await line.openUpload(this.videoId, { sha256, bytes: data.length, content_type: 'video/mp4', ...(captions_vtt ? { captions_vtt } : {}), manifest }, this.stop.signal);
     const stage: Stage = { upload_id: slot.upload_id, attempt: slot.attempt, sha256, quote_id: this.handed.quote_id, stage: 'requested' };
     saved.uploads.push(stage);
