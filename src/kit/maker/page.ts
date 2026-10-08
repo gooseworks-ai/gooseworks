@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, PartContext } from '../part-interface';
-import { isAnimatedImage } from './images';
+import { cssDataUrls, isAnimatedImage } from './images';
 import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
@@ -148,6 +148,13 @@ export async function buildPage(
     placed.set(rel, ref.sha256);
     const data = await readChecked(ref, fail);
     if (ref.media === 'html') openTrees(ref, data);
+    // The page can't read the rules of its own stylesheet files (each file is its own origin),
+    // so the pictures they name as data: URLs are checked here.
+    if (ref.mime === 'text/css' || /\.css$/i.test(ref.path)) {
+      for (const inline of cssDataUrls(data.toString('utf8'))) {
+        if (isAnimatedImage(inline.bytes)) fail(`the stylesheet ${rel} names a picture that moves on its own; frame pages take still pictures and draw any motion themselves`);
+      }
+    }
     const target = path.join(dir, ...rel.split('/'));
     await mkdir(path.dirname(target), { recursive: true });
     if (ref === spec.template) continue;
