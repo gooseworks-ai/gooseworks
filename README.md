@@ -237,6 +237,18 @@ npx gooseworks call scrapecreators /v1/facebook/adLibrary/search/ads \
   --body='{"query":"running shoes","country":"US"}'
 ```
 
+### `tool`
+
+Call any GooseWorks tool (the same tools the GooseWorks MCP connector gives an agent) with your saved sign-in. It's meant for agents that have a shell but no connector, such as a cloud sandbox in ChatGPT agent, Meta AI or Grok:
+
+```bash
+npx gooseworks tool --list                                  # the server's rules + every tool
+npx gooseworks tool brand_onboarding --schema               # one tool's arguments
+npx gooseworks tool brand_onboarding '{"action":"status"}'  # call it
+```
+
+The result prints as JSON (`--json` prints the raw MCP result). Arguments can also come from a file (`--file args.json`) or stdin (`-`). It exits 1 when the tool reports an error. Paid tools follow the same rules as over the connector.
+
 ## Security & data handling
 
 We'd rather you know exactly what this CLI does before you run it:

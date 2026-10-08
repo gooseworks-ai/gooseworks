@@ -71,6 +71,29 @@ and approval before spending. Hosted installed snapshots use the existing Skills
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
 
+## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example `account_whoami`, `brand_onboarding`,
+`brand_read`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the `gooseworks` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+```bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+```
+
+- Run `npx gooseworks tool --list` once first. It prints the server's rules for using the tools
+  and every tool name; `npx gooseworks tool <name> --schema` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as `next_step` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run `npx gooseworks login --device --no-wait`, show the
+  user the link and code it prints, and run `npx gooseworks login --device` once they approve.
+
+When the tools are registered in this session, call them directly instead.
+
 ## Route to the right skill FIRST
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
@@ -218,7 +241,9 @@ may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
 user to reconnect or refresh GooseWorks. Installing or updating the `gooseworks` CLI never fixes
-a missing connector tool, so never send a chat-app user to a terminal for it.
+a missing connector tool, so never send a chat-app user to a terminal for it. An agent that has
+its own shell and a signed-in CLI can call the tool with `npx gooseworks tool` instead (see
+"No GooseWorks tools in this session?" above).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
