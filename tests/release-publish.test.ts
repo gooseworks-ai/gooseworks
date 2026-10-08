@@ -15,7 +15,7 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
   process.env.GITHUB_SHA = sha; process.env.GITHUB_REF_NAME = 'dev'; process.env.GITHUB_RUN_NUMBER = '42'; delete process.env.GITHUB_OUTPUT;
 });
-afterEach(() => { jest.restoreAllMocks(); global.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); global.fetch = originalFetch; process.env = { ...originalEnv }; });
 test('publishes the exact tested archive with next and accepts a confirmed retry', async () => {
   global.fetch = jest.fn().mockResolvedValueOnce({ status: 404 }).mockResolvedValueOnce({ ok: true, json: async () => existing });
   await publish();
@@ -37,4 +37,34 @@ test('stale queued releases cannot move next backwards', async () => {
   exec.mockReturnValue(`${'b'.repeat(40)}\trefs/heads/dev\n`);
   await expect(publish()).rejects.toThrow(/newer merge/);
   expect(exec.mock.calls.some(call => call[0] === 'npm')).toBe(false);
+});
+test('waits for delayed npm processing without publishing a second time', async () => {
+  jest.useFakeTimers();
+  global.fetch = jest.fn()
+    .mockResolvedValueOnce({ status: 404 })
+    .mockResolvedValueOnce({ status: 404 })
+    .mockResolvedValueOnce({ status: 404 })
+    .mockResolvedValueOnce({ ok: true, json: async () => existing });
+  const published = publish();
+  await jest.advanceTimersByTimeAsync(20000);
+  await published;
+  expect(exec.mock.calls.filter(call => call[0] === 'npm')).toHaveLength(1);
+});
+test('delayed registry confirmation still rejects mismatched package bytes', async () => {
+  jest.useFakeTimers();
+  global.fetch = jest.fn()
+    .mockResolvedValueOnce({ status: 404 })
+    .mockResolvedValueOnce({ status: 404 })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ ...existing, dist: { integrity: 'sha512-wrong' } }) });
+  const published = expect(publish()).rejects.toThrow(/different source or bytes/);
+  await jest.advanceTimersByTimeAsync(10000);
+  await published;
+});
+test('a release still unavailable after the processing deadline fails clearly', async () => {
+  jest.useFakeTimers();
+  global.fetch = jest.fn().mockResolvedValue({ status: 404 });
+  const published = expect(publish()).rejects.toThrow(/still unavailable after 10 minutes/);
+  await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+  await published;
+  expect(exec.mock.calls.filter(call => call[0] === 'npm')).toHaveLength(1);
 });
