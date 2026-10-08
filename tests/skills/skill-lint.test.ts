@@ -36,6 +36,12 @@ it.each([
   ['a fullwidth install command', 'Run \uFF4E\uFF50\uFF4D install first.', 'setup.no_install'],
   ['an old tool name with escaped underscores', 'Save it with video&#95;project&#95;upsert.', 'action.real_names_only'],
   ['an old tool name with Markdown escapes', 'Save it with video\\_project\\_upsert.', 'action.real_names_only'],
+  ['an install request with a direction mark', 'Please in\u200Estall the plugin.', 'setup.no_install'],
+  ['an install request with a variation selector', 'Please in\uFE0Fstall the plugin.', 'setup.no_install'],
+  ['an install request with a soft-hyphen entity', 'Please in&shy;stall the plugin.', 'setup.no_install'],
+  ['an install request with a legacy soft-hyphen entity', 'Please in&shystall the plugin.', 'setup.no_install'],
+  ['an install request with a zero-width-space entity', 'Please in&ZeroWidthSpace;stall the plugin.', 'setup.no_install'],
+  ['a dollar sign as a named entity', 'About &dollar;8 for the video.', 'money.credits_only'],
 ])('fails on %s', (_case, text, rule) => {
   expect([...new Set(lintSkill(text).map((problem) => problem.split(':')[0]))]).toEqual([rule]);
 });

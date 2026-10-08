@@ -76,24 +76,39 @@ function negated(words: string[], index: number): boolean {
   return false;
 }
 
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', dollar: '$', lowbar: '_', hyphen: '-', dash: '-',
-  euro: '€', pound: '£', cent: '¢', yen: '¥', colon: ':', period: '.', comma: ',', excl: '!', quest: '?', vert: '|',
-};
+const HTML = fixture<{ entities: Record<string, string>; legacy: string[] }>('html-named-entities.json');
+const LEGACY = new Set(HTML.legacy);
 
-/** What a reader sees: HTML entities and Markdown escapes decoded. */
+/** One named reference: `&name;`, or a legacy name a browser decodes without the semicolon. */
+function namedEntity(match: string, name: string, semicolon: string): string {
+  if (semicolon && Object.prototype.hasOwnProperty.call(HTML.entities, name)) return HTML.entities[name];
+  // Without a semicolon a browser takes the longest legacy name and keeps the rest.
+  for (let end = name.length; end > 0; end--) {
+    const head = name.slice(0, end);
+    if (LEGACY.has(head)) return HTML.entities[head] + name.slice(end) + semicolon;
+  }
+  return match;
+}
+
+const codePoint = (value: number): string => (value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : '�');
+
+/** What a reader sees: every HTML character reference and Markdown escape decoded. */
 function rendered(text: string): string {
   return text
-    .replace(/&#x([0-9a-f]+);?/gi, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);?/g, (_m, dec: string) => String.fromCodePoint(Number(dec)))
-    .replace(/&([a-z]+);/gi, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match)
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, hex: string) => codePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);?/g, (_m, dec: string) => codePoint(Number(dec)))
+    .replace(/&([A-Za-z][A-Za-z0-9]*)(;?)/g, namedEntity)
     .replace(/\\([!-/:-@[-`{-~])/g, '$1');
 }
 
-/** The text as written, as rendered, and rendered then NFKC-folded with invisible characters removed. */
+/**
+ * The text as written, as rendered, and rendered then NFKC-folded with every
+ * default-ignorable character (zero-width spaces, joiners, direction marks,
+ * soft hyphens, variation selectors, …) removed.
+ */
 function views(text: string): string[] {
   const shown = rendered(text);
-  const folded = shown.normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '');
+  const folded = shown.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '');
   return [...new Set([text, shown, folded])];
 }
 
