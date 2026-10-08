@@ -25,6 +25,13 @@
 //   --disable-3d-apis).
 // - The browser's render fingerprint draws only the generic font families, so
 //   two computers that differ only in a named system font share a cache key.
+// - A closed shadow root made by setHTMLUnsafe, or written with an
+//   entity-encoded shadowrootmode, is out of the runtime's reach.
+// - url() tokens written with CSS escapes are not found in style text, so a
+//   data: or blob: picture named that way is not checked.
+// - The browser download's unpacker does not catch names that differ only in
+//   case on a case-insensitive disk; the zip comes only from the pinned,
+//   checksummed browser download, so it is first-party too.
 //
 // Plain ES2020 in a string: nothing here is compiled, so the page runs exactly
 // this text. Keep it free of backticks and "${".
@@ -227,6 +234,12 @@ const RUNTIME = String.raw`(function () {
     report('The frame page fetches ' + String(url).slice(0, 200) + '. Frame pages get their data from the kit and load only their own files.');
     throw new DOMException('XMLHttpRequest is not available in frame pages', 'NotSupportedError');
   });
+  ['open', 'write', 'writeln'].forEach(function (name) {
+    define(Document.prototype, name, function () {
+      report('The frame page rewrites its document (document.' + name + '). Frame pages change the page they are on.');
+      throw new DOMException('document.' + name + ' is not available in frame pages', 'NotSupportedError');
+    });
+  });
   define(Navigator.prototype, 'sendBeacon', function sendBeacon(url) { reach(url, 'beacon'); return false; });
   if (window.EventSource) define(window, 'EventSource', function EventSource(url) { reach(url, 'EventSource'); throw new DOMException('EventSource is not available', 'SecurityError'); });
   function noMedia() { report('The frame page plays video or sound. Frame pages show pictures and text only.'); }
@@ -428,15 +441,24 @@ const RUNTIME = String.raw`(function () {
     };
     for (var r = 0; r < roots.length; r++) {
       var root = roots[r];
-      root.querySelectorAll('img, source, input[type=image]').forEach(function (el) { add(el.currentSrc || el.src); (el.srcset || '').split(',').forEach(function (part) { add(part.trim().split(/\s+/)[0]); }); });
+      // The picture each element really shows (its currentSrc), never the candidates in srcset.
+      root.querySelectorAll('img, input[type=image]').forEach(function (el) { add(el.currentSrc || el.src); });
       root.querySelectorAll('image, feImage, use').forEach(function (el) { add(el.getAttribute('href') || el.getAttribute('xlink:href')); });
       root.querySelectorAll('[style]').forEach(function (el) { css(el.getAttribute('style') || ''); });
       var sheets = Array.prototype.slice.call(root.styleSheets || []).concat(Array.prototype.slice.call(root.adoptedStyleSheets || []));
-      sheets.forEach(function (sheet) {
+      var read = [];
+      var walk = function (sheet) {
+        if (!sheet || read.indexOf(sheet) >= 0) return;
+        read.push(sheet);
         var rules;
         try { rules = sheet.cssRules; } catch (e) { return; }
-        for (var i = 0; i < rules.length; i++) css(rules[i].cssText);
-      });
+        for (var i = 0; i < rules.length; i++) {
+          // An @import rule's text is only its own line; its rules live in its sheet.
+          if (rules[i].styleSheet) walk(rules[i].styleSheet);
+          else css(rules[i].cssText);
+        }
+      };
+      sheets.forEach(walk);
     }
     return found;
   }
@@ -447,13 +469,10 @@ const RUNTIME = String.raw`(function () {
   }
   async function readSource(url) {
     try {
-      if (/^blob:/i.test(url)) return toBase64(new Uint8Array(await (await nativeFetch(url)).arrayBuffer()));
-      var comma = url.indexOf(',');
-      if (comma < 0) throw new Error('no data');
-      var head = url.slice(5, comma);
-      var body = url.slice(comma + 1);
-      if (/;base64$/i.test(head)) return body.replace(/\s+/g, '');
-      return toBase64(new TextEncoder().encode(decodeURIComponent(body)));
+      // The browser decodes the URL as it would to draw it (base64 or percent-encoded bytes).
+      var response = await nativeFetch(url);
+      if (!response.ok) throw new Error('not readable');
+      return toBase64(new Uint8Array(await response.arrayBuffer()));
     } catch (e) {
       report('The picture ' + url.slice(0, 80) + ' could not be read.');
       return null;
