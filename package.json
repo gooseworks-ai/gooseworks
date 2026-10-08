@@ -8,6 +8,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "dev": "tsx src/index.ts",
     "test": "jest",
     "generate:skills": "tsx scripts/generate-skill-files.ts",

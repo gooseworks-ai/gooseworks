@@ -14,8 +14,7 @@ import { stylesCommand } from './commands/styles';
 import { formatsCommand } from './commands/formats';
 import { doctorCommand } from './commands/doctor';
 import { logCommand } from './commands/log';
-import { videoLocalCommand } from './commands/video-local';
-import { videoSaveCommand } from './commands/video-save';
+import { videoCommand, videoSaveMovedCommand } from './commands/video';
 import { getVersion } from './version';
 import { skillsCommand } from './commands/skills';
 import { launchCommand } from './commands/launch';
@@ -43,11 +42,12 @@ program.addCommand(callCommand);
 program.addCommand(orthogonalCommand);
 program.addCommand(stylesCommand);
 program.addCommand(formatsCommand);
-program.addCommand(doctorCommand);
+// Hidden: replaced by `gooseworks video check`; kept one release for old instructions.
+program.addCommand(doctorCommand, { hidden: true });
 program.addCommand(logCommand);
-// Hidden: serves only paused server video orders (see commands/video-local.ts).
-program.addCommand(videoLocalCommand, { hidden: true });
-program.addCommand(videoSaveCommand);
+// Hidden: one line pointing old instructions at `video make`, which uploads the video itself.
+program.addCommand(videoSaveMovedCommand, { hidden: true });
+program.addCommand(videoCommand);
 
 await program.parseAsync(args, { from: 'user' });
 }
