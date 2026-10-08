@@ -82,6 +82,46 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain('A preview-only route makes a script and prompt preview, not a finished video');
   });
 
+  // T-STR-3 re-run: an agent floated the guessing format for software with a
+  // laptop or phone as the prop.
+  it('never offers guessing to a software or service brand, not even with a device as the prop', () => {
+    expect(block).toContain('**Never offer guessing to software or a service.**');
+    expect(block).toContain(
+      'When what the brand sells is software, an app or a service (nothing a person can hold), never offer or script guessing, not even with a laptop, phone or other device showing the app as the prop',
+    );
+    expect(block).toContain('the device is a prop, so `offering_type` stays `digital` or `service`');
+    // A device or hardware brand sells a physical product: guessing stays open.
+    expect(block).toContain(
+      'A brand that sells a physical product, including a device or hardware that comes with an app, can still use guessing with that product.',
+    );
+    expect(block).toContain(
+      'a one-person conversation (a script and prompt preview only, no finished video yet)',
+    );
+    expect(block).toContain('the street testimonial if the catalog lists it and does not rule it out, or custom.');
+    expect(block).toContain('Asking again never unlocks a route the table or the selector rules out.');
+  });
+
+  it("reads the catalog's fit.ok false on a street row as no finished video, not as no conversation", () => {
+    expect(block).toContain(
+      'When they asked for a street interview, the catalog may mark (newer servers do) the street-interview rows `fit.ok: false` for such a brand: they can\'t make a finished video for it.',
+    );
+    expect(block).toContain(
+      'so still offer the one-person conversation, saying plainly that it is a script and prompt preview only.',
+    );
+    // A device brand whose kit reads as software: confirm before overriding the catalog.
+    expect(block).toContain(
+      'tell the customer the catalog flagged it and confirm what they sell before offering guessing with that device.',
+    );
+    const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
+    expect(picker).toContain(
+      'A row with `fit.ok: false` is ruled out for this brand. Never propose it unless the customer, after hearing why, still asks for it.',
+    );
+    // Insisting is not a way around the street route check (review round 4).
+    expect(picker).toContain(
+      'For a street interview, insisting never unlocks a route the route check rules out; when they asked for one, the one-person conversation preview is the one exception (see the route check).',
+    );
+  });
+
   it('never reads a suggested row as a match for the setup the customer named', () => {
     const picker = flat(video.slice(video.indexOf('### 3. Show the picker'), video.indexOf('### 4. Check this machine')));
     expect(picker).toContain('`suggested` ranks a row for the brand; it never means the row makes the setup they named.');

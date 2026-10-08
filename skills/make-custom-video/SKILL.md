@@ -287,9 +287,9 @@ The environment owner must confirm the app-MCP service rollout and refresh the c
 
 ## Match a named format before going custom
 
-Before creating a custom project, when the brief changes, and before any paid preview, check whether the request names or implies a catalog format: street interview / vox pop / man-on-the-street, street testimonial, podcast, iMessage or chat, split-screen creator, screen insert, listicle, and so on. Call video_catalog_list {kind:"formats", brand_id}, then fetch that format's renderer or recipe skill and run its own selector or checks.
+Before creating a custom project, when the brief changes, and before any paid preview, check whether the request names or implies a catalog format: street interview / vox pop / man-on-the-street, street testimonial, podcast, iMessage or chat, split-screen creator, screen insert, listicle, and so on. Call video_catalog_list {kind:"formats", brand_id}, then fetch that format's renderer or recipe skill and run its own selector or checks. A street row marked fit.ok: false means no finished street video for this brand; when they asked for a street interview, the one-person conversation (preview only) still fits.
 
-For a street interview, fetch render-street-interview, read its street-script-writing guide, write a brief JSON with mode, offering_type (physical, service or digital), interaction_type and participants (people interviewed on screen, not counting the interviewer), and run python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>. It exits 2 whenever the status is not ready-for-writing. Its route output is binding: route.support ("render" or "preview-only"), route.person_reference and route.max_participants. A status of unsupported-route lists route_gaps and alternatives; it is a stop, not permission to go custom: show the alternatives and go custom only if the customer picks it.
+For a street interview, fetch render-street-interview, read its street-script-writing guide, write a brief JSON with mode, offering_type (physical, service or digital), interaction_type and participants (people interviewed on screen, not counting the interviewer), and run python3 scripts/prepare_script_context.py --brief <brief.json> --out <context.json>. It exits 2 whenever the status is not ready-for-writing. Its route output is binding: route.support ("render" or "preview-only"), route.person_reference and route.max_participants. A status of unsupported-route lists route_gaps and alternatives; it is a stop, not permission to go custom: show the alternatives and go custom only if the customer picks it. For a software, app or service brand, a laptop, phone or other device showing the software is a prop, not their product: offering_type stays digital or service, so guessing stays unsupported. A brand that sells the device or hardware itself is physical and keeps guessing (product-guess) with that device.
 
 | Street route | On screen | Person image reference | Status |
 | --- | --- | --- | --- |
@@ -299,6 +299,7 @@ For a street interview, fetch render-street-interview, read its street-script-wr
 
 If the request fits a route, use that format; a fitting template format is not a custom video. If nothing fits, tell the customer in plain words what is supported and what is preview only, and name the closest supported options (the selector's alternatives) and how each differs. Or propose custom and say why. Go custom only when the customer chooses it. A custom video built on a named format still keeps that format's hard constraints. For a street interview, those are:
 
+- product-guess only with a physical product the brand sells; never a phone, laptop or screen showing software (no phone, screen or UI demonstration);
 - people described in text, never as uploaded person photos;
 - one generation per interview take;
 - deep focus;

@@ -1318,6 +1318,23 @@ Neither interview route takes a photo of a person: people are described in text,
 propose putting a founder's or creator's face in one. Keep the customer's named setup: never
 change the interaction, mode or number of people just to make a check pass.
 
+**Never offer guessing to software or a service.** The guessing route needs a physical product
+to hand over. When what the brand sells is software, an app or a service (nothing a person can
+hold), never offer or script guessing, not even with a laptop, phone or other device showing the
+app as the prop: the device is a prop, so \`offering_type\` stays \`digital\` or \`service\` and the
+selector says unsupported. A brand that sells a physical product, including a device or
+hardware that comes with an app, can still use guessing with that product. Offer the table's
+real alternatives instead: a one-person conversation (a script and prompt preview only, no
+finished video yet), the street testimonial if the catalog lists it and does not rule it out,
+or custom. Asking again never unlocks a route the table or the selector rules out.
+
+When they asked for a street interview, the catalog may mark (newer servers do) the
+street-interview rows \`fit.ok: false\` for such a brand: they can't make a finished video for it.
+That verdict is about the finished video, so still offer the one-person conversation, saying
+plainly that it is a script and prompt preview only. If the brand read shows the brand sells the
+device itself but the catalog rules guessing out, tell the customer the catalog flagged it and
+confirm what they sell before offering guessing with that device.
+
 - **Without a shell on the customer's computer**, decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
 - **With a shell** (the customer's computer or the coworker sandbox), also run its free
@@ -1458,6 +1475,11 @@ contain a full picker independently of the item page.
   format is made only on the customer's computer (the coworker has no browser): if you have no
   shell there and the customer picks one, say it needs GooseWorks running on their computer and
   offer another.
+- A row with \`fit.ok: false\` is ruled out for this brand. Never propose it unless the customer,
+  after hearing why, still asks for it. For a street interview, insisting never unlocks a route
+  the route check rules out; when they asked for one, the one-person conversation preview is the
+  one exception (see the route check). When they ask about a ruled-out row, tell them why in
+  plain words (its \`fit.reason\`), never the field name.
 - \`suggested\` ranks a row for the brand; it never means the row makes the setup they named.
   Never tell the customer a row is "exactly" what they asked for beyond what its card says. A
   street interview still needs the route check above first.
