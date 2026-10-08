@@ -1,11 +1,40 @@
 {
   "aspect": "9:16",
   "scenes": [
-    { "id": "s1", "line": null, "on_screen": "= your standup, written before anyone opens chat", "picture": "media/partner-icon.svg" },
-    { "id": "s2", "line": null, "on_screen": "Connect your team chat in a click", "picture": null },
-    { "id": "s3", "line": null, "on_screen": "We read the threads you choose", "picture": null },
-    { "id": "s4", "line": null, "on_screen": "Your standup drafts itself each morning", "picture": null },
-    { "id": "s5", "line": null, "on_screen": "Review, edit and post in seconds", "picture": null }
+    {
+      "id": "s1",
+      "line": null,
+      "on_screen": "= your standup, written before anyone opens chat",
+      "picture": "media/partner-icon.svg"
+    },
+    {
+      "id": "s2",
+      "line": null,
+      "on_screen": "Connect your team chat in a click",
+      "picture": null
+    },
+    {
+      "id": "s3",
+      "line": null,
+      "on_screen": "We read the threads you choose",
+      "picture": null
+    },
+    {
+      "id": "s4",
+      "line": null,
+      "on_screen": "Your standup drafts itself each morning",
+      "picture": null
+    },
+    {
+      "id": "s5",
+      "line": null,
+      "on_screen": "Review, edit and post in seconds",
+      "picture": null
+    }
   ],
-  "products": []
+  "products": [],
+  "answers": {
+    "partner": "Team chat",
+    "integration_confirmed": true
+  }
 }

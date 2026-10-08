@@ -31,6 +31,9 @@
   <script>
     // A static card whose only event is the call to action hard-cutting in.
     // That cut is a CSS animation, so the maker's virtual clock times it.
+    // The recipe's rule: two logos side by side only when the customer confirmed the integration.
+    var answers = kit.values.answers || {};
+    if (answers.integration_confirmed !== true) throw new Error('the customer has not confirmed the integration');
     document.documentElement.style.setProperty('--cta-at', (kit.values.cta_reveal_s || 2) + 's');
     var first = kit.scenes[0];
     if (first.picture) document.getElementById('partner-img').src = first.picture;
