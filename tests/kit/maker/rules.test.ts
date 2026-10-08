@@ -337,10 +337,42 @@ describeMedia('pages that break the rules are refused', () => {
   }, 60_000);
 
   it('a render whose largest possible frame would not fit the working space, before the frame is written', async () => {
-    // These frames come out small; the room is held for the largest a frame this size could be.
     // A 1920x1080 frame can take about 8 MB; these take a few KB, and everything else fits in 6 MB.
-    const result = await render(drawing("document.getElementById('t').textContent = 'small';"), { aspect: '16:9', short_side: 1080 }, { diskLimitBytes: 6 * 1024 * 1024 });
-    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('working space'), left: [], video: false });
+    const root = temp();
+    try {
+      writeFileSync(path.join(root, 'page.html'), drawing("document.getElementById('t').textContent = 'small';"));
+      const { ctx } = partContext(root);
+      let screenshots = 0;
+      const real = ctx.browser!;
+      const counted: PartContext['browser'] = {
+        launch: async () => {
+          const browser = await real.launch();
+          return {
+            close: () => browser.close(),
+            newPage: async (opts) => {
+              const tab = await browser.newPage(opts);
+              return { ...tab, screenshot: (o: Parameters<typeof tab.screenshot>[0]) => { screenshots++; return tab.screenshot(o); } };
+            },
+          };
+        },
+      };
+      await expect(
+        makeVideo(
+          { template: fileRef(path.join(root, 'page.html')), scenes: [{ id: 'a', on_screen: 'x' }], aspect: '16:9', short_side: 1080, max_words: 8, duration_s: 1, fps: 6 },
+          { ...ctx, browser: counted },
+          { diskLimitBytes: 6 * 1024 * 1024 },
+        ),
+      ).rejects.toMatchObject({ code: 'bad_input', detail: expect.stringContaining('working space') });
+      // The frame was never written: the room for it was refused first.
+      expect(screenshots).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('a page that rewrites its document with document.open or write', async () => {
+    const result = await render(drawing("try { document.open(); document.write('<p>new page</p>'); document.close(); } catch (e) {}"));
+    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('rewrites its document') });
   }, 60_000);
 
   it('a video or sound element inside a closed shadow root', async () => {
@@ -369,6 +401,25 @@ describeMedia('pages that break the rules are refused', () => {
     const gl = await render(drawing("if (document.createElement('canvas').getContext('webgl')) throw new Error('WebGL is on');"));
     expect(gl).toMatchObject({ ok: true });
   }, 60_000);
+
+  it('inline pictures read as the browser reads them: srcset, percent-encoding and @import', async () => {
+    const still = Buffer.from('R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==', 'base64');
+    const moving = Buffer.from('R0lGODlhAQABAIAAAP///wAAACH5BAAKAAAALAAAAAABAAEAAAICRAEAIfkEAAoAAAAsAAAAAAEAAQAAAgJEAQA7', 'base64');
+    const b64 = (data: Buffer, type = 'image/gif') => `data:${type};base64,${data.toString('base64')}`;
+    // A still picture in srcset (its URL holds a comma) is fine.
+    const srcset = await render(`<!doctype html><body><img srcset="${b64(still)} 1x, ${b64(still)} 2x" src="${b64(still)}"></body>`);
+    expect(srcset).toMatchObject({ ok: true });
+    // A moving picture written percent-encoded is still a moving picture.
+    const percent = [...moving].map((byte) => `%${byte.toString(16).padStart(2, '0')}`).join('');
+    const encoded = await render(`<!doctype html><body><img src="data:image/gif,${percent}"></body>`);
+    expect(encoded).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('moves on its own') });
+    // A moving picture in a stylesheet the page's stylesheet imports.
+    const imported = await render('<!doctype html><head><link rel="stylesheet" href="a.css"></head><body><p>x</p></body>', {}, {}, {
+      'a.css': '@import url("b.css");',
+      'b.css': `p { background-image: url("${b64(moving)}"); }`,
+    });
+    expect(imported).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('moves on its own') });
+  }, 120_000);
 
   it('a page that throws midway leaves no scratch behind', async () => {
     const result = await render(drawing("kit.render(function (t, frame) { if (frame.index === 3) throw new Error('broken at frame 3'); document.getElementById('t').textContent = String(t); });"));
@@ -399,6 +450,10 @@ describe('moving pictures', () => {
     expect(isAnimatedImage(utf16('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>'))).toBe(false);
     const prefixed = '<?xml version="1.0"?><svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:circle r="4"><svg:animate attributeName="r" values="4;8" dur="1s"/></svg:circle></svg:svg>';
     expect(isAnimatedImage(new TextEncoder().encode(prefixed))).toBe(true);
+    // However much space and how many comments come before the root element.
+    const padded = ' \n'.repeat(3000) + '<!-- made by hand -->\n<!DOCTYPE svg [ <!ENTITY a "b"> ]>\n<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"><set attributeName="r" to="8" begin="1s"/></circle></svg>';
+    expect(isAnimatedImage(new TextEncoder().encode(padded))).toBe(true);
+    expect(isAnimatedImage(new TextEncoder().encode(' '.repeat(5000) + '<html><body><p>@keyframes is just text here</p></body></html>'))).toBe(false);
   });
 });
 
