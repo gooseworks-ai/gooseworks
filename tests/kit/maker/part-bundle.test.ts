@@ -25,7 +25,10 @@ describe.each(KIT_PARTS)('$id $version package', (part) => {
     const imports = [...published.matchAll(/^\s*import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
     expect(imports.length).toBeGreaterThan(0);
     for (const name of imports) expect(ALLOWED_IMPORTS).toContain(name);
-    expect(published).not.toMatch(/\brequire\(|\bimport\(|child_process|\bfetch\(|node:(http|https|net|dns|tls|worker_threads)\b|process\.env/);
+    // The page runtime is text the browser runs (it refuses fetch for the page); the part's own code is the rest.
+    const partCode = published.replace(/var RUNTIME = String\.raw`[\s\S]*?\n}\)\(\);`;/, '');
+    expect(partCode).not.toBe(published);
+    expect(partCode).not.toMatch(/\brequire\(|\bimport\(|child_process|\bfetch\(|node:(http|https|net|dns|tls|worker_threads)\b|process\.env/);
   });
 
   it('part.json names this part and lists every file it ships', () => {
