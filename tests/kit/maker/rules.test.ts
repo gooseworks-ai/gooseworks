@@ -47,6 +47,18 @@ describe('word limit', () => {
   });
 });
 
+describe('inputs part.json does not declare', () => {
+  const errorOnly = { error: (code: string, detail?: string) => new TestPartError(code as never, detail) } as Pick<PartContext, 'error'>;
+  const valid = { template: page('plain.html'), scenes: [{ id: 'a', on_screen: 'Hello' }], aspect: '9:16', max_words: 8, duration_s: 2 };
+
+  it('are refused, as part.json refuses them, before anything is read', () => {
+    expect(readInputs(valid, errorOnly).scenes).toHaveLength(1);
+    expect(() => readInputs({ ...valid, colour: 'red' }, errorOnly)).toThrow(/inputs\.colour is not a known field/);
+    expect(() => readInputs({ ...valid, fps: 29.97 }, errorOnly)).toThrow(/inputs\.fps should be integer/);
+    expect(() => readInputs({ ...valid, scene_s: 2 }, errorOnly)).toThrow(/exactly one allowed shape/);
+  });
+});
+
 describeMedia('frames are pure', () => {
   const inputs = () => ({
     template: page('clock.html'),
