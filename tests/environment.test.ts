@@ -21,6 +21,8 @@ test('rejects mixed hosts and deceptive URLs without falling back', () => {
   selectEnvironment('staging');
   assertConnection('https://api.staging.gooseworks.ai', 'api');
   assertConnection('https://mcp.staging.gooseworks.ai/mcp', 'mcp');
+  assertConnection('https://app-mcp.staging.gooseworks.ai/mcp', 'mcp');
+  expect(() => assertConnection('https://app-mcp.staging.gooseworks.ai.evil.test/mcp', 'mcp')).toThrow();
   for (const url of ['https://api.gooseworks.ai', 'https://api.staging.gooseworks.ai.evil.test', 'http://api.staging.gooseworks.ai', 'https://user:pass@api.staging.gooseworks.ai']) expect(() => assertConnection(url, 'api')).toThrow();
   expect(() => assertConnection('https://mcp.gooseworks.ai/mcp', 'mcp')).toThrow();
   selectEnvironment('production'); expect(() => assertConnection('https://api.staging.gooseworks.ai', 'api')).toThrow();

@@ -44,7 +44,7 @@ export function assertConnection(value: string, kind: 'api' | 'mcp'): void {
   if (selected === 'staging' ? !staged : staged) throw new Error(`${kind} connection does not match --env ${selected}. Sign in to that environment again.`);
   const allowed = kind === 'api'
     ? ['api.gooseworks.ai', 'app.gooseworks.ai', 'api.staging.gooseworks.ai']
-    : ['mcp.gooseworks.ai', 'sandbox-mcp.gooseworks.ai', 'mcp.staging.gooseworks.ai'];
+    : ['mcp.gooseworks.ai', 'sandbox-mcp.gooseworks.ai', 'mcp.staging.gooseworks.ai', 'app-mcp.staging.gooseworks.ai'];
   if (!allowed.includes(url.hostname)) throw new Error(`Unrecognized ${kind} connection host`);
   if (kind === 'api' && url.pathname !== '/' && url.pathname !== '') throw new Error('API base must be an origin');
 }
