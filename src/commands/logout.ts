@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { clearCredentials, getCredentials } from '../auth/credentials';
+import { clearPendingDeviceLogin } from '../auth/device-flow';
 import { removeClaudeMcp } from '../agents/claude-mcp';
 import * as logger from '../utils/logger';
 import { getEnvironment } from '../environment';
@@ -7,6 +8,9 @@ import { getEnvironment } from '../environment';
 export const logoutCommand = new Command('logout')
   .description('Sign out and clear saved credentials')
   .action(async () => {
+    // An unfinished device sign-in (`login --device --no-wait`) is dropped too,
+    // even when no account is signed in yet.
+    clearPendingDeviceLogin();
     const existing = getCredentials();
     if (!existing) {
       logger.info('Not currently logged in.');

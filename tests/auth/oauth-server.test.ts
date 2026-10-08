@@ -18,6 +18,7 @@ import open from 'open';
 import { saveCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
 import { selectEnvironment } from '../../src/environment';
+import * as logger from '../../src/utils/logger';
 
 const mockOpen = open as jest.MockedFunction<typeof open>;
 const mockSaveCredentials = saveCredentials as jest.MockedFunction<typeof saveCredentials>;
@@ -214,5 +215,43 @@ describe('auth/oauth-server', () => {
       default_agent_id: 'agent-default',
       mcp_server_url: 'http://localhost:6200',
     }));
+  });
+
+  // GOOSE-3937: open() resolves even when no browser exists, and an agent's
+  // shell may be on another machine, so the link is always printed.
+  it('prints the sign-in link even when the browser opened', async () => {
+    const flow = runOAuthFlow('https://api.gooseworks.ai');
+    const url = await waitForOpen();
+
+    expect(logger.info).toHaveBeenCalledWith(`If no browser opened, open this link to sign in:\n      ${url}`);
+    expect(logger.warn).not.toHaveBeenCalled();
+
+    const { port, state } = extractCallbackParams(url);
+    await hitCallback(port, { token: 'cal_token', email: 'user@example.com', agent_id: 'agent-123', state });
+    await flow;
+  });
+
+  it('times out after 5 minutes (not 2) and points at device sign-in', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    try {
+      let settled: Error | undefined;
+      const flow = runOAuthFlow('https://api.gooseworks.ai').catch((error: Error) => { settled = error; });
+      // setImmediate is real here, so this drains every pending promise hop.
+      const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+      jest.advanceTimersByTime(120_000);
+      await flush();
+      expect(settled).toBeUndefined();
+
+      jest.advanceTimersByTime(179_999);
+      await flush();
+      expect(settled).toBeUndefined();
+
+      jest.advanceTimersByTime(1);
+      await flow;
+      expect(settled?.message).toBe('Sign-in timed out after 5 minutes. If your browser is on a different device (cloud agent, SSH), run: gooseworks login --device');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
