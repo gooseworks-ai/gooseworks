@@ -122,7 +122,12 @@ export async function buildPage(
   const still = (ref: FileRef, data: Buffer) => {
     if (isAnimatedImage(data)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
   };
-
+  // A closed shadow root written into the page's HTML is out of the kit runtime's reach.
+  const openTrees = (ref: FileRef, data: Buffer) => {
+    if (/\bshadowroot(mode)?\s*=\s*["']?closed/i.test(data.toString('utf8'))) {
+      fail(`the frame ${path.basename(ref.path)} declares a closed shadow root; use an open one`);
+    }
+  };
 
   // The template and its frames keep their places relative to each other.
   const pageFiles = [spec.template, ...spec.frames];
@@ -142,6 +147,7 @@ export async function buildPage(
     }
     placed.set(rel, ref.sha256);
     const data = await readChecked(ref, fail);
+    if (ref.media === 'html') openTrees(ref, data);
     const target = path.join(dir, ...rel.split('/'));
     await mkdir(path.dirname(target), { recursive: true });
     if (ref === spec.template) continue;

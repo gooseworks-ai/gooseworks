@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { FileRef, KitPage, PartContext, Timeline } from '../part-interface';
 import { SEGMENT_FRAMES, concatArgs, concatList, frameName, pngSize, segmentArgs } from './encode';
+import { isAnimatedImage } from './images';
 import { readInputs, type MakerSpec } from './inputs';
 import { buildPage } from './page';
 
@@ -56,8 +57,14 @@ async function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Err
   }
 }
 
-function problemsOf(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+/** What the page runtime hands back after starting or drawing: problems, and new data:/blob: pictures. */
+function reportOf(value: unknown): { problems: string[]; sources: Array<{ url: string; data: string }> } {
+  const raw = (value ?? {}) as { problems?: unknown; sources?: unknown };
+  const problems = Array.isArray(raw.problems) ? raw.problems.filter((v): v is string => typeof v === 'string') : [];
+  const sources = Array.isArray(raw.sources)
+    ? raw.sources.filter((v): v is { url: string; data: string } => !!v && typeof v.url === 'string' && typeof v.data === 'string')
+    : [];
+  return { problems, sources };
 }
 
 /** The most a PNG of this size can take: raw RGBA, a filter byte per row, and zlib's overhead. */
@@ -142,9 +149,15 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
       for (let i = start; i < start + count; i++) await rm(path.join(framesDir, frameName(i)), { force: true });
       release(frameBytes);
     };
+    // A picture the page made from a data: or blob: URL must be still, like every other picture.
     const checked = (value: unknown) => {
-      const problems = problemsOf(value);
-      if (problems.length) refusePage(problems);
+      const report = reportOf(value);
+      if (report.problems.length) refusePage(report.problems);
+      for (const source of report.sources) {
+        if (isAnimatedImage(Buffer.from(source.data, 'base64'))) {
+          refusePage([`The picture ${source.url} moves on its own; frame pages take still pictures and draw any motion themselves.`]);
+        }
+      }
     };
     const frameBound = pngBound(spec.output.width, spec.output.height);
 
