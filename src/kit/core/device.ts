@@ -29,6 +29,14 @@ export async function deviceId(home: string): Promise<string> {
   return id;
 }
 
+function hasCopy(versionDir: string): boolean {
+  try {
+    return readdirSync(versionDir, { withFileTypes: true }).some((entry) => entry.isDirectory() && existsSync(path.join(versionDir, entry.name, 'part.json')));
+  } catch {
+    return false;
+  }
+}
+
 /** Part versions in the cache, by id (at most 200 parts, 50 versions each). */
 export function cachedParts(home: string): Array<{ id: string; versions: string[] }> {
   const root = partsCacheDir(home);
@@ -38,7 +46,11 @@ export function cachedParts(home: string): Array<{ id: string; versions: string[
     if (!PART_ID.test(id) || id.length > 64) continue;
     const dir = path.join(root, id);
     if (!statSync(dir).isDirectory()) continue;
-    const versions = readdirSync(dir).filter((v) => isExactVersion(v) && existsSync(path.join(dir, v, 'part.json'))).sort().slice(0, 50);
+    // Each verified copy lives in its own folder: <id>/<version>/<copy key>/part.json.
+    const versions = readdirSync(dir)
+      .filter((v) => isExactVersion(v) && hasCopy(path.join(dir, v)))
+      .sort()
+      .slice(0, 50);
     if (versions.length) parts.push({ id, versions });
     if (parts.length >= 200) break;
   }
