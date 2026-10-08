@@ -169,7 +169,36 @@ export interface ShellDownload {
  * kit says so instead of unpacking an unchecked download. Fill a new revision
  * with `npx tsx scripts/pin-kit-browser.ts` when playwright-core moves.
  */
-export const SHELL_DOWNLOADS: Record<string, Record<string, ShellDownload>> = {};
+export const SHELL_DOWNLOADS: Record<string, Record<string, ShellDownload>> = {
+  // Chrome for Testing 149.0.7827.55, as playwright-core 1.61.0 pins it.
+  '1228': {
+    'darwin-arm64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip',
+      bytes: 98043456,
+      sha256: '302f82603be06683947594ecd60f849e362a8fe3dd82a89bd4408477c97e75a6',
+    },
+    'darwin-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-x64/chrome-headless-shell-mac-x64.zip',
+      bytes: 103452247,
+      sha256: 'a32029e1861329a431b712d5b864e213d9cf8ef51a82ce4c24b27e25f6605434',
+    },
+    'linux-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip',
+      bytes: 119778157,
+      sha256: '410c9407d5de3fea80d9398666be06f2aa09154a3fa7b327dc254e336bb4c4b7',
+    },
+    'linux-arm64': {
+      url: 'https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip',
+      bytes: 115342043,
+      sha256: '1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f',
+    },
+    'win32-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/win64/chrome-headless-shell-win64.zip',
+      bytes: 119099822,
+      sha256: '5cfda0c763aa6a867ce2efad0c467e3220e9c5c01c4cba02fd57afe49ede5457',
+    },
+  },
+};
 
 /** The kit's own fetch: follows redirects, stops at maxBytes. */
 async function fetchToFile(url: string, target: string, maxBytes: number): Promise<void> {
