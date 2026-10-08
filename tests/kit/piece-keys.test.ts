@@ -76,3 +76,17 @@ describe('a failed piece follows the line’s next step', () => {
     expect(line.pieces).toHaveLength(1);
   });
 });
+
+describe('a resumed piece the line said to stop on', () => {
+  it('is asked again under its own key, never ordered as a new attempt', async () => {
+    const home = tempHome();
+    const first = fakeLine({ piece: failedWith('provider_failed', 'stop') });
+    expect((await runMake({ home, line: first })).status).toBe('stopped');
+
+    const again = fakeLine();
+    await runMake({ home, line: again });
+    const keys = keysOf(again, 'clips.scene-1');
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((key) => key.endsWith(':1'))).toBe(true);
+  });
+});

@@ -221,11 +221,14 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       return { json: (cached.json ?? null) as JsonValue, files, reused: true };
     }
 
-    // The key: the last one again while its piece may be running or is done; a
-    // new attempt only after a provider failure, and only one.
+    // The key: the last one again while its piece may be running or is done,
+    // or when the line's answer to it was anything but retry (asking again is
+    // free and gets the line's answer anew). A new attempt only after a failure
+    // the line said to retry, and only one.
     let current: OrderState['attempts'][number];
-    if (last && last.outcome !== 'failed') current = last;
-    else if (last && last.attempt >= 2) throw failureFor(last.failure ?? { code: 'provider_failed', error: 'This piece failed twice.', fix: '', next: 'stop' });
+    const retryable = last?.outcome === 'failed' && (last.failure?.next ?? 'retry') === 'retry' && last.failure?.code !== 'provider_rejected';
+    if (last && !retryable) current = last;
+    else if (last && last.attempt >= 2) throw new KitStop([last.failure?.error, last.failure?.fix].filter(Boolean).join(' ') || 'This part of the video failed twice.', 'failed', last.failure?.code);
     else {
       current = { attempt: last ? last.attempt + 1 : 1, key: keyFor(last ? last.attempt + 1 : 1), outcome: 'sent' };
       state.attempts.push(current);
