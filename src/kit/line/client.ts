@@ -49,6 +49,25 @@ export class LineError extends Error {
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 
+/** Reads a body up to `maxBytes`, stopping the transfer as soon as it would go past. */
+async function readBounded(res: Response, maxBytes: number): Promise<Buffer> {
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error('A file to download is larger than the kit allows.');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, total);
+}
+
 export const sleep: Sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason ?? new Error('stopped'));
@@ -102,20 +121,25 @@ type Auth = 'login' | 'token' | 'hand-over';
 const MINUTE = 60_000;
 
 export class VideoLine {
+  // Secrets live only in private fields: never enumerable, never in JSON or a dump.
   readonly #login: string | null;
   #token: string | null;
   #lease: string | null = null;
+  readonly deviceId: string;
+  readonly workerId: string | undefined;
   private readonly origin: string;
   private readonly fetchImpl: typeof fetch;
   private readonly wait: Sleep;
   private readonly maxRetries: number;
 
-  constructor(private readonly opts: LineOptions) {
+  constructor(opts: LineOptions) {
     const base = new URL(opts.apiBase);
     if (base.pathname !== '/' || base.search || base.hash || base.username || base.password) throw new Error('The API address must be an origin.');
     this.origin = base.origin;
     this.#login = opts.login || null;
     this.#token = opts.lineToken || null;
+    this.deviceId = opts.deviceId;
+    this.workerId = opts.workerId;
     this.fetchImpl = opts.fetch ?? fetch;
     this.wait = opts.sleep ?? sleep;
     this.maxRetries = opts.maxRetries ?? 6;
@@ -240,20 +264,22 @@ export class VideoLine {
     if (target.origin === this.origin) {
       const auth = this.#token ?? this.#login;
       if (auth) headers.Authorization = `Bearer ${auth}`;
-      if (this.opts.workerId) headers[WORKER_HEADER] = this.opts.workerId;
+      if (this.workerId) headers[WORKER_HEADER] = this.workerId;
     }
     for (let attempt = 0; ; attempt++) {
       const link = linkedSignal([signal], 10 * MINUTE);
       try {
         const res = await this.fetchImpl(target.toString(), { method: 'GET', headers, signal: link.signal });
         if (!res.ok) {
+          await res.body?.cancel().catch(() => undefined);
           if (res.status < 500 || attempt >= 2) throw new Error(`A file could not be downloaded (HTTP ${res.status}).`);
         } else {
           const declared = Number(res.headers.get('content-length') ?? '0');
-          if (declared > maxBytes) throw new Error('A file to download is larger than the kit allows.');
-          const data = Buffer.from(await res.arrayBuffer());
-          if (data.length > maxBytes) throw new Error('A file to download is larger than the kit allows.');
-          return data;
+          if (declared > maxBytes) {
+            await res.body?.cancel().catch(() => undefined);
+            throw new Error('A file to download is larger than the kit allows.');
+          }
+          return await readBounded(res, maxBytes);
         }
       } catch (error) {
         if (signal?.aborted || attempt >= 2 || /larger than|HTTP 4/.test(String((error as Error)?.message))) throw error;
@@ -265,13 +291,13 @@ export class VideoLine {
   }
 
   private headers(auth: Auth, json: boolean): Record<string, string> {
-    const headers: Record<string, string> = { Accept: 'application/json', [DEVICE_HEADER]: this.opts.deviceId };
+    const headers: Record<string, string> = { Accept: 'application/json', [DEVICE_HEADER]: this.deviceId };
     if (json) headers['Content-Type'] = 'application/json';
     const bearer = auth === 'login' ? this.#login : auth === 'token' ? this.#token : (this.#login ?? this.#token);
     if (!bearer) throw new Error(auth === 'token' ? 'This video has not been handed over to this computer.' : 'Sign in first.');
     headers.Authorization = `Bearer ${bearer}`;
     if (auth === 'token' && this.#lease) headers[LEASE_HEADER] = this.#lease;
-    if (this.opts.workerId) headers[WORKER_HEADER] = this.opts.workerId;
+    if (this.workerId) headers[WORKER_HEADER] = this.workerId;
     return headers;
   }
 
