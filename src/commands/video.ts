@@ -25,7 +25,8 @@ function readKitEnv() {
     worker,
     lineToken: worker ? lineToken : undefined,
     workerId: env.GOOSEWORKS_KIT_WORKER_ID || undefined,
-    noSelfUpdate: env.GOOSEWORKS_KIT_NO_SELF_UPDATE === '1',
+    // A worker's image pins its kit, and its token has left the environment, so it never relaunches itself.
+    noSelfUpdate: worker || env.GOOSEWORKS_KIT_NO_SELF_UPDATE === '1',
   };
 }
 
