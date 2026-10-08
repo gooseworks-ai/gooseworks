@@ -1,0 +1,13 @@
+{
+  "id": "card",
+  "part": { "id": "html-frames", "version": "1.0.0" },
+  "inputs": {
+    "template": { "asset": "frames/card.html" },
+    "scenes": { "from": "plan.scenes" },
+    "brand": { "from": "brand" },
+    "aspect": { "from": "plan.aspect" },
+    "max_words": 8,
+    "duration_s": 7,
+    "values": { "cta_reveal_s": 2 }
+  }
+}
