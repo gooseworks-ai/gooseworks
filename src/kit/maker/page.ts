@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, PartContext } from '../part-interface';
+import { isAnimatedImage } from './images';
 import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
@@ -35,6 +36,8 @@ export interface BuiltPage {
   entry: string;
   /** Font families the page can use: the style's fonts by file name, the brand's as brand-heading and brand-body. */
   families: string[];
+  /** Bytes written into the page folder. */
+  bytes: number;
 }
 
 type Fail = (detail: string) => never;
@@ -77,13 +80,16 @@ export function familyOf(ref: FileRef): string {
   return path.basename(ref.path, path.extname(ref.path)).replace(/[^A-Za-z0-9 _-]/g, '-');
 }
 
-function injectHead(html: string, head: string): string {
+/**
+ * Puts the kit's head first in the document, right after the doctype, so it
+ * runs before anything of the page's own, even a script placed before <head>.
+ * The parser files it into the head the page then continues.
+ */
+function injectFirst(html: string, head: string): string {
   const text = html.replace(/^\uFEFF/, '');
-  const headTag = /<head\b[^>]*>/i.exec(text);
-  if (headTag) return text.slice(0, headTag.index + headTag[0].length) + head + text.slice(headTag.index + headTag[0].length);
-  const htmlTag = /<html\b[^>]*>/i.exec(text);
-  if (htmlTag) return text.slice(0, htmlTag.index + htmlTag[0].length) + '<head>' + head + '</head>' + text.slice(htmlTag.index + htmlTag[0].length);
-  return '<!doctype html><head>' + head + '</head>' + text;
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(text);
+  if (doctype) return doctype[0] + head + text.slice(doctype[0].length);
+  return '<!doctype html>' + head + text;
 }
 
 function cssString(value: string): string {
@@ -96,6 +102,14 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
   };
   await mkdir(path.join(dir, KIT_FOLDER, 'fonts'), { recursive: true });
   await mkdir(path.join(dir, KIT_FOLDER, 'media'), { recursive: true });
+  let bytes = 0;
+  const put = async (target: string, data: Buffer | string) => {
+    await writeFile(target, data);
+    bytes += Buffer.byteLength(data);
+  };
+  const still = (ref: FileRef, data: Buffer) => {
+    if (isAnimatedImage(data, ref.mime)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
+  };
 
   // The template and its frames keep their places relative to each other.
   const pageFiles = [spec.template, ...spec.frames];
@@ -118,7 +132,8 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
     const target = path.join(dir, ...rel.split('/'));
     await mkdir(path.dirname(target), { recursive: true });
     if (ref === spec.template) continue;
-    await writeFile(target, data);
+    if (ref.media === 'image') still(ref, data);
+    await put(target, data);
     if (ref.media === 'image') preload.push(url(rel));
   }
 
@@ -129,7 +144,7 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
     if (families.includes(family)) fail(`two fonts are both called ${family}`);
     const kind = fontOf(ref, fail);
     const name = `${ref.sha256.slice(0, 16)}.${kind.ext}`;
-    await writeFile(path.join(dir, KIT_FOLDER, 'fonts', name), await readChecked(ref, fail));
+    await put(path.join(dir, KIT_FOLDER, 'fonts', name), await readChecked(ref, fail));
     faces.push(`@font-face{font-family:${cssString(family)};src:url(${cssString(url(`${KIT_FOLDER}/fonts/${name}`))}) format(${cssString(kind.format)});font-display:block;}`);
     families.push(family);
   };
@@ -143,7 +158,9 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
     if (!ext) fail(`the picture ${path.basename(ref.path)} is not png, jpg, webp, gif, avif or svg`);
     const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
     if (!preload.includes(url(rel))) {
-      await writeFile(path.join(dir, ...rel.split('/')), await readChecked(ref, fail));
+      const data = await readChecked(ref, fail);
+      still(ref, data);
+      await put(path.join(dir, ...rel.split('/')), data);
       preload.push(url(rel));
     }
     return url(rel);
@@ -204,6 +221,6 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
     `<style id="kit-fonts">${faces.join('')}:root{${variables.join(';')}}</style>` +
     `<script>${runtimeScript(data)}</script>`;
   const template = (await readChecked(spec.template, fail)).toString('utf8');
-  await writeFile(entry, injectHead(template, head));
-  return { entry, families };
+  await put(entry, injectFirst(template, head));
+  return { entry, families, bytes };
 }

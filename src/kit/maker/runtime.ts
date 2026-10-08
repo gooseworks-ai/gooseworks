@@ -1,11 +1,16 @@
-// The script the maker puts first in every frame page. It gives the page its
-// data (window.kit) and replaces every clock the page could read with one
-// virtual clock that only the maker moves, one frame at a time:
-//   Date, performance.now, timers, requestAnimationFrame, event times,
+// The script the maker puts first in every frame page, before any of the
+// page's own code. It gives the page its data (window.kit) and replaces every
+// clock and source of chance the page could read, at the prototype level so
+// no native copy stays reachable, with one virtual clock that only the maker
+// moves, one frame at a time:
+//   Date (and Intl and Temporal "now"), performance (now, timeOrigin, marks,
+//   measures, entries, timing, memory), timers, idle and task scheduling,
+//   requestAnimationFrame, event times, document.lastModified, File dates,
 //   CSS and Web Animations, SVG animations, Math.random and crypto randomness.
-// So the same inputs give the same pixels on every run. It also reports what
-// the page must not do (reach the network, start workers, play media, throw),
-// so the maker can refuse the page with a plain reason.
+// So the same inputs give the same pixels on every run. It also refuses what a
+// frame page must not do (fetch, play video or sound, throw) and reports it,
+// so the maker can refuse the page with a plain reason. The kit's browser
+// watches from outside too (requests, errors, workers, frames, popups).
 //
 // Plain ES2020 in a string: nothing here is compiled, so the page runs exactly
 // this text. Keep it free of backticks and "${".
@@ -32,6 +37,20 @@ const RUNTIME = String.raw`(function () {
   function reach(url, how) {
     report('The frame page tries to reach ' + String(url).slice(0, 200) + ' (' + how + '). Frame pages may load only their own files.');
   }
+  function define(target, name, value) {
+    try { Object.defineProperty(target, name, { value: value, writable: true, configurable: true }); } catch (e) {}
+  }
+  function getter(target, name, get) {
+    try { Object.defineProperty(target, name, { get: get, configurable: true }); } catch (e) {}
+  }
+
+  // The few natives the runtime itself needs, kept in this closure only.
+  var nativeRaf = window.requestAnimationFrame.bind(window);
+  var nativeSetTimeout = window.setTimeout.bind(window);
+  var NativeChannel = window.MessageChannel;
+  var nativeEntries = Performance.prototype.getEntriesByType;
+  var nativeMark = Performance.prototype.mark;
+  var nativeMeasure = Performance.prototype.measure;
 
   // Randomness: one fixed seed, so a page that shuffles shuffles the same way every run.
   var seed = 0x2f6b3a1d;
@@ -42,37 +61,114 @@ const RUNTIME = String.raw`(function () {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
-  Math.random = random;
-  try {
-    Object.defineProperty(window.crypto, 'getRandomValues', { value: function (array) {
+  define(Math, 'random', random);
+  if (window.Crypto) {
+    define(Crypto.prototype, 'getRandomValues', function getRandomValues(array) {
       var bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
       for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(random() * 256);
       return array;
-    } });
-    Object.defineProperty(window.crypto, 'randomUUID', { value: function () {
+    });
+    define(Crypto.prototype, 'randomUUID', function randomUUID() {
       var hex = '';
       for (var i = 0; i < 32; i++) hex += Math.floor(random() * 16).toString(16);
       return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + '89ab'.charAt(Math.floor(random() * 4)) + hex.slice(17, 20) + '-' + hex.slice(20, 32);
-    } });
-  } catch (e) {}
-
-  // Clocks.
-  var RealDate = Date;
-  class KitDate extends RealDate {
-    constructor() {
-      if (arguments.length === 0) super(EPOCH + now);
-      else super(...arguments);
-    }
-    static now() { return EPOCH + now; }
+    });
   }
-  window.Date = new Proxy(KitDate, { apply: function () { return new RealDate(EPOCH + now).toString(); } });
-  try { Object.defineProperty(performance, 'now', { value: function () { return now; } }); } catch (e) {}
-  try { Object.defineProperty(performance, 'timeOrigin', { get: function () { return EPOCH; } }); } catch (e) {}
-  try { Object.defineProperty(Event.prototype, 'timeStamp', { get: function () { return now; } }); } catch (e) {}
-  try { Object.defineProperty(document.timeline, 'currentTime', { get: function () { return now; } }); } catch (e) {}
-  try { performance.setResourceTimingBufferSize(100000); } catch (e) {}
+  if (window.SubtleCrypto) {
+    define(SubtleCrypto.prototype, 'generateKey', function generateKey() {
+      report('The frame page makes a random key. Frame pages draw the same way every time.');
+      return Promise.reject(new DOMException('generateKey is not available', 'NotSupportedError'));
+    });
+  }
 
-  // Timers and frame callbacks run only when the maker moves the clock.
+  // Dates. The global Date becomes a stand-in that builds real dates at the
+  // virtual time; the native constructor is reachable from nowhere else.
+  var RealDate = Date;
+  function virtualNow() { return EPOCH + now; }
+  var KitDate = new Proxy(RealDate, {
+    apply: function () { return new RealDate(EPOCH + now).toString(); },
+    construct: function (target, args, newTarget) { return Reflect.construct(target, args.length ? args : [EPOCH + now], newTarget); }
+  });
+  define(RealDate, 'now', virtualNow);
+  define(RealDate.prototype, 'constructor', KitDate);
+  define(window, 'Date', KitDate);
+  var formatOf = Object.getOwnPropertyDescriptor(Intl.DateTimeFormat.prototype, 'format');
+  if (formatOf && formatOf.get) {
+    var nativeFormat = formatOf.get;
+    getter(Intl.DateTimeFormat.prototype, 'format', function () {
+      var bound = nativeFormat.call(this);
+      return function (date) { return bound(date === undefined ? EPOCH + now : date); };
+    });
+  }
+  var nativeToParts = Intl.DateTimeFormat.prototype.formatToParts;
+  define(Intl.DateTimeFormat.prototype, 'formatToParts', function formatToParts(date) {
+    return nativeToParts.call(this, date === undefined ? EPOCH + now : date);
+  });
+  if (typeof Temporal === 'object' && Temporal && Temporal.Now) {
+    var instant = function () { return Temporal.Instant.fromEpochMilliseconds(EPOCH + now); };
+    var zoned = function (zone) { return instant().toZonedDateTimeISO(zone === undefined ? 'UTC' : zone); };
+    var replacements = {
+      instant: instant,
+      timeZoneId: function () { return 'UTC'; },
+      zonedDateTimeISO: zoned,
+      plainDateTimeISO: function (zone) { return zoned(zone).toPlainDateTime(); },
+      plainDateISO: function (zone) { return zoned(zone).toPlainDate(); },
+      plainTimeISO: function (zone) { return zoned(zone).toPlainTime(); }
+    };
+    Object.getOwnPropertyNames(Temporal.Now).forEach(function (name) {
+      if (typeof Temporal.Now[name] !== 'function') return;
+      define(Temporal.Now, name, replacements[name] || function () { throw new Error('Temporal.Now.' + name + ' is not available'); });
+    });
+  }
+  var nativeFile = window.File;
+  if (typeof nativeFile === 'function') {
+    var KitFile = new Proxy(nativeFile, {
+      construct: function (target, args, newTarget) {
+        var options = {};
+        if (args[2]) Object.keys(args[2]).forEach(function (key) { options[key] = args[2][key]; });
+        if (options.lastModified === undefined) options.lastModified = EPOCH + now;
+        return Reflect.construct(target, [args[0], args[1], options], newTarget);
+      }
+    });
+    define(nativeFile.prototype, 'constructor', KitFile);
+    define(window, 'File', KitFile);
+  }
+  getter(Document.prototype, 'lastModified', function () { return '01/01/2026 00:00:00'; });
+
+  // The performance clock and everything that carries its times.
+  define(Performance.prototype, 'now', function now_() { return now; });
+  getter(Performance.prototype, 'timeOrigin', function () { return EPOCH; });
+  define(Performance.prototype, 'mark', function mark(name, options) {
+    var copy = {};
+    if (options) Object.keys(options).forEach(function (key) { copy[key] = options[key]; });
+    if (copy.startTime === undefined) copy.startTime = now;
+    return nativeMark.call(this, name, copy);
+  });
+  define(Performance.prototype, 'measure', function measure(name, start, end) {
+    var options = {};
+    if (start && typeof start === 'object') Object.keys(start).forEach(function (key) { options[key] = start[key]; });
+    else {
+      options.start = start === undefined ? 0 : start;
+      if (end !== undefined) options.end = end;
+    }
+    if (options.end === undefined && options.duration === undefined) options.end = now;
+    return nativeMeasure.call(this, name, options);
+  });
+  ['getEntries', 'getEntriesByType', 'getEntriesByName'].forEach(function (name) {
+    define(Performance.prototype, name, function () { return []; });
+  });
+  define(Performance.prototype, 'toJSON', function toJSON() { return { timeOrigin: EPOCH }; });
+  var fixedTiming = {};
+  ['navigationStart', 'fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'].forEach(function (key) { fixedTiming[key] = EPOCH; });
+  Object.freeze(fixedTiming);
+  getter(Performance.prototype, 'timing', function () { return fixedTiming; });
+  var fixedMemory = Object.freeze({ jsHeapSizeLimit: 0, totalJSHeapSize: 0, usedJSHeapSize: 0 });
+  getter(Performance.prototype, 'memory', function () { return fixedMemory; });
+  if (window.PerformanceObserver) define(PerformanceObserver.prototype, 'observe', function observe() {});
+  getter(Event.prototype, 'timeStamp', function () { return now; });
+  if (window.AnimationTimeline) getter(AnimationTimeline.prototype, 'currentTime', function () { return now; });
+
+  // Timers, frame callbacks and scheduled tasks run only when the maker moves the clock.
   var timers = new Map();
   var frameCallbacks = new Map();
   var nextId = 1;
@@ -87,27 +183,54 @@ const RUNTIME = String.raw`(function () {
     timers.set(id, { id: id, at: now + delay, fn: fn, args: args, every: repeat ? Math.max(1, delay) : 0 });
     return id;
   }
-  window.setTimeout = function (fn, ms) { return addTimer(fn, ms, Array.prototype.slice.call(arguments, 2), false); };
-  window.setInterval = function (fn, ms) { return addTimer(fn, ms, Array.prototype.slice.call(arguments, 2), true); };
-  window.clearTimeout = function (id) { timers.delete(id); };
-  window.clearInterval = function (id) { timers.delete(id); };
-  window.requestAnimationFrame = function (fn) { var id = nextId++; frameCallbacks.set(id, fn); return id; };
-  window.cancelAnimationFrame = function (id) { frameCallbacks.delete(id); };
-  window.requestIdleCallback = function (fn) {
+  define(window, 'setTimeout', function setTimeout(fn, ms) { return addTimer(fn, ms, Array.prototype.slice.call(arguments, 2), false); });
+  define(window, 'setInterval', function setInterval(fn, ms) { return addTimer(fn, ms, Array.prototype.slice.call(arguments, 2), true); });
+  define(window, 'clearTimeout', function clearTimeout(id) { timers.delete(id); });
+  define(window, 'clearInterval', function clearInterval(id) { timers.delete(id); });
+  define(window, 'requestAnimationFrame', function requestAnimationFrame(fn) { var id = nextId++; frameCallbacks.set(id, fn); return id; });
+  define(window, 'cancelAnimationFrame', function cancelAnimationFrame(id) { frameCallbacks.delete(id); });
+  define(window, 'requestIdleCallback', function requestIdleCallback(fn) {
     return addTimer(function () { fn({ didTimeout: false, timeRemaining: function () { return 0; } }); }, 0, [], false);
-  };
-  window.cancelIdleCallback = function (id) { timers.delete(id); };
+  });
+  define(window, 'cancelIdleCallback', function cancelIdleCallback(id) { timers.delete(id); });
+  if (window.Scheduler && window.scheduler) {
+    define(Scheduler.prototype, 'postTask', function postTask(callback, options) {
+      return new Promise(function (resolve, reject) {
+        addTimer(function () { try { resolve(callback()); } catch (e) { reject(e); } }, options && options.delay, [], false);
+      });
+    });
+    define(Scheduler.prototype, 'yield', function yield_() { return Promise.resolve(); });
+  }
 
-  // What a frame page must not do. The kit's browser blocks the network as well;
-  // this only says what the page tried, so the maker can refuse it plainly.
-  ['WebSocket', 'EventSource'].forEach(function (name) {
-    var Real = window[name];
-    if (typeof Real !== 'function') return;
-    window[name] = function (url) { reach(url, name); return new Real(url); };
+  // What a frame page must not do: fetch, play video or sound.
+  define(window, 'fetch', function fetch(input) {
+    report('The frame page fetches ' + String(input && input.url ? input.url : input).slice(0, 200) + '. Frame pages get their data from the kit and load only their own files.');
+    return Promise.reject(new TypeError('fetch is not available in frame pages'));
   });
-  ['Worker', 'SharedWorker'].forEach(function (name) {
-    window[name] = function () { report('The frame page starts a ' + name + '. Frame pages run on the page alone.'); throw new Error(name + ' is not available'); };
+  define(XMLHttpRequest.prototype, 'open', function open(method, url) {
+    report('The frame page fetches ' + String(url).slice(0, 200) + '. Frame pages get their data from the kit and load only their own files.');
+    throw new DOMException('XMLHttpRequest is not available in frame pages', 'NotSupportedError');
   });
+  define(Navigator.prototype, 'sendBeacon', function sendBeacon(url) { reach(url, 'beacon'); return false; });
+  if (window.EventSource) define(window, 'EventSource', function EventSource(url) { reach(url, 'EventSource'); throw new DOMException('EventSource is not available', 'SecurityError'); });
+  function noMedia() { report('The frame page plays video or sound. Frame pages show pictures and text only.'); }
+  define(HTMLMediaElement.prototype, 'play', function play() {
+    noMedia();
+    return Promise.reject(new DOMException('Media is not available in frame pages', 'NotAllowedError'));
+  });
+  ['AudioContext', 'webkitAudioContext', 'OfflineAudioContext'].forEach(function (name) {
+    if (window[name]) define(window, name, function () { noMedia(); throw new DOMException(name + ' is not available', 'NotSupportedError'); });
+  });
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var node = added[j];
+        if (node.nodeType !== 1) continue;
+        if (/^(VIDEO|AUDIO)$/.test(node.tagName) || node.querySelector('video, audio')) noMedia();
+      }
+    }
+  }).observe(document, { childList: true, subtree: true });
   window.addEventListener('error', function (event) {
     var target = event.target;
     if (target && target !== window && target.tagName) {
@@ -124,7 +247,7 @@ const RUNTIME = String.raw`(function () {
   });
   var resourcesSeen = 0;
   function scanResources() {
-    var list = performance.getEntriesByType('resource');
+    var list = nativeEntries.call(performance, 'resource');
     for (; resourcesSeen < list.length; resourcesSeen++) {
       var name = list[resourcesSeen].name;
       if (!isLocal(name)) reach(name, list[resourcesSeen].initiatorType || 'request');
@@ -219,6 +342,15 @@ const RUNTIME = String.raw`(function () {
   });
   window.kit = kit;
 
+  // Lets the browser finish what the frame started (layout, fonts, pictures,
+  // observers, queued tasks) before the maker takes the picture.
+  function task() {
+    return new Promise(function (resolve) {
+      var channel = new NativeChannel();
+      channel.port1.onmessage = function () { resolve(); };
+      channel.port2.postMessage(0);
+    });
+  }
   async function settle() {
     // Reading the layout makes the browser start any font the new frame needs.
     if (document.body) void document.body.offsetHeight;
@@ -229,6 +361,10 @@ const RUNTIME = String.raw`(function () {
       if (!images[i].complete) pending.push(images[i].decode().catch(function () {}));
     }
     if (pending.length) await Promise.all(pending);
+    await task();
+    await new Promise(function (resolve) { nativeRaf(function () { nativeRaf(resolve); }); });
+    await new Promise(function (resolve) { nativeSetTimeout(resolve, 0); });
+    await task();
   }
 
   function take() {
@@ -256,7 +392,7 @@ const RUNTIME = String.raw`(function () {
         image.src = url;
         return image.decode().catch(function () { report('The picture ' + url + ' could not be read.'); });
       }));
-      if (document.querySelector('video, audio')) report('The frame page plays video or sound. Frame pages show pictures and text only.');
+      if (document.querySelector('video, audio')) noMedia();
       syncAnimations();
       await settle();
       return take();
@@ -284,6 +420,10 @@ const RUNTIME = String.raw`(function () {
         report('The frame page threw an error while drawing: ' + String(e && e.message ? e.message : e).slice(0, 300));
       }
       syncAnimations();
+      await settle();
+      return take();
+    },
+    finish: async function () {
       await settle();
       return take();
     }
