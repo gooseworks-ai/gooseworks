@@ -170,6 +170,46 @@ export function deviceLink(userCode: string, ref?: string): string {
   return link;
 }
 
+function isLocalHost(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+}
+
+/**
+ * The link to print for a new code. An explicit GOOSEWORKS_FRONTEND_URL (local
+ * testing) wins. Otherwise the server's own `verification_url_complete`: it
+ * knows which Growth app serves /link in its environment (make.gooseworks.ai
+ * in production, ads-staging.gooseworks.ai on staging), which the CLI's
+ * FRONTEND_URL does not (staging's points at the old GTM app). It is used only
+ * when it is an https GooseWorks address, or a local one for a local API;
+ * anything else falls back to FRONTEND_URL.
+ */
+export function chooseDeviceLink(
+  serverLink: unknown,
+  userCode: string,
+  apiBase: string,
+  ref?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (env.GOOSEWORKS_FRONTEND_URL?.trim() || typeof serverLink !== 'string') return deviceLink(userCode, ref);
+  let url: URL;
+  try {
+    url = new URL(serverLink);
+  } catch {
+    return deviceLink(userCode, ref);
+  }
+  const gooseworks = url.protocol === 'https:' && (url.hostname === 'gooseworks.ai' || url.hostname.endsWith('.gooseworks.ai'));
+  let localApi = false;
+  try { localApi = isLocalHost(new URL(apiBase).hostname); } catch { /* not local */ }
+  const local = localApi && isLocalHost(url.hostname) && (url.protocol === 'http:' || url.protocol === 'https:');
+  if ((!gooseworks && !local) || url.username || url.password || url.hash || url.pathname.replace(/\/+$/, '') !== '/link') {
+    return deviceLink(userCode, ref);
+  }
+  // Same encoding as deviceLink(), so both paths print identical links.
+  const trimmed = ref?.trim();
+  url.search = `?code=${encodeURIComponent(userCode)}${trimmed ? `&creator_ref=${encodeURIComponent(trimmed)}` : ''}`;
+  return url.toString();
+}
+
 export async function startDeviceLogin(
   apiBase: string,
   ref?: string,
@@ -206,7 +246,7 @@ export async function startDeviceLogin(
   const pending: PendingDeviceLogin = {
     device_code: data.device_code,
     user_code: data.user_code,
-    link: deviceLink(data.user_code, ref),
+    link: chooseDeviceLink(data.verification_url_complete, data.user_code, apiBase, ref),
     api_base: apiBase,
     expires_at: new Date(now() + expiresIn * 1000).toISOString(),
     interval: saneInterval(data.interval, DEFAULT_INTERVAL_S),

@@ -8,6 +8,7 @@ import {
   DeviceFlowUnavailableError,
   DeviceLoginStoppedError,
   APPROVAL_GRACE_MS,
+  chooseDeviceLink,
   EXPIRED_MESSAGE,
   readPendingDeviceLogin,
   runDeviceFlow,
@@ -375,5 +376,40 @@ describe('auth/device-flow', () => {
     } finally {
       if (saved !== undefined) process.env.GOOSEWORKS_FRONTEND_URL = saved;
     }
+  });
+  describe('the printed link', () => {
+    const API = 'https://api.staging.gooseworks.ai';
+    const noOverride = {} as NodeJS.ProcessEnv;
+
+    it("uses the server's link for its environment (e.g. ads-staging on staging)", () => {
+      expect(chooseDeviceLink('https://ads-staging.gooseworks.ai/link?code=WDJB-MJHT', 'WDJB-MJHT', API, undefined, noOverride))
+        .toBe('https://ads-staging.gooseworks.ai/link?code=WDJB-MJHT');
+      expect(chooseDeviceLink('https://make.gooseworks.ai/link', 'WDJB-MJHT', API, 'K7M2', noOverride))
+        .toBe('https://make.gooseworks.ai/link?code=WDJB-MJHT&creator_ref=K7M2');
+    });
+
+    it('falls back to FRONTEND_URL for anything that is not a GooseWorks /link address', () => {
+      const fallback = `${FRONTEND_URL}/link?code=WDJB-MJHT`;
+      for (const bad of [
+        'https://evil.example/link',
+        'http://make.gooseworks.ai/link',
+        'https://gooseworks.ai.evil.example/link',
+        'https://make.gooseworks.ai/phish',
+        'https://user:pw@make.gooseworks.ai/link',
+        'not a url',
+        undefined,
+      ]) {
+        expect(chooseDeviceLink(bad, 'WDJB-MJHT', API, undefined, noOverride)).toBe(fallback);
+      }
+      // A localhost link only for a local API.
+      expect(chooseDeviceLink('http://localhost:4000/link', 'WDJB-MJHT', API, undefined, noOverride)).toBe(fallback);
+      expect(chooseDeviceLink('http://localhost:4000/link', 'WDJB-MJHT', 'http://localhost:5999', undefined, noOverride))
+        .toBe('http://localhost:4000/link?code=WDJB-MJHT');
+    });
+
+    it('lets an explicit GOOSEWORKS_FRONTEND_URL win', () => {
+      expect(chooseDeviceLink('https://ads-staging.gooseworks.ai/link', 'WDJB-MJHT', API, undefined, { GOOSEWORKS_FRONTEND_URL: 'http://localhost:4007' } as NodeJS.ProcessEnv))
+        .toBe(`${FRONTEND_URL}/link?code=WDJB-MJHT`);
+    });
   });
 });
