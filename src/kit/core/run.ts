@@ -526,7 +526,8 @@ class Maker {
 
     const dir = this.store.stepDir(spec.id);
     const workDir = path.join(dir, 'out');
-    const tmpDir = path.join(dir, 'tmp');
+    // Scratch space sits inside the step's own folder, so a part can register a scratch file too.
+    const tmpDir = path.join(workDir, '.tmp');
     for (const attempt of [1, 2] as const) {
       if (this.stop.signal.aborted) throw this.fatal ?? new KitStop('This video was stopped.', 'stop');
       await rm(workDir, { recursive: true, force: true });
@@ -567,7 +568,7 @@ class Maker {
           this.deps.log.write('error', 'step outputs refused', { step: spec.id, errors: outputErrors });
           throw new PartError('output_invalid', outputErrors.join('; '));
         }
-        await this.checkOutputFiles(outputs, spec.loaded.dir);
+        await this.checkOutputFiles(outputs, spec.loaded.dir, tmpDir);
         record.status = 'done';
         record.outputs = outputs as JsonObject;
         record.finished_at = this.now().toISOString();
@@ -602,9 +603,10 @@ class Maker {
   }
 
   /** A part's output files must be in this video's folder (or the part's own) and unchanged. */
-  private async checkOutputFiles(outputs: unknown, partDir: string): Promise<void> {
+  private async checkOutputFiles(outputs: unknown, partDir: string, tmpDir: string): Promise<void> {
     for (const ref of fileRefsIn(outputs)) {
       if (!isInside(this.layout.root, ref.path) && !isInside(partDir, ref.path)) throw new PartError('output_invalid', 'an output file is outside this video’s folder');
+      if (isInside(tmpDir, ref.path)) throw new PartError('output_invalid', 'an output file is in the step’s scratch folder, which is cleared after the step');
       // Every output is hashed again once the part returns, even one it registered.
       const actual = await hashFile(ref.path).catch(() => null);
       if (!actual || actual.sha256 !== ref.sha256 || actual.bytes !== ref.bytes) throw new PartError('output_invalid', 'an output file does not match its hash');
@@ -830,7 +832,7 @@ class Maker {
   }
 
   private async cleanTmp(): Promise<void> {
-    for (const key of this.parts.keys()) await rm(path.join(this.store.stepDir(key), 'tmp'), { recursive: true, force: true }).catch(() => undefined);
+    for (const key of this.parts.keys()) await rm(path.join(this.store.stepDir(key), 'out', '.tmp'), { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
