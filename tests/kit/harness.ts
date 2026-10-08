@@ -222,6 +222,7 @@ const layerInputs = {
 /** The test parts: a paid clip maker that orders one piece per scene, and pass-through layers. */
 export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Record<string, LoadedPart> {
   const clipMaker: LoadedPart = {
+    source: 'published',
     dir: '/parts/clip-maker/1.0.0',
     manifest: manifest('clip-maker', {
       kind: 'generate_video',
@@ -242,6 +243,7 @@ export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Rec
     },
   };
   const passLayer = (id: string, slot: 'brand' | 'captions' | 'sound', kind: PartManifest['kind']): LoadedPart => ({
+    source: 'published',
     dir: `/parts/${id}/1.0.0`,
     manifest: manifest(id, { kind, layer: slot, inputs: layerInputs, outputs: { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object' } } } }),
     run: async (inputs: any, ctx: PartContext) => {
@@ -255,6 +257,7 @@ export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Rec
     'captions-layer': passLayer('captions-layer', 'captions', 'caption'),
     'sound-layer': passLayer('sound-layer', 'sound', 'mix'),
     'check-layer': {
+      source: 'published',
       dir: '/parts/check-layer/1.0.0',
       manifest: manifest('check-layer', { kind: 'check', layer: 'check', inputs: layerInputs, outputs: { type: 'object', additionalProperties: false, required: ['verdict'], properties: { verdict: { type: 'object' } } } }),
       run: async () => ({ verdict: { pass: true, checks: [] } }),

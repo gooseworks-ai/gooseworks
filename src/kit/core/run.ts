@@ -49,7 +49,9 @@ import { assertCheckable, schemaErrors } from './schema';
 import { withoutSignedLinks } from './secrets';
 import { fetchStyle, readLocalStyle, type LoadedStyle } from './style';
 import { inspectFfmpeg, kitTools, toolchainId, type Toolchain } from './toolchain';
-import { KIT_VERSION, kitRefusal } from './version';
+import { PartLoadError } from '../parts/loader';
+import { KIT_DEV_ENV } from '../env';
+import { interfaceRefusal, KIT_VERSION, kitRangeRefusal } from './version';
 
 export const LAYER_ORDER: readonly LayerSlot[] = ['brand', 'captions', 'sound', 'check'];
 const SLOT_KIND: Record<LayerSlot, PartKind> = { brand: 'compose', captions: 'caption', sound: 'mix', check: 'check' };
@@ -255,8 +257,8 @@ class Maker {
   }
 
   private devFolders(): { parts: string | null; styles: string | null } {
-    const parts = this.deps.env.GOOSE_KIT_PARTS_DIR || null;
-    const styles = this.deps.env.GOOSE_KIT_STYLES_DIR || null;
+    const parts = this.deps.env[KIT_DEV_ENV.partsDir] || null;
+    const styles = this.deps.env[KIT_DEV_ENV.stylesDir] || null;
     if ((parts || styles) && this.deps.environment === 'production') {
       throw new KitStop('The dev parts and styles folders work only against staging or a local server.', 'refused');
     }
@@ -371,7 +373,7 @@ class Maker {
       if (lock) {
         const entry = lock.parts[ref.id];
         if (!entry || entry.version !== ref.version) throw new KitStop(`Part ${ref.id} ${ref.version} is not in this video’s parts list, so it can’t run. Nothing was spent.`, 'change_request');
-        const tooOld = kitRefusal({ id: ref.id, version: ref.version, kit: entry.kit });
+        const tooOld = kitRangeRefusal({ id: ref.id, version: ref.version, kit: entry.kit });
         if (tooOld) throw new KitStop(`${tooOld} Nothing was spent.`, 'update_kit');
       }
     }
@@ -380,11 +382,14 @@ class Maker {
       try {
         loaded = await this.deps.host.loader.load({ ref, lock, dev, home: this.deps.home, env: this.deps.env, signal: this.stop.signal });
       } catch (error) {
-        throw new KitStop(`${error instanceof Error ? error.message : 'A part could not be loaded.'} Nothing was spent.`, 'change_request');
+        const words = `${error instanceof Error ? error.message : 'A part could not be loaded.'} Nothing was spent.`;
+        if (error instanceof PartLoadError && error.code === 'kit_range') throw new KitStop(words, 'update_kit');
+        if (error instanceof PartLoadError && error.code === 'unreachable') throw new KitStop(`${words} Run the same command again in a minute.`, 'stop');
+        throw new KitStop(words, 'change_request');
       }
       const m = loaded.manifest;
       if (m.id !== ref.id || m.version !== ref.version) throw new KitStop(`Part ${ref.id} ${ref.version} loaded as another version. Nothing was spent.`, 'change_request');
-      const refusal = kitRefusal(m);
+      const refusal = interfaceRefusal(m);
       if (refusal) throw new KitStop(`${refusal} Nothing was spent.`, 'update_kit');
       if (slot && (m.layer !== slot || m.kind !== SLOT_KIND[slot])) throw new KitStop(`Part ${ref.id} can’t fill the ${slot} layer. Nothing was spent.`, 'change_request');
       const lockModels = lock ? lock.parts[ref.id].models : m.needs.models;

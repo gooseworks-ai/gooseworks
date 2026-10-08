@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { DeviceReport, ToolReport } from '../line/types';
 import { devicePath, partsCacheDir } from './paths';
 import { createExclusive, readJson, writeJson } from './save';
-import { parseSemver, KIT_INTERFACES, KIT_VERSION } from './version';
+import { isExactVersion, KIT_INTERFACES, KIT_VERSION } from './version';
 import type { Toolchain } from './toolchain';
 
 const DEVICE_ID = /^[A-Za-z0-9-]{8,64}$/;
@@ -38,7 +38,7 @@ export function cachedParts(home: string): Array<{ id: string; versions: string[
     if (!PART_ID.test(id) || id.length > 64) continue;
     const dir = path.join(root, id);
     if (!statSync(dir).isDirectory()) continue;
-    const versions = readdirSync(dir).filter((v) => parseSemver(v) && existsSync(path.join(dir, v, 'part.json'))).sort().slice(0, 50);
+    const versions = readdirSync(dir).filter((v) => isExactVersion(v) && existsSync(path.join(dir, v, 'part.json'))).sort().slice(0, 50);
     if (versions.length) parts.push({ id, versions });
     if (parts.length >= 200) break;
   }

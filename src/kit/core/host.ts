@@ -1,8 +1,10 @@
-// What the core needs from the two other kit lanes, as interfaces:
+// What the core needs from the two other kit lanes:
 // - BrowserSupport: the bundled Chromium (C2's web video maker).
-// - PartLoader: loading and verifying locked parts (C3).
+// - PartLoader: loading locked parts, every file checked against the lock (src/kit/parts).
 // The core is handed both; `defaultHost()` gives the ones this build carries.
-import type { KitBrowserProvider, PartManifest, PartRef, PartRun, PartsLock } from '../part-interface';
+import type { KitBrowserProvider } from '../part-interface';
+import { createPartLoader, type PartLoader } from '../parts/loader';
+import { KIT_VERSION } from './version';
 import type { ToolReport } from '../line/types';
 
 export interface BrowserSupport {
@@ -12,21 +14,7 @@ export interface BrowserSupport {
   provider(opts: { allowDirs: string[]; signal: AbortSignal }): KitBrowserProvider;
 }
 
-export interface LoadedPart {
-  manifest: PartManifest;
-  /** The part's read-only version folder. */
-  dir: string;
-  run: PartRun;
-}
-
-export interface PartLoader {
-  /**
-   * Loads one part version, every file checked against the lock's sha256
-   * (or, with `dev`, read from the dev parts folder without hashes). Throws a
-   * plain error when a file is missing or does not match.
-   */
-  load(opts: { ref: PartRef; lock: PartsLock | null; dev: boolean; home: string; env: NodeJS.ProcessEnv; signal: AbortSignal }): Promise<LoadedPart>;
-}
+export type { LoadedPart, PartLoader } from '../parts/loader';
 
 export interface KitHost {
   browser: BrowserSupport;
@@ -45,15 +33,6 @@ const browserStandIn: BrowserSupport = {
   },
 };
 
-// STAND-IN: C3 — replaced by the parts loader once video/c3-parts-cli merges.
-// It refuses every part, so nothing runs (and nothing is spent) without the
-// real lock check.
-const loaderStandIn: PartLoader = {
-  async load() {
-    throw new Error('Loading video parts is not part of this build yet.');
-  },
-};
-
 export function defaultHost(): KitHost {
-  return { browser: browserStandIn, loader: loaderStandIn };
+  return { browser: browserStandIn, loader: createPartLoader({ kitVersion: KIT_VERSION }) };
 }

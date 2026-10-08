@@ -1,8 +1,7 @@
 import { spawn } from 'child_process';
 import { Command } from 'commander';
 import { getCredentials } from '../auth/credentials';
-import { API_BASE } from '../config';
-import { getEnvironment } from '../environment';
+import { apiEnvironment, readKitEnv } from '../kit/env';
 import { checkComputer } from '../kit/core/check';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
@@ -11,36 +10,13 @@ import { kitHome } from '../kit/core/paths';
 import { makeVideo } from '../kit/core/run';
 import { VideoLine } from '../kit/line/client';
 
-/**
- * The kit's settings. On a worker (MV-40) the line token arrives in the
- * environment; it is taken out of it at once so no child process sees it, and
- * from then on lives only inside the line client.
- */
-function readKitEnv() {
-  const env = process.env;
-  const worker = env.GOOSEWORKS_KIT_WORKER === '1';
-  const lineToken = env.GOOSEWORKS_VIDEO_LINE_TOKEN || undefined;
-  delete process.env.GOOSEWORKS_VIDEO_LINE_TOKEN;
-  return {
-    worker,
-    lineToken: worker ? lineToken : undefined,
-    workerId: env.GOOSEWORKS_KIT_WORKER_ID || undefined,
-    // A worker's image pins its kit, and its token has left the environment, so it never relaunches itself.
-    noSelfUpdate: worker || env.GOOSEWORKS_KIT_NO_SELF_UPDATE === '1',
-  };
-}
-
-function environmentOf(apiBase: string): 'production' | 'staging' | 'local' {
-  const host = new URL(apiBase).hostname;
-  if (['localhost', '127.0.0.1', '[::1]'].includes(host)) return 'local';
-  return getEnvironment() === 'staging' ? 'staging' : 'production';
-}
-
 async function setUp() {
-  const kit = readKitEnv();
+  // The token leaves the environment as it is read, so no child process sees it.
+  const settings = readKitEnv(process.env);
+  const kit = { ...settings, noSelfUpdate: settings.noSelfUpdate || settings.worker };
   const creds = kit.worker ? null : getCredentials();
   if (kit.worker && !kit.lineToken) throw new Error('This worker has no video token, so it cannot make the video.');
-  const apiBase = kit.worker ? API_BASE : (creds?.api_base ?? API_BASE);
+  const apiBase = kit.worker ? settings.apiBase : (creds?.api_base ?? settings.apiBase);
   const home = kitHome();
   const line = new VideoLine({
     apiBase,
@@ -112,7 +88,7 @@ videoCommand
         line,
         host: defaultHost(),
         log,
-        environment: environmentOf(apiBase),
+        environment: apiEnvironment(apiBase),
         signal: stop.signal,
       });
       if (result.status === 'update_kit') {
@@ -127,3 +103,4 @@ videoCommand
       process.off('SIGTERM', onSignal);
     }
   });
+

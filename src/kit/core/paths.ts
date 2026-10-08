@@ -8,11 +8,13 @@
 // GOOSE_KIT_HOME replaces ~/.gooseworks.
 import * as os from 'os';
 import * as path from 'path';
+import { KIT_DEV_ENV } from '../env';
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function kitHome(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.GOOSE_KIT_HOME) return path.resolve(env.GOOSE_KIT_HOME);
+  const home = env[KIT_DEV_ENV.home];
+  if (home) return path.resolve(home);
   return path.join(env.GOOSEWORKS_USER_HOME || os.homedir(), '.gooseworks');
 }
 
