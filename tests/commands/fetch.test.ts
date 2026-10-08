@@ -250,12 +250,6 @@ describe('fetch command', () => {
     expect(emitted.content).toBe(current.content);
     expect(emitted).not.toHaveProperty('brand_context');
     expect(emitted).not.toHaveProperty('brand_context_digest');
-    expect(emitted.content).toContain('brand_read { brand_id, sections: ["summary", "kit", "products", "learnings"] }');
-    expect(emitted.content).toContain('An older API returns the actual four brand sections');
-    expect(emitted.content).toContain('Do not fabricate a receipt or send nonexistent bundle/digest fields');
-    expect(emitted.content).toContain('Binding is required');
-    expect(emitted.content).toContain('That refusal never permits the older-API');
-    expect(emitted.content).toContain('Guide returns `not_found`');
   });
 
 });

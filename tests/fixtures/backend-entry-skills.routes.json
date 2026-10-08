@@ -1,0 +1,16 @@
+{
+  "$comment": "SNAPSHOT of the entry skills the BACKEND lists to chat apps. This repo cannot read that file, so the drift test asserts against this checked-in copy. If the drift test fails, update BOTH this snapshot AND the source file named below. The backend's old hosted-connector pointer (app-mcp-server/lib/ads-skill.ts) is removed on the video branch, so it routes no Brand Growth skills itself.",
+  "source_repo": "gooseworks-app",
+  "source_file": "apps/api/src/services/entry-skills.ts",
+  "source_symbol": "ENTRY_SKILLS (entries without hidden: true)",
+  "source_ref": "video/a5-playbooks @ a6a8fb5b3",
+  "captured": "2026-10-08",
+  "entry_skills": [
+    "goose-ads",
+    "goose-product-photos",
+    "goose-video",
+    "gooseworks",
+    "make-custom-video"
+  ],
+  "brand_growth_skills": []
+}
