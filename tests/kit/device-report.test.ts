@@ -18,6 +18,8 @@ describe('the device report’s parts', () => {
     copy('html-frames', '1.1.0', 'd4e5f6');
     copy('old-layout', '1.0.0', null);
     mkdirSync(path.join(parts, 'empty-part', '2.0.0', 'k'), { recursive: true });
+    // Only the loader's working folders hold a part.json here: not a verified copy.
+    for (const working of ['.staging-x1', '.quarantine', '.abc.lock']) copy('half-made', '3.0.0', working);
     mkdirSync(path.join(parts, '.tmp', 'x'), { recursive: true });
 
     expect(cachedParts(home)).toEqual([{ id: 'html-frames', versions: ['1.0.0', '1.1.0'] }]);

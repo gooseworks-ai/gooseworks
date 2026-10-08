@@ -50,7 +50,10 @@ function parseDevice(raw: string): string | null {
 
 function hasCopy(versionDir: string): boolean {
   try {
-    return readdirSync(versionDir, { withFileTypes: true }).some((entry) => entry.isDirectory() && existsSync(path.join(versionDir, entry.name, 'part.json')));
+    // The loader's own working folders (.staging-*, .quarantine, .<key>.lock) start with a dot.
+    return readdirSync(versionDir, { withFileTypes: true }).some(
+      (entry) => entry.isDirectory() && !entry.name.startsWith('.') && existsSync(path.join(versionDir, entry.name, 'part.json')),
+    );
   } catch {
     return false;
   }
