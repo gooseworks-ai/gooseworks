@@ -63,6 +63,12 @@ export function fileHashes(value: unknown): Record<string, string> | null {
     folded.add(lower);
     out[file] = hash;
   }
+  // A path that is also another path's folder ("assets/data" and
+  // "assets/data/a.mjs") cannot be stored; case is folded as above.
+  for (const lower of folded) {
+    const segments = lower.split('/');
+    for (let i = 1; i < segments.length; i++) if (folded.has(segments.slice(0, i).join('/'))) return null;
+  }
   return out;
 }
 
