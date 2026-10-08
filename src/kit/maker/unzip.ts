@@ -1,7 +1,10 @@
 // A small zip reader for the kit's browser download, with Node built-ins only.
-// The archive's sha256 is checked against its pin before this runs; this only
-// refuses entries that would land outside the target folder.
-import { mkdir, readFile, symlink, writeFile } from 'fs/promises';
+// The archive's sha256 is checked against its pin before this runs; this also
+// refuses entries that would land outside the target folder, a name used
+// twice, and anything under a link the archive made. Files are created new,
+// never through a link.
+import { constants } from 'fs';
+import { mkdir, open, readFile, symlink } from 'fs/promises';
 import * as path from 'path';
 import { inflateRawSync } from 'zlib';
 
@@ -30,6 +33,9 @@ export async function unzipTo(zipFile: string, dest: string): Promise<void> {
   if (count === 0xffff || at === 0xffffffff) throw new Error('the browser download uses a zip format the kit does not read');
   const root = path.resolve(dest);
   await mkdir(root, { recursive: true });
+  const names = new Set<string>();
+  const links = new Set<string>();
+  const noFollow = (constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
   for (let n = 0; n < count; n++) {
     if (zip.readUInt32LE(at) !== DIRECTORY_ENTRY) throw new Error('the browser download is damaged');
     const method = zip.readUInt16LE(at + 10);
@@ -46,6 +52,12 @@ export async function unzipTo(zipFile: string, dest: string): Promise<void> {
     if (name.includes('\\') || name.startsWith('/')) throw new Error(`the browser download holds a bad path: ${name}`);
     const target = path.resolve(root, name);
     if (!inside(root, target)) throw new Error(`the browser download holds a path outside its folder: ${name}`);
+    const key = path.relative(root, target);
+    if (names.has(key)) throw new Error(`the browser download holds ${name} twice`);
+    names.add(key);
+    for (let up = path.dirname(key); up !== '.' && up !== path.dirname(up); up = path.dirname(up)) {
+      if (links.has(up)) throw new Error(`the browser download puts ${name} under a link`);
+    }
     if (name.endsWith('/')) {
       await mkdir(target, { recursive: true });
       continue;
@@ -62,8 +74,14 @@ export async function unzipTo(zipFile: string, dest: string): Promise<void> {
         throw new Error(`the browser download links outside its folder: ${name}`);
       }
       await symlink(link, target);
+      links.add(key);
     } else {
-      await writeFile(target, data, { mode: mode & 0o777 || 0o644 });
+      const file = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow, mode & 0o777 || 0o644);
+      try {
+        await file.writeFile(data);
+      } finally {
+        await file.close();
+      }
     }
   }
 }
