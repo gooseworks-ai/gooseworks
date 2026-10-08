@@ -174,12 +174,14 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
   const scenes = [];
   for (const scene of spec.scenes) {
     const picture = scene.picture && typeof scene.picture === 'object' ? await media(scene.picture) : scene.picture;
+    const image = scene.image ? await media(scene.image) : null;
     scenes.push({
       id: scene.id,
       index: scene.index,
       line: scene.line,
       on_screen: scene.on_screen,
       picture,
+      image,
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
     });

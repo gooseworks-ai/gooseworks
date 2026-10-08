@@ -34,6 +34,8 @@ export interface SceneSpec {
   on_screen: string | null;
   /** A picture the plan names: a still (as a file) or a description. */
   picture: FileRef | string | null;
+  /** A picture the customer uploaded for this scene (a partner's icon, a screen), as a file. */
+  image: FileRef | null;
 }
 
 export interface ProductSpec {
@@ -132,7 +134,8 @@ function scenesOf(value: unknown, maxWords: number, fail: Fail): SceneSpec[] {
     let picture: FileRef | string | null = null;
     if (isFileRef(raw.picture)) picture = fileOf(raw.picture, `${at}.picture`, ['image'], fail);
     else picture = optionalText(raw.picture, `${at}.picture`, fail);
-    return { id, index, line, on_screen: onScreen, picture };
+    const image = raw.image === undefined || raw.image === null ? null : fileOf(raw.image, `${at}.image`, ['image'], fail);
+    return { id, index, line, on_screen: onScreen, picture, image };
   });
 }
 
