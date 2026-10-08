@@ -6,7 +6,7 @@ import { mkdir, statfs } from 'fs/promises';
 import * as path from 'path';
 import type { DeviceReport, ToolReport } from '../line/types';
 import { devicePath, partsCacheDir } from './paths';
-import { readJson, writeJson } from './save';
+import { createExclusive, readJson, writeJson } from './save';
 import { parseSemver, KIT_INTERFACES, KIT_VERSION } from './version';
 import type { Toolchain } from './toolchain';
 
@@ -20,7 +20,12 @@ export async function deviceId(home: string): Promise<string> {
   if (typeof saved?.device_id === 'string' && DEVICE_ID.test(saved.device_id)) return saved.device_id;
   const id = randomUUID();
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  await writeJson(file, { device_id: id, created_at: new Date().toISOString() });
+  const record = { device_id: id, created_at: new Date().toISOString() };
+  if (await createExclusive(file, JSON.stringify(record, null, 2) + '\n')) return id;
+  // The file is there: another run made it first (use its id), or it is damaged (replace it).
+  const winner = await readJson<{ device_id?: unknown }>(file);
+  if (typeof winner?.device_id === 'string' && DEVICE_ID.test(winner.device_id)) return winner.device_id;
+  await writeJson(file, record);
   return id;
 }
 
