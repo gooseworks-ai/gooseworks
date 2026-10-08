@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { canonicalHash, canonicalJson } from '../../src/kit/core/canonical';
+import { styleHash } from '../../src/kit/core/style';
 import type { KitHost, LoadedPart } from '../../src/kit/core/host';
 import { KitLog } from '../../src/kit/core/log';
 import { makeVideo, type MakeResult } from '../../src/kit/core/run';
@@ -73,7 +74,7 @@ export function plan(pinned: Record<string, unknown> = style) {
     revision: 1,
     style_id: style.id,
     style_version: style.version,
-    style_hash: canonicalHash(pinned),
+    style_hash: styleHash(pinned),
     brain_digest: {},
     brand: { name: 'Brand', logo: null, colors: {}, fonts: {}, pronunciations: [], cta: null },
     layers: layerSet,
@@ -167,7 +168,7 @@ export function fakeLine(script: LineScript = {}) {
         credits: { used: 0, cap: 1000 },
         plan: script.planBody ? { ...plan(pinned), body: script.planBody(plan(pinned).body) } : plan(pinned),
         parts_lock: lock,
-        style_package: { style_id: style.id, version: style.version, style_hash: canonicalHash(pinned), url: `${API}/pkg/view`, sha256: pkg.view.sha256 },
+        style_package: { style_id: style.id, version: style.version, style_hash: styleHash(pinned), url: `${API}/pkg/view`, sha256: pkg.view.sha256 },
       };
       return json(200, {
         device_id: body.device.device_id,

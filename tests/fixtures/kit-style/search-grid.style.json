@@ -1,0 +1,151 @@
+{
+  "id": "search-grid",
+  "version": "1.0.0",
+  "title": "Search grid",
+  "copy": {
+    "description": "A search bar types what your customer wants, and a grid of your products answers it.",
+    "best_for": "Brands with a range of products that answer one need.",
+    "needs": "Three to six product photos on plain backgrounds, and your logo."
+  },
+  "selection": {
+    "fit_for": [
+      "product ranges",
+      "online shops",
+      "gift guides"
+    ],
+    "not_for": [
+      "software or app brands",
+      "service businesses"
+    ],
+    "requires": {
+      "logo": true,
+      "product_photos": 3
+    },
+    "goal": "conversion",
+    "distinct_from": [
+      {
+        "id": "photo-grid-promo-card",
+        "how": "Search grid opens on a question; photo grid opens on an offer."
+      }
+    ],
+    "limits": [
+      "No people and no voice.",
+      "Words appear on screen only."
+    ]
+  },
+  "traits": {
+    "needs_browser": true,
+    "speech": "none",
+    "captions": false,
+    "end_card": true,
+    "qc_flags": [
+      "text_legible",
+      "products_visible"
+    ]
+  },
+  "products": {
+    "min": 3,
+    "max": 6
+  },
+  "duration": {
+    "min_seconds": 8,
+    "max_seconds": 15
+  },
+  "aspects": [
+    "9:16",
+    "1:1"
+  ],
+  "scenes": {
+    "count": {
+      "min": 3,
+      "max": 5
+    },
+    "max_words": 8,
+    "shows": [
+      "The search bar types the customer's question.",
+      "The grid fills with the chosen products, one cell at a time.",
+      "The best match grows to fill the screen."
+    ]
+  },
+  "timeline": [
+    {
+      "id": "frames",
+      "part": {
+        "id": "html-frames",
+        "version": "1.0.0"
+      },
+      "inputs": {
+        "template": {
+          "asset": "frames/search-grid.html"
+        },
+        "font": {
+          "asset": "fonts/Inter-Bold.ttf"
+        },
+        "scenes": {
+          "from": "plan.scenes"
+        },
+        "products": {
+          "from": "plan.products"
+        },
+        "colors": {
+          "from": "brand.colors"
+        }
+      }
+    },
+    {
+      "id": "music",
+      "part": {
+        "id": "music-elevenlabs",
+        "version": "1.0.0"
+      },
+      "inputs": {
+        "mood": "bright",
+        "seconds": {
+          "from": "step.frames.seconds"
+        }
+      }
+    },
+    {
+      "id": "mix",
+      "part": {
+        "id": "audio-mix",
+        "version": "1.0.0"
+      },
+      "inputs": {
+        "video": {
+          "from": "step.frames.video"
+        },
+        "music": {
+          "from": "step.music.audio"
+        }
+      }
+    }
+  ],
+  "layers": {
+    "brand": true,
+    "captions": false,
+    "sound": true,
+    "check": true
+  },
+  "plan_note": "Write 3 to 5 scenes. Scene 1 is the search: a short question the customer's buyer would type, 8 words or fewer. Each next scene shows one chosen product with a label of 2 to 4 words, in the order the customer picked them. Use 3 to 6 products. Plain, useful tone; no hype and no prices on screen.",
+  "cost": {
+    "usd": 0.05,
+    "low_usd": 0.03,
+    "high_usd": 0.08,
+    "basis": "estimated",
+    "as_of": "2026-10-08"
+  },
+  "assets": {
+    "fonts": [
+      "fonts/Inter-Bold.ttf"
+    ],
+    "frames": [
+      "frames/search-grid.html"
+    ],
+    "demo": {
+      "video_url": "https://example.com/styles/search-grid/demo.mp4",
+      "poster_url": "https://example.com/styles/search-grid/poster.jpg",
+      "ratio": "9:16"
+    }
+  }
+}

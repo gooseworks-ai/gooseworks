@@ -4,7 +4,7 @@
 // once the video is stopped.
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import * as path from 'path';
-import { canonicalHash } from '../../src/kit/core/canonical';
+import { styleHash } from '../../src/kit/core/style';
 import type { PartContext } from '../../src/kit/part-interface';
 import { fakeLine, lineCalls, lineRoute, MODEL, runMake, style, tempHome, testParts, VIDEO } from './harness';
 
@@ -15,7 +15,7 @@ describe('the approved style', () => {
     const changed = { ...style, layers: { ...style.layers, sound: false } };
     const line = fakeLine({
       style: changed,
-      handOver: (handed) => ({ ...handed, plan: { ...handed.plan, style_hash: canonicalHash(style) } }),
+      handOver: (handed) => ({ ...handed, plan: { ...handed.plan, style_hash: styleHash(style) } }),
     });
     const result = await runMake({ home: tempHome(), line });
     expect(result.status).toBe('failed');

@@ -44,12 +44,26 @@ function safeRelative(p: unknown): string {
   return p;
 }
 
+/**
+ * The style's fingerprint, exactly as our server makes it (gooseworks-app
+ * hashStyleFile in services/video-styles/style-versions.service.ts): sha256 of
+ * the style as canonical JSON, without its top-level cost block. The cost may
+ * change at the same version, so it never changes what a video pinned.
+ */
+export function styleHash(style: unknown): string {
+  if (style && typeof style === 'object' && !Array.isArray(style)) {
+    const { cost: _cost, ...made } = style as Record<string, unknown>;
+    return canonicalHash(made);
+  }
+  return canonicalHash(style);
+}
+
 /** The style file's grammar, as the core relies on it. */
 export function checkStyle(raw: unknown, pin: { id: string; version: string; hash: string }): StyleFile {
   if (!raw || typeof raw !== 'object') refuse('The style file could not be read.');
   const style = raw as StyleFile;
   if (style.id !== pin.id || style.version !== pin.version) refuse('The style file is not the version this video pinned.');
-  if (canonicalHash(style) !== pin.hash) refuse('The style file does not match the one approved for this video.');
+  if (styleHash(style) !== pin.hash) refuse('The style file does not match the one approved for this video.');
   if (!Array.isArray(style.timeline) || style.timeline.length === 0) refuse('The style has no steps to make.');
   const seen = new Set<string>();
   for (const step of style.timeline) {
