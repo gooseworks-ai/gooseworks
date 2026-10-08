@@ -96,7 +96,17 @@ function cssString(value: string): string {
   return JSON.stringify(value);
 }
 
-export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartContext, 'error' | 'log'>): Promise<BuiltPage> {
+/**
+ * Builds the page folder. `reserve(bytes)` is called before every write and
+ * throws when the maker's working space would run out, so nothing is written
+ * past it.
+ */
+export async function buildPage(
+  spec: MakerSpec,
+  dir: string,
+  ctx: Pick<PartContext, 'error' | 'log'>,
+  reserve: (bytes: number) => void = () => undefined,
+): Promise<BuiltPage> {
   const fail: Fail = (detail) => {
     throw ctx.error('bad_input', detail);
   };
@@ -104,12 +114,15 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
   await mkdir(path.join(dir, KIT_FOLDER, 'media'), { recursive: true });
   let bytes = 0;
   const put = async (target: string, data: Buffer | string) => {
+    const size = Buffer.byteLength(data);
+    reserve(size);
     await writeFile(target, data);
-    bytes += Buffer.byteLength(data);
+    bytes += size;
   };
   const still = (ref: FileRef, data: Buffer) => {
     if (isAnimatedImage(data, ref.mime)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
   };
+
 
   // The template and its frames keep their places relative to each other.
   const pageFiles = [spec.template, ...spec.frames];
