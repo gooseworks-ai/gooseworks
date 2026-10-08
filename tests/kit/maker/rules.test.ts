@@ -10,6 +10,7 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { findShell, installShell } from '../../../src/kit/maker/browser';
 import { isAnimatedImage } from '../../../src/kit/maker/images';
+import { unzipTo } from '../../../src/kit/maker/unzip';
 import { readInputs } from '../../../src/kit/maker/inputs';
 import { run } from '../../../src/kit/maker/parts/html-frames/src/part';
 import { makeVideo } from '../../../src/kit/maker/make';
@@ -85,6 +86,43 @@ describeMedia('frames are pure', () => {
       rmSync(one, { recursive: true, force: true });
       rmSync(two, { recursive: true, force: true });
     }
+  }, 120_000);
+});
+
+describeMedia('frames stay pure when the page fights the clock', () => {
+  const twice = async (html: string) => {
+    const runs: string[][] = [];
+    for (let i = 0; i < 2; i++) {
+      const root = temp();
+      try {
+        writeFileSync(path.join(root, 'page.html'), html);
+        const made = await makeVideo(
+          { template: fileRef(path.join(root, 'page.html')), scenes: [{ id: 'a', on_screen: 'x' }], aspect: '1:1', max_words: 8, duration_s: 1, fps: 8, short_side: 720 },
+          partContext(root).ctx,
+        );
+        runs.push(made.frameHashes);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+    return runs;
+  };
+  const fast = '@keyframes zip { from { transform: translateX(0) rotate(0deg); background: #f00; } to { transform: translateX(600px) rotate(360deg); background: #00f; } }';
+
+  it('an animation the page plays again on every frame', async () => {
+    const [one, two] = await twice(`<!doctype html><style>${fast} #b { width: 80px; height: 80px; background: #f00; }</style><body><div id="b"></div><script>
+      var anim = document.getElementById('b').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(600px)' }], { duration: 37, iterations: Infinity });
+      kit.render(function () { anim.play(); });
+    </script></body>`);
+    expect(two).toEqual(one);
+  }, 120_000);
+
+  it('animations inside a closed shadow root', async () => {
+    const [one, two] = await twice(`<!doctype html><body><div id="host"></div><script>
+      var root = document.getElementById('host').attachShadow({ mode: 'closed' });
+      root.innerHTML = '<svg width="600" height="300"><circle cx="150" cy="150" r="40" fill="#9b5de5"><animate attributeName="cx" values="40;560;40" dur="0.05s" repeatCount="indefinite"/></circle></svg>';
+    </script></body>`);
+    expect(two).toEqual(one);
   }, 120_000);
 });
 
@@ -233,14 +271,18 @@ describeMedia('the kit browser', () => {
 });
 
 describeMedia('pages that break the rules are refused', () => {
-  const render = async (html: string, extra: Record<string, unknown> = {}, options = {}) => {
+  const render = async (html: string, extra: Record<string, unknown> = {}, options = {}, files: Record<string, string | Buffer> = {}) => {
     const root = temp();
     const dir = path.join(root, 'style');
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'page.html'), html);
+    const frames = Object.entries(files).map(([name, content]) => {
+      writeFileSync(path.join(dir, name), content);
+      return fileRef(path.join(dir, name));
+    });
     const { ctx } = partContext(root);
     const outcome = await makeVideo(
-      { template: fileRef(path.join(dir, 'page.html')), scenes: [{ id: 'a', on_screen: 'x' }], aspect: '1:1', max_words: 8, duration_s: 1, fps: 6, short_side: 720, ...extra },
+      { template: fileRef(path.join(dir, 'page.html')), frames, scenes: [{ id: 'a', on_screen: 'x' }], aspect: '1:1', max_words: 8, duration_s: 1, fps: 6, short_side: 720, ...extra },
       ctx,
       options,
     ).then(
@@ -288,6 +330,46 @@ describeMedia('pages that break the rules are refused', () => {
     expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('working space'), left: [], video: false });
   }, 60_000);
 
+  it('a page that moves itself to another document, even one of its own files', async () => {
+    const fake = '<!doctype html><script>window.__kitDriver = { start: async () => ({ problems: [], sources: [] }), frame: async () => ({ problems: [], sources: [] }), finish: async () => ({ problems: [], sources: [] }) };</script>';
+    const result = await render(drawing("kit.render(function (t, frame) { if (frame.index === 2) location.href = 'other.html'; });"), {}, {}, { 'other.html': fake });
+    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('another document'), video: false });
+  }, 60_000);
+
+  it('a render whose largest possible frame would not fit the working space, before the frame is written', async () => {
+    // These frames come out small; the room is held for the largest a frame this size could be.
+    // A 1920x1080 frame can take about 8 MB; these take a few KB, and everything else fits in 6 MB.
+    const result = await render(drawing("document.getElementById('t').textContent = 'small';"), { aspect: '16:9', short_side: 1080 }, { diskLimitBytes: 6 * 1024 * 1024 });
+    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('working space'), left: [], video: false });
+  }, 60_000);
+
+  it('a video or sound element inside a closed shadow root', async () => {
+    const result = await render(drawing("var host = document.createElement('div'); document.body.appendChild(host); var root = host.attachShadow({ mode: 'closed' }); setTimeout(function () { root.appendChild(document.createElement('video')); }, 300);"));
+    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('video or sound') });
+  }, 60_000);
+
+  it('a closed shadow root written into the HTML', async () => {
+    const result = await render('<!doctype html><body><div><template shadowrootmode="closed"><p>hidden</p></template></div></body>');
+    expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('closed shadow root') });
+  }, 60_000);
+
+  it('a moving picture labelled as a still one, or made from data: and blob: URLs', async () => {
+    const twoFrameGif = Buffer.from('R0lGODlhAQABAIAAAP///wAAACH5BAAKAAAALAAAAAABAAEAAAICRAEAIfkEAAoAAAAsAAAAAAEAAQAAAgJEAQA7', 'base64');
+    const labelled = await render('<!doctype html><body><img src="still.png"></body>', {}, {}, { 'still.png': twoFrameGif });
+    expect(labelled).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('moves on its own') });
+    const inline = await render(`<!doctype html><body><img src="data:image/png;base64,${twoFrameGif.toString('base64')}"></body>`);
+    expect(inline).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('moves on its own') });
+    const made = await render(drawing(`var bytes = Uint8Array.from(atob('${twoFrameGif.toString('base64')}'), function (c) { return c.charCodeAt(0); }); document.body.style.backgroundImage = 'url(' + URL.createObjectURL(new Blob([bytes], { type: 'image/gif' })) + ')';`));
+    expect(made).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('moves on its own') });
+  }, 60_000);
+
+  it('a page that moves with scrolling, and has no WebGL to draw with', async () => {
+    const scrolling = await render(drawing("new ScrollTimeline({ source: document.documentElement });"));
+    expect(scrolling).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringMatching(/scroll timeline/i) });
+    const gl = await render(drawing("if (document.createElement('canvas').getContext('webgl')) throw new Error('WebGL is on');"));
+    expect(gl).toMatchObject({ ok: true });
+  }, 60_000);
+
   it('a page that throws midway leaves no scratch behind', async () => {
     const result = await render(drawing("kit.render(function (t, frame) { if (frame.index === 3) throw new Error('broken at frame 3'); document.getElementById('t').textContent = String(t); });"));
     expect(result).toMatchObject({ ok: false, code: 'bad_input', detail: expect.stringContaining('broken at frame 3'), left: [], video: false });
@@ -302,38 +384,74 @@ describe('moving pictures', () => {
     return Uint8Array.from([...head, ...Array.from({ length: frames }, () => frame).flat(), 0x3b]);
   };
   it('refuses animated pictures and keeps still ones', () => {
-    expect(isAnimatedImage(gif(2), 'image/gif')).toBe(true);
-    expect(isAnimatedImage(gif(1), 'image/gif')).toBe(false);
+    expect(isAnimatedImage(gif(2))).toBe(true);
+    expect(isAnimatedImage(gif(1))).toBe(false);
     const svg = (body: string) => new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`);
-    expect(isAnimatedImage(svg('<circle r="4"><animate attributeName="r" values="4;8" dur="1s"/></circle>'), 'image/svg+xml')).toBe(true);
-    expect(isAnimatedImage(svg('<circle r="4"/>'), 'image/svg+xml')).toBe(false);
+    expect(isAnimatedImage(svg('<circle r="4"><animate attributeName="r" values="4;8" dur="1s"/></circle>'))).toBe(true);
+    expect(isAnimatedImage(svg('<circle r="4"/>'))).toBe(false);
+  });
+
+  it('reads the format from the bytes, whatever the label, and decodes SVG text first', () => {
+    // An animated GIF saved under a .png name and label is still a moving GIF.
+    expect(isAnimatedImage(gif(2))).toBe(true);
+    const utf16 = (text: string) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+    expect(isAnimatedImage(utf16('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"><animate attributeName="r" values="4;8" dur="1s"/></circle></svg>'))).toBe(true);
+    expect(isAnimatedImage(utf16('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>'))).toBe(false);
+    const prefixed = '<?xml version="1.0"?><svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:circle r="4"><svg:animate attributeName="r" values="4;8" dur="1s"/></svg:circle></svg:svg>';
+    expect(isAnimatedImage(new TextEncoder().encode(prefixed))).toBe(true);
   });
 });
 
 describe('the browser download', () => {
-  /** A stored (uncompressed) zip with one file. */
-  const zipOf = (name: string, content: string) => {
-    const data = Buffer.from(content);
-    const file = Buffer.from(name);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(file.length, 26);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(file.length, 28);
-    central.writeUInt32LE((0o100755 << 16) >>> 0, 38);
+  /** A stored (uncompressed) zip; a mode of 0o120777 makes the entry a link to its content. */
+  const zipOfMany = (entries: Array<{ name: string; content: string; mode?: number }>) => {
+    const locals: Buffer[] = [];
+    const centrals: Buffer[] = [];
+    let offset = 0;
+    for (const entry of entries) {
+      const data = Buffer.from(entry.content);
+      const file = Buffer.from(entry.name);
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt32LE(data.length, 18);
+      local.writeUInt32LE(data.length, 22);
+      local.writeUInt16LE(file.length, 26);
+      const central = Buffer.alloc(46);
+      central.writeUInt32LE(0x02014b50, 0);
+      central.writeUInt32LE(data.length, 20);
+      central.writeUInt32LE(data.length, 24);
+      central.writeUInt16LE(file.length, 28);
+      central.writeUInt32LE(((entry.mode ?? 0o100755) << 16) >>> 0, 38);
+      central.writeUInt32LE(offset, 42);
+      locals.push(local, file, data);
+      centrals.push(central, file);
+      offset += 30 + file.length + data.length;
+    }
+    const directory = Buffer.concat(centrals);
     const end = Buffer.alloc(22);
     end.writeUInt32LE(0x06054b50, 0);
-    end.writeUInt16LE(1, 8);
-    end.writeUInt16LE(1, 10);
-    end.writeUInt32LE(46 + file.length, 12);
-    end.writeUInt32LE(30 + file.length + data.length, 16);
-    return Buffer.concat([local, file, data, central, file, end]);
+    end.writeUInt16LE(entries.length, 8);
+    end.writeUInt16LE(entries.length, 10);
+    end.writeUInt32LE(directory.length, 12);
+    end.writeUInt32LE(offset, 16);
+    return Buffer.concat([...locals, directory, end]);
   };
+  const zipOf = (name: string, content: string) => zipOfMany([{ name, content }]);
+
+  it('refuses a name used twice and anything under a link the archive made', async () => {
+    const dir = temp();
+    try {
+      const twice = path.join(dir, 'twice.zip');
+      writeFileSync(twice, zipOfMany([{ name: 'a/run', content: 'one' }, { name: 'a/run', content: 'two' }]));
+      await expect(unzipTo(twice, path.join(dir, 'out1'))).rejects.toThrow(/twice/);
+      const linked = path.join(dir, 'linked.zip');
+      writeFileSync(linked, zipOfMany([{ name: 'b/', content: '' }, { name: 'a', content: 'b', mode: 0o120777 }, { name: 'a/run', content: 'through the link' }]));
+      await expect(unzipTo(linked, path.join(dir, 'out2'))).rejects.toThrow(/under a link/);
+      expect(existsSync(path.join(dir, 'out2', 'b', 'run'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('unpacks only a download whose sha256 matches its pin', async () => {
     const zip = zipOf('chrome-headless-shell-mac-arm64/chrome-headless-shell', '#!/bin/sh\n');
