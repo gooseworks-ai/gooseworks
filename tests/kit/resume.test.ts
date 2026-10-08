@@ -1,6 +1,6 @@
 // Rule: a resume never orders a finished piece again; only the pieces that
 // were not made are ordered, so the customer never pays twice.
-import { fakeLine, lineCalls, runMake, tempHome } from './harness';
+import { fakeLine, lineCalls, lineRoute, runMake, tempHome } from './harness';
 
 describe('video make resumes without re-ordering finished pieces', () => {
   it('orders only the unfinished piece after a stop', async () => {
@@ -35,5 +35,18 @@ describe('video make resumes without re-ordering finished pieces', () => {
     const again = fakeLine();
     expect((await runMake({ home, line: again })).status).toBe('done');
     expect(again.pieces).toHaveLength(0);
+  });
+
+  it('asks the check again for a video already sent, instead of sending it again', async () => {
+    const home = tempHome();
+    const first = fakeLine({ upload: 'fail' });
+    await runMake({ home, line: first });
+    expect(lineRoute(first.seen, '/upload')).toHaveLength(1);
+
+    const again = fakeLine();
+    expect((await runMake({ home, line: again })).status).toBe('done');
+    expect(lineRoute(again.seen, '/upload')).toHaveLength(0);
+    expect(again.seen.filter((s) => s.url.startsWith('https://store.test'))).toHaveLength(0);
+    expect(lineRoute(again.seen, '/upload/up_1/done')).toHaveLength(1);
   });
 });

@@ -31,7 +31,7 @@ interface Tracked {
 /** What has been made so far, as the card shows it. */
 export class ProgressBook {
   private readonly steps = new Map<string, Tracked>();
-  note = 'Making your video';
+  note = 'Getting your video ready';
 
   plan(steps: Array<{ id: string; kind: PartKind; typical_s: number }>): void {
     for (const step of steps) {
@@ -92,7 +92,7 @@ export class ProgressBook {
       pieces_total: Math.min(Math.max(total, done), 500),
       eta_seconds: Math.min(Math.round(eta), 86_400),
       note: this.note,
-      steps: rows.slice(0, 12),
+      ...(rows.length ? { steps: rows.slice(0, 12) } : {}),
     };
   }
 }

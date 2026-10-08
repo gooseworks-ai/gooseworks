@@ -85,6 +85,17 @@ export type MakeResult =
   | { status: 'stopped' | 'failed'; message: string }
   | { status: 'update_kit'; message: string; min_version?: string };
 
+/** One fix: re-run this step or layer with these extra inputs (a new round makes a new step hash). */
+interface Fix {
+  target: string;
+  inputs: JsonObject;
+  round: number;
+  from: 'local' | 'server';
+}
+
+/** run.json as the kit writes it: the contract's record plus the fixes in force, so a restart keeps them. */
+type KitRunRecord = RunRecord & { fixes?: Fix[] };
+
 interface StepSpec {
   id: string;
   ref: PartRef;
@@ -165,7 +176,7 @@ class Maker {
   private reporter!: ProgressReporter;
   private store!: RunStore;
   private layout!: RunLayout;
-  private run!: RunRecord;
+  private run!: KitRunRecord;
   private cache!: PieceCache;
   private tools!: Toolchain;
   private toolchain = '';
@@ -229,6 +240,9 @@ class Maker {
     this.store = new RunStore(this.layout);
     this.cache = new PieceCache(this.layout.pieces);
     this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
+    // Reports start now, so checking the style and parts never looks quiet.
+    this.reporter.start();
+    void this.reporter.send(true);
     try {
       return await this.makeHandedOver(dev);
     } catch (error) {
@@ -283,7 +297,7 @@ class Maker {
     await writeJson(this.layout.plan, planCopy);
     if (this.lock) await writeJson(this.layout.partsLock, this.lock);
 
-    const previous = await this.store.readRun();
+    const previous = (await this.store.readRun()) as KitRunRecord | null;
     const started = this.now().toISOString();
     this.run = {
       record: 1,
@@ -298,6 +312,7 @@ class Maker {
       status: 'running',
       steps: previous?.steps ?? {},
       local_fix_used: previous?.quote_id === handed.quote_id ? previous.local_fix_used : false,
+      fixes: previous?.quote_id === handed.quote_id ? ((previous as KitRunRecord).fixes ?? []) : [],
       upload_attempt: previous?.quote_id === handed.quote_id ? previous.upload_attempt : 0,
       started_at: previous?.started_at ?? started,
       updated_at: started,
@@ -316,21 +331,23 @@ class Maker {
     this.planScope = await materialize(plan.body, this.layout.inputs, download);
     this.brand = brandKit(await materialize(plan.brand, this.layout.inputs, download));
 
+    this.book.note = 'Making your video';
     this.book.plan([
       ...this.style.style.timeline.map((s) => ({ id: s.id, kind: this.parts.get(s.id)!.manifest.kind, typical_s: this.parts.get(s.id)!.manifest.timing.typical_s })),
       ...this.layersOn().map((slot) => ({ id: `layer-${slot}`, kind: SLOT_KIND[slot], typical_s: this.parts.get(`layer-${slot}`)!.manifest.timing.typical_s })),
     ]);
-    this.reporter.start();
     void this.reporter.send(true);
 
+    // The fixes already in force (after a restart) apply from the start.
     let result = await this.pipeline();
     if (!result.verdict.pass) {
-      const fix = this.run.local_fix_used ? null : this.fixFrom(result.verdict, []);
+      const fix = this.run.local_fix_used ? null : this.fixFrom(result.verdict, [], 'local');
       if (!fix) return this.checkFailed(result.verdict);
       this.run.local_fix_used = true;
+      this.run.fixes = [...(this.run.fixes ?? []), fix];
       await this.saveRun();
       this.say('The final check found something to fix. Fixing it once…');
-      result = await this.pipeline(fix);
+      result = await this.pipeline();
       if (!result.verdict.pass) return this.checkFailed(result.verdict);
     }
     return this.upload(result);
@@ -401,16 +418,23 @@ class Maker {
   }
 
   /** The timeline, then the layers that are on. Saved steps with the same hash are reused. */
-  private async pipeline(fix?: { target: string; inputs: JsonObject; round: number }): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }> {
+  private async pipeline(): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }> {
     const outputs = new Map<string, Record<string, unknown>>();
     const scope = { plan: this.planScope, brand: this.brand, steps: outputs, assets: this.style.assets };
     const hashes: Record<string, string> = {};
     let timeline: Timeline | null = null;
+    const fixes = this.run.fixes ?? [];
+    const fixed = (id: string, inputs: Record<string, unknown>) => {
+      const mine = fixes.filter((f) => f.target === id);
+      return {
+        inputs: mine.reduce((acc, f) => ({ ...acc, ...f.inputs }), inputs),
+        round: mine.length ? Math.max(...mine.map((f) => f.round)) : undefined,
+      };
+    };
     for (const step of this.style.style.timeline) {
       const loaded = this.parts.get(step.id)!;
-      let inputs = bindInputs(step.inputs as Record<string, unknown> | undefined, scope, step.id);
-      if (fix?.target === step.id) inputs = { ...inputs, ...fix.inputs };
-      const out = await this.runStep({ id: step.id, ref: step.part, loaded, inputs, models: this.modelsOf(step.part, loaded), fix: fix?.target === step.id ? fix.round : undefined }, hashes);
+      const { inputs, round } = fixed(step.id, bindInputs(step.inputs as Record<string, unknown> | undefined, scope, step.id));
+      const out = await this.runStep({ id: step.id, ref: step.part, loaded, inputs, models: this.modelsOf(step.part, loaded), fix: round }, hashes);
       outputs.set(step.id, out);
       if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
     }
@@ -427,9 +451,8 @@ class Maker {
       const id = `layer-${slot}`;
       const loaded = this.parts.get(id)!;
       const ref = { id: loaded.manifest.id, version: loaded.manifest.version };
-      let inputs: Record<string, unknown> = { video: cut, timeline, brand: this.brand, expect: expectationOf(this.style.style, this.handed.plan), ...(words ? { words } : {}) };
-      if (fix?.target === id) inputs = { ...inputs, ...fix.inputs };
-      const out = await this.runStep({ id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: fix?.target === id ? fix.round : undefined }, hashes);
+      const { inputs, round } = fixed(id, { video: cut, timeline, brand: this.brand, expect: expectationOf(this.style.style, this.handed.plan), ...(words ? { words } : {}) });
+      const out = await this.runStep({ id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
       if (slot === 'check') {
         verdict = out.verdict as CheckVerdict;
         continue;
@@ -578,7 +601,6 @@ class Maker {
           videoId: this.videoId,
           stepId: spec.id,
           part: spec.ref,
-          attempt,
           models: spec.models,
           workDir,
           runRoot: this.layout.root,
@@ -641,15 +663,15 @@ class Maker {
   }
 
   /** The one fix: the check's own hint, or the server's check mapped to the layer that can redo it. */
-  private fixFrom(verdict: CheckVerdict, serverChecks: string[]): { target: string; inputs: JsonObject; round: number } | null {
-    const round = (this.run.local_fix_used ? 1 : 0) + this.run.upload_attempt + 1;
+  private fixFrom(verdict: CheckVerdict, serverChecks: string[], from: Fix['from']): Fix | null {
+    const round = (this.run.fixes?.length ?? 0) + 1;
     const failed = verdict.checks.filter((c) => c.status === 'fail' && (serverChecks.length === 0 || serverChecks.includes(c.code)));
     const hinted: FixHint | undefined = failed.find((c) => c.fix)?.fix;
-    if (hinted?.slot && this.parts.has(`layer-${hinted.slot}`)) return { target: `layer-${hinted.slot}`, inputs: hinted.inputs ?? {}, round };
-    if (hinted?.step && this.parts.has(hinted.step)) return { target: hinted.step, inputs: hinted.inputs ?? {}, round };
+    if (hinted?.slot && this.parts.has(`layer-${hinted.slot}`)) return { target: `layer-${hinted.slot}`, inputs: hinted.inputs ?? {}, round, from };
+    if (hinted?.step && this.parts.has(hinted.step)) return { target: hinted.step, inputs: hinted.inputs ?? {}, round, from };
     for (const check of serverChecks) {
       const slot = SERVER_CHECK_SLOT[check];
-      if (slot && this.parts.has(`layer-${slot}`)) return { target: `layer-${slot}`, inputs: {}, round };
+      if (slot && this.parts.has(`layer-${slot}`)) return { target: `layer-${slot}`, inputs: {}, round, from };
     }
     return null;
   }
@@ -690,15 +712,11 @@ class Maker {
   /** Upload, our server's check, and one fix after a first failed check. */
   private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }): Promise<MakeResult> {
     let current = result;
-    let lastFailedSha: string | null = null;
     for (;;) {
       const final = (await this.writeFinal(current, current.verdict))!;
       const data = await readFile(final);
       if (data.length > MAX_UPLOAD_BYTES) throw new KitStop('The finished video is larger than the line takes.', 'failed');
       const sha256 = sha256Hex(data);
-      if (sha256 === lastFailedSha) {
-        return { status: 'failed', message: 'The video didn’t pass our check and the one fix changed nothing, so it wasn’t sent again. Nothing more will be charged for it.' };
-      }
       let captions_vtt: string | undefined;
       if (current.captions) {
         captions_vtt = await readFile(current.captions.path, 'utf8');
@@ -724,37 +742,47 @@ class Maker {
         return { status: 'done', message: `Your video is ready. It passed the final check. Saved here: ${final}` };
       }
       const reasons = check.reasons.map((r) => r.message).filter(Boolean).join(' ');
-      const fix = check.fixes_left > 0 ? this.fixFrom(current.verdict, check.reasons.map((r) => r.check)) : null;
+      const serverFixUsed = (this.run.fixes ?? []).some((f) => f.from === 'server');
+      const fix = check.fixes_left > 0 && !serverFixUsed ? this.fixFrom(current.verdict, check.reasons.map((r) => r.check), 'server') : null;
       if (!fix) {
         this.run.status = 'failed';
         await this.saveRun();
         return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim() };
       }
-      lastFailedSha = sha256;
-      this.reporter.resume();
-      this.say('Our check found something to fix. Fixing it once…');
+      this.run.fixes = [...(this.run.fixes ?? []), fix];
       this.run.status = 'running';
       await this.saveRun();
-      current = await this.pipeline(fix);
+      this.reporter.resume();
+      this.say('Our check found something to fix. Fixing it once…');
+      current = await this.pipeline();
       if (!current.verdict.pass) return this.checkFailed(current.verdict);
+      // A fix that changed nothing is not sent again: the same bytes get the same answer.
     }
   }
 
-  /** The slot, the PUT and done, saved stage by stage; a resumed upload of the same file asks done again. */
+  /**
+   * The slot, the PUT and done, saved stage by stage. These same bytes already
+   * put (or already checked) are never sent again: done is asked again for
+   * that upload, which gives the same answer.
+   */
   private async sendUpload(sha256: string, data: Buffer, captions_vtt: string | undefined, manifest: Record<string, unknown>): Promise<UploadCheck> {
     const { line } = this.deps;
     type Stage = { upload_id: string; attempt: 1 | 2; sha256: string; quote_id: string; stage: 'requested' | 'put' | 'done'; result?: 'pass' | 'fail' };
     const saved = (await this.store.readUpload<{ uploads: Stage[] }>()) ?? { uploads: [] };
-    const last = saved.uploads[saved.uploads.length - 1];
-    if (last && last.sha256 === sha256 && last.quote_id === this.handed.quote_id && last.stage === 'put') {
+    const finish = async (stage: Stage): Promise<UploadCheck> => {
+      this.book.note = 'Checking your video';
+      this.run.status = 'checking';
+      await this.saveRun();
       await this.reporter.flush();
       this.reporter.pause();
-      const check = await line.finishUpload(this.videoId, last.upload_id, this.stop.signal);
-      last.stage = 'done';
-      last.result = check.result;
+      const check = await line.finishUpload(this.videoId, stage.upload_id, this.stop.signal);
+      stage.stage = 'done';
+      stage.result = check.result;
       await this.store.writeUpload(saved);
       return check;
-    }
+    };
+    const sent = [...saved.uploads].reverse().find((u) => u.sha256 === sha256 && u.quote_id === this.handed.quote_id && (u.stage === 'put' || u.stage === 'done'));
+    if (sent) return finish(sent);
     const slot = await line.openUpload(this.videoId, { sha256, bytes: data.length, content_type: 'video/mp4', ...(captions_vtt ? { captions_vtt } : {}), manifest }, this.stop.signal);
     const stage: Stage = { upload_id: slot.upload_id, attempt: slot.attempt, sha256, quote_id: this.handed.quote_id, stage: 'requested' };
     saved.uploads.push(stage);
@@ -762,16 +790,7 @@ class Maker {
     await line.put(slot.put, data, this.stop.signal);
     stage.stage = 'put';
     await this.store.writeUpload(saved);
-    this.book.note = 'Checking your video';
-    this.run.status = 'checking';
-    await this.saveRun();
-    await this.reporter.flush();
-    this.reporter.pause();
-    const check = await line.finishUpload(this.videoId, slot.upload_id, this.stop.signal);
-    stage.stage = 'done';
-    stage.result = check.result;
-    await this.store.writeUpload(saved);
-    return check;
+    return finish(stage);
   }
 
   private async cleanTmp(): Promise<void> {

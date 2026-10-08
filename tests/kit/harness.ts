@@ -34,6 +34,8 @@ export interface LineScript {
   token?: string;
   lock?: (lock: any) => any;
   upload?: 'pass' | 'fail';
+  /** Answer for one download of a made piece's file; default: the file. */
+  download?: (url: URL, n: number) => Response | undefined;
 }
 
 export const style = {
@@ -126,6 +128,7 @@ export function fakeLine(script: LineScript = {}) {
   const pkg = stylePackage();
   const token = script.token ?? 'vl1_q_1.4102444800.handedsignature0123456789';
   let pieceCount = 0;
+  let downloadCount = 0;
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = String(input);
     const headers: Record<string, string> = {};
@@ -134,7 +137,7 @@ export function fakeLine(script: LineScript = {}) {
     seen.push({ url, method: init.method ?? 'GET', headers, body });
     const u = new URL(url);
     if (u.origin === 'https://store.test') return new Response(null, { status: 200 });
-    if (u.origin === 'https://files.test') return new Response(Buffer.from(`clip ${u.pathname}`), { status: 200 });
+    if (u.origin === 'https://files.test') return script.download?.(u, downloadCount++) ?? new Response(Buffer.from(`clip ${u.pathname}`), { status: 200 });
     if (u.pathname === '/pkg/view') return json(200, pkg.view);
     if (u.pathname === '/pkg/manifest') return new Response(pkg.manifest, { status: 200 });
     if (u.pathname === '/pkg/style.json') return new Response(pkg.styleBytes, { status: 200 });
@@ -317,5 +320,8 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     heartbeatMs: 3_600_000,
   });
 }
+
+/** Calls to exactly this line route, e.g. "/upload" (the slot) apart from "/upload/up_1/done". */
+export const lineRoute = (seen: Seen[], route: string) => seen.filter((s) => new URL(s.url).pathname === `/v1/video-line/${VIDEO}${route}`);
 
 export const lineCalls = (seen: Seen[], route: string) => seen.filter((s) => s.url.startsWith(`${API}/v1/video-line/`) && s.url.includes(route));
