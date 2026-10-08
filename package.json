@@ -1,6 +1,6 @@
 {
   "name": "gooseworks",
-  "version": "0.4.5",
+  "version": "0.4.4",
   "description": "GooseWorks CLI \u2014 give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
@@ -13,7 +13,7 @@
     "generate:skills": "tsx scripts/generate-skill-files.ts",
     "prepublishOnly": "npm run generate:skills && npm run build && npm test",
     "changeset": "changeset",
-    "version-packages": "changeset version && npm run generate:skills",
+    "version-packages": "changeset version && npm install --package-lock-only --ignore-scripts && npm run generate:skills",
     "test:pack": "node scripts/pack-smoke.cjs"
   },
   "dependencies": {
