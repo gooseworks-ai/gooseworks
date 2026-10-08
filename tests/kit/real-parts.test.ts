@@ -1,7 +1,7 @@
 // Rule checked against S2's published part manifests (fixtures copied from
 // goose-skills parts/<id>/1.0.0/part.json): a part may order the models its
-// lock lists, written as its provider path with a leading slash, and nothing
-// else.
+// lock lists, written as in needs.models (with or without a leading slash),
+// and nothing else.
 import { readFileSync, writeFileSync } from 'fs';
 import * as path from 'path';
 import type { ModelNeed, PartContext } from '../../src/kit/part-interface';
@@ -16,21 +16,26 @@ const cut = async (ctx: PartContext) => {
 };
 
 describe('S2’s published parts', () => {
-  it.each(['creator-h3', 'video-seedance-2', 'image-nano-banana', 'captions-layer'])('%s may order its locked models by their provider path', async (id) => {
+  const cases = ['creator-h3', 'video-seedance-2', 'image-nano-banana', 'captions-layer'].flatMap((id) => [
+    [id, ''],
+    [id, '/'],
+  ]);
+  it.each(cases)('%s may order its locked models, written as in part.json with "%s" in front', async (id, lead) => {
     const models = real(id);
     const line = fakeLine({ lock: (lock) => ({ ...lock, parts: { ...lock.parts, 'clip-maker': { ...lock.parts['clip-maker'], models } } }) });
     const parts = testParts({
       clip: { needs: { browser: false, ffmpeg: false, network: true, models } },
       clipRun: (async (_inputs: unknown, ctx: PartContext) => {
-        // As the published part.mjs files call it: path `/${model}`.
+        // As the published part.mjs files call it: the model id as in needs.models (or with a leading slash).
         for (const [i, m] of models.entries()) {
-          await ctx.line!.order({ piece: `take-${i + 1}`, provider: m.provider, path: `/${m.model}`, body: { prompt_text: `take ${i + 1}` }, results: [{ pointer: '/file_url', name: `take-${i + 1}.mp4`, media: 'video' }] });
+          await ctx.line!.order({ piece: `take-${i + 1}`, provider: m.provider, path: `${lead}${m.model}`, body: { prompt_text: `take ${i + 1}` }, results: [{ pointer: '/file_url', name: `take-${i + 1}.mp4`, media: 'video' }] });
         }
         return cut(ctx);
       }) as never,
     });
     expect((await runMake({ home: tempHome(), line, parts })).status).toBe('done');
-    expect(line.pieces.map((p) => p.call.path)).toEqual(models.map((m) => `/${m.model}`));
+    // The path goes to the line exactly as the part wrote it.
+    expect(line.pieces.map((p) => p.call.path)).toEqual(models.map((m) => `${lead}${m.model}`));
   });
 
   it('still refuses a model the lock does not list', async () => {

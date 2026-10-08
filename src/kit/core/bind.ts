@@ -59,7 +59,10 @@ export function bindValue(value: unknown, scope: BindScope, stepId: string): unk
     }
     return resolveFrom(value.from, scope, stepId);
   }
-  if (Array.isArray(value)) return value.map((item) => bindValue(item, scope, stepId));
+  // A reference to an output that never came is left out: of an object as a
+  // missing field, of a list as a missing item. The part's schema then decides
+  // whether it may be missing.
+  if (Array.isArray(value)) return value.map((item) => bindValue(item, scope, stepId)).filter((item) => item !== undefined);
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {

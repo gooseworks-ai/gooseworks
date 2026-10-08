@@ -206,9 +206,9 @@ export function fakeLine(script: LineScript = {}) {
   return { fetch: fetchImpl, seen, pieces, token };
 }
 
-const fileSchema = (media: string) => ({ type: 'object', 'x-kit-file': { media } });
+export const fileSchema = (media: string) => ({ type: 'object', 'x-kit-file': { media } });
 
-function manifest(id: string, extra: Partial<PartManifest>): PartManifest {
+export function manifest(id: string, extra: Partial<PartManifest>): PartManifest {
   return {
     interface: 1,
     id,
