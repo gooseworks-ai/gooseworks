@@ -34,6 +34,10 @@ export interface LineScript {
   token?: string;
   lock?: (lock: any) => any;
   upload?: 'pass' | 'fail';
+  /** The style the package carries (default: `style`). */
+  style?: Record<string, unknown>;
+  /** Changes the hand-over's `line` before it is sent. */
+  handOver?: (line: any) => any;
   /** Answer for one PUT to storage; default: stored. Throwing simulates a lost answer. */
   put?: (n: number) => Response;
   /** Answer for one upload done call; default: the check's result. */
@@ -60,14 +64,14 @@ const layerSet = {
   check: { id: 'check-layer', version: '1.0.0' },
 };
 
-export function plan() {
+export function plan(pinned: Record<string, unknown> = style) {
   return {
     project_id: VIDEO,
     quote_id: 'q_1',
     revision: 1,
     style_id: style.id,
     style_version: style.version,
-    style_hash: canonicalHash(style),
+    style_hash: canonicalHash(pinned),
     brain_digest: {},
     brand: { name: 'Brand', logo: null, colors: {}, fonts: {}, pronunciations: [], cta: null },
     layers: layerSet,
@@ -107,8 +111,8 @@ export function partsLock() {
 }
 
 /** The style package as the API serves it: a view, its manifest, and the files. */
-function stylePackage() {
-  const styleBytes = Buffer.from(JSON.stringify(style));
+function stylePackage(pinned: Record<string, unknown>) {
+  const styleBytes = Buffer.from(JSON.stringify(pinned));
   const files = [{ path: 'style.json', sha256: sha(styleBytes), bytes: styleBytes.length }];
   const manifest = Buffer.from(canonicalJson({ style_id: style.id, version: style.version, files }));
   const view = {
@@ -129,7 +133,8 @@ const json = (status: number, body: unknown) =>
 export function fakeLine(script: LineScript = {}) {
   const seen: Seen[] = [];
   const pieces: any[] = [];
-  const pkg = stylePackage();
+  const pinned = script.style ?? style;
+  const pkg = stylePackage(pinned);
   const token = script.token ?? 'vl1_q_1.4102444800.handedsignature0123456789';
   let pieceCount = 0;
   let downloadCount = 0;
@@ -150,23 +155,24 @@ export function fakeLine(script: LineScript = {}) {
     const p = u.pathname.replace(`/v1/video-line/${VIDEO}`, '');
     if (p === '/device') {
       const lock = script.lock ? script.lock(partsLock()) : partsLock();
+      const handed = {
+        token,
+        project_id: VIDEO,
+        quote_id: 'q_1',
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+        lease: '00000000-0000-4000-8000-000000000001',
+        stage: 'making',
+        credits: { used: 0, cap: 1000 },
+        plan: plan(pinned),
+        parts_lock: lock,
+        style_package: { style_id: style.id, version: style.version, style_hash: canonicalHash(pinned), url: `${API}/pkg/view`, sha256: pkg.view.sha256 },
+      };
       return json(200, {
         device_id: body.device.device_id,
         saved_at: new Date().toISOString(),
         kit: { ok: true, min_version: '1.0.0', latest_version: '1.0.0' },
         styles: { ready: 1, total: 1 },
-        line: {
-          token,
-          project_id: VIDEO,
-          quote_id: 'q_1',
-          expires_at: new Date(Date.now() + 86_400_000).toISOString(),
-          lease: '00000000-0000-4000-8000-000000000001',
-          stage: 'making',
-          credits: { used: 0, cap: 1000 },
-          plan: plan(),
-          parts_lock: lock,
-          style_package: { style_id: style.id, version: style.version, style_hash: canonicalHash(style), url: `${API}/pkg/view`, sha256: pkg.view.sha256 },
-        },
+        line: script.handOver ? script.handOver(handed) : handed,
       });
     }
     if (p === '/pieces') {
@@ -228,7 +234,7 @@ const layerInputs = {
 };
 
 /** The test parts: a paid clip maker that orders one piece per scene, and pass-through layers. */
-export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Record<string, LoadedPart> {
+export function testParts(overrides: { clip?: Partial<PartManifest>; clipRun?: LoadedPart['run']; checkRun?: LoadedPart['run'] } = {}): Record<string, LoadedPart> {
   const clipMaker: LoadedPart = {
     source: 'published',
     dir: '/parts/clip-maker/1.0.0',
@@ -240,7 +246,7 @@ export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Rec
       outputs: { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object' } } },
       ...overrides.clip,
     }),
-    run: async (inputs: any, ctx: PartContext) => {
+    run: overrides.clipRun ?? (async (inputs: any, ctx: PartContext) => {
       const parts: Buffer[] = [];
       for (const [i, scene] of (inputs.scenes as Array<{ line: string }>).entries()) {
         const got = await ctx.line!.order({ piece: `scene-${i + 1}`, provider: 'fal', path: MODEL, body: { text: scene.line }, results: [{ pointer: '/file_url', name: `scene-${i + 1}.mp4`, media: 'video' }] });
@@ -248,7 +254,7 @@ export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Rec
       }
       writeFileSync(path.join(ctx.workDir, 'cut.mp4'), Buffer.concat(parts));
       return { video: await ctx.file('cut.mp4', 'video'), timeline: { duration_s: 5, width: 1080, height: 1920, fps: 30, scenes: [], speech: [] } };
-    },
+    }) as LoadedPart['run'],
   };
   const passLayer = (id: string, slot: 'brand' | 'captions' | 'sound', kind: PartManifest['kind']): LoadedPart => ({
     source: 'published',
@@ -268,7 +274,7 @@ export function testParts(overrides: { clip?: Partial<PartManifest> } = {}): Rec
       source: 'published',
       dir: '/parts/check-layer/1.0.0',
       manifest: manifest('check-layer', { kind: 'check', layer: 'check', inputs: layerInputs, outputs: { type: 'object', additionalProperties: false, required: ['verdict'], properties: { verdict: { type: 'object' } } } }),
-      run: async () => ({ verdict: { pass: true, checks: [] } }),
+      run: overrides.checkRun ?? (async () => ({ verdict: { pass: true, checks: [] } })),
     },
   };
 }
@@ -308,6 +314,8 @@ export interface RunOptions {
   loads?: string[];
   worker?: { token: string; id: string };
   printed?: string[];
+  now?: () => Date;
+  signal?: AbortSignal;
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -329,6 +337,8 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     tools,
     sleep: async () => undefined,
     heartbeatMs: 3_600_000,
+    ...(opts.now ? { now: opts.now } : {}),
+    ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }
 

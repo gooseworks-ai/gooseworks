@@ -545,7 +545,10 @@ class Maker {
       try {
         const ctx = this.context(spec, attempt, workDir, tmpDir, link.signal, record);
         const outputs = await new Promise<Record<string, unknown>>((resolve, reject) => {
-          link.signal.addEventListener('abort', () => reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s`)), { once: true });
+          const ended = () => reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s`));
+          // Stopped while the step was being saved: the part never starts.
+          if (link.signal.aborted) return ended();
+          link.signal.addEventListener('abort', ended, { once: true });
           spec.loaded.run(spec.inputs, ctx).then((o) => resolve(o as Record<string, unknown>), reject);
         });
         if (this.fatal) throw this.fatal;
@@ -722,10 +725,18 @@ class Maker {
       const data = await readFile(final);
       if (data.length > MAX_UPLOAD_BYTES) throw new KitStop('The finished video is larger than the line takes.', 'failed');
       const sha256 = sha256Hex(data);
+      // Only the exact bytes the final check passed are sent.
+      if (sha256 !== current.cut.sha256 || data.length !== current.cut.bytes) {
+        throw new KitStop('The finished video changed after its final check, so it wasn’t sent. Run the same command again to make it again.', 'failed');
+      }
       let captions_vtt: string | undefined;
       if (current.captions) {
-        captions_vtt = await readFile(current.captions.path, 'utf8');
-        if (Buffer.byteLength(captions_vtt) > MAX_CAPTIONS_BYTES) throw new KitStop('The captions file is larger than the line takes.', 'failed');
+        const captions = await readFile(current.captions.path);
+        if (sha256Hex(captions) !== current.captions.sha256 || captions.length !== current.captions.bytes) {
+          throw new KitStop('The captions changed after the final check, so the video wasn’t sent. Run the same command again to make it again.', 'failed');
+        }
+        if (captions.length > MAX_CAPTIONS_BYTES) throw new KitStop('The captions file is larger than the line takes.', 'failed');
+        captions_vtt = captions.toString('utf8');
       }
       this.book.note = 'Sending your video for its final check';
       this.run.status = 'uploading';
