@@ -61,7 +61,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   },
   {
     skill: 'goose-video',
-    when: 'Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain.',
+    when: 'Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. An agent that can run shell commands on the customer\'s computer makes it there; otherwise the GooseWorks coworker makes it.',
     how: 'For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume.',
     delivery: 'entry',
   },

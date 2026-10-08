@@ -729,12 +729,15 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
     expect(video.match(/^---$/gm)).toHaveLength(2);
   });
 
-  it('uses card capability independently of local execution', () => {
+  it('uses card capability independently of who makes the video', () => {
     expect(video).toContain('card.display_hint');
-    expect(video).toContain('client: { shell: true }');
+    expect(video).toContain('**Who makes the video (one rule).**');
+    expect(video).toContain("If you can run shell commands on the customer's own\ncomputer, you make it there");
+    expect(video).toContain('Every caller gets every format.');
+    expect(video).not.toContain('client: { shell: true }');
+    expect(video).not.toContain('available_here');
     expect(video).toContain('print no table or list of the formats');
     expect(video).toContain('print card.text_summary as returned');
-    expect(video).toContain('Never offer\n  available_here:false');
     expect(video).not.toContain('always a markdown table');
     expect(video).not.toContain('Every video format runs on the customer');
   });
@@ -760,13 +763,13 @@ describe('skills/getGooseVideoSkillContent (the front door)', () => {
       'Never create paid ingredients before the selected renderer passes', 'never silently change the selected format']) {
       expect(setup).toContain(required);
     }
-    expect(setup).toContain('client:{shell:false}');
+    expect(setup).toContain('If it cannot be fixed, hand the project off in Step 5');
   });
 
   it('routes existing projects first and delegates chat execution without claiming readiness', () => {
     expect(video.indexOf('## Route first')).toBeLessThan(video.indexOf('### 1. Resolve the brand'));
     expect(video).toContain('goose_run_task { brand_id, project_id, message }');
-    expect(video).toContain('Never tell a chat host it needs Claude Code to start');
+    expect(video).toContain('Never tell the customer they need Claude Code to start');
     expect(video).toContain('A saved free draft is not a started worker or a complete plan');
     expect(video).toContain('never claim completion or approve an empty plan');
     expect(video).toContain('Read again on a customer reply, card action or requested update');

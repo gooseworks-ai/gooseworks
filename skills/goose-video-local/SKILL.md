@@ -8,10 +8,10 @@ description: >
   gooseworks CLI) OR inside a GooseWorks workspace sandbox (canonical MCP tools + Bash, no CLI).
   Use for a client-side format project (created by goose-video), a template-remix project or a
   video batch. A copy-for-Claude command or project id must first be checked with
-  video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
+  video_project_read. An agent that can't run shell commands on the customer's computer hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.7
+version: 0.7.0
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -202,7 +202,16 @@ On an approved resume, keep the saved brief and evidence; search again only for 
 
 ## Chat hosts and cards
 
-First perform the mandatory route check below. Then, without a shell, hand a verified template
+**Who makes the video (one rule).** If you can run shell commands on the customer's own
+computer, you make it there with `goose-video-local`: check the toolchain first and, if it
+can't be fixed, hand it off. If you can't, hand it to the GooseWorks coworker with
+`goose_run_task { brand_id, project_id, message: the customer's words }`; the one approval,
+Stop and fixes stay in this chat. Inside the GooseWorks coworker's own sandbox you are the
+coworker: make it yourself and never hand off. A hosted code sandbox is not the customer's
+computer. Decide this yourself, never from the host's name; the server needs no flag for it.
+
+First perform the mandatory route check below. Then, if you can't run shell commands on the
+customer's computer, hand a verified template
 project to `goose_run_task { brand_id, project_id, message }`, or a verified template batch to
 `goose_run_task { brand_id, batch_id, message }` (never send both ids). Keep task_id and the
 same project or batch. Generated custom children keep their separate make-custom-video flow.
@@ -290,7 +299,8 @@ review set; do not add a separate approval round.
 
 ## Where am I running? (decide once, first)
 
-Check in Bash, without printing any secret value:
+With no shell on the customer's computer at all, you don't render here: hand the project off
+(Chat hosts and cards above). Otherwise check in Bash, without printing any secret value:
 
 ```bash
 [ -n "$GW_MEDIA_PROXY_TOKEN" ] && echo sandbox || echo local
@@ -468,7 +478,10 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
      **`ghcr.io/gooseworks-ai/goose-video-render`** (ffmpeg + ffprobe + Playwright Chromium baked
      in), mounting the project working directory. (Nested Docker is usually disabled inside
      managed sandboxes — treat this as an option, not a guarantee.)
-  5. **None of the above works →** STOP and tell the user plainly, e.g.: *"Video rendering needs
+  5. **None of the above works →** on the customer's computer, hand the project to the GooseWorks
+     coworker with `goose_run_task` (a `needs_browser` format can't be: offer another). Inside the
+     coworker sandbox, or when the customer wants it made on their own machine, STOP and tell the
+     user plainly, e.g.: *"Video rendering needs
      ffmpeg (and, for this format, a Playwright Chromium) on the machine running this agent. This
      environment doesn't have them and I can't install them here. Options: (a) enable Docker so I
      can use the goose-video-render image, (b) install ffmpeg + `npx playwright install chromium`,
@@ -1211,8 +1224,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    “Not now” keeps the plan. In a coworker sandbox end the turn after saving the review set;
    the customer's approval arrives as the next message.
    Record the explicit yes with `video_project_upsert { brand_id, project_id, patch: { approve:
-   { user_quote: "<their exact words>", total_credits: <the saved total> } } }` before rendering.
-   A single project requires recorded approval too; never treat an absent approval as permission.
+   { user_quote: "<their exact words>", total_credits: <the saved total> } } }` before rendering;
+   its reply says what comes next. A single project requires recorded approval too; never treat an absent approval as permission.
    Changes require an updated saved review, clearing prior approval, and approval of the new
    total. One yes authorizes the remaining approved chain. On insufficient_balance start
    nothing; offer a shorter video or top-up. Remove batch concepts with patch.concepts remove:true,
@@ -1222,7 +1235,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 
 1. **Open the render row FIRST** — right after recording the Step 3 approval, before any paid
    generation (if this returns `approval_required`, the approval is missing or was cleared: go
-   back to Step 3 and ask in this chat, don't retry):
+   back to Step 3 and ask in this chat, don't retry; if it returns `coworker_makes_it`, the video
+   was handed to the GooseWorks coworker, so don't render it: the coworker is making it):
    `video_render_run { brand_id, project_id, kind: "full" }` (no `dry_run`; returns
    `render_id`) → keep `render_id`, then mark it running:
    `video_render_run { brand_id, project_id, render: { render_id, status: "running",
