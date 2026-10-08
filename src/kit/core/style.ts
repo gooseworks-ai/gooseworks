@@ -100,12 +100,13 @@ export async function fetchStyle(opts: FetchStyle): Promise<LoadedStyle> {
   if (!link.searchParams.has('project_id')) link.searchParams.set('project_id', opts.projectId);
   let view: PackageView;
   try {
-    view = JSON.parse((await opts.download(link.toString(), 1024 * 1024)).toString('utf8')) as PackageView;
+    // GET /api/video-styles/<id>/<version>/package answers { package: {...} }.
+    view = (JSON.parse((await opts.download(link.toString(), 1024 * 1024)).toString('utf8')) as { package: PackageView }).package;
   } catch (error) {
     if (error instanceof KitStop) throw error;
     refuse('The style for this video could not be downloaded. Run the same command again in a minute.');
   }
-  if (!opts.ref.sha256 || view.sha256 !== opts.ref.sha256 || !view.url || !Array.isArray(view.files)) refuse('The style package is not the one this video pinned.');
+  if (!view || !opts.ref.sha256 || view.sha256 !== opts.ref.sha256 || !view.url || !Array.isArray(view.files)) refuse('The style package is not the one this video pinned.');
   const manifestBytes = await opts.download(view.url, 1024 * 1024);
   if (sha256Hex(manifestBytes) !== opts.ref.sha256) refuse('The style package does not match its checksum.');
   const manifest = JSON.parse(manifestBytes.toString('utf8')) as PackageManifest;

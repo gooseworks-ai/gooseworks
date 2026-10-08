@@ -138,7 +138,7 @@ export function fakeLine(script: LineScript = {}) {
     const u = new URL(url);
     if (u.origin === 'https://store.test') return new Response(null, { status: 200 });
     if (u.origin === 'https://files.test') return script.download?.(u, downloadCount++) ?? new Response(Buffer.from(`clip ${u.pathname}`), { status: 200 });
-    if (u.pathname === '/pkg/view') return json(200, pkg.view);
+    if (u.pathname === '/pkg/view') return json(200, { package: pkg.view });
     if (u.pathname === '/pkg/manifest') return new Response(pkg.manifest, { status: 200 });
     if (u.pathname === '/pkg/style.json') return new Response(pkg.styleBytes, { status: 200 });
     const p = u.pathname.replace(`/v1/video-line/${VIDEO}`, '');

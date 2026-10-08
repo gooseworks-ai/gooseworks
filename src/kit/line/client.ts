@@ -228,7 +228,8 @@ export class VideoLine {
 
   /**
    * Downloads a file. Only a link on our own API origin is signed in (the
-   * style package); a provider's or storage link gets no sign-in at all.
+   * style package), with this video's line token once it is handed over;
+   * a provider's or storage link gets no sign-in at all.
    */
   async download(url: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
     const target = new URL(url);
@@ -237,7 +238,7 @@ export class VideoLine {
     }
     const headers: Record<string, string> = {};
     if (target.origin === this.origin) {
-      const auth = this.#login ?? this.#token;
+      const auth = this.#token ?? this.#login;
       if (auth) headers.Authorization = `Bearer ${auth}`;
       if (this.opts.workerId) headers[WORKER_HEADER] = this.opts.workerId;
     }
