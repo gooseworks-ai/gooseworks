@@ -71,6 +71,29 @@ and approval before spending. Hosted installed snapshots use the existing Skills
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
 
+## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example `account_whoami`, `brand_onboarding`,
+`brand_read`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the `gooseworks` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+```bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+```
+
+- Run `npx gooseworks tool --list` once first. It prints the server's rules for using the tools
+  and every tool name; `npx gooseworks tool <name> --schema` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as `next_step` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run `npx gooseworks login --device --no-wait`, show the
+  user the link and code it prints, and run `npx gooseworks login --device` once they approve.
+
+When the tools are registered in this session, call them directly instead.
+
 ## Route to the right skill FIRST
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: `goose-video` for a new request, `make-custom-video` for an explicit original/reference brief, or `goose-video-local` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised `catalog_fetch { type: "skill", slug }`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
@@ -96,7 +119,7 @@ brand and onboarding flow; it does not create another onboarding checklist.
 | --- | --- | --- |
 | Remix/make an ad, research a brand for ads, OR analyze ad performance — Meta/Google ad campaigns, creative fatigue, CAC/lead quality, competitor ad intel, ad angles & hooks | **`goose-ads`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-ads" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style/format | **`goose-graphics`** | If installed locally, use it. Otherwise `gooseworks fetch goose-graphics` (or `gooseworks install --claude --with goose-graphics`). |
-| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. Growth renders in its sandbox; connected coding agents use their local toolchain. | **`goose-video`** | For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume. |
+| Make a **video** ad from a template or an original brief. Template-free briefs and Instagram/direct video references route to make-custom-video. An agent that can run shell commands on the customer's computer makes it there; otherwise the GooseWorks coworker makes it. | **`goose-video`** | For new work, fetch the current goose-video entry from the selected connection, then load the full brand before format suggestions. An installed entry is a bootstrap; keep approved project packages on resume. |
 | Create an original branded video without a template, adapt an Instagram/direct video reference, or resume a generated custom project; separate script and ingredient approvals are required in the same chat | **`make-custom-video`** | Fetch the current make-custom-video entry and its production harness for new work, then read summary, kit, products and learnings before script writing. Read an existing project first and retain its approved package/context on resume. |
 | Render an EXISTING app video project or batch on this machine — the app's "copy for Claude" command names it | **`goose-video-local`** | Read the existing project first. Use the current goose-video-local entry as the connection adapter, retain approved recipe packages/context and apply brand preparation before a new plan or script. |
 | Make **product photos** — studio, lifestyle, marketplace, social, or on-model product photography | **`goose-product-photos`** | In a chat app, fetch it with `catalog_fetch { type: "skill", slug: "goose-product-photos" }`. In a terminal, use the installed entry skill; if it is missing, run `gooseworks install --claude`. |
@@ -186,7 +209,7 @@ On an approved resume, keep the saved brief and evidence; search again only for 
 
 ## Setup
 
-All commands below auto-load credentials from `~/.gooseworks/credentials.json`. If a command exits with "Not logged in", tell the user to run: `npx gooseworks login`. To log out: `npx gooseworks logout`.
+All commands below auto-load credentials from `~/.gooseworks/credentials.json`. If a command exits with "Not logged in", tell the user to run: `npx gooseworks login`. In a cloud sandbox or over SSH, sign in with a code instead: run `npx gooseworks login --device --no-wait` yourself, show the user the link and code it prints, and run `npx gooseworks login --device` once they have approved. To log out: `npx gooseworks logout`.
 
 ### Choose the available runtime — MCP first, then CLI
 
@@ -218,7 +241,9 @@ may show a server prefix (for example `mcp__gooseworks__catalog_search`), a chat
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
 user to reconnect or refresh GooseWorks. Installing or updating the `gooseworks` CLI never fixes
-a missing connector tool, so never send a chat-app user to a terminal for it.
+a missing connector tool, so never send a chat-app user to a terminal for it. An agent that has
+its own shell and a signed-in CLI can call the tool with `npx gooseworks tool` instead (see
+"No GooseWorks tools in this session?" above).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -541,7 +566,7 @@ The `gooseworks` CLI sends authenticated requests (Bearer `GOOSEWORKS_API_KEY`) 
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost and get their yes
-3. **If a `gooseworks` command exits with "Not logged in"**: tell the user to run `npx gooseworks login`
+3. **If a `gooseworks` command exits with "Not logged in"**: tell the user to run `npx gooseworks login` (in a cloud sandbox or over SSH, use the code sign-in described in Setup)
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to `/tmp/gooseworks-scripts/`, install pip deps, then execute. NEVER pollute the user's project directory
 6. **Output files default to `~/Gooseworks/`** — always confirm with the user before saving

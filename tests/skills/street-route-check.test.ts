@@ -35,7 +35,7 @@ describe('goose-video street-interview route check', () => {
     expect(block).toContain('| Guessing (`product-guess`) | Interviewer and up to four people | A physical product to hand over');
     expect(block).toContain('| Conversation (`mic-only`, `product-sample`, `concept-challenge`) | Interviewer and one person |');
     expect(block).toContain('A script and prompt preview only, no finished video yet');
-    expect(block).toContain('**Without a shell** (a chat host), decide from this table. Do not fetch the renderer');
+    expect(block).toContain("**Without a shell on the customer's computer**, decide from this table. Do not fetch the renderer");
     // Neither interview route takes a person photo; the setup is never bent to pass.
     expect(block).toContain('Neither interview route takes a photo of a person: people are described in text');
     expect(block).toContain('never change the interaction, mode or number of people just to make a check pass');

@@ -94,11 +94,16 @@ describe('runDoctorChecks', () => {
     expect(mockCreds).not.toHaveBeenCalled();
   });
 
-  it('fails ffmpeg when the build lacks libx264 or libass, even though ffmpeg is on PATH', () => {
+  it('allows Pillow captions when the build lacks libass', () => {
     machine({ ...healthy, 'ffmpeg -hide_banner -filters': { status: 0, stdout: ' ... scale V->V\n' } });
     const ffmpeg = runDoctorChecks().find((c) => c.id === 'ffmpeg')!;
-    expect(ffmpeg.ok).toBe(false);
-    expect(ffmpeg.detail).toMatch(/lacks libass/);
+    expect(ffmpeg.ok).toBe(true);
+    expect(ffmpeg.detail).toMatch(/Pillow overlays supported/);
+  });
+
+  it('rejects a build without H.264 encoding', () => {
+    machine({ ...healthy, 'ffmpeg -hide_banner -encoders': { status: 0, stdout: 'mpeg4' } });
+    expect(runDoctorChecks().find(c => c.id === 'ffmpeg')).toMatchObject({ ok: false, detail: 'ffmpeg is installed but lacks libx264 encoder' });
   });
 
   it('skips the auth checks when asked (install runs it before login is guaranteed)', () => {

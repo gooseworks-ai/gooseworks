@@ -3,7 +3,7 @@ name: make-custom-video
 slug: make-custom-video
 description: Connect the shared video production harness to GooseWorks projects, script and ingredient approvals, managed media generation, budgets and final delivery. Use for original briefs, Instagram/video references and resumed custom projects.
 category: ads
-version: 2.3.3
+version: 2.4.0
 author: GooseWorks
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/v2
@@ -68,6 +68,29 @@ an existing approved run's recorded package; changing that harness requires a re
 and approval before spending. Hosted installed snapshots use the existing Skills Update action.
 Skill content and a host's cached MCP tool schemas are separate: refreshing one does not refresh
 the other. Check the actual advertised tools before using new fields.
+
+## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example `account_whoami`, `brand_onboarding`,
+`brand_read`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the `gooseworks` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+```bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+```
+
+- Run `npx gooseworks tool --list` once first. It prints the server's rules for using the tools
+  and every tool name; `npx gooseworks tool <name> --schema` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as `next_step` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run `npx gooseworks login --device --no-wait`, show the
+  user the link and code it prints, and run `npx gooseworks login --device` once they approve.
+
+When the tools are registered in this session, call them directly instead.
 
 ## Prepare the video workflow and brand before creative work
 
@@ -238,7 +261,21 @@ review set; do not add a separate approval round.
 
 ## Make Custom Video
 
-The generic production phases run in the Growth sandbox or a connected agent with a shell. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
+The generic production phases run in the Growth sandbox or with an agent that can run shell commands on the customer's computer. GooseWorks owns the project, approvals, budget, uploads and final selection. This adapter replaces Studio desktop files and Tauri approval events with the product contract below.
+
+## Execution preflight
+
+Who makes it: if you can run shell commands on the customer's own computer, you execute this custom project there. If you can't, create the project and hand it to the GooseWorks coworker with goose_run_task { brand_id, project_id, message: the customer's words }. Inside the GooseWorks coworker's own sandbox, make it yourself. Decide this yourself; the server needs no flag for it. Missing libass does not remove shell capability: fetch [[composes::caption-burn]], which uses Pillow and FFmpeg overlay. Fetch every selected specialist and the invoked harness step files before declaring a route unavailable.
+
+For MCP-owned runs set GW_MEDIA_VIA=mcp and GW_PROJECT_ID before running any helper, even if CLI credentials exist. Record the selected account_whoami public API origin as GW_EXPECTED_API_ORIGIN; never open credential files to discover it. Use HTTP only after verifying the matching origin through supported CLI diagnostics. For large MCP relay bodies, use the helper's body_file without retyping: upload that JSON file to this same video project, confirm the returned asset, then call data_post_provider with body_asset_id and omit body when the tool advertises that argument. Its normal project, approval, budget and secret checks still apply. Older connectors must relay the exact saved JSON unchanged.
+
+Before taking over a delegated project, cancel its delegate task and read back that it is detached. Do not request another approval while a stale delegate remains attached. If cancellation is unsupported, save the blocker; a Stop followed by reapproval can wake the same delegate again.
+
+After a paid failure, reconcile the known job and actual charges. Stop after the first identical infrastructure failure; a failed coworker turn can still cost credits. Quotes are estimates, not actual spend. Preserve approved copy while changing cost explanations; show actual cumulative charges from the project ledger.
+
+Run helpers from the run's working directory with explicit absolute input/output paths. For footage, save inspected source in/out bounds and fit:width, including screen.fit:width. A planned creator image may be absent during free take planning; use plan_takes --plan-only instead of generating a placeholder.
+
+The writer's paid critic cannot run before custom script approval. Perform its rubric locally before script review and save that evidence. Only run an external critic when the host explicitly supports it in the current approved phase and budget; never bypass a spend gate or silently claim an independent critic ran.
 
 ## Check the connected tool contract first
 

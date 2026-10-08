@@ -13,7 +13,7 @@ gooseworks --env staging install --claude --mcp --project /tmp/goose-staging-tes
 gooseworks --env staging launch --agent claude --project /tmp/goose-staging-test
 ```
 
-For Codex use `--codex` and `--agent codex`. The isolated profile needs its own Claude or Codex sign-in: add `--login` to the launch command once. Staging Goose sign-in uses `app.staging.gooseworks.ai` and allows the company's internal test accounts.
+For Codex use `--codex` and `--agent codex`. The isolated profile needs its own Claude or Codex sign-in: add `--login` to the launch command once. Staging Goose sign-in uses the staging Growth app, `ads-staging.gooseworks.ai`, and allows the company's internal test accounts.
 
 `--project` chooses the working folder. **`launch` provides isolation**: it changes the child agent's home/configuration, checks the real skill inventory, and gives it only `gooseworks-staging` MCP. Use the launcher every time. Opening the folder in an ordinary agent session uses that agent's normal production setup.
 

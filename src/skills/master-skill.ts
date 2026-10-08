@@ -205,6 +205,19 @@ recorded package and brand inputs stay pinned until an intentional change.
 ${BRAIN_FIRST_ENTRY}`;
 }
 
+/**
+ * Who makes an agent-made video: one rule, in the same words as the server's
+ * (gooseworks-app lib/who-makes-the-video.ts). The agent decides; the server
+ * never guesses it from the host.
+ */
+const WHO_MAKES_THE_VIDEO = `**Who makes the video (one rule).** If you can run shell commands on the customer's own
+computer, you make it there with \`goose-video-local\`: check the toolchain first and, if it
+can't be fixed, hand it off. If you can't, hand it to the GooseWorks coworker with
+\`goose_run_task { brand_id, project_id, message: the customer's words }\`; the one approval,
+Stop and fixes stay in this chat. Inside the GooseWorks coworker's own sandbox you are the
+coworker: make it yourself and never hand off. A hosted code sandbox is not the customer's
+computer. Decide this yourself, never from the host's name; the server needs no flag for it.`;
+
 const CUSTOMER_TALK = `## How to talk to the customer (applies to every message you send them)
 
 The customer is a marketer or founder, not an engineer. Everything in this skill about tools,
@@ -236,6 +249,32 @@ both hosts and the ending. You can also review your recipe ingredients in the ap
 here and I'll make the full video (about N credits)."
 
 ${SKILL_FRESHNESS}`;
+
+// GOOSE-3937: a cloud agent's sandbox (ChatGPT agent, Meta AI, Grok) has a
+// shell but no GooseWorks connector, because those apps load tools from their
+// own settings. `gooseworks tool` calls the same MCP tools with the CLI login.
+const CLI_TOOL_BRIDGE = `## No GooseWorks tools in this session? Call them through the CLI
+
+The GooseWorks tools named here (for example \`account_whoami\`, \`brand_onboarding\`,
+\`brand_read\`) normally come from the GooseWorks connector. If they are not registered in this
+session but you have a shell with the \`gooseworks\` CLI signed in (a cloud sandbox such as
+ChatGPT agent, Meta AI or Grok), call the same tool from the shell:
+
+\`\`\`bash
+npx gooseworks tool <name> '<arguments as a JSON object>'
+\`\`\`
+
+- Run \`npx gooseworks tool --list\` once first. It prints the server's rules for using the tools
+  and every tool name; \`npx gooseworks tool <name> --schema\` shows one tool's arguments.
+- The result prints as JSON. When a tool answers with a one-line summary, the fields you act on
+  (such as \`next_step\` and ids) follow under "Data:". It exits 1 when the tool reports an error.
+- Nothing renders as a widget here, so tell the user the result in plain words.
+- The same rules apply as over the connector: state the credit total and get the user's yes
+  before paid work.
+- If it says you are not logged in, run \`npx gooseworks login --device --no-wait\`, show the
+  user the link and code it prints, and run \`npx gooseworks login --device\` once they approve.
+
+When the tools are registered in this session, call them directly instead.`;
 
 const ENVIRONMENT_IDENTITY = `## Keep the selected connection for the whole run
 
@@ -432,6 +471,8 @@ This skill is also the **parent router** for the GooseWorks family. Data/GTM wor
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ## Route to the right skill FIRST
 
 First apply the **Common company onboarding** gate below. Preserve the user's original request while onboarding, then continue with it as soon as onboarding is complete. For video work, load the current matching workflow from the selected connection first: \`goose-video\` for a new request, \`make-custom-video\` for an explicit original/reference brief, or \`goose-video-local\` for an existing template project/batch. Read an existing project first to determine its actual route and retain its approved packages. Fetch with the advertised \`catalog_fetch { type: "skill", slug }\`; an installed copy or old chat is only a bootstrap. Then load the brand context (**"Load the brand context FIRST"**, immediately below), search the Brand Brain for the task (**"Search the Brand Brain, then propose"**), and follow the matching workflow with both. For other specialized work, **switch to that skill** after loading the brand instead of the data flow below:
@@ -484,7 +525,7 @@ ${BRAIN_FIRST_ENTRY}
 
 ## Setup
 
-All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. To log out: \`npx gooseworks logout\`.
+All commands below auto-load credentials from \`~/.gooseworks/credentials.json\`. If a command exits with "Not logged in", tell the user to run: \`npx gooseworks login\`. In a cloud sandbox or over SSH, sign in with a code instead: run \`npx gooseworks login --device --no-wait\` yourself, show the user the link and code it prints, and run \`npx gooseworks login --device\` once they have approved. To log out: \`npx gooseworks logout\`.
 
 ### Choose the available runtime — MCP first, then CLI
 
@@ -516,7 +557,9 @@ may show a server prefix (for example \`mcp__gooseworks__catalog_search\`), a ch
 
 If one of these tools is missing, the GooseWorks connection or its tool list is stale: ask the
 user to reconnect or refresh GooseWorks. Installing or updating the \`gooseworks\` CLI never fixes
-a missing connector tool, so never send a chat-app user to a terminal for it.
+a missing connector tool, so never send a chat-app user to a terminal for it. An agent that has
+its own shell and a signed-in CLI can call the tool with \`npx gooseworks tool\` instead (see
+"No GooseWorks tools in this session?" above).
 
 Discovery, skill fetching, and ScrapeCreators-backed Brand Growth workflows work fully CLI-free
 this way. Task skills own the endpoint and analysis workflow; this runtime rule owns how the same
@@ -734,7 +777,7 @@ The \`gooseworks\` CLI sends authenticated requests (Bearer \`GOOSEWORKS_API_KEY
 0. **Read the canonical brand context before substantive work**, pass what it returns into whatever skill you route to, and never re-ask the user for a fact it already answers (see "Load the brand context FIRST").
 1. **Consider a GooseWorks skill when it fits the task** — scraping, research, lead gen, enrichment, especially at scale, behind auth, or from a specific source. For a quick lookup your built-in tools are fine; use your judgement and pick the best tool for the user.
 2. **Before paid operations**, tell the user the estimated credit cost and get their yes
-3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\`
+3. **If a \`gooseworks\` command exits with "Not logged in"**: tell the user to run \`npx gooseworks login\` (in a cloud sandbox or over SSH, use the code sign-in described in Setup)
 4. **Parse JSON responses** and present data in a readable format to the user
 5. **When running scripts**: save to \`/tmp/gooseworks-scripts/\`, install pip deps, then execute. NEVER pollute the user's project directory
 6. **Output files default to \`~/Gooseworks/\`** — always confirm with the user before saving
@@ -817,6 +860,8 @@ It works the same in a chat app (ChatGPT, claude.ai, Cowork) and in a terminal c
 everything except the few steps labelled terminal-only goes through the connector's tools.
 
 ${CUSTOMER_TALK}
+
+${CLI_TOOL_BRIDGE}
 
 ${connectorPrerequisite('ads_generate', ' There is no HTTP or file fallback: the REST ad\nendpoints are session-cookie-only and reject your token.')}
 
@@ -1221,11 +1266,11 @@ name: goose-video
 slug: goose-video
 description: >
   Start a video ad in the same chat. Resolve the brand and suggest supported formats with a
-  picker or the returned text choices. An agent with a verified shell makes the video with
-  goose-video-local; a chat host hands the same project to the GooseWorks coworker. Review
-  one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
+  picker or the returned text choices. An agent that can run shell commands on the customer's
+  computer makes the video with goose-video-local; otherwise the GooseWorks coworker makes it.
+  Review one complete template plan and total credits before production. Custom videos retain two authenticated review gates in this chat.
 category: ads
-version: 3.0.6
+version: 3.1.0
 author: GooseWorks
 tags: [gooseworks, ads, video, local-render, coworker, chat]
 ---
@@ -1234,15 +1279,18 @@ tags: [gooseworks, ads, video, local-render, coworker, chat]
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ## Purpose
 
-Resolve the brand, show supported formats and create one saved project. An agent with a verified
-shell follows **\`goose-video-local\`**. A chat host delegates that same project to the GooseWorks
-coworker, which renders in its sandbox. This is agent execution, not a recipe server-order API.
+Resolve the brand, show supported formats and create one saved project. This is agent
+execution, not a recipe server-order API.
 
-**Cards and execution are separate capabilities.** A terminal may render without drawing a
-picker; a chat host may draw a picker while the coworker renders. Follow \`card.display_hint\`
-and \`available_here\`, never a guess from the host's name. Template-remix review stays in this
+${WHO_MAKES_THE_VIDEO}
+
+**Cards and execution are separate.** A terminal may render without drawing a picker; a chat
+app may draw a picker while the coworker renders. Follow \`card.display_hint\` for how to show
+things; who makes the video is the rule above. Template-remix review stays in this
 chat. Custom videos use separate authenticated script and ingredient approvals in this same chat.
 Studio is an optional review surface.
 
@@ -1287,7 +1335,7 @@ plainly that it is a script and prompt preview only. If the brand read shows the
 device itself but the catalog rules guessing out, tell the customer the catalog flagged it and
 confirm what they sell before offering guessing with that device.
 
-- **Without a shell** (a chat host), decide from this table. Do not fetch the renderer: its
+- **Without a shell on the customer's computer**, decide from this table. Do not fetch the renderer: its
   package is far too large for a chat.
 - **With a shell** (the customer's computer or the coworker sandbox), also run its free
   selector, which makes no paid call. If the fetch or the run fails, decide from the table.
@@ -1414,10 +1462,8 @@ Idea requests still follow ad-angle-miner with the video output.
 
 ### 3. Show the picker or its text fallback
 
-Call \`video_catalog_list { kind: "formats", brand_id }\`. On the customer's computer, when you
-can actually execute shell commands, include \`client: { shell: true }\`; in a chat host omit
-that claim. Inside a coworker sandbox follow its reported capabilities, never claim to be the
-customer's computer. Respect requested limit and next_cursor for more item pages; the card may
+Call \`video_catalog_list { kind: "formats", brand_id }\`. Every caller gets every format.
+Respect requested limit and next_cursor for more item pages; the card may
 contain a full picker independently of the item page.
 
 - **card.display_hint:"widget"**: the picker replaces a format table. Write at most one short
@@ -1425,8 +1471,10 @@ contain a full picker independently of the item page.
 - **Otherwise**: print card.text_summary as returned. Without a card, show returned rows with
   names, faithful descriptions, needs and demo links, respecting the requested page size.
   Write "no demo yet" when absent. Never put links only in a question control.
-- A format whose card contradicts what they asked for is never Suggested. Never offer
-  available_here:false as an executable choice. Relay not_available_here in one short line.
+- A format whose card contradicts what they asked for is never Suggested. A \`needs_browser\`
+  format is made only on the customer's computer (the coworker has no browser): if you have no
+  shell there and the customer picks one, say it needs GooseWorks running on their computer and
+  offer another.
 - A row with \`fit.ok: false\` is ruled out for this brand. Never propose it unless the customer,
   after hearing why, still asks for it. For a street interview, insisting never unlocks a route
   the route check rules out; when they asked for one, the one-person conversation preview is the
@@ -1442,11 +1490,11 @@ contain a full picker independently of the item page.
 
 ### 4. Check this machine can render it
 
-- **Chat host without a shell:** skip local checks and delegate an available format in Step 5.
-  Never tell a chat host it needs Claude Code to start. Browser-only formats remain unavailable
-  here; give computer setup guidance only if asked how to make one.
+- **No shell on the customer's computer:** skip local checks and hand the project off in Step 5.
+  Never tell the customer they need Claude Code to start. Give computer setup guidance only if
+  asked how to make a \`needs_browser\` format.
 - **Local shell:** run \`gooseworks doctor --no-browser\` for common setup (auth/MCP, Node 18+,
-  ffmpeg with libx264 + libass, ffprobe). Then fetch the selected template and its capabilities,
+  ffmpeg with libx264 (libass only for an ASS caption route), ffprobe). Then fetch the selected template and its capabilities,
   and install documented dependencies in its fetched folder. Do not guess a renderer from a
   format name. For each Node renderer using default Playwright Chromium, run
   \`gooseworks doctor --renderer-script "/absolute/path/to/the/fetched/scripts/record.js"\` with
@@ -1454,8 +1502,8 @@ contain a full picker independently of the item page.
   Use the actual script path. Custom browser launch settings need their equivalent exact-runtime
   check. Non-browser capabilities need only their documented runtime checks.
   Never create paid ingredients before the selected renderer passes. Repair and recheck under
-  existing setup permissions. If it cannot be fixed, re-list with client:{shell:false} and
-  delegate only a format available to the coworker; never silently change the selected format.
+  existing setup permissions. If it cannot be fixed, hand the project off in Step 5 (a
+  \`needs_browser\` format can't be: offer another); never silently change the selected format.
 - **Coworker sandbox:** you are the renderer. Follow goose-video-local's sandbox checks; never
   hand off recursively or claim browser capability that the sandbox lacks.
 
@@ -1463,17 +1511,17 @@ contain a full picker independently of the item page.
 
 1. \`video_project_upsert { brand_id, name, format: <template_id> }\` with no brief (a brief creates
    a concept batch). A street interview is created only after its route check found a supported
-   setup. Include client:{shell:true} only for real local execution. Default
+   setup. Default
    creation_intent:"format" keeps the style with this brand's content; source_remix requires an
    explicit choice to use source content.
    If they already chose a campaign/concept, include its verified campaign_id and optional
    campaign_concept_id. Read the IDs from that brand's saved campaign; the concept must belong
    to it. Omit unknown IDs and never infer a link or create a campaign solely to file a video.
-2. **Verified local shell or coworker sandbox:** load
+2. **You make it** (a shell on the customer's computer, or the coworker sandbox): load
    \`catalog_fetch { type: "skill", slug: "goose-video-local" }\` and follow it on the same project_id.
    Carry the customer's words, verified defaults, campaign, selected angle and a street
    interview's route check result into its brief.
-3. **Chat host:** \`goose_run_task { brand_id, project_id, message }\` with the request, selected
+3. **No shell there:** \`goose_run_task { brand_id, project_id, message }\` with the request, selected
    format, defaults and a street interview's route check result. Keep task_id. Continue questions/edits with the same task and project.
    A saved free draft is not a started worker or a complete plan. Follow actual saved state.
 4. When follow.card_follows is true, the card follows progress: do not re-read it in a loop.
@@ -1481,6 +1529,9 @@ contain a full picker independently of the item page.
    plan needs the returned recovery action; never claim completion or approve an empty plan.
    Approval requires the current complete plan and total. Insufficient balance: offer a shorter
    video or top-up. “Not now” keeps the saved plan.
+5. On the customer's yes, record it with \`video_project_upsert { brand_id, project_id, patch:
+   { approve: { user_quote, total_credits } } }\`. Its reply says what comes next: the coworker
+   gets the approval when it is making the video; otherwise you render it.
 
 Do not hand the customer a command to paste somewhere else.
 
@@ -1509,7 +1560,7 @@ and its usable delivery link.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Picker plus table | Ignored display_hint | Widget: one line; otherwise text_summary |
-| Terminal loses formats | Confused cards with execution | Declare real shell capability and check renderer |
+| Agent with a shell hands off | Decided from the host, not the rule | Make it here; hand off only without a shell or a fixable toolchain |
 | Chat told it cannot start | Only local execution considered | Create once and delegate to coworker |
 | Worker ends without a plan | Assumed completion means ready | Follow actual failure/recovery state |
 | Two projects for one video | Recreated instead of resuming | Continue same project and task |
@@ -1552,10 +1603,10 @@ description: >
   gooseworks CLI) OR inside a GooseWorks workspace sandbox (canonical MCP tools + Bash, no CLI).
   Use for a client-side format project (created by goose-video), a template-remix project or a
   video batch. A copy-for-Claude command or project id must first be checked with
-  video_project_read. A hosted connector with no shell hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
+  video_project_read. An agent that can't run shell commands on the customer's computer hands this same project to the GooseWorks coworker. To start a NEW video ad in chat,
   use goose-video first.
 category: ads
-version: 0.6.7
+version: 0.7.0
 author: GooseWorks
 tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sandbox, byoa]
 ---
@@ -1564,11 +1615,16 @@ tags: [gooseworks, ads, video, remix, imessage, podcast, ugc, local-render, sand
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ${videoEntryPreparation('goose-video-local')}
 
 ## Chat hosts and cards
 
-First perform the mandatory route check below. Then, without a shell, hand a verified template
+${WHO_MAKES_THE_VIDEO}
+
+First perform the mandatory route check below. Then, if you can't run shell commands on the
+customer's computer, hand a verified template
 project to \`goose_run_task { brand_id, project_id, message }\`, or a verified template batch to
 \`goose_run_task { brand_id, batch_id, message }\` (never send both ids). Keep task_id and the
 same project or batch. Generated custom children keep their separate make-custom-video flow.
@@ -1623,7 +1679,8 @@ ${ASSET_READINESS}
 
 ## Where am I running? (decide once, first)
 
-Check in Bash, without printing any secret value:
+With no shell on the customer's computer at all, you don't render here: hand the project off
+(Chat hosts and cards above). Otherwise check in Bash, without printing any secret value:
 
 \`\`\`bash
 [ -n "$GW_MEDIA_PROXY_TOKEN" ] && echo sandbox || echo local
@@ -1786,7 +1843,7 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
   1. **Sandbox →** see "Running in a GooseWorks sandbox": ffmpeg + ffprobe (+ PIL on demand); no
      Chromium, so browser formats stop there.
   2. **CLI present →** run \`gooseworks doctor --no-browser\` for login, MCP, Node 18+, ffmpeg
-     with libx264 + libass, and ffprobe. This is common setup only. After fetching the selected
+     with libx264, and ffprobe. Require libass only for a selected ASS caption route; caption-burn uses Pillow overlays and does not need it. This is common setup only. After fetching the selected
      capabilities in Step 2, check each browser renderer's actual launch before ANY paid
      ingredient. An unscoped \`gooseworks doctor\` checks only the calling folder's browser;
      it cannot certify a different fetched renderer.
@@ -1801,7 +1858,10 @@ the skill. It's fire-and-forget, never counts against you, and never blocks your
      **\`ghcr.io/gooseworks-ai/goose-video-render\`** (ffmpeg + ffprobe + Playwright Chromium baked
      in), mounting the project working directory. (Nested Docker is usually disabled inside
      managed sandboxes — treat this as an option, not a guarantee.)
-  5. **None of the above works →** STOP and tell the user plainly, e.g.: *"Video rendering needs
+  5. **None of the above works →** on the customer's computer, hand the project to the GooseWorks
+     coworker with \`goose_run_task\` (a \`needs_browser\` format can't be: offer another). Inside the
+     coworker sandbox, or when the customer wants it made on their own machine, STOP and tell the
+     user plainly, e.g.: *"Video rendering needs
      ffmpeg (and, for this format, a Playwright Chromium) on the machine running this agent. This
      environment doesn't have them and I can't install them here. Options: (a) enable Docker so I
      can use the goose-video-render image, (b) install ffmpeg + \`npx playwright install chromium\`,
@@ -2452,8 +2512,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
    “Not now” keeps the plan. In a coworker sandbox end the turn after saving the review set;
    the customer's approval arrives as the next message.
    Record the explicit yes with \`video_project_upsert { brand_id, project_id, patch: { approve:
-   { user_quote: "<their exact words>", total_credits: <the saved total> } } }\` before rendering.
-   A single project requires recorded approval too; never treat an absent approval as permission.
+   { user_quote: "<their exact words>", total_credits: <the saved total> } } }\` before rendering;
+   its reply says what comes next. A single project requires recorded approval too; never treat an absent approval as permission.
    Changes require an updated saved review, clearing prior approval, and approval of the new
    total. One yes authorizes the remaining approved chain. On insufficient_balance start
    nothing; offer a shorter video or top-up. Remove batch concepts with patch.concepts remove:true,
@@ -2463,7 +2523,8 @@ ingredient here is only a genuinely separate SOURCE clip the format needs (e.g. 
 
 1. **Open the render row FIRST** — right after recording the Step 3 approval, before any paid
    generation (if this returns \`approval_required\`, the approval is missing or was cleared: go
-   back to Step 3 and ask in this chat, don't retry):
+   back to Step 3 and ask in this chat, don't retry; if it returns \`coworker_makes_it\`, the video
+   was handed to the GooseWorks coworker, so don't render it: the coworker is making it):
    \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_OPEN_ARGS} }\` (no \`dry_run\`; returns
    \`render_id\`) → keep \`render_id\`, then mark it running:
    \`${RENDER_ROW_TOOL} { brand_id, project_id, ${RENDER_UPDATE_KEY}: { render_id, status: "running",
@@ -2859,6 +2920,8 @@ screenshot or an app mockup is not a product photo: that is an image edit, not t
 
 ${CUSTOMER_TALK}
 
+${CLI_TOOL_BRIDGE}
+
 ${connectorPrerequisite('photos_generate')}
 
 ## Start from the brand context — don't re-ask what it already answers
@@ -2974,5 +3037,5 @@ whether a human model is wanted (which needs explicit consent — see the rules)
 
 /** Thin GooseWorks connection to the catalog-published production harness. */
 export function getMakeCustomVideoSkillContent(): string {
-  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${videoEntryPreparation('make-custom-video')}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
+  return CUSTOM_VIDEO_ADAPTER_CONTENT.replace("\n# Agent version\n", `\n# Agent version\n\n${CUSTOMER_TALK}\n\n${CLI_TOOL_BRIDGE}\n\n${videoEntryPreparation('make-custom-video')}\n\n${ENVIRONMENT_IDENTITY}\n\n${ASSET_READINESS}\n`) + STORED_FOOTAGE_GUIDANCE;
 }
