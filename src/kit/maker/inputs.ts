@@ -1,6 +1,10 @@
 // The html-frames inputs, read and checked before anything starts. Bundled
-// into the part (part.mjs): Node built-ins only, nothing from the kit core.
+// into the part (part.mjs) with the input schema from its part.json and the
+// kit core's schema checker, so the part refuses exactly what part.json does,
+// however it is called.
+import { schemaErrors } from '../core/schema';
 import type { FileRef, PartContext } from '../part-interface';
+import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.0.0/part.json';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -192,6 +196,8 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
     throw ctx.error('bad_input', detail);
   };
   if (!isObject(raw)) fail('inputs should be an object');
+  const schemaProblems = schemaErrors(INPUT_SCHEMA, raw);
+  if (schemaProblems.length) fail(schemaProblems.slice(0, 3).join('; '));
   const template = fileOf(raw.template, 'template', ['html'], fail);
   const framesRaw = raw.frames ?? [];
   if (!Array.isArray(framesRaw) || framesRaw.length > LIMITS.frames) fail(`frames should be a list of up to ${LIMITS.frames} files`);
