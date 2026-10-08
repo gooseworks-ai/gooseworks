@@ -57,7 +57,11 @@ describe('html-frames through the kit', () => {
       const dir = path.join(FIXTURES, 'pilots', style);
       const step = JSON.parse(readFileSync(path.join(dir, 'step.json'), 'utf8')) as { id: string; inputs: Record<string, unknown> };
       const plan = JSON.parse(readFileSync(path.join(dir, 'plan.json'), 'utf8')) as { scenes: Array<Record<string, unknown>> };
-      plan.scenes.forEach((scene) => (scene.picture = null));
+      // Plan files arrive as files: the scene's uploaded image becomes a FileRef, as the core hands it over.
+      plan.scenes.forEach((scene) => {
+        scene.picture = null;
+        if (typeof scene.image === 'string') scene.image = fileRef(path.join(FIXTURES, scene.image));
+      });
       const assets = new Map<string, FileRef>();
       const collect = (value: unknown): void => {
         if (!value || typeof value !== 'object') return;

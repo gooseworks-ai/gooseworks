@@ -5,7 +5,8 @@
       "id": "s1",
       "line": null,
       "on_screen": "= your standup, written before anyone opens chat",
-      "picture": "media/partner-icon.svg"
+      "picture": null,
+      "image": "media/partner-icon.svg"
     },
     {
       "id": "s2",
