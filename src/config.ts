@@ -15,10 +15,13 @@ assertConnection(API_BASE, 'api');
 // Goose Growth app (ads-frontend) at make.gooseworks.ai/cli/auth, which is a
 // straight port of the old CLI login page. Old published CLI versions still hit
 // app.gooseworks.ai and are handled by the sunset redirect layer.
-export const FRONTEND_URL = process.env.GOOSEWORKS_FRONTEND_URL || (getEnvironment() === 'staging' ? 'https://app.staging.gooseworks.ai' : 'https://make.gooseworks.ai');
+export const FRONTEND_URL = process.env.GOOSEWORKS_FRONTEND_URL || (getEnvironment() === 'staging' ? 'https://ads-staging.gooseworks.ai' : 'https://make.gooseworks.ai');
 if (getEnvironment() === 'staging') {
   const url = new URL(FRONTEND_URL);
-  if (url.protocol !== 'https:' || !url.hostname.endsWith('.staging.gooseworks.ai') || url.username || url.password) throw new Error('Staging sign-in must use the staging frontend');
+  // The staging Growth app is ads-staging.gooseworks.ai (make.gooseworks.ai's staging twin);
+  // app.staging is the retired GTM app and has no /link.
+  const stagingFrontend = url.hostname === 'ads-staging.gooseworks.ai' || url.hostname.endsWith('.staging.gooseworks.ai');
+  if (url.protocol !== 'https:' || !stagingFrontend || url.username || url.password) throw new Error('Staging sign-in must use the staging frontend');
 }
 // Public graphics hub (skills + formats catalog). Distinct host from FRONTEND_URL:
 // `app.gooseworks.ai` has no /styles or /formats routes — those live on skills.gooseworks.ai.
