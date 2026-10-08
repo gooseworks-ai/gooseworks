@@ -25,9 +25,14 @@ import { unzipTo } from './unzip';
 
 // The few Playwright calls the kit makes, typed here so the kit builds
 // without Playwright's own types.
+interface PwFrame {
+  url(): string;
+}
 interface PwRequest {
   url(): string;
   failure(): { errorText: string } | null;
+  isNavigationRequest(): boolean;
+  frame(): PwFrame;
 }
 interface PwRoute {
   request(): PwRequest;
@@ -47,6 +52,8 @@ interface PwPage {
   on(event: 'pageerror', handler: (error: Error) => void): void;
   on(event: 'worker' | 'frameattached' | 'crash', handler: () => void): void;
   on(event: 'dialog', handler: (dialog: PwDialog) => void): void;
+  on(event: 'framenavigated', handler: (frame: PwFrame) => void): void;
+  mainFrame(): PwFrame;
 }
 interface PwContext {
   route(url: string, handler: (route: PwRoute) => unknown): Promise<void>;
@@ -89,6 +96,7 @@ export const CHROMIUM_ARGS = [
   '--disable-sync',
   '--no-pings',
   '--host-resolver-rules=MAP * ~NOTFOUND',
+  '--disable-3d-apis',
   '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
   '--webrtc-ip-handling-policy=disable_non_proxied_udp',
 ];
@@ -101,6 +109,10 @@ const LOCKDOWN = `(() => {
   const refuse = (name) => function () { throw new DOMException(name + ' is not available', 'SecurityError'); };
   for (const name of ['WebSocket', 'Worker', 'SharedWorker']) {
     try { Object.defineProperty(window, name, { value: refuse(name), writable: false, configurable: false }); } catch (e) {}
+  }
+  // A page rewritten with document.open or write would lose what the kit put first in it.
+  for (const name of ['open', 'write', 'writeln']) {
+    try { Object.defineProperty(Document.prototype, name, { value: refuse('document.' + name), writable: true, configurable: true }); } catch (e) {}
   }
 })();`;
 
@@ -157,7 +169,36 @@ export interface ShellDownload {
  * kit says so instead of unpacking an unchecked download. Fill a new revision
  * with `npx tsx scripts/pin-kit-browser.ts` when playwright-core moves.
  */
-export const SHELL_DOWNLOADS: Record<string, Record<string, ShellDownload>> = {};
+export const SHELL_DOWNLOADS: Record<string, Record<string, ShellDownload>> = {
+  // Chrome for Testing 149.0.7827.55, as playwright-core 1.61.0 pins it.
+  '1228': {
+    'darwin-arm64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip',
+      bytes: 98043456,
+      sha256: '302f82603be06683947594ecd60f849e362a8fe3dd82a89bd4408477c97e75a6',
+    },
+    'darwin-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-x64/chrome-headless-shell-mac-x64.zip',
+      bytes: 103452247,
+      sha256: 'a32029e1861329a431b712d5b864e213d9cf8ef51a82ce4c24b27e25f6605434',
+    },
+    'linux-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip',
+      bytes: 119778157,
+      sha256: '410c9407d5de3fea80d9398666be06f2aa09154a3fa7b327dc254e336bb4c4b7',
+    },
+    'linux-arm64': {
+      url: 'https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1228/chromium-headless-shell-linux-arm64.zip',
+      bytes: 115342043,
+      sha256: '1652929a70f4afb17aca36fce073fb7ed22262d16825be761b0801972f43ac4f',
+    },
+    'win32-x64': {
+      url: 'https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/win64/chrome-headless-shell-win64.zip',
+      bytes: 119099822,
+      sha256: '5cfda0c763aa6a867ce2efad0c467e3220e9c5c01c4cba02fd57afe49ede5457',
+    },
+  },
+};
 
 /** The kit's own fetch: follows redirects, stops at maxBytes. */
 async function fetchToFile(url: string, target: string, maxBytes: number): Promise<void> {
@@ -395,22 +436,39 @@ export function createKitBrowserSupport(options: KitBrowserSupportOptions = {}):
           if (problems.length < 20 && !problems.includes(message)) problems.push(message);
         };
         const blocked = new Set<string>();
+        // The only documents the page may hold are the ones the part opens (goto, setContent).
+        let opening: string | null = null;
+        let current: string | null = null;
+        let page: PwPage | null = null;
+        const withoutHash = (url: string) => url.split('#')[0];
         const context = await browser.newContext(contextOptions(viewport, scale));
         await context.addInitScript({ content: LOCKDOWN });
         await context.route('**/*', (route) => {
-          const url = route.request().url();
+          const request = route.request();
+          const url = request.url();
+          if (page && request.isNavigationRequest() && request.frame() === page.mainFrame() && opening === null) {
+            blocked.add(url);
+            note(`The page tried to move to another document (${shortUrl(url)}). A frame page stays on the page it was opened on.`);
+            return route.abort('blockedbyclient');
+          }
           if (allowedFileUrl(url, roots)) return route.continue();
           blocked.add(url);
           note(`The page tried to reach ${shortUrl(url)}. Pages may load only their own files.`);
           return route.abort('blockedbyclient');
         });
-        let page: PwPage | null = null;
         context.on('page', (opened) => {
           if (page === null || opened === page) return;
           note('The page opened another window.');
           void opened.close().catch(() => undefined);
         });
         page = await context.newPage();
+        const main = page.mainFrame();
+        page.on('framenavigated', (frame) => {
+          if (frame !== main) return;
+          const at = withoutHash(frame.url());
+          if (opening !== null) return;
+          if (current !== null && at !== current) note(`The page moved to another document (${shortUrl(at)}). A frame page stays on the page it was opened on.`);
+        });
         page.on('requestfailed', (request) => {
           const url = request.url();
           if (!blocked.has(url)) note(`The page could not load ${shortUrl(url)} (${request.failure()?.errorText ?? 'failed'}).`);
@@ -431,26 +489,44 @@ export function createKitBrowserSupport(options: KitBrowserSupportOptions = {}):
         };
         const guarded = async <T>(work: () => Promise<T>): Promise<T> => {
           clean();
-          const result = await work();
+          let result: T;
+          try {
+            result = await work();
+          } catch (error) {
+            // A call that failed because the page broke a rule (a navigation destroys the page's
+            // context, for one) reports the rule, not the browser's own words.
+            clean();
+            throw error;
+          }
           clean();
           return result;
+        };
+        const opened = page;
+        const openDocument = async <T>(target: string, work: () => Promise<T>): Promise<T> => {
+          opening = target;
+          try {
+            return await work();
+          } finally {
+            opening = null;
+            current = withoutHash(opened.mainFrame().url());
+          }
         };
         return {
           goto: (url) =>
             guarded(async () => {
               if (!allowedFileUrl(url, roots)) throw plain('A page may open only files in its own folders.');
-              return page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+              return openDocument(url, () => opened.goto(url, { waitUntil: 'load', timeout: 60_000 }));
             }),
-          setContent: (html) => guarded(() => page.setContent(html, { waitUntil: 'load', timeout: 60_000 })),
-          evaluate: (fn, arg) => guarded(() => page.evaluate(fn, arg)) as never,
+          setContent: (html) => guarded(() => openDocument('about:blank', () => opened.setContent(html, { waitUntil: 'load', timeout: 60_000 }))),
+          evaluate: (fn, arg) => guarded(() => opened.evaluate(fn, arg)) as never,
           screenshot: (opts) =>
             guarded(async () => {
               const target = path.resolve(opts.path);
               if (!roots.some((root) => inside(root, realOrResolved(target)))) throw plain('A screenshot may be saved only in the step’s own folders.');
-              return page.screenshot({ path: target, type: opts.type ?? 'png', omitBackground: opts.omitBackground ?? false });
+              return opened.screenshot({ path: target, type: opts.type ?? 'png', omitBackground: opts.omitBackground ?? false });
             }),
           async close() {
-            await page.close().catch(() => undefined);
+            await opened.close().catch(() => undefined);
             await context.close().catch(() => undefined);
           },
         };

@@ -12,6 +12,27 @@
 // so the maker can refuse the page with a plain reason. The kit's browser
 // watches from outside too (requests, errors, workers, frames, popups).
 //
+// Frames are first-party style files, reviewed in goose-studio, so this guards
+// against mistakes and drift, not against a page written to escape it.
+//
+// Known limits (not closed here):
+// - Native MessageChannel and postMessage tasks run on the browser's own timing.
+// - SubtleCrypto can still use randomness (random keys are refused), and object
+//   URL ids (blob:...) are random; a page that shows either text drifts.
+// - Animation.startTime and SVG getCurrentTime read before kit.ready() resolves
+//   come from the browser's clock.
+// - Scroll and view timelines are refused; WebGL is off (the browser runs with
+//   --disable-3d-apis).
+// - The browser's render fingerprint draws only the generic font families, so
+//   two computers that differ only in a named system font share a cache key.
+// - A closed shadow root made by setHTMLUnsafe, or written with an
+//   entity-encoded shadowrootmode, is out of the runtime's reach.
+// - url() tokens written with CSS escapes are not found in style text, so a
+//   data: or blob: picture named that way is not checked.
+// - The browser download's unpacker does not catch names that differ only in
+//   case on a case-insensitive disk; the zip comes only from the pinned,
+//   checksummed browser download, so it is first-party too.
+//
 // Plain ES2020 in a string: nothing here is compiled, so the page runs exactly
 // this text. Keep it free of backticks and "${".
 
@@ -48,6 +69,8 @@ const RUNTIME = String.raw`(function () {
   var nativeRaf = window.requestAnimationFrame.bind(window);
   var nativeSetTimeout = window.setTimeout.bind(window);
   var NativeChannel = window.MessageChannel;
+  var nativeFetch = window.fetch.bind(window);
+  var nativeAttachShadow = Element.prototype.attachShadow;
   var nativeEntries = Performance.prototype.getEntriesByType;
   var nativeMark = Performance.prototype.mark;
   var nativeMeasure = Performance.prototype.measure;
@@ -211,6 +234,12 @@ const RUNTIME = String.raw`(function () {
     report('The frame page fetches ' + String(url).slice(0, 200) + '. Frame pages get their data from the kit and load only their own files.');
     throw new DOMException('XMLHttpRequest is not available in frame pages', 'NotSupportedError');
   });
+  ['open', 'write', 'writeln'].forEach(function (name) {
+    define(Document.prototype, name, function () {
+      report('The frame page rewrites its document (document.' + name + '). Frame pages change the page they are on.');
+      throw new DOMException('document.' + name + ' is not available in frame pages', 'NotSupportedError');
+    });
+  });
   define(Navigator.prototype, 'sendBeacon', function sendBeacon(url) { reach(url, 'beacon'); return false; });
   if (window.EventSource) define(window, 'EventSource', function EventSource(url) { reach(url, 'EventSource'); throw new DOMException('EventSource is not available', 'SecurityError'); });
   function noMedia() { report('The frame page plays video or sound. Frame pages show pictures and text only.'); }
@@ -218,10 +247,16 @@ const RUNTIME = String.raw`(function () {
     noMedia();
     return Promise.reject(new DOMException('Media is not available in frame pages', 'NotAllowedError'));
   });
+  ['ScrollTimeline', 'ViewTimeline'].forEach(function (name) {
+    if (window[name]) define(window, name, function () { report('The frame page uses a scroll timeline. Frame pages move with time only.'); throw new DOMException('Scroll timelines are not available in frame pages', 'NotSupportedError'); });
+  });
   ['AudioContext', 'webkitAudioContext', 'OfflineAudioContext'].forEach(function (name) {
     if (window[name]) define(window, name, function () { noMedia(); throw new DOMException(name + ' is not available', 'NotSupportedError'); });
   });
-  new MutationObserver(function (records) {
+  // Every tree the page draws in: the document and each shadow root, open,
+  // closed (recorded when made) or declarative (found by walking).
+  var roots = [document];
+  var mediaWatch = new MutationObserver(function (records) {
     for (var i = 0; i < records.length; i++) {
       var added = records[i].addedNodes;
       for (var j = 0; j < added.length; j++) {
@@ -230,7 +265,25 @@ const RUNTIME = String.raw`(function () {
         if (/^(VIDEO|AUDIO)$/.test(node.tagName) || node.querySelector('video, audio')) noMedia();
       }
     }
-  }).observe(document, { childList: true, subtree: true });
+  });
+  function addRoot(root) {
+    if (roots.indexOf(root) >= 0) return;
+    roots.push(root);
+    mediaWatch.observe(root, { childList: true, subtree: true });
+  }
+  mediaWatch.observe(document, { childList: true, subtree: true });
+  define(Element.prototype, 'attachShadow', function attachShadow(init) {
+    var root = nativeAttachShadow.call(this, init);
+    addRoot(root);
+    return root;
+  });
+  function findRoots() {
+    for (var r = 0; r < roots.length; r++) {
+      var all = roots[r].querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) if (all[i].shadowRoot) addRoot(all[i].shadowRoot);
+    }
+    for (var k = 0; k < roots.length; k++) if (roots[k].querySelector('video, audio')) noMedia();
+  }
   window.addEventListener('error', function (event) {
     var target = event.target;
     if (target && target !== window && target.tagName) {
@@ -258,20 +311,25 @@ const RUNTIME = String.raw`(function () {
   // to its age on the virtual clock. SVG animations follow the same clock.
   var born = new WeakMap();
   function syncAnimations() {
-    var list = document.getAnimations ? document.getAnimations() : [];
-    for (var i = 0; i < list.length; i++) {
-      var animation = list[i];
-      if (!born.has(animation)) {
-        born.set(animation, now);
-        try { animation.pause(); } catch (e) {}
+    var seen = new Set();
+    for (var r = 0; r < roots.length; r++) {
+      var list = roots[r].getAnimations ? roots[r].getAnimations() : [];
+      for (var i = 0; i < list.length; i++) {
+        var animation = list[i];
+        if (seen.has(animation)) continue;
+        seen.add(animation);
+        if (animation.timeline && animation.timeline !== document.timeline) report('The frame page uses a scroll timeline. Frame pages move with time only.');
+        if (!born.has(animation)) born.set(animation, now);
+        // Paused every time: a page that calls play() never gets a moment on the computer's clock.
+        try { if (animation.playState !== 'paused') animation.pause(); } catch (e) {}
+        try { animation.currentTime = Math.max(0, now - born.get(animation)); } catch (e) {}
       }
-      try { animation.currentTime = Math.max(0, now - born.get(animation)); } catch (e) {}
-    }
-    var svgs = document.getElementsByTagName('svg');
-    for (var j = 0; j < svgs.length; j++) {
-      var svg = svgs[j];
-      if (svg.ownerSVGElement || typeof svg.pauseAnimations !== 'function') continue;
-      try { svg.pauseAnimations(); svg.setCurrentTime(now / 1000); } catch (e) {}
+      var svgs = roots[r].querySelectorAll('svg');
+      for (var j = 0; j < svgs.length; j++) {
+        var svg = svgs[j];
+        if (svg.ownerSVGElement || typeof svg.pauseAnimations !== 'function') continue;
+        try { svg.pauseAnimations(); svg.setCurrentTime(now / 1000); } catch (e) {}
+      }
     }
   }
 
@@ -367,11 +425,70 @@ const RUNTIME = String.raw`(function () {
     await task();
   }
 
-  function take() {
+  // Pictures the page makes from data: and blob: URLs, in HTML, SVG or CSS.
+  // Each is read once and handed to the maker, which refuses one that moves.
+  var sourcesSeen = Object.create(null);
+  var URL_IN_CSS = /url\(\s*(['"]?)((?:data|blob):[^'")]*)\1\s*\)/gi;
+  function inlineSources() {
+    var found = [];
+    var add = function (url) {
+      if (url && /^(data|blob):/i.test(url) && !sourcesSeen[url]) { sourcesSeen[url] = 1; found.push(url); }
+    };
+    var css = function (text) {
+      var match;
+      URL_IN_CSS.lastIndex = 0;
+      while ((match = URL_IN_CSS.exec(text))) add(match[2]);
+    };
+    for (var r = 0; r < roots.length; r++) {
+      var root = roots[r];
+      // The picture each element really shows (its currentSrc), never the candidates in srcset.
+      root.querySelectorAll('img, input[type=image]').forEach(function (el) { add(el.currentSrc || el.src); });
+      root.querySelectorAll('image, feImage, use').forEach(function (el) { add(el.getAttribute('href') || el.getAttribute('xlink:href')); });
+      root.querySelectorAll('[style]').forEach(function (el) { css(el.getAttribute('style') || ''); });
+      var sheets = Array.prototype.slice.call(root.styleSheets || []).concat(Array.prototype.slice.call(root.adoptedStyleSheets || []));
+      var read = [];
+      var walk = function (sheet) {
+        if (!sheet || read.indexOf(sheet) >= 0) return;
+        read.push(sheet);
+        var rules;
+        try { rules = sheet.cssRules; } catch (e) { return; }
+        for (var i = 0; i < rules.length; i++) {
+          // An @import rule's text is only its own line; its rules live in its sheet.
+          if (rules[i].styleSheet) walk(rules[i].styleSheet);
+          else css(rules[i].cssText);
+        }
+      };
+      sheets.forEach(walk);
+    }
+    return found;
+  }
+  function toBase64(bytes) {
+    var text = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  }
+  async function readSource(url) {
+    try {
+      // The browser decodes the URL as it would to draw it (base64 or percent-encoded bytes).
+      var response = await nativeFetch(url);
+      if (!response.ok) throw new Error('not readable');
+      return toBase64(new Uint8Array(await response.arrayBuffer()));
+    } catch (e) {
+      report('The picture ' + url.slice(0, 80) + ' could not be read.');
+      return null;
+    }
+  }
+  async function take() {
     scanResources();
+    var sources = [];
+    var urls = inlineSources();
+    for (var i = 0; i < urls.length; i++) {
+      var data = await readSource(urls[i]);
+      if (data !== null) sources.push({ url: urls[i].slice(0, 120), data: data });
+    }
     var out = problems.slice();
     problems.length = 0;
-    return out;
+    return { problems: out, sources: sources };
   }
 
   var driver = {
@@ -392,12 +509,14 @@ const RUNTIME = String.raw`(function () {
         image.src = url;
         return image.decode().catch(function () { report('The picture ' + url + ' could not be read.'); });
       }));
-      if (document.querySelector('video, audio')) noMedia();
+      findRoots();
       syncAnimations();
       await settle();
+      syncAnimations();
       return take();
     },
     frame: async function (index) {
+      findRoots();
       var target = (index * 1000) / DATA.fps;
       runTimers(target);
       now = target;
@@ -419,12 +538,16 @@ const RUNTIME = String.raw`(function () {
       } catch (e) {
         report('The frame page threw an error while drawing: ' + String(e && e.message ? e.message : e).slice(0, 300));
       }
+      findRoots();
       syncAnimations();
       await settle();
+      // Anything the page did while the browser settled is set back to the frame's time.
+      syncAnimations();
       return take();
     },
     finish: async function () {
       await settle();
+      findRoots();
       return take();
     }
   };

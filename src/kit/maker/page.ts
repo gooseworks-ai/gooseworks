@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, PartContext } from '../part-interface';
-import { isAnimatedImage } from './images';
+import { cssDataUrls, isAnimatedImage } from './images';
 import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
@@ -96,7 +96,17 @@ function cssString(value: string): string {
   return JSON.stringify(value);
 }
 
-export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartContext, 'error' | 'log'>): Promise<BuiltPage> {
+/**
+ * Builds the page folder. `reserve(bytes)` is called before every write and
+ * throws when the maker's working space would run out, so nothing is written
+ * past it.
+ */
+export async function buildPage(
+  spec: MakerSpec,
+  dir: string,
+  ctx: Pick<PartContext, 'error' | 'log'>,
+  reserve: (bytes: number) => void = () => undefined,
+): Promise<BuiltPage> {
   const fail: Fail = (detail) => {
     throw ctx.error('bad_input', detail);
   };
@@ -104,11 +114,19 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
   await mkdir(path.join(dir, KIT_FOLDER, 'media'), { recursive: true });
   let bytes = 0;
   const put = async (target: string, data: Buffer | string) => {
+    const size = Buffer.byteLength(data);
+    reserve(size);
     await writeFile(target, data);
-    bytes += Buffer.byteLength(data);
+    bytes += size;
   };
   const still = (ref: FileRef, data: Buffer) => {
-    if (isAnimatedImage(data, ref.mime)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
+    if (isAnimatedImage(data)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
+  };
+  // A closed shadow root written into the page's HTML is out of the kit runtime's reach.
+  const openTrees = (ref: FileRef, data: Buffer) => {
+    if (/\bshadowroot(mode)?\s*=\s*["']?closed/i.test(data.toString('utf8'))) {
+      fail(`the frame ${path.basename(ref.path)} declares a closed shadow root; use an open one`);
+    }
   };
 
   // The template and its frames keep their places relative to each other.
@@ -129,6 +147,14 @@ export async function buildPage(spec: MakerSpec, dir: string, ctx: Pick<PartCont
     }
     placed.set(rel, ref.sha256);
     const data = await readChecked(ref, fail);
+    if (ref.media === 'html') openTrees(ref, data);
+    // The page can't read the rules of its own stylesheet files (each file is its own origin),
+    // so the pictures they name as data: URLs are checked here.
+    if (ref.mime === 'text/css' || /\.css$/i.test(ref.path)) {
+      for (const inline of cssDataUrls(data.toString('utf8'))) {
+        if (isAnimatedImage(inline.bytes)) fail(`the stylesheet ${rel} names a picture that moves on its own; frame pages take still pictures and draw any motion themselves`);
+      }
+    }
     const target = path.join(dir, ...rel.split('/'));
     await mkdir(path.dirname(target), { recursive: true });
     if (ref === spec.template) continue;
