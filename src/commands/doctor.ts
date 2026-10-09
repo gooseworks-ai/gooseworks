@@ -77,7 +77,7 @@ export function runDoctorChecks(opts: { includeAuth?: boolean; includeBrowser?: 
         id: 'mcp',
         label: 'GooseWorks MCP configured',
         ok: !!creds?.mcp_server_url,
-        fix: 'gooseworks install --claude --mcp  (then restart Claude Code)',
+        fix: 'gooseworks install --claude --mcp',
       },
     );
   }
