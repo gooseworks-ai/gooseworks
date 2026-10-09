@@ -78,7 +78,11 @@ In a terminal use the commands:
 - When no skill fits, `gooseworks orthogonal find "<task>"` finds an API,
   `gooseworks orthogonal describe <api> <path>` shows its parameters and `gooseworks call` runs it.
 - `gooseworks credits` shows the balance. If a command says you are not signed in, run
-  `gooseworks login` and let the customer finish signing in.
+  `gooseworks login` and let the customer finish signing in. In a cloud sandbox or over SSH,
+  run `gooseworks login --device --no-wait`, show the customer its link and code, and run
+  `gooseworks login --device` once they approve.
+- No GooseWorks actions here but a signed-in CLI? `gooseworks tool --list` lists them;
+  `gooseworks tool <name> '<json>'` calls one.
 - Results go in `~/Gooseworks/` unless the customer names a place. Ask before saving, and never
   overwrite a file.
 
