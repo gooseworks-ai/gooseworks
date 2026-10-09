@@ -33,7 +33,7 @@ data work here.
 | --- | --- | --- |
 | Make, edit or study image ads: from a template, a source ad or the brand's products; why a campaign underperforms; competitor ads, angles and hooks | **`goose-ads`** | Use goose-ads: open it with catalog_fetch in a chat app, or use the installed copy in a terminal. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style or format | **`goose-graphics`** | Fetch it with catalog_fetch, or `gooseworks fetch goose-graphics` in a terminal. |
-| Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Use goose-video: start with video_formats and follow the next_step in every answer. |
+| Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Use goose-video: ask which product first, read the brand, then video_formats; follow the next_step in every answer. |
 | Make **product photos**: studio, lifestyle, marketplace, social or on a model | **`goose-product-photos`** | Use goose-product-photos: open it with catalog_fetch in a chat app, or use the installed copy in a terminal. |
 | Animate an approved static ad or product image | **`animate-image`** | Fetch it with catalog_fetch, or `gooseworks fetch animate-image` in a terminal. |
 | Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |

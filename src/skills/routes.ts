@@ -62,7 +62,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-video',
     when: 'Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started',
-    how: 'Use goose-video: start with video_formats and follow the next_step in every answer.',
+    how: 'Use goose-video: ask which product first, read the brand, then video_formats; follow the next_step in every answer.',
     delivery: 'entry',
   },
   {
