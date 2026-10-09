@@ -3,7 +3,7 @@
  *
  * Routing is declared in three places that used to be hand-synced:
  *   1. THIS repo's `src/skills/routes.ts` (now the SINGLE SOURCE),
- *   2. `gooseworks-app/backend/src/app-mcp-server/lib/ads-skill.ts` (not editable
+ *   2. `gooseworks-app/apps/api/src/services/entry-skills.ts` (not editable
  *      from here — represented by a checked-in snapshot),
  *   3. `goose-skills/collections/brand-growth` (derived from #1 — also snapshotted).
  *
@@ -19,6 +19,7 @@ import {
   getRouteManifest,
   renderDomainRouteTable,
   renderBrandGrowthTable,
+  UNROUTED_ENTRY_SKILLS,
 } from '../../src/skills/routes';
 import { getMasterSkillContent, getEntrySkillNames } from '../../src/skills/master-skill';
 
@@ -35,7 +36,7 @@ function loadSnapshot(name: string): RouteSnapshot {
   ) as RouteSnapshot;
 }
 
-const backend = loadSnapshot('backend-ads-skill.routes.json');
+const backend = loadSnapshot('backend-entry-skills.routes.json');
 const publicSkills = loadSnapshot('goose-skills-brand-growth.routes.json');
 
 function where(snapshot: RouteSnapshot): string {
@@ -56,11 +57,11 @@ describe('routing single source (GOOSE-3190)', () => {
     }
   });
 
-  it('every vendored entry skill is reachable from the domain route table', () => {
+  it('every vendored entry skill is reachable from the domain route table or named as unrouted', () => {
     const domainSkills = new Set(DOMAIN_ROUTES.map((r) => r.skill));
     for (const name of entrySkills) {
       if (name === 'gooseworks') continue; // the router itself
-      expect(domainSkills.has(name)).toBe(true);
+      expect(domainSkills.has(name) || name in UNROUTED_ENTRY_SKILLS).toBe(true);
     }
   });
 
@@ -72,12 +73,12 @@ describe('routing single source (GOOSE-3190)', () => {
   });
 
   it.each([
-    ['backend hosted-connector pointer', backend],
+    ['backend entry-skill list', backend],
     ['goose-skills brand-growth collection', publicSkills],
   ])('%s names no skill the CLI route table is missing', (_label, snapshot) => {
     const declared = [...(snapshot.entry_skills || []), ...snapshot.brand_growth_skills]
       // `gooseworks` IS the router — it routes to the others, not to itself.
-      .filter((slug) => slug !== 'gooseworks');
+      .filter((slug) => slug !== 'gooseworks' && !(slug in UNROUTED_ENTRY_SKILLS));
     const missing = declared.filter((slug) => !routed.has(slug));
     expect(
       missing,

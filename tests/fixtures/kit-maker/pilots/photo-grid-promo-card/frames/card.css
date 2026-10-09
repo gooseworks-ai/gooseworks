@@ -1,0 +1,22 @@
+:root { --ink: var(--brand-text, #111111); --ink-soft: #555555; --bg: var(--brand-background, #f2f2f2); --bg-tile: #fafafa; --bg-band: #e6e6e6; --accent: var(--brand-primary, #333333); }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: var(--kit-width); height: var(--kit-height); background: var(--bg); font-family: brand-heading, sans-serif; color: var(--ink); overflow: hidden; }
+.frame { position: relative; width: 100%; height: 100%; }
+.brand-mark { position: absolute; top: 56px; left: 0; right: 0; display: flex; justify-content: center; }
+.brand-mark img { height: 44px; }
+.headline { position: absolute; top: 150px; left: 40px; right: 40px; text-align: center; font-weight: 800; font-size: 120px; line-height: .96; letter-spacing: -3.6px; }
+.sub { position: absolute; top: 430px; left: 0; right: 0; text-align: center; font: 500 34px brand-body, sans-serif; color: var(--ink-soft); }
+.viewport { position: absolute; left: 0; right: 0; top: 576px; height: 784px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%); }
+.grid { position: absolute; left: 60px; top: 0; display: grid; grid-template-columns: repeat(5, 360px); grid-template-rows: repeat(2, 380px); gap: 24px; }
+.tile { position: relative; border-radius: 22px; overflow: hidden; background: var(--bg-tile); }
+.tile img { width: 100%; height: 100%; object-fit: cover; }
+.tile.band-product { background: var(--bg-band); display: flex; align-items: center; justify-content: center; padding: 14px; }
+.tile.band-product img { object-fit: contain; }
+.tile.type-off { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+.tile.type-off .pct { font-weight: 700; font-size: 142px; letter-spacing: -4px; line-height: .9; }
+.tile.type-off .off { font-weight: 700; font-size: 104px; letter-spacing: -3px; }
+.tile.code { background: var(--ink); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.tile.code .lbl { font-weight: 700; letter-spacing: 5px; font-size: 22px; color: rgba(255,255,255,.65); margin-bottom: 12px; }
+.tile.code .val { font-weight: 800; font-size: 80px; letter-spacing: -3px; color: #ffffff; }
+.chips { position: absolute; left: 0; right: 0; bottom: 110px; display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.chip { border: 2px solid var(--ink); border-radius: 999px; padding: 18px 36px; font-weight: 700; font-size: 26px; letter-spacing: 1.5px; text-transform: uppercase; }
