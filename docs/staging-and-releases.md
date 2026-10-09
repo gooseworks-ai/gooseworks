@@ -13,7 +13,7 @@ gooseworks --env staging install --claude --mcp --project /tmp/goose-staging-tes
 gooseworks --env staging launch --agent claude --project /tmp/goose-staging-test
 ```
 
-For Codex use `--codex` and `--agent codex`. The isolated profile needs its own Claude or Codex sign-in: add `--login` to the launch command once. Staging Goose sign-in uses `app.staging.gooseworks.ai` and allows the company's internal test accounts.
+For Codex use `--codex` and `--agent codex`. The isolated profile needs its own Claude or Codex sign-in: add `--login` to the launch command once. Staging Goose sign-in uses the staging Growth app, `ads-staging.gooseworks.ai`, and allows the company's internal test accounts.
 
 `--project` chooses the working folder. **`launch` provides isolation**: it changes the child agent's home/configuration, checks the real skill inventory, and gives it only `gooseworks-staging` MCP. Use the launcher every time. Opening the folder in an ordinary agent session uses that agent's normal production setup.
 
@@ -41,7 +41,7 @@ An npm maintainer opens the `gooseworks` package's settings and adds a GitHub Ac
 
 The GitHub `npm-release` environment already allows `dev` and `main` to deploy. Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. The workflow uses npm OIDC, so no npm token or local npm login is needed. New npm trusted publishers default to staged publishing; explicitly allow `npm publish` for this workflow. See [npm's trusted publishing setup](https://docs.npmjs.com/trusted-publishers/).
 
-Add a Changeset to CLI changes with `npm run changeset`. Raise feature PRs to `dev`; test the resulting `@next` package, then promote to `main`. Merge the bot's **Release GooseWorks CLI** version PR to publish the stable version. The bot does the version bump, generated manifest, changelog, build, tests, packaging, npm publish, and GitHub release.
+Add a Changeset to CLI changes with `npm run changeset`. **Select patch for routine releases**, including fixes and new commands: `0.4.4 → 0.4.5 → 0.4.6`. Use minor or major only when explicitly requested. Raise feature PRs to `dev`; test the resulting `@next` package, then promote to `main`. Merge the bot's **Release GooseWorks CLI** version PR to publish the stable version. The bot does the version bump, package lock, generated manifest, changelog, build, tests, packaging, npm publish, and GitHub release.
 
 The prerelease version is derived from pending Changesets (patch fallback when there is no note) and includes the CI run number and commit. It never moves `latest`. Each release publishes the exact tarball that passed the install smoke test. Retries verify published source and package integrity. Stale queued runs cannot move a tag backwards.
 

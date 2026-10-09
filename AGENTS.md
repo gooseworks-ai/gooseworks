@@ -1,5 +1,12 @@
 # Agent notes for this repo
 
+## Release version policy
+
+Routine CLI releases use **patch bumps**: `0.4.4 → 0.4.5 → 0.4.6`.
+Select `patch` in Changesets for ordinary fixes and new commands. Use `minor`
+or `major` only when the user explicitly requests that version change.
+Keep the package lock and generated skill manifest aligned with the version.
+
 ## `skills/` is generated AND committed — never delete it
 
 The vendored entry skills under `skills/` (`gooseworks`, `goose-ads`, `goose-video`)
