@@ -1,0 +1,60 @@
+{
+  "id": "frames",
+  "part": {
+    "id": "html-frames",
+    "version": "1.0.0"
+  },
+  "inputs": {
+    "template": {
+      "asset": "frames/card.html"
+    },
+    "frames": [
+      {
+        "asset": "frames/card.css"
+      },
+      {
+        "asset": "frames/card.js"
+      },
+      {
+        "asset": "frames/shared.js"
+      }
+    ],
+    "scenes": {
+      "from": "plan.scenes"
+    },
+    "products": {
+      "from": "plan.products"
+    },
+    "brand": {
+      "name": {
+        "from": "brand.name"
+      },
+      "logo": {
+        "from": "brand.logo"
+      },
+      "colors": {
+        "from": "brand.colors"
+      },
+      "fonts": {
+        "from": "brand.fonts"
+      },
+      "cta": {
+        "from": "brand.cta"
+      }
+    },
+    "aspect": {
+      "from": "plan.aspect"
+    },
+    "max_words": 8,
+    "duration_s": 10,
+    "fps": 25,
+    "values": {
+      "offer": "25%",
+      "code": "DAD25",
+      "chips": [
+        "14 day battery",
+        "New strap"
+      ]
+    }
+  }
+}

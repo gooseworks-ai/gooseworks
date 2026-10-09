@@ -211,8 +211,7 @@ For focused creative work you can also use:
 
 - `/goose-ads` for static ads, ad research, and ad performance.
 - `/goose-product-photos` for studio, lifestyle, marketplace, social, and on-model product photography.
-- `/goose-video` to pick a video format and make the ad on this machine (Claude Code, Codex or Cursor).
-- `/goose-video-local` to render a video project you started in the app, on this machine.
+- `/goose-video` to make a video ad, or an original video from a brief, in the chat. Once you approve it on the plan card, `gooseworks video make <id>` makes it on this machine when the chat says so.
 - `goose-graphics` for social graphics, carousels, slides, and branded visual content.
 - `animate-image` to turn an approved still into a short motion creative.
 
@@ -296,30 +295,22 @@ Then in Claude Code: *"remix template `<id>` for `<your-site>`"*.
 
 **The GooseWorks MCP server is REQUIRED for ads.** The skill is a thin wrapper over the
 backend's single ad-generation workflow — the same one the GooseWorks ads app uses — reached
-through the `gooseworks` MCP tools (`get_brand_kit`, `submit_remix_batch`, `get_remix_batch`,
-`regenerate_creative`, …). The skill does NOT generate images, drive FAL, or manage renders
-itself; the backend runs the pipeline and stores results. `install` registers the MCP server
-with `--mcp` (or `--all`) and verifies it's reachable; if it isn't, you'll see a warning — the
-ads flow will fail without MCP. Re-run `gooseworks install --claude --mcp` if needed.
+through the GooseWorks actions (`brand_read`, `ads_generate`, `ads_read`, `ads_edit`, …). The
+skill does not generate images or manage renders itself; the backend runs the pipeline and
+stores results. `install` registers the MCP server with `--mcp` (or `--all`) and verifies it's
+reachable; if it isn't, you'll see a warning.
 
-Generation is billed to your GooseWorks credits **server-side**: `submit_remix_batch` reserves
-the estimated cost up front and bills only the images that complete. There's no separate
-ad-credit balance. Use `estimate_remix_batch` (cost preview) and `gooseworks credits` (balance).
+Generation is billed to your GooseWorks credits **server-side**: `ads_generate` gives the credit
+total before anything is made, reserves it when you say yes, and bills only the images that
+complete. `gooseworks credits` shows your balance.
 
-### Original videos and the shared harness
+### Videos
 
-The installed `make-custom-video` entry connects GooseWorks projects, authenticated
-script and ingredient approvals, budgets, media storage and delivery to the shared
-`video-production-harness` catalog skill. It contains no production playbook or
-assembly code. CLI, direct MCP and Growth fetch the same production package through
-the GooseWorks catalog; direct MCP clients do not need a local CLI.
-
-Production instructions are maintained in Goose Studio's existing control-plane
-harness. Tested Studio changes publish a generated package to `goose-skills`.
-Each run saves its fetched package in its durable workspace. Project metadata keeps
-only the version, hash and package location; resuming uses the saved package instead
-of changing instructions during production. An unavailable package blocks
-generation. New runs use the currently published catalog version.
+The `goose-video` and `make-custom-video` entry skills are built by the GooseWorks server and
+copied here unchanged. They start with `video_formats` and follow the `next_step` in every answer,
+which gives the step for the video's stage. Only your click on the plan card approves a video.
+When the chat says so, `gooseworks video make <id>` makes the approved video on this machine
+from versioned parts, each checked against the video's parts list before anything runs.
 
 ### Keeping skills up to date
 

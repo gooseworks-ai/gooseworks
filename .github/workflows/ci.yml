@@ -1,7 +1,7 @@
 name: CLI checks
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, video-merged, 'video/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,3 +26,70 @@ jobs:
         run: |
           npm pack --ignore-scripts --json > packed.json
           node scripts/pack-smoke.cjs "$(node -p 'require("./packed.json")[0].filename')"
+
+  # The kit's web maker tests render real video in Chromium's headless shell with
+  # ffmpeg, and skip where either is missing. This job sets both up and fails if
+  # any of them skipped. It stays off the npm-release path: release.yml dispatches
+  # this workflow on changeset-release/* and opens its release PR from there, and
+  # neither runs this job.
+  maker:
+    if: ${{ !startsWith(github.head_ref || github.ref_name, 'changeset-release/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Look for the maker tests
+        id: maker
+        run: |
+          if [ -d tests/kit/maker ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No tests/kit/maker on this branch yet: nothing to set up."
+          fi
+      - uses: actions/setup-node@v6
+        if: steps.maker.outputs.present == 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - if: steps.maker.outputs.present == 'true'
+        run: npm ci
+      - name: Read the pinned playwright-core
+        id: playwright
+        if: steps.maker.outputs.present == 'true'
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache the video browser
+        if: steps.maker.outputs.present == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ms-playwright
+          key: kit-headless-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      # The project's own playwright-core (never a downloaded one), so the shell
+      # is the revision the kit pins. On a cache hit only the system libraries
+      # are installed.
+      - name: Install the video browser and ffmpeg
+        if: steps.maker.outputs.present == 'true'
+        run: |
+          npx --no playwright-core install --with-deps --only-shell chromium
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          # Ubuntu 24.04 runners block unprivileged user namespaces through
+          # AppArmor, which Chromium's sandbox needs. The kit keeps the sandbox
+          # on, so lift the block on this throwaway runner rather than turn it off.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
+      - name: Run the maker tests (none may skip)
+        if: steps.maker.outputs.present == 'true'
+        run: |
+          npx jest tests/kit/maker --runInBand --json --outputFile="$RUNNER_TEMP/maker.json"
+          node -e '
+            const r = require(process.env.RUNNER_TEMP + "/maker.json");
+            const skipped = r.testResults.flatMap((file) => file.assertionResults)
+              .filter((test) => test.status !== "passed" && test.status !== "failed");
+            console.log(`maker tests: ${r.numPassedTests} passed, ${skipped.length} skipped, ${r.numFailedTests} failed`);
+            for (const test of skipped) console.log(`  skipped: ${test.fullName}`);
+            if (!r.numTotalTests || skipped.length) {
+              console.error("Every maker test must run here; a skip means Chromium or ffmpeg is missing.");
+              process.exit(1);
+            }'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright

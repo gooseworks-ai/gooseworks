@@ -1,0 +1,14 @@
+{
+  "aspect": "9:16",
+  "scenes": [
+    { "id": "s1", "line": null, "on_screen": "cozy living room rug ideas", "picture": null },
+    { "id": "s2", "line": null, "on_screen": "Machine washable", "picture": null },
+    { "id": "s3", "line": null, "on_screen": "Stain resistant", "picture": null },
+    { "id": "s4", "line": null, "on_screen": "Pet and kid friendly", "picture": null }
+  ],
+  "products": [
+    { "id": "p1", "name": "Rug one", "images": ["media/product-1.svg", "media/product-2.svg"] },
+    { "id": "p2", "name": "Rug two", "images": ["media/product-3.svg", "media/product-4.svg"] },
+    { "id": "p3", "name": "Rug three", "images": ["media/product-5.svg", "media/product-6.svg"] }
+  ]
+}
