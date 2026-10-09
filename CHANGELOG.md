@@ -1,5 +1,13 @@
 # gooseworks
 
+## 0.5.2
+
+### Patch Changes
+
+- 6a32c0e: `gooseworks install` no longer tells the user to restart their agent: the final line asks the agent for the work, and an unreachable MCP server suggests checking the connection and running the install again.
+- 3d638e6: The `gooseworks` entry skill now starts every first task with `brand_setup` status and follows only its `next_step`, saving each answer with `brand_setup` and carrying on the user's request once setup is done.
+- 51cd9fc: `gooseworks tool` now prints an answer's card text under `Card:` and its next step as a last `Next:` line, so an agent that reads only text sees the card and what to do now. Control characters in that text are dropped. `--json` still prints the raw result. The examples call `brand_setup`.
+
 ## 0.5.1
 
 ### Patch Changes
