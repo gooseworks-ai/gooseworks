@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app video/b2-product-first @ eb26e5780
+// Source: gooseworks-app video/b2-product-first @ e07d5caf1
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -24,15 +24,16 @@ version: 4.1.0
 
 # GooseWorks video
 
-Use GooseWorks to make the customer's video, here in this chat. For a video already started (they name it, or a card sends it), call video_read and follow its next_step.
+Use GooseWorks to make the customer's video, here in this chat. For a video already started (named, or sent by a card), call video_read and follow its next_step.
 
-For a new video, in this order:
+For a new video, in this order. Suggest nothing before step 5, and write no plan before they pick a style.
 
-1. The product. If the customer hasn't said which product the video is for, ask them, offering the brand's products by name from brand_read (sections: products). Skip the question when the brand has only one product.
-2. Research before any style. Read the brand kit, its learnings and the chosen products in full with brand_read (sections kit and learnings, with the products' ids): their photos, specs and creative notes. Search the brand's knowledge for those products with knowledge_search. Then tell the customer in two or three plain lines what the video should say and what it should avoid.
-3. Call video_formats with the customer's own words as the request and the chosen products' ids.
-4. The customer picks the style; never suggest one. If they already named a style the answer lists as available, that is their pick: go on with it. Otherwise, with the style card on screen, say one short line and wait; without a card, list the styles that fit, each with its name, one line and its price as written, and ask which one they want.
-5. Then follow the next_step in every answer. It says what to do at each stage, from the plan to the finished video, so there is nothing else to read.
+1. The request. If they haven't said what the video is about, ask in one short question.
+2. The brand. Only when brand_read lists more than one brand, ask which one; with one, use it.
+3. The product. Unless they named it, ask which product the video is for, offering the brand's products by name from brand_read (sections: products). With one product, use it.
+4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Search the brand's knowledge for them with knowledge_search. Keep a few plain lines for yourself of what the video should say and avoid.
+5. The styles. Call video_formats with the request and the chosen products' ids. The customer picks; never recommend one. If they already named a style the answer lists as available, that is their pick. Otherwise, with the style card on screen, say one short line and wait; without one, list the fitting styles, each with its name, one line and price as written, and ask which one.
+6. The plan. Call video_create with the picked style and the products, then follow the next_step in every answer: it says how to write the scenes with video_change, and what follows.
 
 ## Rules
 
@@ -56,15 +57,16 @@ version: 3.1.0
 
 # GooseWorks video
 
-Use GooseWorks to make the customer's video, here in this chat. For a video already started (they name it, or a card sends it), call video_read and follow its next_step.
+Use GooseWorks to make the customer's video, here in this chat. For a video already started (named, or sent by a card), call video_read and follow its next_step.
 
-For a new video, in this order:
+For a new video, in this order. Suggest nothing before step 5, and write no plan before they pick a style.
 
-1. The product. If the customer hasn't said which product the video is for, ask them, offering the brand's products by name from brand_read (sections: products). Skip the question when the brand has only one product.
-2. Research before any style. Read the brand kit, its learnings and the chosen products in full with brand_read (sections kit and learnings, with the products' ids): their photos, specs and creative notes. Search the brand's knowledge for those products with knowledge_search. Then tell the customer in two or three plain lines what the video should say and what it should avoid.
-3. Call video_formats with the customer's own words as the request and the chosen products' ids.
-4. The customer picks the style; never suggest one. If they already named a style the answer lists as available, that is their pick: go on with it. Otherwise, with the style card on screen, say one short line and wait; without a card, list the styles that fit, each with its name, one line and its price as written, and ask which one they want.
-5. Then follow the next_step in every answer. It says what to do at each stage, from the plan to the finished video, so there is nothing else to read.
+1. The request. If they haven't said what the video is about, ask in one short question.
+2. The brand. Only when brand_read lists more than one brand, ask which one; with one, use it.
+3. The product. Unless they named it, ask which product the video is for, offering the brand's products by name from brand_read (sections: products). With one product, use it.
+4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Search the brand's knowledge for them with knowledge_search. Keep a few plain lines for yourself of what the video should say and avoid.
+5. The styles. Call video_formats with the request and the chosen products' ids. The customer picks; never recommend one. If they already named a style the answer lists as available, that is their pick. Otherwise, with the style card on screen, say one short line and wait; without one, list the fitting styles, each with its name, one line and price as written, and ask which one.
+6. The plan. Call video_create with the picked style and the products, then follow the next_step in every answer: it says how to write the scenes with video_change, and what follows.
 
 ## Rules
 
