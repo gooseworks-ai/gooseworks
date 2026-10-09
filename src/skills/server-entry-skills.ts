@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app video/b2-product-first @ aab7d9abb
+// Source: gooseworks-app dev @ 810c496ee
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -13,7 +13,7 @@
 // gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one.
 
 /** The rulebook version this text was built from. */
-export const SERVER_RULEBOOK_VERSION = '0.6.0';
+export const SERVER_RULEBOOK_VERSION = '1.0.2';
 
 export const SERVER_VIDEO_ENTRY_SKILLS = {
   'goose-video': `---
@@ -31,9 +31,9 @@ For a new video, in this order. Suggest nothing before step 5 and write no plan 
 1. The request. If they haven't said what the video is about, ask in one short question.
 2. The brand. Ask which brand only when brand_read lists several; with one, use it.
 3. The product. Unless they named one or want none, ask which product, offering the brand's products by name from brand_read (sections: products). Use the only one if there is one; with none, go on without.
-4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Search the brand's knowledge for them with knowledge_search. Keep a few plain lines of what to say and avoid.
+4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Then knowledge_search for them. Keep a few plain lines of what to say and avoid.
 5. The styles. Call video_formats with the request and the products' ids: [] for none or a style without products. The customer picks; never recommend one. A style they named that the answer lists as available is their pick. Otherwise, with the style card on screen, say one short line and wait; without one, list the fitting styles, each with its name, one line and price as written, and ask which one.
-6. The plan. Call video_create with the picked style and the products, then follow the next_step in every answer: it says how to write the scenes with video_change and what follows.
+6. The plan. Call video_create with the picked style and the products; its next_step says how to write the scenes with video_change and what follows.
 
 ## Rules
 
@@ -43,9 +43,9 @@ For a new video, in this order. Suggest nothing before step 5 and write no plan 
 - Money is a credit number, exactly as an answer gives it: never dollars, never your own math.
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
-- Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
-- Only the customer's click on the plan card approves a video; a yes typed in chat is not an approval.
-- Where the app can't show the card, give the customer the plan link; they press the button there.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- A yes counts only for the price the customer was shown: their press on the plan card, or their yes in chat sent with that price.
+- Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
 `,
@@ -64,9 +64,9 @@ For a new video, in this order. Suggest nothing before step 5 and write no plan 
 1. The request. If they haven't said what the video is about, ask in one short question.
 2. The brand. Ask which brand only when brand_read lists several; with one, use it.
 3. The product. Unless they named one or want none, ask which product, offering the brand's products by name from brand_read (sections: products). Use the only one if there is one; with none, go on without.
-4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Search the brand's knowledge for them with knowledge_search. Keep a few plain lines of what to say and avoid.
+4. Research. Read the brand kit, learnings and the chosen products with brand_read (sections kit and learnings, plus the products' ids): photos, specs, creative notes. Then knowledge_search for them. Keep a few plain lines of what to say and avoid.
 5. The styles. Call video_formats with the request and the products' ids: [] for none or a style without products. The customer picks; never recommend one. A style they named that the answer lists as available is their pick. Otherwise, with the style card on screen, say one short line and wait; without one, list the fitting styles, each with its name, one line and price as written, and ask which one.
-6. The plan. Call video_create with the picked style and the products, then follow the next_step in every answer: it says how to write the scenes with video_change and what follows.
+6. The plan. Call video_create with the picked style and the products; its next_step says how to write the scenes with video_change and what follows.
 
 ## Rules
 
@@ -76,9 +76,9 @@ For a new video, in this order. Suggest nothing before step 5 and write no plan 
 - Money is a credit number, exactly as an answer gives it: never dollars, never your own math.
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
-- Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
-- Only the customer's click on the plan card approves a video; a yes typed in chat is not an approval.
-- Where the app can't show the card, give the customer the plan link; they press the button there.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- A yes counts only for the price the customer was shown: their press on the plan card, or their yes in chat sent with that price.
+- Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
 `,
@@ -94,7 +94,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number, exactly as an answer gives it: never dollars, never your own math.
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
-- Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   ads: `- Talk to marketers: what they get and what they decide, never how it is made.
@@ -103,7 +103,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number, exactly as an answer gives it: never dollars, never your own math.
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
-- Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
 - Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
@@ -113,7 +113,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number, exactly as an answer gives it: never dollars, never your own math.
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
-- Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
 - Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
