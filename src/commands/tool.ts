@@ -72,7 +72,7 @@ function answerGuide(structured: unknown, texts: unknown[]): { card: string | nu
   const found = candidates.find((value): value is Record<string, unknown> => isRecord(value) && ('next_step' in value || 'card' in value));
   if (!found) return { card: null, next: null };
   const card = isRecord(found.card) && typeof found.card.text_summary === 'string' ? plainText(found.card.text_summary) : '';
-  const next = isRecord(found.next_step) && typeof found.next_step.note === 'string' ? plainText(found.next_step.note) : '';
+  const next = isRecord(found.next_step) && typeof found.next_step.note === 'string' ? plainText(found.next_step.note).replace(/\s+/g, ' ') : '';
   return { card: card || null, next: next || null };
 }
 
