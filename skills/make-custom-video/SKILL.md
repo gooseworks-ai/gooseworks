@@ -1,16 +1,20 @@
 ---
 name: make-custom-video
-description: "Make an original video from a brief or a reference video with GooseWorks in this chat: start with video_formats and follow the next_step in every answer."
-version: 3.0.0
+description: "Make an original video from a brief or a reference video with GooseWorks in this chat: ask which product first, read the brand, then video_formats, and follow the next_step in every answer."
+version: 3.1.0
 ---
 
 # GooseWorks video
 
-Use GooseWorks to make the customer's video, here in this chat.
+Use GooseWorks to make the customer's video, here in this chat. For a video already started (they name it, or a card sends it), call video_read and follow its next_step.
 
-Start with video_formats, passing the customer's own words as they said them. For a video already started (they name it, or a card sends it), call video_read instead.
+For a new video, in this order:
 
-Then follow the next_step in every answer. It says what to do at the stage the video is in, from the first plan to the finished video, so there is nothing else to read.
+1. The product. If the customer hasn't said which product the video is for, ask them, offering the brand's products by name from brand_read (sections: products). Skip the question when the brand has only one product.
+2. Research before any style. Read the brand kit, its learnings and the chosen products in full with brand_read (sections kit and learnings, with the products' ids): their photos, specs and creative notes. Search the brand's knowledge for those products with knowledge_search. Then tell the customer in two or three plain lines what the video should say and what it should avoid.
+3. Call video_formats with the customer's own words as the request and the chosen products' ids.
+4. The customer picks the style; never suggest one. With the style card on screen, say one short line and wait. Without a card, list the styles that fit, each with its name, one line and its price as written, and ask which one they want.
+5. Then follow the next_step in every answer. It says what to do at each stage, from the plan to the finished video, so there is nothing else to read.
 
 ## Rules
 

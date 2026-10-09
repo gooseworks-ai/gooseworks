@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app video-merged @ f6775132e
+// Source: gooseworks-app video/b2-product-first @ 03b506b60
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -13,22 +13,26 @@
 // gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one.
 
 /** The rulebook version this text was built from. */
-export const SERVER_RULEBOOK_VERSION = '0.5.1';
+export const SERVER_RULEBOOK_VERSION = '0.6.0';
 
 export const SERVER_VIDEO_ENTRY_SKILLS = {
   'goose-video': `---
 name: goose-video
-description: "Make a video ad with GooseWorks in this chat: start with video_formats and follow the next_step in every answer."
-version: 4.0.0
+description: "Make a video ad with GooseWorks in this chat: ask which product first, read the brand, then video_formats, and follow the next_step in every answer."
+version: 4.1.0
 ---
 
 # GooseWorks video
 
-Use GooseWorks to make the customer's video, here in this chat.
+Use GooseWorks to make the customer's video, here in this chat. For a video already started (they name it, or a card sends it), call video_read and follow its next_step.
 
-Start with video_formats, passing the customer's own words as they said them. For a video already started (they name it, or a card sends it), call video_read instead.
+For a new video, in this order:
 
-Then follow the next_step in every answer. It says what to do at the stage the video is in, from the first plan to the finished video, so there is nothing else to read.
+1. The product. If the customer hasn't said which product the video is for, ask them, offering the brand's products by name from brand_read (sections: products). Skip the question when the brand has only one product.
+2. Research before any style. Read the brand kit, its learnings and the chosen products in full with brand_read (sections kit and learnings, with the products' ids): their photos, specs and creative notes. Search the brand's knowledge for those products with knowledge_search. Then tell the customer in two or three plain lines what the video should say and what it should avoid.
+3. Call video_formats with the customer's own words as the request and the chosen products' ids.
+4. The customer picks the style; never suggest one. With the style card on screen, say one short line and wait. Without a card, list the styles that fit, each with its name, one line and its price as written, and ask which one they want.
+5. Then follow the next_step in every answer. It says what to do at each stage, from the plan to the finished video, so there is nothing else to read.
 
 ## Rules
 
@@ -46,17 +50,21 @@ Then follow the next_step in every answer. It says what to do at the stage the v
 `,
   'make-custom-video': `---
 name: make-custom-video
-description: "Make an original video from a brief or a reference video with GooseWorks in this chat: start with video_formats and follow the next_step in every answer."
-version: 3.0.0
+description: "Make an original video from a brief or a reference video with GooseWorks in this chat: ask which product first, read the brand, then video_formats, and follow the next_step in every answer."
+version: 3.1.0
 ---
 
 # GooseWorks video
 
-Use GooseWorks to make the customer's video, here in this chat.
+Use GooseWorks to make the customer's video, here in this chat. For a video already started (they name it, or a card sends it), call video_read and follow its next_step.
 
-Start with video_formats, passing the customer's own words as they said them. For a video already started (they name it, or a card sends it), call video_read instead.
+For a new video, in this order:
 
-Then follow the next_step in every answer. It says what to do at the stage the video is in, from the first plan to the finished video, so there is nothing else to read.
+1. The product. If the customer hasn't said which product the video is for, ask them, offering the brand's products by name from brand_read (sections: products). Skip the question when the brand has only one product.
+2. Research before any style. Read the brand kit, its learnings and the chosen products in full with brand_read (sections kit and learnings, with the products' ids): their photos, specs and creative notes. Search the brand's knowledge for those products with knowledge_search. Then tell the customer in two or three plain lines what the video should say and what it should avoid.
+3. Call video_formats with the customer's own words as the request and the chosen products' ids.
+4. The customer picks the style; never suggest one. With the style card on screen, say one short line and wait. Without a card, list the styles that fit, each with its name, one line and its price as written, and ask which one they want.
+5. Then follow the next_step in every answer. It says what to do at each stage, from the plan to the finished video, so there is nothing else to read.
 
 ## Rules
 
@@ -94,7 +102,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
 - Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
-- Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task. For video the server does this.
+- Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   photos: `- Talk to marketers: what they get and what they decide, never how it is made.
@@ -104,7 +112,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Follow the next_step in every answer; it says what to do now.
 - With a card on screen (display_hint "widget"), add at most one short line; never re-list it or its links.
 - Paid work needs the customer's yes to the credit total first. For video only their click on the plan card counts; you never approve.
-- Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task. For video the server does this.
+- Before choosing an angle, claim, product or source, or asking a brand fact: brand_read, then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
 } as const;
