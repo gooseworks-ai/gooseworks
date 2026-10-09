@@ -243,11 +243,11 @@ Call any GooseWorks tool (the same tools the GooseWorks MCP connector gives an a
 
 ```bash
 npx gooseworks tool --list                                  # the server's rules + every tool
-npx gooseworks tool brand_onboarding --schema               # one tool's arguments
-npx gooseworks tool brand_onboarding '{"action":"status"}'  # call it
+npx gooseworks tool brand_setup --schema                    # one tool's arguments
+npx gooseworks tool brand_setup '{"action":"status"}'       # call it
 ```
 
-The result prints as JSON (`--json` prints the raw MCP result). Arguments can also come from a file (`--file args.json`) or stdin (`-`). It exits 1 when the tool reports an error. Paid tools follow the same rules as over the connector.
+The result prints as JSON, then the card's text under `Card:` and the next step as a last `Next:` line when the answer has them (`--json` prints the raw MCP result). Arguments can also come from a file (`--file args.json`) or stdin (`-`). It exits 1 when the tool reports an error. Paid tools follow the same rules as over the connector.
 
 ## Security & data handling
 
