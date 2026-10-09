@@ -28,6 +28,12 @@ jest.mock('../../src/auth/oauth-server', () => ({
   runOAuthFlow: jest.fn(),
 }));
 
+jest.mock('../../src/auth/device-flow', () => ({
+  ...jest.requireActual('../../src/auth/device-flow'),
+  readPendingDeviceLogin: jest.fn().mockReturnValue(null),
+  runDeviceFlow: jest.fn(),
+}));
+
 jest.mock('../../src/skills/installer', () => ({
   installManagedEntrySkills: jest.fn().mockReturnValue([
     { name: 'gooseworks', action: 'installed' },
@@ -90,12 +96,17 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
+import { runDeviceFlow } from '../../src/auth/device-flow';
 import { installManagedEntrySkills, installStandaloneSkill } from '../../src/skills/installer';
 import { getEntrySkills } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../../src/agents/codex';
 import { configureCursor } from '../../src/agents/cursor';
+import { detectAgents } from '../../src/agents/detect';
+import { verifyMcpReachable } from '../../src/agents/claude-mcp';
+import { runDoctorChecks } from '../../src/commands/doctor';
+import { selectEnvironment } from '../../src/environment';
 import * as loggerModule from '../../src/utils/logger';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
@@ -352,6 +363,66 @@ describe('install command', () => {
 
     expect(help).toContain('--with <skill-slug>');
     expect(help).toContain('gooseworks install --claude --with goose-graphics');
+  });
+
+  // GOOSE-3937: cloud sandboxes get skills only — no agent configs, no MCP files.
+  describe('--skills-only', () => {
+    afterEach(() => selectEnvironment('production'));
+
+    it('installs the entry and --with skills and configures no agent', async () => {
+      mockGetCredentials.mockReturnValue(mockCreds);
+      mockInstallStandaloneSkill.mockResolvedValue(undefined);
+      const { createInstallCommand } = await import('../../src/commands/install');
+
+      await createInstallCommand().parseAsync(['node', 'test', '--skills-only', '--with', 'goose-graphics']);
+
+      expect(mockRunOAuthFlow).not.toHaveBeenCalled();
+      expect(mockInstallManagedEntrySkills).toHaveBeenCalled();
+      expect(mockInstallStandaloneSkill).toHaveBeenCalledWith('goose-graphics', expect.any(Object));
+      for (const fn of [mockConfigureClaude, mockConfigureClaudeMcp, mockConfigureCodex, mockConfigureCodexMcp, mockConfigureCursor, verifyMcpReachable, detectAgents, runDoctorChecks]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+      expect(loggerModule.step).toHaveBeenCalledWith(1, 2, 'Authenticating...');
+      expect(loggerModule.step).toHaveBeenCalledWith(2, 2, 'Installing GooseWorks skills...');
+      expect(loggerModule.done).toHaveBeenCalledWith('Skills installed in ~/.agents/skills. Read ~/.agents/skills/gooseworks/SKILL.md to use GooseWorks.');
+    });
+
+    it.each([['--claude'], ['--codex'], ['--cursor'], ['--all'], ['--mcp']])('refuses to combine with %s', async (flag) => {
+      mockGetCredentials.mockReturnValue(mockCreds);
+      const { createInstallCommand } = await import('../../src/commands/install');
+
+      await expect(createInstallCommand().parseAsync(['node', 'test', '--skills-only', flag]))
+        .rejects.toThrow('--skills-only installs skills only. Drop the agent flags.');
+      expect(mockInstallManagedEntrySkills).not.toHaveBeenCalled();
+      expect(mockConfigureClaude).not.toHaveBeenCalled();
+    });
+
+    it('with no sign-in in progress, starts one, prints the link and stops (exit code 2) without installing', async () => {
+      mockGetCredentials.mockReturnValue(null);
+      const pending = { device_code: 'd', user_code: 'WDJB-MJHT', link: 'https://make.gooseworks.ai/link?code=WDJB-MJHT', api_base: 'https://api.gooseworks.ai', expires_at: new Date(Date.now() + 600_000).toISOString(), interval: 3 };
+      (runDeviceFlow as jest.Mock).mockResolvedValue({ status: 'pending', pending });
+      const { createInstallCommand } = await import('../../src/commands/install');
+
+      try {
+        await createInstallCommand().parseAsync(['node', 'test', '--skills-only']);
+        expect(runDeviceFlow).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ wait: false }));
+        expect(process.exitCode).toBe(2);
+        expect(loggerModule.warn).toHaveBeenCalledWith('Not signed in yet. After you approve, run this command again to finish.');
+        expect(mockInstallManagedEntrySkills).not.toHaveBeenCalled();
+        expect(mockRunOAuthFlow).not.toHaveBeenCalled();
+      } finally {
+        process.exitCode = 0;
+      }
+    });
+
+    it('is refused for staging', async () => {
+      selectEnvironment('staging');
+      const { createInstallCommand } = await import('../../src/commands/install');
+
+      await expect(createInstallCommand().parseAsync(['node', 'test', '--skills-only']))
+        .rejects.toThrow('Use --claude or --codex with --project for staging');
+      expect(mockInstallManagedEntrySkills).not.toHaveBeenCalled();
+    });
   });
 
   // GOOSE-3718: every video ad is made on the customer's machine, so the

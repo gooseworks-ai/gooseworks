@@ -1,5 +1,7 @@
 import { Command } from 'commander';
-import { ensureLoggedIn } from './login';
+import { ensureLoggedIn, signIn } from './login';
+import { getCredentials } from '../auth/credentials';
+import { readPendingDeviceLogin } from '../auth/device-flow';
 import { installManagedEntrySkills, installStandaloneSkill } from '../skills/installer';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp, verifyMcpReachable } from '../agents/claude-mcp';
@@ -26,6 +28,7 @@ interface InstallOptions {
   ref?: string;
   overwriteModified?: boolean;
   project?: string;
+  skillsOnly?: boolean;
 }
 
 export function createInstallCommand(): Command {
@@ -45,8 +48,14 @@ Examples:
   .option('--api-base <url>', 'API base URL', API_BASE)
   .option('--ref <code>', 'Referral or marketing campaign code for attribution')
   .option('--project <folder>', 'Required staging test folder; used only by gooseworks launch')
+  .option('--skills-only', 'Sign in and install GooseWorks skills to ~/.agents/skills only; configure no agents (cloud sandboxes)')
   .action(async (opts: InstallOptions) => {
     logger.banner(getVersion());
+
+    if (opts.skillsOnly) {
+      await installSkillsOnly(opts);
+      return;
+    }
 
     const targetAgents = resolveTargetAgents(opts);
     if (getEnvironment() === 'staging') {
@@ -76,38 +85,7 @@ Examples:
     logger.success(`Logged in as ${creds.email}`);
 
     // Step 2: Refresh bundled entries; preserve standalone and edited copies.
-    const freshness = await readEntryFreshnessReport();
-    await reportEntrySkillFreshness(freshness);
-    if (freshness.cli === 'outdated') {
-      logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
-      process.exit(1);
-      return;
-    }
-    logger.step(2, 3, 'Installing GooseWorks skills...');
-    for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
-      if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
-      else logger.success(`${r.action === 'installed' ? 'Installed' : 'Kept'} ${r.name} skill at ~/.agents/skills/${r.name}/`);
-    }
-    for (const slug of opts.with || []) {
-      try {
-        logger.info(`Installing standalone skill ${slug}...`);
-        let lastReported = 0;
-        await installStandaloneSkill(slug, {
-          overwriteModified: opts.overwriteModified,
-          onProgress: ({ downloaded, total }) => {
-            const step = Math.max(1, Math.min(5, Math.ceil(total / 10)));
-            if (downloaded === total || downloaded - lastReported >= step) {
-              logger.info(`  Downloaded ${downloaded}/${total} files for ${slug}`);
-              lastReported = downloaded;
-            }
-          },
-        });
-        logger.success(`Installed standalone skill ${slug} to ~/.agents/skills/${slug}/`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error(`Could not install standalone skill ${slug}: ${message}`);
-      }
-    }
+    if (!(await installSkillFiles(opts, 2, 3))) return;
 
     // Step 3: Configure agents
     logger.step(3, 3, 'Configuring agents...');
@@ -214,6 +192,78 @@ Examples:
 }
 
 export const installCommand = createInstallCommand();
+
+/**
+ * Refreshes the bundled entry skills (after the freshness check) and installs
+ * any `--with` standalone skills into ~/.agents/skills. Returns false when the
+ * refresh was refused (the process has been told to exit).
+ */
+async function installSkillFiles(opts: InstallOptions, step: number, totalSteps: number): Promise<boolean> {
+  const freshness = await readEntryFreshnessReport();
+  await reportEntrySkillFreshness(freshness);
+  if (freshness.cli === 'outdated') {
+    logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
+    process.exit(1);
+    return false;
+  }
+  logger.step(step, totalSteps, 'Installing GooseWorks skills...');
+  for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
+    if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
+    else logger.success(`${r.action === 'installed' ? 'Installed' : 'Kept'} ${r.name} skill at ~/.agents/skills/${r.name}/`);
+  }
+  for (const slug of opts.with || []) {
+    try {
+      logger.info(`Installing standalone skill ${slug}...`);
+      let lastReported = 0;
+      await installStandaloneSkill(slug, {
+        overwriteModified: opts.overwriteModified,
+        onProgress: ({ downloaded, total }) => {
+          const step = Math.max(1, Math.min(5, Math.ceil(total / 10)));
+          if (downloaded === total || downloaded - lastReported >= step) {
+            logger.info(`  Downloaded ${downloaded}/${total} files for ${slug}`);
+            lastReported = downloaded;
+          }
+        },
+      });
+      logger.success(`Installed standalone skill ${slug} to ~/.agents/skills/${slug}/`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Could not install standalone skill ${slug}: ${message}`);
+    }
+  }
+  return true;
+}
+
+/**
+ * `install --skills-only` (GOOSE-3937): for cloud sandboxes. Signs in (resuming
+ * a pending `login --device --no-wait`) and installs skills only — no agent
+ * configs, no MCP files, no toolchain report.
+ */
+async function installSkillsOnly(opts: InstallOptions): Promise<void> {
+  if (opts.claude || opts.codex || opts.cursor || opts.all || opts.mcp) {
+    throw new Error('--skills-only installs skills only. Drop the agent flags.');
+  }
+  if (getEnvironment() === 'staging') throw new Error('Use --claude or --codex with --project for staging');
+  if (opts.project) throw new Error('--project is for isolated staging installs; omit it for the normal production install');
+
+  logger.step(1, 2, 'Authenticating...');
+  if (!getCredentials() && !readPendingDeviceLogin(opts.apiBase || API_BASE)) {
+    // No sign-in in progress. Start one and stop here: a cloud agent's shell
+    // only shows output when the command ends, so waiting would hide the link.
+    const outcome = await signIn(opts.apiBase || API_BASE, opts.ref, { wait: false });
+    if (outcome.status === 'pending') {
+      logger.warn('Not signed in yet. After you approve, run this command again to finish.');
+      process.exitCode = 2;
+      return;
+    }
+  }
+  const creds = await ensureLoggedIn(opts.apiBase, opts.ref);
+  logger.success(`Logged in as ${creds.email}`);
+
+  if (!(await installSkillFiles(opts, 2, 2))) return;
+
+  logger.done('Skills installed in ~/.agents/skills. Read ~/.agents/skills/gooseworks/SKILL.md to use GooseWorks.');
+}
 
 function resolveTargetAgents(opts: InstallOptions): AgentType[] {
   if (opts.all) {
