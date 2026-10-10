@@ -107,6 +107,9 @@ interface StepSpec {
   fix?: number;
 }
 
+/** For a failure that repeats on every run of the same plan. */
+const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
+
 function lineWords(error: LineError): string {
   return [error.message, error.fix].filter(Boolean).join(' ');
 }
@@ -123,6 +126,9 @@ function failureWords(error: PartError): string {
       return 'This computer is missing something this video needs. Run the computer check, then make it again.';
     case 'timeout':
       return 'Part of this video took too long. Run the same command again; what was made so far is kept.';
+    case 'bad_input':
+    case 'output_invalid':
+      return PLAN_CHANGE;
     default:
       return 'Part of this video could not be made. Run the same command again; what was made so far is kept.';
   }
