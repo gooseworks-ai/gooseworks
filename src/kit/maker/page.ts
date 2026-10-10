@@ -4,14 +4,30 @@
 // <head>. Only these files are in the folder, so the page can show only what
 // its inputs name (and what the step hash covers). Bundled into the part.
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, PartContext } from '../part-interface';
-import { cssDataUrls, isAnimatedImage } from './images';
+import { cssDataUrls, isAnimatedImage, pictureGeometry } from './images';
 import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
 const KIT_FOLDER = '_kit';
+// A page's picture is staged at most this many pixels on its long side: the browser drops a 4000 px
+// photo when the page holds several, and reports it as unreadable.
+const MAX_PICTURE_PX = 2048;
+// Pictures the kit's ffmpeg stages smaller: a JPEG as JPEG, a PNG or WebP as PNG (keeping its alpha).
+const RESIZABLE = new Set(['image/png', 'image/webp', 'image/jpeg']);
+// ffmpeg filters that turn stored pixels the way each EXIF orientation shows them.
+const ORIENT: Record<number, string[]> = {
+  1: [],
+  2: ['hflip'],
+  3: ['hflip', 'vflip'],
+  4: ['vflip'],
+  5: ['transpose=0'],
+  6: ['transpose=1'],
+  7: ['transpose=3'],
+  8: ['transpose=2'],
+};
 
 const IMAGE_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -104,7 +120,7 @@ function cssString(value: string): string {
 export async function buildPage(
   spec: MakerSpec,
   dir: string,
-  ctx: Pick<PartContext, 'error' | 'log'>,
+  ctx: Pick<PartContext, 'error' | 'log'> & { tools?: Pick<PartContext['tools'], 'exec'> },
   reserve: (bytes: number) => void = () => undefined,
 ): Promise<BuiltPage> {
   const fail: Fail = (detail) => {
@@ -137,6 +153,7 @@ export async function buildPage(
   const url = (relFromDir: string) => path.relative(path.dirname(entry), path.join(dir, ...relFromDir.split('/'))).split(path.sep).join('/');
   const placed = new Map<string, string>();
   const preload: string[] = [];
+  const staging = new Map<string, string>();
   for (const ref of pageFiles) {
     const rel = path.relative(base, ref.path).split(path.sep).join('/');
     if (rel.split('/')[0] === KIT_FOLDER) fail(`the frame ${rel} uses the folder name ${KIT_FOLDER}, which the kit keeps for itself`);
@@ -178,17 +195,54 @@ export async function buildPage(
   if (spec.brand?.fonts.heading) await addFont(spec.brand.fonts.heading, 'brand-heading');
   if (spec.brand?.fonts.body) await addFont(spec.brand.fonts.body, 'brand-body');
 
+  // A picture larger than MAX_PICTURE_PX on its long side, staged smaller by the kit's ffmpeg; null when it fits.
+  // ffmpeg reads the bytes already checked against the step hash, never the file again.
+  const smaller = async (ref: FileRef, data: Buffer): Promise<string | null> => {
+    const shape = pictureGeometry(data);
+    if (!shape || !ctx.tools) return null;
+    // The browser shows the picture turned by its EXIF orientation, so the size is worked out as shown.
+    const turned = shape.orientation >= 5;
+    const [width, height] = turned ? [shape.height, shape.width] : [shape.width, shape.height];
+    if (Math.max(width, height) <= MAX_PICTURE_PX) return null;
+    const k = MAX_PICTURE_PX / Math.max(width, height);
+    const [w, h] = [Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k))];
+    const to = shape.format === 'jpeg' ? 'jpg' : 'png';
+    const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}-${MAX_PICTURE_PX}.${to}`;
+    const target = path.join(dir, ...rel.split('/'));
+    // Turned here rather than by ffmpeg's autorotate, which some ffmpeg versions apply and others don't.
+    const filters = [...ORIENT[shape.orientation], `scale=${w}:${h}:flags=lanczos`, 'setsar=1', ...(to === 'png' ? ['format=rgba'] : [])];
+    const quality = to === 'jpg' ? ['-q:v', '2'] : [];
+    const exact = ['-fflags', '+bitexact', '-flags', '+bitexact', '-map_metadata', '-1', '-threads', '1'];
+    try {
+      await ctx.tools.exec(
+        'ffmpeg',
+        ['-hide_banner', '-y', '-loglevel', 'error', '-noautorotate', '-f', `${shape.format}_pipe`, '-i', 'pipe:0', '-frames:v', '1', '-vf', filters.join(','), ...quality, ...exact, target],
+        { stdin: data },
+      );
+    } catch {
+      return fail(`the picture ${path.basename(ref.path)} is too large to show (${width}x${height}); use one at most ${MAX_PICTURE_PX} px on its long side`);
+    }
+    return rel;
+  };
+
   // Pictures: product photos, the logo and scene stills, by content.
   const media = async (ref: FileRef): Promise<string> => {
     const ext = IMAGE_EXT[ref.mime];
     if (!ext) fail(`the picture ${path.basename(ref.path)} is not png, jpg, webp, gif, avif or svg`);
-    const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
-    if (!preload.includes(url(rel))) {
-      const data = await readChecked(ref, fail);
-      still(ref, data);
-      await put(path.join(dir, ...rel.split('/')), data);
-      preload.push(url(rel));
-    }
+    let rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
+    const staged = staging.get(ref.sha256);
+    if (staged) return staged;
+    const data = await readChecked(ref, fail);
+    still(ref, data);
+    const resized = RESIZABLE.has(ref.mime) ? await smaller(ref, data) : null;
+    if (resized) {
+      rel = resized;
+      const size = (await stat(path.join(dir, ...rel.split('/')))).size;
+      reserve(size);
+      bytes += size;
+    } else await put(path.join(dir, ...rel.split('/')), data);
+    preload.push(url(rel));
+    staging.set(ref.sha256, url(rel));
     return url(rel);
   };
   const products = [];

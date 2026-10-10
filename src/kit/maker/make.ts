@@ -28,8 +28,16 @@ const FRAME_TIMEOUT_MS = 60_000;
 
 type MakerContext = Pick<PartContext, 'workDir' | 'tmpDir' | 'tools' | 'browser' | 'progress' | 'log' | 'error' | 'signal' | 'file'>;
 
-function timelineOf(spec: MakerSpec): Timeline {
-  return {
+/** Where the page drew the brand's logo, in the page's CSS pixels. */
+interface LogoRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
+  const timeline: Timeline = {
     duration_s: spec.frameCount / spec.fps,
     width: spec.output.width,
     height: spec.output.height,
@@ -41,6 +49,16 @@ function timelineOf(spec: MakerSpec): Timeline {
     })),
     speech: [],
   };
+  // The logo's box on the output picture, so the final check can look for the logo where it is drawn.
+  if (logo) {
+    const k = spec.scale;
+    const x0 = Math.max(0, Math.floor(logo.x * k));
+    const y0 = Math.max(0, Math.floor(logo.y * k));
+    const x1 = Math.min(spec.output.width, Math.ceil((logo.x + logo.w) * k));
+    const y1 = Math.min(spec.output.height, Math.ceil((logo.y + logo.h) * k));
+    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: 'logo', x: x0, y: y0, w: x1 - x0, h: y1 - y0 }];
+  }
+  return timeline;
 }
 
 async function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
@@ -57,14 +75,16 @@ async function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Err
   }
 }
 
-/** What the page runtime hands back after starting or drawing: problems, and new data:/blob: pictures. */
-function reportOf(value: unknown): { problems: string[]; sources: Array<{ url: string; data: string }> } {
-  const raw = (value ?? {}) as { problems?: unknown; sources?: unknown };
+/** What the page runtime hands back after starting or drawing: problems, new data:/blob: pictures, and the logo's box. */
+function reportOf(value: unknown): { problems: string[]; sources: Array<{ url: string; data: string }>; logo: LogoRect | null } {
+  const raw = (value ?? {}) as { problems?: unknown; sources?: unknown; logo?: unknown };
   const problems = Array.isArray(raw.problems) ? raw.problems.filter((v): v is string => typeof v === 'string') : [];
   const sources = Array.isArray(raw.sources)
     ? raw.sources.filter((v): v is { url: string; data: string } => !!v && typeof v.url === 'string' && typeof v.data === 'string')
     : [];
-  return { problems, sources };
+  const box = raw.logo as Partial<LogoRect> | null | undefined;
+  const logo = box && [box.x, box.y, box.w, box.h].every((v) => typeof v === 'number' && Number.isFinite(v)) && box.w! > 0 && box.h! > 0 ? (box as LogoRect) : null;
+  return { problems, sources, logo };
 }
 
 /** The most a PNG of this size can take: raw RGBA, a filter byte per row, and zlib's overhead. */
@@ -128,6 +148,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
   const scratch = [pageDir, framesDir, segmentsDir];
   const total = spec.frameCount;
   const frameHashes: string[] = [];
+  let logo: LogoRect | null = null;
   const segments: string[] = [];
   const name = 'video.mp4';
   const out = path.join(ctx.workDir, name);
@@ -158,6 +179,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
           refusePage([`The picture ${source.url} moves on its own; frame pages take still pictures and draw any motion themselves.`]);
         }
       }
+      return report;
     };
     const frameBound = pngBound(spec.output.width, spec.output.height);
 
@@ -177,13 +199,15 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
       let segmentBytes = 0;
       for (let index = 0; index < total; index++) {
         stopIfAsked();
-        checked(
+        const drawn = checked(
           await withTimeout(
             page.evaluate<unknown>(`window.__kitDriver.frame(${index})`),
             FRAME_TIMEOUT_MS,
             () => ctx.error('bad_input', `the frame page took more than a minute to draw frame ${index}`),
           ),
         );
+        // The last frame that shows the logo gives its box: by then any entrance has settled.
+        if (drawn.logo) logo = drawn.logo;
         const file = path.join(framesDir, frameName(index));
         // Room for the largest PNG this size can be, then only what it took.
         reserve(frameBound);
@@ -243,7 +267,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
     const video = await ctx.file(name, 'video');
     ctx.log.info('frames rendered', { frames: total, seconds, width: spec.output.width, height: spec.output.height });
     finished = true;
-    return { video, seconds, timeline: timelineOf(spec), frameHashes };
+    return { video, seconds, timeline: timelineOf(spec, logo), frameHashes };
   } finally {
     // The maker's own scratch goes on every exit; a failed run leaves no half-made video either.
     for (const dir of scratch) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
