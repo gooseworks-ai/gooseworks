@@ -914,7 +914,8 @@ class Maker {
     await this.reporter.flush();
     this.run.status = 'failed';
     await this.saveRun();
-    return { status: 'failed', message: 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.' };
+    const notSent = 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.';
+    return { status: 'failed', message: detail === CHECK_FAILED ? notSent : `${detail} ${notSent}` };
   }
 
   /** Part, step and layer ids, which the person never sees. */

@@ -97,6 +97,7 @@ it('reports a failed final check with the check’s own words', async () => {
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video has no sound.' }]);
+  expect(result.message).toBe('The video has no sound. The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.');
 });
 
 // check-layer 1.1.2's verdict: a failed check carries no message; its words are in `reasons[]`.
