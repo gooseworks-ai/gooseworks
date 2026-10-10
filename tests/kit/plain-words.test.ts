@@ -67,4 +67,12 @@ describe('plain words from a part', () => {
     expect(out).toMatch(/places\.$/);
     expect(plainWords('a'.repeat(250), FALLBACK)).toBe(FALLBACK);
   });
+
+  it('counts the full stop it adds toward the cap', () => {
+    expect(plainWords('a'.repeat(199), FALLBACK)).toBe(`${'a'.repeat(199)}.`);
+    expect(plainWords('a'.repeat(200), FALLBACK)).toBe(FALLBACK);
+    expect(plainWords(`${'a'.repeat(199)}.`, FALLBACK)).toBe(`${'a'.repeat(199)}.`);
+    expect(plainWords('a'.repeat(9), FALLBACK, [], 10)).toBe(`${'a'.repeat(9)}.`);
+    expect(plainWords('a'.repeat(10), FALLBACK, [], 10)).toBe(FALLBACK);
+  });
 });

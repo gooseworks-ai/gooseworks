@@ -196,7 +196,8 @@ function failureWords(error: PartError, names: readonly string[] = []): string {
 function refusalWords(error: PartError, names: readonly string[]): string {
   if (!error.fromPart || !error.detail) return PLAN_CHANGE;
   const said = plainWords(error.detail, '', names, MAX_CHARS - PLAN_FIX.length - 1);
-  return said ? `${said.charAt(0).toUpperCase()}${said.slice(1)} ${PLAN_FIX}` : PLAN_CHANGE;
+  const words = said ? `${said.charAt(0).toUpperCase()}${said.slice(1)} ${PLAN_FIX}` : PLAN_CHANGE;
+  return words.length <= MAX_CHARS ? words : PLAN_CHANGE;
 }
 
 function checkLock(raw: unknown, videoId: string, plan: ApprovedPlan): PartsLock {

@@ -96,6 +96,41 @@ describe('a part’s refusal of the plan', () => {
     expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
   });
 
+  describe('at the card’s 200-character cap', () => {
+    const FIX = ' Change the plan, then make it again.';
+    const GENERIC = 'This video can’t be made from this plan. Change the plan, then make it again.';
+    // Plain words of exactly `n` characters, ending in `end`.
+    const refusal = (n: number, end = '') => `${'The row label is far too long for the card '.repeat(10).slice(0, n - end.length - 1)}x${end}`;
+    const make = async (detail: string) => {
+      const line = fakeLine();
+      const result = await runMake({ home: tempHome(), line, parts: refusing('bad_input', detail) });
+      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+      return result.message!;
+    };
+
+    it('fits a refusal with no full stop that ends at exactly 200', async () => {
+      const said = refusal(200 - FIX.length - 1);
+      const message = await make(said);
+      expect(message).toBe(`${said}.${FIX}`);
+      expect(message).toHaveLength(200);
+    });
+
+    it('gives the generic words when the added full stop would make 201', async () => {
+      expect(await make(refusal(200 - FIX.length))).toBe(GENERIC);
+    });
+
+    it('fits a refusal with its own full stop that ends at exactly 200', async () => {
+      const said = refusal(200 - FIX.length, '.');
+      const message = await make(said);
+      expect(message).toBe(`${said}${FIX}`);
+      expect(message).toHaveLength(200);
+    });
+
+    it('gives the generic words for a refusal one character over', async () => {
+      expect(await make(refusal(200 - FIX.length + 1, '.'))).toBe(GENERIC);
+    });
+  });
+
   it('gives the generic words for the core’s own refusal and for a tool failure', async () => {
     const line = fakeLine();
     const parts = testParts({ clipRun: (async () => ({ clips: 'not files' })) as any });

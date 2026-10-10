@@ -34,6 +34,7 @@ function readsPlain(sentence: string, names: readonly string[]): boolean {
 }
 
 const letters = (text: string) => (text.match(/\p{L}/gu) ?? []).length;
+const finished = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
 /**
  * The plain sentences of `text`, at most `maxChars` characters, or `fallback` when the filter took out
@@ -50,11 +51,11 @@ export function plainWords(text: string, fallback: string, names: readonly strin
   for (const sentence of sentences) {
     if (!readsPlain(sentence, ids)) continue;
     const next = kept ? `${kept} ${sentence}` : sentence;
-    if (next.length > maxChars) break;
+    if (finished(next).length > maxChars) break;
     kept = next;
   }
   // A path is not words the person lost, so it doesn't count toward "most of it".
   const total = letters(text.replace(new RegExp(PATH.source, 'g'), '$1'));
   if (letters(kept) < 2 || letters(kept) * 2 < total) return fallback;
-  return /[.!?]$/.test(kept) ? kept : `${kept}.`;
+  return finished(kept);
 }
