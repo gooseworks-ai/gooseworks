@@ -312,7 +312,8 @@ export function encodeArgs(preset: 'h264-master' | 'h264-intermediate' | 'aac'):
     case 'h264-intermediate':
       return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p', '-threads', '1', '-x264-params', 'threads=1:lookahead-threads=1', ...exact];
     case 'aac':
-      return ['-c:a', 'aac', '-b:a', '192k', '-threads', '1', ...exact];
+      // 48 kHz like the parts harness, so part tests see what the kit makes. No -ac: speech extracts pass -ac 1 first.
+      return ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-threads', '1', ...exact];
   }
 }
 

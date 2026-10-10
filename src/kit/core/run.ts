@@ -159,6 +159,14 @@ function reportedCode(error: PartError): string {
   return error instanceof PieceFailure && error.spent ? 'provider_failed' : 'tool_failed';
 }
 
+/** The words of the first `verdict.reasons[]` entry for `check`, else of the first entry with words; '' when none has any. */
+function reasonFor(verdict: CheckVerdict, check: string | null): string {
+  const reasons = (verdict as { reasons?: unknown }).reasons;
+  if (!Array.isArray(reasons)) return '';
+  const worded = reasons.filter((r): r is { check?: unknown; message: string } => !!r && typeof r === 'object' && typeof r.message === 'string' && r.message.trim() !== '');
+  return ((check !== null && worded.find((r) => r.check === check)) || worded[0])?.message.trim() ?? '';
+}
+
 /** Plain words for a part's failure: the line's own words when it said them, never a part's detail. */
 function failureWords(error: PartError): string {
   if (error instanceof PieceFailure && error.spent) return FAILED_TWICE;
@@ -884,11 +892,13 @@ class Maker {
     await this.writeFinal(null, verdict);
     this.book.finish('layer-check', 'failed');
     this.book.note = 'The final check found a problem';
-    // Check parts give each failed check words in `message`, beside the interface's fields; only plain ones reach the card.
+    // A check part's words sit in the failed check's `message` or only in `verdict.reasons[]` (neither is in the
+    // interface); only plain ones reach the card.
     const said = verdict.checks.find((c) => c.status === 'fail') as { code?: unknown; message?: unknown } | undefined;
-    const message = typeof said?.message === 'string' ? said.message : '';
+    const code = typeof said?.code === 'string' ? said.code : null;
+    const message = (typeof said?.message === 'string' && said.message.trim()) || reasonFor(verdict, code);
     const detail = plainWords(message, CHECK_FAILED, this.idNames());
-    this.deps.log.write('warn', 'the final check failed', { check: typeof said?.code === 'string' ? said.code : null, message, detail });
+    this.deps.log.write('warn', 'the final check failed', { check: code, message, detail });
     this.reportFailure('layer-check', 'check_failed', detail);
     await this.reporter.flush();
     this.run.status = 'failed';
