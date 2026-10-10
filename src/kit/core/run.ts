@@ -41,7 +41,7 @@ import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
-import { PieceCache, PieceFailure, pieceOrderer } from './pieces';
+import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { ProgressBook } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
@@ -147,8 +147,19 @@ function lineWords(error: LineError): string {
   return [error.message, error.fix].filter(Boolean).join(' ');
 }
 
+/**
+ * The code the line hears for a step's last failure. A provider failure a later run can get past
+ * (its piece has an attempt left, or no piece is named) is reported as `tool_failed`, which keeps
+ * the video in Making; the line ends the video on `provider_failed`.
+ */
+function reportedCode(error: PartError): string {
+  if (error.code !== 'provider_failed') return error.code;
+  return error instanceof PieceFailure && error.spent ? 'provider_failed' : 'tool_failed';
+}
+
 /** Plain words for a part's failure: the line's own words when it said them, never a part's detail. */
 function failureWords(error: PartError): string {
+  if (error instanceof PieceFailure && error.spent) return FAILED_TWICE;
   if (error instanceof PieceFailure) return [error.line.error, error.line.fix].filter(Boolean).join(' ');
   switch (error.code) {
     case 'provider_rejected':
@@ -758,9 +769,10 @@ class Maker {
         this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
         const words = failureWords(failure!);
+        const code = reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
-        this.reportFailure(spec.id, failure!.code, words);
-        throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', failure!.code);
+        this.reportFailure(spec.id, code, words);
+        throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
       } finally {
         link.done();
       }

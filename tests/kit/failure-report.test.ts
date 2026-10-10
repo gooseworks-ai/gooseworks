@@ -158,3 +158,46 @@ describe('a failure report the line never took', () => {
     expect(failures(line)).toEqual([]);
   });
 });
+
+describe('a provider failure', () => {
+  const providerFailed = (req: any) => ({
+    status: 200,
+    json: {
+      piece_key: req.piece_key,
+      idempotency_key: req.idempotency_key,
+      status: 'failed',
+      replayed: false,
+      piece_credits: 0,
+      credits: { used: 0, cap: 1000 },
+      failure: { code: 'provider_failed', error: 'The provider didn’t take the job (429).', fix: 'Try once more with a new attempt. Nothing was charged.', next: 'retry' },
+    },
+  });
+
+  it('keeps the video in Making while its piece has an attempt left, and the next run makes it', async () => {
+    const home = tempHome();
+    const line = fakeLine({ piece: providerFailed });
+    const result = await runMake({ home, line, parts: testParts({ clip: { retry: { transient: 0 } } }) });
+    expect(result.status).toBe('failed');
+    expect(result.message).toMatch(/Try once more/);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
+
+    const again = fakeLine();
+    expect((await runMake({ home, line: again, parts: testParts({ clip: { retry: { transient: 0 } } }) })).status).toBe('done');
+    expect(again.pieces[0].idempotency_key).toMatch(/:2$/);
+  });
+
+  it('ends the video once its piece failed twice, without saying to run again', async () => {
+    const home = tempHome();
+    const line = fakeLine({ piece: providerFailed });
+    const result = await runMake({ home, line });
+    expect(line.pieces).toHaveLength(2);
+    expect(result.message).not.toMatch(/once more|same command/i);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'provider_failed', detail: result.message }]);
+
+    const again = fakeLine();
+    const rerun = await runMake({ home, line: again });
+    expect(again.pieces).toHaveLength(0);
+    expect(failures(again)).toEqual([{ step: 'clips', code: 'provider_failed', detail: result.message }]);
+    expect(rerun.message).toBe(result.message);
+  });
+});
