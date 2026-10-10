@@ -1533,8 +1533,13 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
         ["-hide_banner", "-y", "-loglevel", "error", "-noautorotate", "-f", `${shape.format}_pipe`, "-i", "pipe:0", "-frames:v", "1", "-vf", filters.join(","), ...quality, ...exact, target],
         { stdin: data2 }
       );
-    } catch {
-      return fail(`the picture ${path.basename(ref.path)} is too large to show (${width}x${height}); use one at most ${MAX_PICTURE_PX} px on its long side`);
+    } catch (error) {
+      ctx.log.warn("a picture could not be scaled down for the page", {
+        file: path.basename(ref.path),
+        size: `${width}x${height}`,
+        error: String(error?.stderr ?? error?.message ?? error).slice(-300)
+      });
+      return fail(`a ${width}x${height} picture could not be made smaller for the video; use a PNG or JPEG at most ${MAX_PICTURE_PX} px on its long side`);
     }
     return rel;
   };
