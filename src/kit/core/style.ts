@@ -35,7 +35,11 @@ export interface LoadedStyle {
 const STEP_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_STYLE_FILE = 10 * 1024 * 1024;
 
-function refuse(message: string): never {
+/** Where a refusal's file or step name goes: the run log, never the words the customer sees. */
+export type StyleNote = (why: string, fields: Record<string, unknown>) => void;
+
+function refuse(message: string, note?: StyleNote, fields?: Record<string, unknown>): never {
+  if (note && fields) note(message, fields);
   throw new KitStop(message, 'refused');
 }
 
@@ -59,7 +63,7 @@ export function styleHash(style: unknown): string {
 }
 
 /** The style file's grammar, as the core relies on it. */
-export function checkStyle(raw: unknown, pin: { id: string; version: string; hash: string }): StyleFile {
+export function checkStyle(raw: unknown, pin: { id: string; version: string; hash: string }, note?: StyleNote): StyleFile {
   if (!raw || typeof raw !== 'object') refuse('The style file could not be read.');
   const style = raw as StyleFile;
   if (style.id !== pin.id || style.version !== pin.version) refuse('The style file is not the version this video pinned.');
@@ -68,7 +72,7 @@ export function checkStyle(raw: unknown, pin: { id: string; version: string; has
   const seen = new Set<string>();
   for (const step of style.timeline) {
     if (!step || typeof step.id !== 'string' || !STEP_ID.test(step.id) || step.id.startsWith('layer-') || seen.has(step.id)) refuse('The style lists a step the kit can’t run.');
-    if (!step.part || typeof step.part.id !== 'string' || typeof step.part.version !== 'string') refuse(`The style’s step ${step.id} names no part.`);
+    if (!step.part || typeof step.part.id !== 'string' || typeof step.part.version !== 'string') refuse('A step in the style names no part.', note, { step: step.id });
     seen.add(step.id);
   }
   const layers = style.layers as unknown as Record<string, unknown>;
@@ -83,6 +87,7 @@ export interface FetchStyle {
   dir: string;
   /** Downloads on our API origin are signed in; others are not. */
   download: (url: string, maxBytes: number) => Promise<Buffer>;
+  note?: StyleNote;
 }
 
 interface PackageView {
@@ -102,16 +107,16 @@ interface PackageManifest {
  * one must be in it and match its hash: a file that only happens to be in the
  * folder is never used.
  */
-async function assetRefs(style: StyleFile, dir: string, manifest: Map<string, { sha256: string; bytes: number }> | null): Promise<Map<string, FileRef>> {
+async function assetRefs(style: StyleFile, dir: string, manifest: Map<string, { sha256: string; bytes: number }> | null, note?: StyleNote): Promise<Map<string, FileRef>> {
   const assets = new Map<string, FileRef>();
   for (const p of [...(style.assets?.fonts ?? []), ...(style.assets?.frames ?? [])]) {
     const file = path.join(dir, safeRelative(p));
-    if (!isInside(dir, file) || !existsSync(file)) refuse(`The style package is missing ${p}.`);
+    if (!isInside(dir, file) || !existsSync(file)) refuse('The style package is missing a file it needs.', note, { file: p });
     const listed = manifest?.get(p);
-    if (manifest && !listed) refuse(`The style lists ${p}, which its package does not carry.`);
+    if (manifest && !listed) refuse('The style lists a file its package does not carry.', note, { file: p });
     const mime = mimeOf(file);
     const ref = await fileRef(file, mediaOfMime(mime), undefined, mime);
-    if (listed && (ref.sha256 !== listed.sha256 || ref.bytes !== listed.bytes)) refuse(`The style file ${p} does not match its checksum.`);
+    if (listed && (ref.sha256 !== listed.sha256 || ref.bytes !== listed.bytes)) refuse('A file in the style package does not match its checksum.', note, { file: p });
     assets.set(p, ref);
   }
   return assets;
@@ -141,25 +146,25 @@ export async function fetchStyle(opts: FetchStyle): Promise<LoadedStyle> {
     if (!isInside(opts.dir, target)) refuse('The style package names a file outside its folder.');
     if (existsSync(target) && (await hashFile(target)).sha256 === entry.sha256) continue;
     const listed = view.files.find((f) => f.path === entry.path && f.sha256 === entry.sha256);
-    if (!listed?.url) refuse(`The style package has no link for ${entry.path}.`);
+    if (!listed?.url) refuse('The style package has no link for one of its files.', opts.note, { file: entry.path });
     const data = await opts.download(listed.url, MAX_STYLE_FILE);
-    if (data.length !== entry.bytes || sha256Hex(data) !== entry.sha256) refuse(`The style file ${entry.path} does not match its checksum.`);
+    if (data.length !== entry.bytes || sha256Hex(data) !== entry.sha256) refuse('A file in the style package does not match its checksum.', opts.note, { file: entry.path });
     await atomicWrite(target, data);
   }
-  const style = checkStyle(JSON.parse(await readFile(path.join(opts.dir, 'style.json'), 'utf8')), {
-    id: opts.ref.style_id,
-    version: opts.ref.version,
-    hash: opts.ref.style_hash,
-  });
+  const style = checkStyle(
+    JSON.parse(await readFile(path.join(opts.dir, 'style.json'), 'utf8')),
+    { id: opts.ref.style_id, version: opts.ref.version, hash: opts.ref.style_hash },
+    opts.note,
+  );
   const verified = new Map(manifest.files.map((f) => [f.path, { sha256: f.sha256, bytes: f.bytes }]));
-  return { style, assets: await assetRefs(style, opts.dir, verified) };
+  return { style, assets: await assetRefs(style, opts.dir, verified, opts.note) };
 }
 
 /** Off production only: the style from a local styles folder, still checked against the pinned hash. */
-export async function readLocalStyle(stylesDir: string, pin: { id: string; version: string; hash: string }): Promise<LoadedStyle> {
+export async function readLocalStyle(stylesDir: string, pin: { id: string; version: string; hash: string }, note?: StyleNote): Promise<LoadedStyle> {
   const dir = path.join(path.resolve(stylesDir), safeRelative(pin.id));
   const file = path.join(dir, 'style.json');
   if (!existsSync(file)) refuse(`There is no ${pin.id} style in the local styles folder.`);
-  const style = checkStyle(JSON.parse(await readFile(file, 'utf8')), pin);
-  return { style, assets: await assetRefs(style, dir, null) };
+  const style = checkStyle(JSON.parse(await readFile(file, 'utf8')), pin, note);
+  return { style, assets: await assetRefs(style, dir, null, note) };
 }

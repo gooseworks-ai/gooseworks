@@ -1,7 +1,9 @@
 // When the kit gives up, the line hears why once, in plain words: the step, a
 // code and words for the card, never a part id, a log or a path.
+import { readFileSync } from 'fs';
+import { runLayout } from '../../src/kit/core/paths';
 import { PartLoadError } from '../../src/kit/parts/loader';
-import { fakeLine, lineRoute, runMake, tempHome, testHost, testParts } from './harness';
+import { VIDEO, fakeLine, lineRoute, runMake, style, tempHome, testHost, testParts } from './harness';
 
 const failures = (line: ReturnType<typeof fakeLine>) => lineRoute(line.seen, '/progress').map((s) => s.body.failure).filter(Boolean);
 
@@ -61,4 +63,14 @@ it('sends the report again without the reason to a line that refuses the field',
   const last = reports[reports.length - 1].body;
   expect(last.failure).toBeUndefined();
   expect(last.steps.some((s: { state: string }) => s.state === 'failed')).toBe(true);
+});
+
+it('reports a broken style package in plain words and keeps the file name in the log', async () => {
+  const home = tempHome();
+  const line = fakeLine({ style: { ...style, assets: { fonts: ['fonts/brand-bold.ttf'], frames: [] } } });
+  const result = await runMake({ home, line });
+  expect(result.status).toBe('failed');
+  expect(result.message).toBe('The style package is missing a file it needs.');
+  expect(failures(line)).toEqual([{ step: 'style', code: 'change_request', detail: result.message }]);
+  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/fonts\/brand-bold\.ttf/);
 });

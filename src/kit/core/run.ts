@@ -369,9 +369,10 @@ class Maker {
     }
     const pin = { id: plan.style_id, version: plan.style_version, hash: plan.style_hash };
     this.at = 'style';
+    const note = (why: string, fields: Record<string, unknown>) => deps.log.write('error', why, fields);
     this.style = dev.styles
-      ? await readLocalStyle(dev.styles, pin)
-      : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal) });
+      ? await readLocalStyle(dev.styles, pin, note)
+      : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal), note });
     await this.loadParts(!!dev.parts);
 
     // The plan's files, checked against the hashes frozen at the yes.
