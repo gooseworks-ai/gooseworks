@@ -16,6 +16,8 @@ export class ProgressReporter {
   private failure: ProgressFailure | null = null;
   private failureRefused = false;
   private lineRefused = false;
+  /** Set once the run gives up: from then on reports go without the run's stop signal, which may be aborted. */
+  private lastWord = false;
 
   constructor(
     private readonly line: VideoLine,
@@ -56,6 +58,7 @@ export class ProgressReporter {
 
   /** Sends why the run gave up with the next report, once. Never throws. */
   fail(failure: ProgressFailure): Promise<void> {
+    this.lastWord = true;
     if (this.failureRefused) return this.send(true);
     this.failure = failure;
     this.paused = false;
@@ -102,7 +105,7 @@ export class ProgressReporter {
     try {
       // The run's own stop signal may already be aborted when it gives up, so the last word goes without it.
       const request = failure ? { ...this.book.request(), failure } : this.book.request();
-      const answer = await this.line.progress(this.videoId, request, failure ? undefined : this.signal);
+      const answer = await this.line.progress(this.videoId, request, this.lastWord ? undefined : this.signal);
       if (failure && this.failure === failure) this.failure = null;
       if (answer.stop === true || answer.stage === 'stopped') this.onStop('This video was stopped.', 'stop');
     } catch (error) {

@@ -92,3 +92,25 @@ it('waits for the report that says why before it ends, even behind a slow report
   expect(result.status).toBe('failed');
   expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
 });
+
+it('sends the report without the reason to an old line after the run’s own signal was aborted', async () => {
+  const base = fakeLine({
+    // A non-retry refusal of a piece stops the run, which aborts its own signal before the report goes.
+    piece: () => ({ status: 409, json: { error: { code: 'plan_changed', error: 'This video’s plan changed.', fix: 'Ask for a new yes.', next: 'change_request' } } }),
+    progress: (body) =>
+      body.failure ? json(400, { error: { code: 'unknown_fields', error: 'The request has fields this line doesn’t take.', fix: 'Remove failure.', next: 'change_request', details: { fields: ['failure'] } } }) : undefined,
+  });
+  const line = {
+    ...base,
+    fetch: (async (input: any, init: any = {}) => {
+      if (init.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      return base.fetch(input, init);
+    }) as typeof fetch,
+  };
+  const result = await runMake({ home: tempHome(), line });
+  expect(result.status).toBe('failed');
+  const reports = lineRoute(base.seen, '/progress');
+  const refusedAt = reports.findIndex((r) => r.body.failure);
+  expect(refusedAt).toBeGreaterThanOrEqual(0);
+  expect(reports.slice(refusedAt + 1).some((r) => !r.body.failure)).toBe(true);
+});
