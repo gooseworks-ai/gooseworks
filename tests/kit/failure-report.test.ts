@@ -45,6 +45,17 @@ it('reports a failed final check with the check’s own words', async () => {
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video has no sound.' }]);
 });
 
+it('keeps a final check’s tool output, paths and ids off the card and in the log', async () => {
+  const home = tempHome();
+  const line = fakeLine();
+  const message = '[aac @ 0x7f8a1c004a00] Invalid data in /Users/someone/.gooseworks/videos/vid_1/layers/sound/out/out.mp4 (layer-sound)';
+  const parts = testParts({ checkRun: (async () => ({ verdict: { pass: false, checks: [{ code: 'sound', status: 'fail', message }] } })) as any });
+  const result = await runMake({ home, line, parts });
+  expect(result.status).toBe('failed');
+  expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video didn’t pass the final check.' }]);
+  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('0x7f8a1c004a00');
+});
+
 it('sends the report again without the reason to a line that refuses the field', async () => {
   const refused: unknown[] = [];
   const line = fakeLine({

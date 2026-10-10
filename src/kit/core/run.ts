@@ -42,6 +42,7 @@ import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
+import { plainWords } from './plain-words';
 import { ProgressBook } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
@@ -107,6 +108,7 @@ interface StepSpec {
   fix?: number;
 }
 
+const CHECK_FAILED = 'The video didn’t pass the final check.';
 /** For a failure that repeats on every run of the same plan. */
 const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
 /** The server's `failure.code` shape. */
@@ -878,14 +880,27 @@ class Maker {
     await this.writeFinal(null, verdict);
     this.book.finish('layer-check', 'failed');
     this.book.note = 'The final check found a problem';
-    // Check parts give each failed check plain words in `message`, beside the interface's fields.
-    const said = verdict.checks.find((c) => c.status === 'fail') as { message?: unknown } | undefined;
-    const detail = typeof said?.message === 'string' && said.message.trim() ? said.message : 'The video didn’t pass the final check.';
+    // Check parts give each failed check words in `message`, beside the interface's fields; only plain ones reach the card.
+    const said = verdict.checks.find((c) => c.status === 'fail') as { code?: unknown; message?: unknown } | undefined;
+    const message = typeof said?.message === 'string' ? said.message : '';
+    const detail = plainWords(message, CHECK_FAILED, this.idNames());
+    this.deps.log.write('warn', 'the final check failed', { check: typeof said?.code === 'string' ? said.code : null, message, detail });
     this.reportFailure('layer-check', 'check_failed', detail);
     await this.reporter.flush();
     this.run.status = 'failed';
     await this.saveRun();
     return { status: 'failed', message: 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.' };
+  }
+
+  /** Part, step and layer ids, which the person never sees. */
+  private idNames(): string[] {
+    const names = new Set<string>();
+    for (const [key, loaded] of this.parts) {
+      names.add(key);
+      names.add(loaded.manifest.id);
+      names.add(`${loaded.manifest.id}@${loaded.manifest.version}`);
+    }
+    return [...names];
   }
 
   private async writeFinal(result: { cut: FileRef; captions?: FileRef } | null, verdict: CheckVerdict): Promise<string | null> {
