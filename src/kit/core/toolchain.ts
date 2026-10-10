@@ -208,14 +208,39 @@ function rate(value: unknown): number | undefined {
   return a > 0 && b > 0 ? Math.round((a / b) * 1000) / 1000 : undefined;
 }
 
+/** "HH:MM:SS.nnnnnnnnn", as Matroska writes a stream's DURATION tag. */
+function clockSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/.exec(value.trim());
+  if (!match) return numberOf(value);
+  const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return seconds > 0 ? seconds : undefined;
+}
+
+function durationTag(stream: Record<string, unknown> | undefined): number | undefined {
+  const tags = stream?.tags;
+  if (!tags || typeof tags !== 'object') return undefined;
+  // Matroska may write it per language, as DURATION-eng.
+  const key = Object.keys(tags).find((name) => /^duration(-|$)/i.test(name));
+  return key ? clockSeconds((tags as Record<string, unknown>)[key]) : undefined;
+}
+
+type ProbeData = { format?: { duration?: string; format_name?: string }; streams?: Array<Record<string, unknown>> };
+
 /** ffprobe's answer for one file. */
 export function parseProbe(json: string): MediaInfo {
-  const data = JSON.parse(json) as { format?: { duration?: string }; streams?: Array<Record<string, unknown>> };
+  const data = JSON.parse(json) as ProbeData;
   const streams = data.streams ?? [];
   const video = streams.find((s) => s.codec_type === 'video');
   const audio = streams.find((s) => s.codec_type === 'audio');
   const info: MediaInfo = { has_audio: !!audio, has_video: !!video };
-  const duration = numberOf(data.format?.duration);
+  // A recording written as a stream (WebM, Matroska) often has no length in its header.
+  const duration =
+    numberOf(data.format?.duration) ??
+    numberOf(video?.duration) ??
+    numberOf(audio?.duration) ??
+    durationTag(video) ??
+    durationTag(audio);
   if (duration !== undefined) info.duration_s = duration;
   if (video) {
     const width = numberOf(video.width);
@@ -227,6 +252,45 @@ export function parseProbe(json: string): MediaInfo {
     if (typeof video.codec_name === 'string') info.video_codec = video.codec_name;
   }
   if (audio && typeof audio.codec_name === 'string') info.audio_codec = audio.codec_name;
+  return info;
+}
+
+/** Whether a probed file is a still picture, which has no length to find. */
+function isStill(json: string): boolean {
+  const name = (JSON.parse(json) as ProbeData).format?.format_name ?? '';
+  return /(^|,)image2|_pipe(,|$)/.test(name);
+}
+
+/** The span of one stream's packets, from `ffprobe -show_entries packet=pts_time,duration_time -of csv=p=0`. */
+export function packetSpan(csv: string): number | undefined {
+  let first = Infinity;
+  let last = -Infinity;
+  for (const line of csv.split('\n')) {
+    const [ptsText, durText] = line.trim().split(',');
+    const pts = Number(ptsText);
+    if (!ptsText || !Number.isFinite(pts)) continue;
+    const dur = Number(durText);
+    first = Math.min(first, pts);
+    last = Math.max(last, pts + (Number.isFinite(dur) && dur > 0 ? dur : 0));
+  }
+  const span = last - first;
+  return Number.isFinite(span) && span > 0 ? Math.round(span * 1e6) / 1e6 : undefined;
+}
+
+/** Probes one file; when the header has no length, reads it from the last packet's time. */
+export async function probeMedia(exec: KitTools['exec'], file: string): Promise<MediaInfo> {
+  const { stdout } = await exec('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { timeoutMs: 60_000 });
+  const info = parseProbe(stdout);
+  if (info.duration_s !== undefined || (!info.has_video && !info.has_audio) || isStill(stdout)) return info;
+  try {
+    const select = info.has_video ? 'v:0' : 'a:0';
+    const packets = await exec('ffprobe', ['-v', 'error', '-select_streams', select, '-show_entries', 'packet=pts_time,duration_time', '-of', 'csv=p=0', file], { timeoutMs: 120_000 });
+    const span = packetSpan(packets.stdout);
+    if (span !== undefined) info.duration_s = span;
+  } catch (error) {
+    if (error instanceof PartError && error.code === 'stopped') throw error;
+    // No packets to read: the file keeps no length and the step that needs one says so.
+  }
   return info;
 }
 
@@ -293,10 +357,7 @@ export function kitTools(chain: { ffmpeg: string; ffprobe: string; toolchain: st
     ffprobe: chain.ffprobe,
     toolchain: chain.toolchain,
     exec,
-    probe: async (file) => {
-      const { stdout } = await exec('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { timeoutMs: 60_000 });
-      return parseProbe(stdout);
-    },
+    probe: (file) => probeMedia(exec, file),
     encodeArgs,
   };
 }
