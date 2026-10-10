@@ -2,7 +2,7 @@
 // plain words pass; paths, ids and tool output stay in the run log.
 
 /** The card shows no longer a detail than this (gooseworks-app run-failure.ts DETAIL_MAX). */
-const MAX_CHARS = 200;
+export const MAX_CHARS = 200;
 
 const PATH = /(^|[\s"'(=:])(?:~?\/|\.{1,2}\/|[A-Za-z]:\\)\S*/;
 const FILE_NAME = /\b[\w.-]+\.(?:mp4|mov|m4v|webm|mkv|avi|wav|mp3|m4a|aac|ogg|flac|json|ndjson|vtt|srt|ass|png|jpe?g|webp|gif|svg|ttf|otf|woff2?|html?|mjs|cjs|js|ts|log|txt)\b/i;
@@ -32,11 +32,11 @@ function readsPlain(sentence: string, names: readonly string[]): boolean {
 const letters = (text: string) => (text.match(/\p{L}/gu) ?? []).length;
 
 /**
- * The plain sentences of `text`, at most 200 characters, or `fallback` when the filter took out
+ * The plain sentences of `text`, at most `maxChars` characters, or `fallback` when the filter took out
  * most of it. `names` are ids the person must not see (parts, steps, layers); only the ones that
  * can't be read as a word (with a dash, dot, underscore, @ or digit) are matched.
  */
-export function plainWords(text: string, fallback: string, names: readonly string[] = []): string {
+export function plainWords(text: string, fallback: string, names: readonly string[] = [], maxChars = MAX_CHARS): string {
   const ids = names.filter((name) => name && /[-_.@\d]/.test(name));
   const sentences = text
     .split(/\r?\n+|(?<=[.!?])\s+/)
@@ -46,7 +46,7 @@ export function plainWords(text: string, fallback: string, names: readonly strin
   for (const sentence of sentences) {
     if (!readsPlain(sentence, ids)) continue;
     const next = kept ? `${kept} ${sentence}` : sentence;
-    if (next.length > MAX_CHARS) break;
+    if (next.length > maxChars) break;
     kept = next;
   }
   // A path is not words the person lost, so it doesn't count toward "most of it".

@@ -10,7 +10,11 @@ const CODES: ReadonlySet<string> = new Set([
 
 export class PartError extends Error implements PartErrorShape {
   readonly retryable: boolean;
-  constructor(readonly code: PartErrorCode, readonly detail?: string) {
+  /**
+   * True when `detail` is the part's own words (its `ctx.error` or a thrown `{ code }`): parts write
+   * `bad_input` and `output_invalid` details for the person. The core's own details are log words.
+   */
+  constructor(readonly code: PartErrorCode, readonly detail?: string, readonly fromPart = false) {
     super(detail ? `${code}: ${detail}` : code);
     this.name = 'PartError';
     this.retryable = RETRYABLE.has(code);
@@ -22,7 +26,7 @@ export function asPartError(error: unknown): PartError {
   if (error instanceof PartError) return error;
   const code = (error as { code?: unknown })?.code;
   const detail = error instanceof Error ? error.message : String(error);
-  if (typeof code === 'string' && CODES.has(code)) return new PartError(code as PartErrorCode, (error as { detail?: string }).detail ?? detail);
+  if (typeof code === 'string' && CODES.has(code)) return new PartError(code as PartErrorCode, (error as { detail?: string }).detail ?? detail, true);
   return new PartError('tool_failed', detail);
 }
 
