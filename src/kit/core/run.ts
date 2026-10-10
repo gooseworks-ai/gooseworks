@@ -109,6 +109,8 @@ interface StepSpec {
 
 /** For a failure that repeats on every run of the same plan. */
 const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
+/** The server's `failure.code` shape. */
+const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 
 /** A part that would not load, in plain words: which part and why go to the log. */
 function loadStop(error: unknown): KitStop {
@@ -214,6 +216,9 @@ class Maker {
   private readonly parts = new Map<string, LoadedPart>();
   private readonly hosted = new Map<string, string>();
   private readonly pieceLocks = new Map<string, Promise<void>>();
+  /** Where the run is, for the failure report: a step id or a stage before or after the steps. */
+  private at = 'hand-over';
+  private failureSent = false;
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
@@ -296,12 +301,23 @@ class Maker {
       this.run.status = stop && stop.reason === 'stop' ? 'stopped' : 'failed';
       await this.saveRun().catch(() => undefined);
     }
+    if (stop && (stop.reason === 'failed' || stop.reason === 'change_request' || stop.reason === 'refused')) {
+      this.reportFailure(this.at, stop.code ?? 'change_request', stop.message);
+      await this.reporter?.flush().catch(() => undefined);
+    }
     if (stop) {
       if (stop.reason === 'update_kit') return { status: 'update_kit', message: stop.message };
       return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message };
     }
     this.deps.log.write('error', 'the run ended on an error', { error: error instanceof Error ? error.message : String(error) });
     return { status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' };
+  }
+
+  /** Tells the line once why the run gave up; the line's own refusals already ended it on its words. */
+  private reportFailure(step: string, code: string, detail: string): void {
+    if (!this.reporter || this.failureSent || this.reporter.refused) return;
+    this.failureSent = true;
+    void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000) });
   }
 
   private async saveRun(): Promise<void> {
@@ -312,6 +328,7 @@ class Maker {
   private async makeHandedOver(dev: { parts: string | null; styles: string | null }): Promise<MakeResult> {
     const { deps, handed } = this;
     const plan = handed.plan;
+    this.at = 'plan';
     if (!plan || plan.project_id !== this.videoId || plan.style_id !== handed.style_package?.style_id || plan.style_version !== handed.style_package?.version) {
       throw new KitStop('The plan handed over is not this video’s. Nothing was spent.', 'change_request');
     }
@@ -351,12 +368,14 @@ class Maker {
       throw new KitStop('The style handed over is not the one approved for this video. Nothing was spent.', 'change_request');
     }
     const pin = { id: plan.style_id, version: plan.style_version, hash: plan.style_hash };
+    this.at = 'style';
     this.style = dev.styles
       ? await readLocalStyle(dev.styles, pin)
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal) });
     await this.loadParts(!!dev.parts);
 
     // The plan's files, checked against the hashes frozen at the yes.
+    this.at = 'plan-files';
     const planFiles = {
       dir: this.layout.inputs,
       download: (u: string, m: number) => deps.line.download(u, m, this.stop.signal),
@@ -407,6 +426,7 @@ class Maker {
       ...this.layersOn().map((slot) => ({ key: `layer-${slot}`, ref: layerRefs?.[slot], slot })),
     ];
     for (const { key, ref, slot } of wanted) {
+      this.at = key;
       if (!ref || typeof ref.id !== 'string' || typeof ref.version !== 'string') throw new KitStop('This video names a part it has no version for. Nothing was spent.', 'change_request');
       if (lock) {
         const entry = lock.parts[ref.id];
@@ -422,6 +442,7 @@ class Maker {
       }
     }
     for (const { key, ref, slot } of wanted) {
+      this.at = key;
       let loaded: LoadedPart;
       try {
         loaded = await this.deps.host.loader.load({ ref, lock, dev, home: this.deps.home, env: this.deps.env, signal: this.stop.signal });
@@ -545,6 +566,7 @@ class Maker {
 
   /** A style step's inputs: a reference the kit can't resolve goes to the log, plain words to the person. */
   private bind(stepId: string, inputs: Record<string, unknown> | undefined, scope: Parameters<typeof bindInputs>[1]): Record<string, unknown> {
+    this.at = stepId;
     try {
       return bindInputs(inputs, scope, stepId);
     } catch (error) {
@@ -572,6 +594,7 @@ class Maker {
   /** One step: reused when its saved record has the same hash and intact files, else run (and retried once). */
   private async runStep(spec: StepSpec, hashes: Record<string, string>): Promise<Record<string, unknown>> {
     const { manifest } = spec.loaded;
+    this.at = spec.id;
     const inputErrors = schemaErrors(manifest.inputs, spec.inputs, `${spec.id} inputs`);
     if (inputErrors.length) {
       this.deps.log.write('error', 'step inputs refused', { step: spec.id, errors: inputErrors });
@@ -654,16 +677,17 @@ class Maker {
         this.run.steps[spec.id] = { status: record.status, step_hash: hash };
         await this.saveRun();
         if (stopped) throw stopped;
-        this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code });
+        this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
+        const words = failureWords(failure!);
         this.book.finish(spec.id, 'failed');
-        void this.reporter.send(true);
-        throw new KitStop(failureWords(failure!), failure!.code === 'over_quote' ? 'stop' : 'failed', failure!.code);
+        this.reportFailure(spec.id, failure!.code, words);
+        throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', failure!.code);
       } finally {
         link.done();
       }
     }
-    throw new KitStop(failureWords(new PartError('tool_failed')), 'failed');
+    throw new KitStop(failureWords(new PartError('tool_failed')), 'failed', 'tool_failed');
   }
 
   /** A part's output files must be in this video's folder (or the part's own) and unchanged. */
@@ -764,7 +788,11 @@ class Maker {
     await this.writeFinal(null, verdict);
     this.book.finish('layer-check', 'failed');
     this.book.note = 'The final check found a problem';
-    await this.reporter.send(true);
+    // Check parts give each failed check plain words in `message`, beside the interface's fields.
+    const said = verdict.checks.find((c) => c.status === 'fail') as { message?: unknown } | undefined;
+    const detail = typeof said?.message === 'string' && said.message.trim() ? said.message : 'The video didn’t pass the final check.';
+    this.reportFailure('layer-check', 'check_failed', detail);
+    await this.reporter.flush();
     this.run.status = 'failed';
     await this.saveRun();
     return { status: 'failed', message: 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.' };
@@ -796,6 +824,7 @@ class Maker {
   /** Upload, our server's check, and one fix after a first failed check. */
   private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }): Promise<MakeResult> {
     let current = result;
+    this.at = 'upload';
     for (;;) {
       const final = (await this.writeFinal(current, current.verdict))!;
       const data = await readFile(final);
@@ -803,13 +832,13 @@ class Maker {
       const sha256 = sha256Hex(data);
       // Only the exact bytes the final check passed are sent.
       if (sha256 !== current.cut.sha256 || data.length !== current.cut.bytes) {
-        throw new KitStop('The finished video changed after its final check, so it wasn’t sent. Run the same command again to make it again.', 'failed');
+        throw new KitStop('The finished video changed after its final check, so it wasn’t sent. Run the same command again to make it again.', 'failed', 'tool_failed');
       }
       let captions_vtt: string | undefined;
       if (current.captions) {
         const captions = await readFile(current.captions.path);
         if (sha256Hex(captions) !== current.captions.sha256 || captions.length !== current.captions.bytes) {
-          throw new KitStop('The captions changed after the final check, so the video wasn’t sent. Run the same command again to make it again.', 'failed');
+          throw new KitStop('The captions changed after the final check, so the video wasn’t sent. Run the same command again to make it again.', 'failed', 'tool_failed');
         }
         if (captions.length > MAX_CAPTIONS_BYTES) throw new KitStop('The captions file is larger than the line takes.', 'failed');
         captions_vtt = captions.toString('utf8');

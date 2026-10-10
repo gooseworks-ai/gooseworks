@@ -127,7 +127,8 @@ export async function fetchStyle(opts: FetchStyle): Promise<LoadedStyle> {
     view = (JSON.parse((await opts.download(link.toString(), 1024 * 1024)).toString('utf8')) as { package: PackageView }).package;
   } catch (error) {
     if (error instanceof KitStop) throw error;
-    refuse('The style for this video could not be downloaded. Run the same command again in a minute.');
+    // A download that may work next time stops the run without ending the video.
+    throw new KitStop('The style for this video could not be downloaded. Run the same command again in a minute.', 'stop');
   }
   if (!view || !opts.ref.sha256 || view.sha256 !== opts.ref.sha256 || !view.url || !Array.isArray(view.files)) refuse('The style package is not the one this video pinned.');
   const manifestBytes = await opts.download(view.url, 1024 * 1024);
