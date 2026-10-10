@@ -4,7 +4,7 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import * as path from 'path';
-import { kitTools, packetSpan, parseProbe } from '../../src/kit/core/toolchain';
+import { kitTools, packetSpan, parseProbe, scanIncomplete } from '../../src/kit/core/toolchain';
 
 const probeJson = (format: Record<string, unknown>, streams: Array<Record<string, unknown>>) => JSON.stringify({ format, streams });
 
@@ -32,6 +32,14 @@ describe('the probe finds a length without one in the header', () => {
     expect(packetSpan('1.000000,N/A\n3.500000,N/A\n')).toBe(2.5);
     expect(packetSpan('')).toBeUndefined();
     expect(packetSpan('N/A,N/A\n')).toBeUndefined();
+  });
+
+  it('knows a scan that stopped short of the file’s end', () => {
+    expect(scanIncomplete('[matroska,webm @ 0x792ac40000] File ended prematurely\n')).toBe(true);
+    expect(scanIncomplete('[mov,mp4 @ 0x1] moov atom not found\n')).toBe(true);
+    expect(scanIncomplete('[matroska,webm @ 0x1] EBML header parsing failed\n')).toBe(true);
+    expect(scanIncomplete('half.mkv: Invalid data found when processing input\n')).toBe(true);
+    expect(scanIncomplete('')).toBe(false);
   });
 });
 
@@ -61,5 +69,24 @@ withTools('a Matroska file remuxed through a pipe (needs ffmpeg)', () => {
     const info = await tools.probe(streamed);
     expect(info.duration_s).toBeCloseTo(2, 1);
     expect(info.width).toBe(160);
+  });
+
+  it('keeps no length for one cut off halfway, which ffprobe reads to the cut without failing', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'kit-probe-'));
+    const source = path.join(dir, 'source.mp4');
+    expect(spawnSync(ffmpeg!, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=25', '-t', '4', '-c:v', 'mpeg4', source]).status).toBe(0);
+    const piped = spawnSync(ffmpeg!, ['-v', 'error', '-i', source, '-c', 'copy', '-f', 'matroska', 'pipe:1'], { maxBuffer: 64 * 1024 * 1024 });
+    expect(piped.status).toBe(0);
+    const cut = path.join(dir, 'cut.mkv');
+    writeFileSync(cut, piped.stdout.subarray(0, Math.floor(piped.stdout.length / 2)));
+
+    const tools = kitTools({ ffmpeg: ffmpeg!, ffprobe: ffprobe!, toolchain: 'test' }, new AbortController().signal);
+    // The case this guards: the scan succeeds and stops at the cut, short of the 4 s recorded.
+    const scan = await tools.exec('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time,duration_time', '-of', 'csv=p=0', cut]);
+    expect(packetSpan(scan.stdout)).toBeLessThan(3.5);
+    expect(scanIncomplete(scan.stderr)).toBe(true);
+    const info = await tools.probe(cut);
+    expect(info.duration_s).toBeUndefined();
+    expect(info.has_video).toBe(true);
   });
 });

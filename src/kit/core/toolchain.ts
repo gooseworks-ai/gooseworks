@@ -277,6 +277,14 @@ export function packetSpan(csv: string): number | undefined {
   return Number.isFinite(span) && span > 0 ? Math.round(span * 1e6) / 1e6 : undefined;
 }
 
+/** What ffprobe says when it read only part of a file: a cut-off or broken recording. */
+const INCOMPLETE_SCAN = /file ended prematurely|invalid data|truncat|ebml|moov atom|corrupt|end of file/i;
+
+/** Whether a packet scan stopped short of the file's end, so its span is not the file's length. */
+export function scanIncomplete(stderr: string): boolean {
+  return INCOMPLETE_SCAN.test(stderr);
+}
+
 /** Probes one file; when the header has no length, reads it from the last packet's time. */
 export async function probeMedia(exec: KitTools['exec'], file: string): Promise<MediaInfo> {
   const { stdout } = await exec('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { timeoutMs: 60_000 });
@@ -285,7 +293,8 @@ export async function probeMedia(exec: KitTools['exec'], file: string): Promise<
   try {
     const select = info.has_video ? 'v:0' : 'a:0';
     const packets = await exec('ffprobe', ['-v', 'error', '-select_streams', select, '-show_entries', 'packet=pts_time,duration_time', '-of', 'csv=p=0', file], { timeoutMs: 120_000 });
-    const span = packetSpan(packets.stdout);
+    // ffprobe exits 0 on a cut-off file; the span up to the cut is not its length, so it keeps none.
+    const span = scanIncomplete(packets.stderr) ? undefined : packetSpan(packets.stdout);
     if (span !== undefined) info.duration_s = span;
   } catch (error) {
     if (error instanceof PartError && error.code === 'stopped') throw error;
