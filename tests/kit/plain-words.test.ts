@@ -28,6 +28,7 @@ describe('plain words from a part', () => {
     expect(plainWords('layer-sound made no audio.', FALLBACK, ['layer-sound'])).toBe(FALLBACK);
     expect(plainWords('check-layer@1.0.0 found silence.', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('loudness_lufs is below the floor.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('brand.cta should be an object.', FALLBACK)).toBe(FALLBACK);
     // A step id that is also a word can't be told apart, so it stays.
     expect(plainWords('The clips have no sound.', FALLBACK, ['clips'])).toBe('The clips have no sound.');
   });
