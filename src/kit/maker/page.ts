@@ -12,6 +12,11 @@ import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
 const KIT_FOLDER = '_kit';
+// A page's picture is staged at most this many pixels on its long side: the browser drops a 4000 px
+// photo when the page holds several, and reports it as unreadable.
+const MAX_PICTURE_PX = 2048;
+// Pictures the kit's ffmpeg reads and writes back losslessly enough to stage smaller (to PNG, a JPEG to JPEG).
+const RESIZABLE: Record<string, 'png' | 'jpg'> = { 'image/png': 'png', 'image/webp': 'png', 'image/jpeg': 'jpg' };
 
 const IMAGE_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -104,7 +109,7 @@ function cssString(value: string): string {
 export async function buildPage(
   spec: MakerSpec,
   dir: string,
-  ctx: Pick<PartContext, 'error' | 'log'>,
+  ctx: Pick<PartContext, 'error' | 'log'> & { tools?: Pick<PartContext['tools'], 'exec' | 'probe'> },
   reserve: (bytes: number) => void = () => undefined,
 ): Promise<BuiltPage> {
   const fail: Fail = (detail) => {
@@ -137,6 +142,7 @@ export async function buildPage(
   const url = (relFromDir: string) => path.relative(path.dirname(entry), path.join(dir, ...relFromDir.split('/'))).split(path.sep).join('/');
   const placed = new Map<string, string>();
   const preload: string[] = [];
+  const staging = new Map<string, string>();
   for (const ref of pageFiles) {
     const rel = path.relative(base, ref.path).split(path.sep).join('/');
     if (rel.split('/')[0] === KIT_FOLDER) fail(`the frame ${rel} uses the folder name ${KIT_FOLDER}, which the kit keeps for itself`);
@@ -178,17 +184,44 @@ export async function buildPage(
   if (spec.brand?.fonts.heading) await addFont(spec.brand.fonts.heading, 'brand-heading');
   if (spec.brand?.fonts.body) await addFont(spec.brand.fonts.body, 'brand-body');
 
+  // A picture larger than MAX_PICTURE_PX on its long side, staged smaller by the kit's ffmpeg; null when it fits.
+  const smaller = async (ref: FileRef): Promise<{ ext: string; target: string } | null> => {
+    const to = RESIZABLE[ref.mime];
+    if (!to || !ctx.tools) return null;
+    let { width, height } = ref;
+    if (!width || !height) ({ width, height } = await ctx.tools.probe(ref.path).catch(() => ({ width: undefined, height: undefined })));
+    if (!width || !height || Math.max(width, height) <= MAX_PICTURE_PX) return null;
+    const k = MAX_PICTURE_PX / Math.max(width, height);
+    const [w, h] = [Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k))];
+    const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}-${MAX_PICTURE_PX}.${to}`;
+    const target = path.join(dir, ...rel.split('/'));
+    const quality = to === 'jpg' ? ['-q:v', '2'] : [];
+    try {
+      await ctx.tools.exec('ffmpeg', ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-i', ref.path, '-frames:v', '1', '-vf', `scale=${w}:${h}:flags=lanczos`, ...quality, target]);
+    } catch {
+      return fail(`the picture ${path.basename(ref.path)} is too large to show (${width}x${height}); use one at most ${MAX_PICTURE_PX} px on its long side`);
+    }
+    return { ext: to, target };
+  };
+
   // Pictures: product photos, the logo and scene stills, by content.
   const media = async (ref: FileRef): Promise<string> => {
     const ext = IMAGE_EXT[ref.mime];
     if (!ext) fail(`the picture ${path.basename(ref.path)} is not png, jpg, webp, gif, avif or svg`);
-    const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
-    if (!preload.includes(url(rel))) {
-      const data = await readChecked(ref, fail);
-      still(ref, data);
-      await put(path.join(dir, ...rel.split('/')), data);
-      preload.push(url(rel));
-    }
+    let rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
+    const staged = staging.get(ref.sha256);
+    if (staged) return staged;
+    const data = await readChecked(ref, fail);
+    still(ref, data);
+    const resized = await smaller(ref);
+    if (resized) {
+      rel = path.relative(dir, resized.target).split(path.sep).join('/');
+      const size = (await readFile(resized.target)).length;
+      reserve(size);
+      bytes += size;
+    } else await put(path.join(dir, ...rel.split('/')), data);
+    preload.push(url(rel));
+    staging.set(ref.sha256, url(rel));
     return url(rel);
   };
   const products = [];
