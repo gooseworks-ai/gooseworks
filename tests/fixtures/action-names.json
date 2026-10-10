@@ -1,9 +1,9 @@
 {
-  "$comment": "SNAPSHOT of the 66 action names in the action contract. The CLI cannot import gooseworks-app, so the skill lint (tests/skills/skill-lint.test.ts) checks generated skills against this list, and checks this list against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. Refresh it from the file below whenever an action is added, renamed or removed there.",
+  "$comment": "Snapshot of registered v2 action names plus the six frozen pages tool shapes pending phase 4 registration. The optional GOOSEWORKS_APP_DIR drift test checks the union of both sources. This fixture does not claim staging availability.",
   "source_repo": "gooseworks-app",
   "source_file": "apps/api/src/app-mcp-server/mcp-tools/v2/contract.ts (ACTION_NAMES)",
   "source_ref": "video-merged",
-  "captured": "2026-10-08",
+  "captured": "2026-10-10",
   "actions": [
     "account_whoami",
     "brand_read",
@@ -70,6 +70,13 @@
     "automation_save",
     "automation_delete",
     "chat_read",
-    "helper_task"
-  ]
+    "helper_task",
+    "ad_ingest",
+    "page_read",
+    "page_write",
+    "form_read",
+    "form_write",
+    "site_write"
+  ],
+  "pending_source_file": "apps/api/src/app-mcp-server/mcp-tools/pages/schemas.ts (*Shape exports)"
 }

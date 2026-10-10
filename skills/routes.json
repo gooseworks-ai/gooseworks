@@ -108,6 +108,12 @@
       ]
     },
     {
+      "job": "The page your ad lands on",
+      "skills": [
+        "goose-pages"
+      ]
+    },
+    {
       "job": "Product photos",
       "skills": [
         "goose-product-photos",
@@ -141,6 +147,7 @@
     "creator-profile-teardown",
     "goose-ads",
     "goose-graphics",
+    "goose-pages",
     "goose-product-photos",
     "goose-video",
     "influencer-prospecting",
