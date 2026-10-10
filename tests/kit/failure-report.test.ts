@@ -74,3 +74,21 @@ it('reports a broken style package in plain words and keeps the file name in the
   expect(failures(line)).toEqual([{ step: 'style', code: 'change_request', detail: result.message }]);
   expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/fonts\/brand-bold\.ttf/);
 });
+
+it('waits for the report that says why before it ends, even behind a slow report', async () => {
+  const delivered: unknown[] = [];
+  const line = fakeLine({
+    // Every report is slow, so the failure queues behind one already on its way.
+    progress: ((body: any) =>
+      new Promise((resolve) =>
+        setTimeout(() => {
+          if (body.failure) delivered.push(body.failure);
+          resolve(json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 }));
+        }, 150),
+      )) as any,
+  });
+  const parts = testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
+  const result = await runMake({ home: tempHome(), line, parts });
+  expect(result.status).toBe('failed');
+  expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+});
