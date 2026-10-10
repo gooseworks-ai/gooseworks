@@ -95,7 +95,7 @@ function encodeArgs(preset: 'h264-master' | 'h264-intermediate' | 'aac'): string
 function makeTools(bins: { ffmpeg: string; ffprobe: string }, signal: AbortSignal): KitTools {
   const exec: KitTools['exec'] = (bin, args, options = {}) =>
     new Promise((resolve, reject) => {
-      const child = spawn(bin === 'ffmpeg' ? bins.ffmpeg : bins.ffprobe, args, { cwd: options.cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(bin === 'ffmpeg' ? bins.ffmpeg : bins.ffprobe, args, { cwd: options.cwd, shell: false, stdio: 'pipe' });
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
@@ -108,6 +108,7 @@ function makeTools(bins: { ffmpeg: string; ffprobe: string }, signal: AbortSigna
         if (code === 0) resolve({ stdout, stderr });
         else reject(new TestPartError('tool_failed', `${bin} exited with ${code}: ${stderr.slice(-1000)}`));
       });
+      child.stdin.end(options.stdin ? Buffer.from(options.stdin) : undefined);
     });
   const probe = async (file: string): Promise<MediaInfo> => {
     const { stdout } = await exec('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file]);
@@ -188,4 +189,18 @@ export function runFfmpeg(args: string[], input?: Buffer): Buffer {
   const r = spawnSync(toolsFound.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args], { input, maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`ffmpeg ${args.join(' ')} failed: ${r.stderr?.toString()}`);
   return r.stdout;
+}
+
+/** The RGBA of one pixel of a still picture, as ffmpeg decodes it (no EXIF turn). */
+export function pixelAt(file: string, x: number, y: number): number[] {
+  return [...runFfmpeg(['-noautorotate', '-i', file, '-vf', `format=rgba,crop=1:1:${x}:${y}`, '-frames:v', '1', '-f', 'rawvideo', '-'])];
+}
+
+/** A still picture's stored size and pixel format. */
+export function pictureInfo(file: string): { width: number; height: number; pix_fmt: string } {
+  if (typeof toolsFound === 'string') throw new Error(toolsFound);
+  const r = spawnSync(toolsFound.ffprobe, ['-v', 'error', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'json', file], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`ffprobe could not read ${file}: ${r.stderr}`);
+  const s = (JSON.parse(r.stdout) as { streams: Array<{ width: number; height: number; pix_fmt: string }> }).streams[0];
+  return { width: Number(s.width), height: Number(s.height), pix_fmt: String(s.pix_fmt) };
 }

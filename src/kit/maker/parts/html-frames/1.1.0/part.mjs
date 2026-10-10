@@ -2,7 +2,7 @@
 
 // src/kit/maker/make.ts
 import { createHash as createHash2 } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile2, rm, stat, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
 import * as path2 from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -202,6 +202,96 @@ function cssDataUrls(css, depth = 0) {
     if (decoded.mime === "text/css" && depth < 4) found.push(...cssDataUrls(decoded.bytes.toString("utf8"), depth + 1));
   }
   return found;
+}
+function tiffOrientation(tiff) {
+  if (tiff.length < 8) return 1;
+  const little = tiff[0] === 73 && tiff[1] === 73;
+  if (!little && !(tiff[0] === 77 && tiff[1] === 77)) return 1;
+  const view = new DataView(tiff.buffer, tiff.byteOffset, tiff.byteLength);
+  const u16 = (at) => view.getUint16(at, little);
+  if (u16(2) !== 42) return 1;
+  const ifd = view.getUint32(4, little);
+  if (ifd + 2 > tiff.length) return 1;
+  const count = u16(ifd);
+  for (let i = 0; i < count; i++) {
+    const entry = ifd + 2 + i * 12;
+    if (entry + 12 > tiff.length) break;
+    if (u16(entry) === 274 && u16(entry + 2) === 3) {
+      const value = u16(entry + 8);
+      return value >= 1 && value <= 8 ? value : 1;
+    }
+  }
+  return 1;
+}
+function jpegGeometry(data) {
+  let at = 2;
+  let orientation = 1;
+  let exifSeen = false;
+  while (at + 4 <= data.length) {
+    if (data[at] !== 255) return null;
+    const marker = data[at + 1];
+    if (marker === 255) {
+      at++;
+      continue;
+    }
+    if (marker === 1 || marker >= 208 && marker <= 215) {
+      at += 2;
+      continue;
+    }
+    if (marker === 217 || marker === 218) return null;
+    const length = data[at + 2] << 8 | data[at + 3];
+    if (length < 2) return null;
+    const body = at + 4;
+    if (marker === 225 && !exifSeen && text(data, body, 6) === "Exif\0\0") {
+      exifSeen = true;
+      orientation = tiffOrientation(data.subarray(body + 6, at + 2 + length));
+    }
+    const sof = marker >= 192 && marker <= 207 && marker !== 196 && marker !== 200 && marker !== 204;
+    if (sof && body + 5 <= data.length) {
+      const height = data[body + 1] << 8 | data[body + 2];
+      const width = data[body + 3] << 8 | data[body + 4];
+      return width && height ? { format: "jpeg", width, height, orientation } : null;
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+function webpGeometry(data) {
+  if (data.length < 30) return null;
+  const chunk = text(data, 12, 4);
+  const p = 20;
+  const u24 = (at) => data[at] | data[at + 1] << 8 | data[at + 2] << 16;
+  if (chunk === "VP8X") return { format: "webp", width: 1 + u24(p + 4), height: 1 + u24(p + 7), orientation: 1 };
+  if (chunk === "VP8 " && data[p + 3] === 157 && data[p + 4] === 1 && data[p + 5] === 42) {
+    return { format: "webp", width: (data[p + 6] | data[p + 7] << 8) & 16383, height: (data[p + 8] | data[p + 9] << 8) & 16383, orientation: 1 };
+  }
+  if (chunk === "VP8L" && data[p] === 47) {
+    const [b1, b2, b3, b4] = [data[p + 1], data[p + 2], data[p + 3], data[p + 4]];
+    return { format: "webp", width: 1 + (b1 | (b2 & 63) << 8), height: 1 + (b2 >> 6 | b3 << 2 | (b4 & 15) << 10), orientation: 1 };
+  }
+  return null;
+}
+function pictureGeometry(data) {
+  if (data.length >= 24 && data[0] === 137 && text(data, 1, 3) === "PNG" && text(data, 12, 4) === "IHDR") {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const width = view.getUint32(16);
+    const height = view.getUint32(20);
+    let orientation = 1;
+    for (let at = 8; at + 12 <= data.length; ) {
+      const length = view.getUint32(at);
+      const type = text(data, at + 4, 4);
+      if (type === "IEND") break;
+      if (type === "eXIf") {
+        orientation = tiffOrientation(data.subarray(at + 8, at + 8 + length));
+        break;
+      }
+      at += 12 + length;
+    }
+    return width && height ? { format: "png", width, height, orientation } : null;
+  }
+  if (data.length >= 4 && data[0] === 255 && data[1] === 216) return jpegGeometry(data);
+  if (data.length >= 12 && text(data, 0, 4) === "RIFF" && text(data, 8, 4) === "WEBP") return webpGeometry(data);
+  return null;
 }
 
 // src/kit/core/canonical.ts
@@ -405,7 +495,7 @@ var inputs = {
       maximum: 200
     },
     products: {
-      description: "plan.products, in the customer's order. A PNG, JPEG or WebP photo over 2048 px on its long side reaches the page scaled down to 2048 px (a PNG or WebP as PNG).",
+      description: "plan.products, in the customer's order. A PNG, JPEG or WebP photo over 2048 px on its long side, as shown after its EXIF orientation, reaches the page turned upright and scaled down to 2048 px (a PNG or WebP as PNG, keeping its transparency).",
       type: "array",
       maxItems: 12,
       items: {
@@ -638,7 +728,7 @@ function readInputs(raw, ctx) {
 
 // src/kit/maker/page.ts
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 
 // src/kit/maker/runtime.ts
@@ -1292,7 +1382,17 @@ function runtimeScript(data) {
 // src/kit/maker/page.ts
 var KIT_FOLDER = "_kit";
 var MAX_PICTURE_PX = 2048;
-var RESIZABLE = { "image/png": "png", "image/webp": "png", "image/jpeg": "jpg" };
+var RESIZABLE = /* @__PURE__ */ new Set(["image/png", "image/webp", "image/jpeg"]);
+var ORIENT = {
+  1: [],
+  2: ["hflip"],
+  3: ["hflip", "vflip"],
+  4: ["vflip"],
+  5: ["transpose=0"],
+  6: ["transpose=1"],
+  7: ["transpose=3"],
+  8: ["transpose=2"]
+};
 var IMAGE_EXT = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -1413,23 +1513,30 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
   for (const font of spec.fonts) await addFont(font, familyOf(font));
   if (spec.brand?.fonts.heading) await addFont(spec.brand.fonts.heading, "brand-heading");
   if (spec.brand?.fonts.body) await addFont(spec.brand.fonts.body, "brand-body");
-  const smaller = async (ref) => {
-    const to = RESIZABLE[ref.mime];
-    if (!to || !ctx.tools) return null;
-    let { width, height } = ref;
-    if (!width || !height) ({ width, height } = await ctx.tools.probe(ref.path).catch(() => ({ width: void 0, height: void 0 })));
-    if (!width || !height || Math.max(width, height) <= MAX_PICTURE_PX) return null;
+  const smaller = async (ref, data2) => {
+    const shape = pictureGeometry(data2);
+    if (!shape || !ctx.tools) return null;
+    const turned = shape.orientation >= 5;
+    const [width, height] = turned ? [shape.height, shape.width] : [shape.width, shape.height];
+    if (Math.max(width, height) <= MAX_PICTURE_PX) return null;
     const k = MAX_PICTURE_PX / Math.max(width, height);
     const [w, h] = [Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k))];
+    const to = shape.format === "jpeg" ? "jpg" : "png";
     const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}-${MAX_PICTURE_PX}.${to}`;
     const target = path.join(dir, ...rel.split("/"));
+    const filters = [...ORIENT[shape.orientation], `scale=${w}:${h}:flags=lanczos`, "setsar=1", ...to === "png" ? ["format=rgba"] : []];
     const quality = to === "jpg" ? ["-q:v", "2"] : [];
+    const exact = ["-fflags", "+bitexact", "-flags", "+bitexact", "-map_metadata", "-1", "-threads", "1"];
     try {
-      await ctx.tools.exec("ffmpeg", ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", ref.path, "-frames:v", "1", "-vf", `scale=${w}:${h}:flags=lanczos`, ...quality, target]);
+      await ctx.tools.exec(
+        "ffmpeg",
+        ["-hide_banner", "-y", "-loglevel", "error", "-noautorotate", "-f", `${shape.format}_pipe`, "-i", "pipe:0", "-frames:v", "1", "-vf", filters.join(","), ...quality, ...exact, target],
+        { stdin: data2 }
+      );
     } catch {
       return fail(`the picture ${path.basename(ref.path)} is too large to show (${width}x${height}); use one at most ${MAX_PICTURE_PX} px on its long side`);
     }
-    return { ext: to, target };
+    return rel;
   };
   const media = async (ref) => {
     const ext = IMAGE_EXT[ref.mime];
@@ -1439,10 +1546,10 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     if (staged) return staged;
     const data2 = await readChecked(ref, fail);
     still(ref, data2);
-    const resized = await smaller(ref);
+    const resized = RESIZABLE.has(ref.mime) ? await smaller(ref, data2) : null;
     if (resized) {
-      rel = path.relative(dir, resized.target).split(path.sep).join("/");
-      const size = (await readFile(resized.target)).length;
+      rel = resized;
+      const size = (await stat(path.join(dir, ...rel.split("/")))).size;
       reserve(size);
       bytes += size;
     } else await put(path.join(dir, ...rel.split("/")), data2);
@@ -1582,7 +1689,7 @@ async function makeVideo(rawInputs, ctx, options = {}) {
     const room = limit - used - FS_MARGIN;
     if (room <= 0) throw overLimit();
     await ctx.tools.exec("ffmpeg", [...args.slice(0, -1), "-fs", String(room), args[args.length - 1]]);
-    const size = (await stat(file)).size;
+    const size = (await stat2(file)).size;
     if (size >= room) throw overLimit();
     reserve(size);
   };
