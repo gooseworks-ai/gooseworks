@@ -181,3 +181,11 @@ export function ffprobe(file: string): { width: number; height: number; duration
 export function sha256File(file: string): string {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
+
+/** Runs the test ffmpeg and returns its stdout bytes; throws with its stderr on failure. */
+export function runFfmpeg(args: string[], input?: Buffer): Buffer {
+  if (typeof toolsFound === 'string') throw new Error(toolsFound);
+  const r = spawnSync(toolsFound.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args], { input, maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`ffmpeg ${args.join(' ')} failed: ${r.stderr?.toString()}`);
+  return r.stdout;
+}

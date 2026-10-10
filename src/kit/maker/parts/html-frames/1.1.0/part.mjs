@@ -1083,7 +1083,7 @@ var RUNTIME = String.raw`(function () {
     }
   }
   // Where the brand's logo shows, in the page's CSS pixels: the largest visible picture of it, as drawn
-  // inside its element (object-fit), so the final check can look for the logo where it is.
+  // inside its element (object-fit) and cut by whatever clips it, so the final check can look for the logo where it is.
   var LOGO = DATA.brand && DATA.brand.logo ? new URL(DATA.brand.logo, document.baseURI).href : null;
   function shownOpacity(el) {
     var opacity = 1;
@@ -1102,6 +1102,70 @@ var RUNTIME = String.raw`(function () {
     if (!isFinite(number)) return free / 2;
     return /%$/.test(text) ? (number / 100) * free : number;
   }
+  function length(value) {
+    var number = parseFloat(value);
+    return isFinite(number) ? number : 0;
+  }
+  // The element's box in viewport pixels, inside its borders and, with padding, inside its padding too.
+  // A transform scales the insets with the element; a rotated one leaves the box as its bounding rect.
+  function innerBox(el, style, padding) {
+    var rect = el.getBoundingClientRect();
+    var kx = el.offsetWidth > 0 ? rect.width / el.offsetWidth : 1;
+    var ky = el.offsetHeight > 0 ? rect.height / el.offsetHeight : 1;
+    var p = padding ? 1 : 0;
+    return {
+      x0: rect.left + (length(style.borderLeftWidth) + p * length(style.paddingLeft)) * kx,
+      y0: rect.top + (length(style.borderTopWidth) + p * length(style.paddingTop)) * ky,
+      x1: rect.right - (length(style.borderRightWidth) + p * length(style.paddingRight)) * kx,
+      y1: rect.bottom - (length(style.borderBottomWidth) + p * length(style.paddingBottom)) * ky,
+      kx: kx,
+      ky: ky
+    };
+  }
+  function cut(box, clip, x, y) {
+    if (x) { box.x0 = Math.max(box.x0, clip.x0); box.x1 = Math.min(box.x1, clip.x1); }
+    if (y) { box.y0 = Math.max(box.y0, clip.y0); box.y1 = Math.min(box.y1, clip.y1); }
+  }
+  function area(box) {
+    return Math.max(0, box.x1 - box.x0) * Math.max(0, box.y1 - box.y0);
+  }
+  function clips(value) {
+    return value !== 'visible';
+  }
+  // An element a fixed-position box is laid out in rather than the viewport.
+  function holdsFixed(style) {
+    return style.transform !== 'none' || style.perspective !== 'none' || style.filter !== 'none' ||
+      (style.backdropFilter && style.backdropFilter !== 'none') || /paint|layout|strict|content/.test(style.contain || '') ||
+      /transform|perspective|filter/.test(style.willChange || '');
+  }
+  function flatParent(node) {
+    if (node.assignedSlot) return node.assignedSlot;
+    var parent = node.parentNode;
+    return parent && parent.nodeType === 11 ? parent.host || null : parent;
+  }
+  // Cuts the box by every ancestor that clips its overflow (border-radius ignored). An absolutely or fixed
+  // positioned box escapes the clips of ancestors outside its containing block, so those are skipped.
+  function cutByAncestors(el, box) {
+    var html = document.documentElement;
+    var body = document.body;
+    // The root's (or else body's) overflow belongs to the viewport, which cuts the box anyway.
+    var bodyPropagates = !clips(getComputedStyle(html).overflowX) && !clips(getComputedStyle(html).overflowY);
+    var escape = getComputedStyle(el).position;
+    for (var node = flatParent(el); node; node = flatParent(node)) {
+      if (node.nodeType !== 1) continue;
+      var style = getComputedStyle(node);
+      if (escape === 'absolute' || escape === 'fixed') {
+        var holds = escape === 'fixed' ? holdsFixed(style) : style.position !== 'static' || holdsFixed(style);
+        if (!holds) continue;
+      }
+      escape = style.position;
+      if (node === html || (node === body && bodyPropagates) || style.display === 'contents') continue;
+      var x = clips(style.overflowX);
+      var y = clips(style.overflowY);
+      if (/paint|strict|content/.test(style.contain || '')) x = y = true;
+      if (x || y) cut(box, innerBox(node, style, false), x, y);
+    }
+  }
   function logoBox() {
     if (!LOGO) return null;
     var best = null;
@@ -1110,30 +1174,35 @@ var RUNTIME = String.raw`(function () {
       for (var i = 0; i < images.length; i++) {
         var img = images[i];
         if ((img.currentSrc || img.src) !== LOGO || shownOpacity(img) < 0.5) continue;
-        var rect = img.getBoundingClientRect();
-        var w = img.offsetWidth;
-        var h = img.offsetHeight;
-        if (!(rect.width > 0 && rect.height > 0 && w > 0 && h > 0)) continue;
-        var box = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+        var style = getComputedStyle(img);
+        var content = innerBox(img, style, true);
+        // The content box in the element's own pixels, where object-fit places the picture.
+        var w = (content.x1 - content.x0) / content.kx;
+        var h = (content.y1 - content.y0) / content.ky;
+        if (!(w > 0 && h > 0)) continue;
+        var drawn = { x0: content.x0, y0: content.y0, x1: content.x1, y1: content.y1 };
         var nw = img.naturalWidth;
         var nh = img.naturalHeight;
-        var style = getComputedStyle(img);
         var fit = style.objectFit;
         if (nw > 0 && nh > 0 && fit && fit !== 'fill') {
           var s = fit === 'contain' ? Math.min(w / nw, h / nh) : fit === 'cover' ? Math.max(w / nw, h / nh) : fit === 'none' ? 1 : Math.min(1, w / nw, h / nh);
           var position = String(style.objectPosition || '50% 50%').split(/\s+/);
-          var kx = rect.width / w;
-          var ky = rect.height / h;
-          box = { x: rect.left + fitOffset(position[0], w - nw * s) * kx, y: rect.top + fitOffset(position[1], h - nh * s) * ky, w: nw * s * kx, h: nh * s * ky };
+          drawn.x0 = content.x0 + fitOffset(position[0], w - nw * s) * content.kx;
+          drawn.y0 = content.y0 + fitOffset(position[1], h - nh * s) * content.ky;
+          drawn.x1 = drawn.x0 + nw * s * content.kx;
+          drawn.y1 = drawn.y0 + nh * s * content.ky;
         }
-        // Only the part on the page counts, and only a picture at least half on it.
-        var x0 = Math.max(0, box.x);
-        var y0 = Math.max(0, box.y);
-        var x1 = Math.min(innerWidth, box.x + box.w);
-        var y1 = Math.min(innerHeight, box.y + box.h);
-        var area = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
-        if (area < box.w * box.h * 0.5 || (best && area <= best.area)) continue;
-        best = { area: area, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        // A picture is cut to its content box (cover crops it there) unless the page lets it overflow.
+        cut(drawn, content, clips(style.overflowX), clips(style.overflowY));
+        var whole = area(drawn);
+        if (!(whole > 0)) continue;
+        var seen = { x0: drawn.x0, y0: drawn.y0, x1: drawn.x1, y1: drawn.y1 };
+        cutByAncestors(img, seen);
+        cut(seen, { x0: 0, y0: 0, x1: innerWidth, y1: innerHeight }, true, true);
+        // Only a picture at least half visible counts.
+        var shown = area(seen);
+        if (shown < whole * 0.5 || (best && shown <= best.area)) continue;
+        best = { area: shown, x: seen.x0, y: seen.y0, w: seen.x1 - seen.x0, h: seen.y1 - seen.y0 };
       }
     }
     return best ? { x: best.x, y: best.y, w: best.w, h: best.h } : null;
