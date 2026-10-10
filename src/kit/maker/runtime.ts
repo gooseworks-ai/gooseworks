@@ -478,6 +478,62 @@ const RUNTIME = String.raw`(function () {
       return null;
     }
   }
+  // Where the brand's logo shows, in the page's CSS pixels: the largest visible picture of it, as drawn
+  // inside its element (object-fit), so the final check can look for the logo where it is.
+  var LOGO = DATA.brand && DATA.brand.logo ? new URL(DATA.brand.logo, document.baseURI).href : null;
+  function shownOpacity(el) {
+    var opacity = 1;
+    for (var node = el; node; node = node.parentNode || node.host) {
+      if (node.nodeType !== 1) continue;
+      var style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return 0;
+      opacity *= Number(style.opacity);
+    }
+    return opacity;
+  }
+  // object-position along one axis: a percentage of the free room, else a length from the start.
+  function fitOffset(value, free) {
+    var text = String(value || '50%');
+    var number = parseFloat(text);
+    if (!isFinite(number)) return free / 2;
+    return /%$/.test(text) ? (number / 100) * free : number;
+  }
+  function logoBox() {
+    if (!LOGO) return null;
+    var best = null;
+    for (var r = 0; r < roots.length; r++) {
+      var images = roots[r].querySelectorAll('img');
+      for (var i = 0; i < images.length; i++) {
+        var img = images[i];
+        if ((img.currentSrc || img.src) !== LOGO || shownOpacity(img) < 0.5) continue;
+        var rect = img.getBoundingClientRect();
+        var w = img.offsetWidth;
+        var h = img.offsetHeight;
+        if (!(rect.width > 0 && rect.height > 0 && w > 0 && h > 0)) continue;
+        var box = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+        var nw = img.naturalWidth;
+        var nh = img.naturalHeight;
+        var style = getComputedStyle(img);
+        var fit = style.objectFit;
+        if (nw > 0 && nh > 0 && fit && fit !== 'fill') {
+          var s = fit === 'contain' ? Math.min(w / nw, h / nh) : fit === 'cover' ? Math.max(w / nw, h / nh) : fit === 'none' ? 1 : Math.min(1, w / nw, h / nh);
+          var position = String(style.objectPosition || '50% 50%').split(/\s+/);
+          var kx = rect.width / w;
+          var ky = rect.height / h;
+          box = { x: rect.left + fitOffset(position[0], w - nw * s) * kx, y: rect.top + fitOffset(position[1], h - nh * s) * ky, w: nw * s * kx, h: nh * s * ky };
+        }
+        // Only the part on the page counts, and only a picture at least half on it.
+        var x0 = Math.max(0, box.x);
+        var y0 = Math.max(0, box.y);
+        var x1 = Math.min(innerWidth, box.x + box.w);
+        var y1 = Math.min(innerHeight, box.y + box.h);
+        var area = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+        if (area < box.w * box.h * 0.5 || (best && area <= best.area)) continue;
+        best = { area: area, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+    }
+    return best ? { x: best.x, y: best.y, w: best.w, h: best.h } : null;
+  }
   async function take() {
     scanResources();
     var sources = [];
@@ -488,7 +544,7 @@ const RUNTIME = String.raw`(function () {
     }
     var out = problems.slice();
     problems.length = 0;
-    return { problems: out, sources: sources };
+    return { problems: out, sources: sources, logo: logoBox() };
   }
 
   var driver = {

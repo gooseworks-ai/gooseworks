@@ -44,7 +44,7 @@ describe('html-frames through the kit', () => {
   it("loads with the kit's parts loader, and its input schema takes each pilot step as the core binds it", async () => {
     const loader = createPartLoader({ kitVersion: KIT_VERSION, importModule: async () => ({ run: async () => ({}) }) });
     const loaded = await loader.load({
-      ref: { id: 'html-frames', version: '1.0.0' },
+      ref: { id: 'html-frames', version: '1.1.0' },
       lock: null,
       dev: true,
       home: os.tmpdir(),

@@ -149,7 +149,7 @@ export function partContext(root: string): TestContext {
     interface: 1,
     video: { id: 'vid_test', style: { id: 'test-style', version: '1.0.0' }, env: 'local' },
     step: { id: 'frames', attempt: 1 },
-    part: { id: 'html-frames', version: '1.0.0', dir: path.join(__dirname, '..', '..', '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.0.0') },
+    part: { id: 'html-frames', version: '1.1.0', dir: path.join(__dirname, '..', '..', '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.1.0') },
     workDir,
     tmpDir,
     seed: () => 0,
