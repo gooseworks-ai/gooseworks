@@ -45,6 +45,50 @@ it('reports a failed final check with the check’s own words', async () => {
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video has no sound.' }]);
 });
 
+// check-layer 1.1.2's verdict: a failed check carries no message; its words are in `reasons[]`.
+const checkLayerVerdict = (reasons: unknown[]) => ({
+  verdict: {
+    pass: false,
+    checks: [
+      { code: 'plays', status: 'pass' },
+      { code: 'length', status: 'fail', found: '9.2 seconds', expected: '15 to 30 seconds' },
+      { code: 'size', status: 'pass', found: '1080x1920' },
+      { code: 'sound', status: 'pass', found: '-14.0 LUFS' },
+      { code: 'captions', status: 'not_applicable' },
+      { code: 'black_frames', status: 'fail', found: 0.8 },
+      { code: 'frozen_frames', status: 'pass' },
+      { code: 'end_card', status: 'pass' },
+      { code: 'flag:text_legible', status: 'not_applicable', found: 'needs eyes; not checked by machine' },
+      { code: 'speech_matches_script', status: 'not_applicable' },
+    ],
+    reasons,
+  },
+});
+
+it('reports a check-layer failure with the words from its reasons', async () => {
+  const line = fakeLine();
+  const verdict = checkLayerVerdict([
+    { check: 'length', message: 'The video is too short.', expected: '15 to 30 seconds', found: '9.2 seconds' },
+    { check: 'black_frames', message: 'Black frames from 2.1 to 2.9 seconds.', expected: 'no black stretch over 0.3 s', found: '0.8' },
+  ]);
+  const parts = testParts({ checkRun: (async () => verdict) as any });
+  const result = await runMake({ home: tempHome(), line, parts });
+  expect(result.status).toBe('failed');
+  expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video is too short.' }]);
+});
+
+it('takes the first reason when none names the failed check, through the same filter', async () => {
+  const words = async (reasons: unknown[]) => {
+    const line = fakeLine();
+    const parts = testParts({ checkRun: (async () => checkLayerVerdict(reasons)) as any });
+    await runMake({ home: tempHome(), line, parts });
+    return failures(line)[0]?.detail;
+  };
+  expect(await words([{ check: 'end_card', message: '' }, { check: 'end_card', message: 'The end card is missing.' }])).toBe('The end card is missing.');
+  expect(await words([{ check: 'length', message: 'Read /Users/someone/.gooseworks/videos/vid_1/final/final.mp4 (check-layer@1.1.2)' }])).toBe('The video didn’t pass the final check.');
+  expect(await words([])).toBe('The video didn’t pass the final check.');
+});
+
 it('keeps a final check’s tool output, paths and ids off the card and in the log', async () => {
   const home = tempHome();
   const line = fakeLine();
