@@ -6,6 +6,8 @@ export const MAX_CHARS = 200;
 
 const PATH = /(^|[\s"'(=:])(?:~?\/|\.{1,2}\/|[A-Za-z]:\\)\S*/;
 const FILE_NAME = /\b[\w.-]+\.(?:mp4|mov|m4v|webm|mkv|avi|wav|mp3|m4a|aac|ogg|flac|json|ndjson|vtt|srt|ass|png|jpe?g|webp|gif|svg|ttf|otf|woff2?|html?|mjs|cjs|js|ts|log|txt)\b/i;
+// Any slash or backslash (relative paths too) and any name.ext token, known extension or not.
+const PATH_LIKE: readonly RegExp[] = [/[\\/]/, /(?:^|[^\w.])\.[a-z][a-z0-9]{1,5}\b/i, /\b[\w-]+\.[a-z][a-z0-9]{0,5}\b/i];
 const TOOL_OUTPUT: readonly RegExp[] = [
   /\[[^\]]*@ ?0x[0-9a-f]+\]/i,
   /\b0x[0-9a-f]{4,}\b/i,
@@ -16,6 +18,8 @@ const TOOL_OUTPUT: readonly RegExp[] = [
   /\bat \S+ \(|:\d+:\d+\b/,
   /\b(?:pts|dts|bitrate|kb\/s|frame=|stream #?\d|codec\w*|demux\w*|muxer|EBML|moov)\b/i,
   /[{}<>]|=>|\|\||&&/,
+  // ffmpeg, ffprobe and libav wording that arrives without a tool's name in front of it.
+  /\b(?:invalid data found|error while|conversion failed|no such file|moov atom|could not find codec|error opening|error initiali[sz]ing|output file is empty|does not contain any stream|unknown encoder|unrecognized option|invalid argument|permission denied|operation not permitted|end of file|core dumped|segmentation fault)\b/i,
   // part@version, snake_case and kebab-case ids: none is a plain word.
   /\b[a-z0-9]+(?:[-_.][a-z0-9]+)*@\d/i,
   /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/i,
@@ -24,7 +28,7 @@ const TOOL_OUTPUT: readonly RegExp[] = [
 ];
 
 function readsPlain(sentence: string, names: readonly string[]): boolean {
-  if (PATH.test(sentence) || FILE_NAME.test(sentence)) return false;
+  if (PATH.test(sentence) || FILE_NAME.test(sentence) || PATH_LIKE.some((pattern) => pattern.test(sentence))) return false;
   if (TOOL_OUTPUT.some((pattern) => pattern.test(sentence))) return false;
   return !names.some((name) => new RegExp(`(^|[^\\w-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`, 'i').test(sentence));
 }

@@ -78,6 +78,23 @@ describe('a part’s refusal of the plan', () => {
     expect(generic.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
   });
 
+  it.each([
+    ['a relative path', 'The logo is missing from assets/logo.', 'assets/logo'],
+    ['a backslash path', 'The logo is missing from assets\\logo.', 'logo'],
+    ['a file name', 'The logo in logo.heic can’t be read.', 'logo.heic'],
+    ['a bare tool diagnostic', 'Invalid data found when processing input', 'Invalid data found'],
+    ['a tool diagnostic with its own sentence', 'Conversion failed!', 'Conversion failed'],
+    ['a missing file', 'No such file or directory', 'No such file'],
+    ['a field path', 'scenes.0.line is too long.', 'scenes.0.line'],
+  ])('gives the generic words for a refusal with %s and keeps it in the log', async (_kind, detail, logged) => {
+    const home = tempHome();
+    const line = fakeLine();
+    const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
+    expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
+  });
+
   it('gives the generic words for the core’s own refusal and for a tool failure', async () => {
     const line = fakeLine();
     const parts = testParts({ clipRun: (async () => ({ clips: 'not files' })) as any });

@@ -14,6 +14,28 @@ describe('plain words from a part', () => {
     expect(plainWords('The sound is too quiet. Checked out.wav at -40 dB.', FALLBACK)).toBe('The sound is too quiet.');
   });
 
+  it('gives the fallback for a relative path, a slash or a file extension of any kind', () => {
+    expect(plainWords('The logo is missing from assets/logo.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The logo is missing from assets\\logo.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Use a picture or/and a line.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The logo in logo.heic can’t be read.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The scene-2.clip file is empty.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Only .webp pictures can be used.', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it.each([
+    'Invalid data found when processing input',
+    'Error while decoding stream #0:0',
+    'Conversion failed!',
+    'No such file or directory',
+    'moov atom not found',
+    'Could not find codec parameters for the picture',
+    'Error opening input',
+    'Output file is empty, nothing was encoded',
+  ])('gives the fallback for the tool diagnostic %p without a tool name', (diagnostic) => {
+    expect(plainWords(diagnostic, FALLBACK)).toBe(FALLBACK);
+  });
+
   it('gives the fallback for a tool diagnostic', () => {
     expect(plainWords('[matroska,webm @ 0x792ac40000] File ended prematurely', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('ffmpeg exited with 1: Invalid data found when processing input', FALLBACK)).toBe(FALLBACK);
