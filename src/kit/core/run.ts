@@ -110,6 +110,23 @@ interface StepSpec {
 /** For a failure that repeats on every run of the same plan. */
 const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
 
+/** A part that would not load, in plain words: which part and why go to the log. */
+function loadStop(error: unknown): KitStop {
+  const code = error instanceof PartLoadError ? error.code : undefined;
+  switch (code) {
+    case 'kit_range':
+      return new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', code);
+    case 'unreachable':
+      return new KitStop('This video’s parts could not be downloaded right now. Run the same command again in a minute. Nothing was spent.', 'stop', code);
+    case 'bad_cache':
+      return new KitStop('The video kit’s folder on this computer is busy or can’t be used. Run the same command again in a minute. Nothing was spent.', 'stop', code);
+    case 'withdrawn':
+      return new KitStop(`A part this video uses was withdrawn. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', code);
+    default:
+      return new KitStop(`A part this video uses can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', code);
+  }
+}
+
 function lineWords(error: LineError): string {
   return [error.message, error.fix].filter(Boolean).join(' ');
 }
@@ -393,9 +410,15 @@ class Maker {
       if (!ref || typeof ref.id !== 'string' || typeof ref.version !== 'string') throw new KitStop('This video names a part it has no version for. Nothing was spent.', 'change_request');
       if (lock) {
         const entry = lock.parts[ref.id];
-        if (!entry || entry.version !== ref.version) throw new KitStop(`Part ${ref.id} ${ref.version} is not in this video’s parts list, so it can’t run. Nothing was spent.`, 'change_request');
+        if (!entry || entry.version !== ref.version) {
+          this.deps.log.write('error', 'part not in the parts list', { step: key, part: `${ref.id}@${ref.version}`, locked: entry?.version ?? null });
+          throw new KitStop(`A part this video uses is not in this video’s parts list, so it can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'not_locked');
+        }
         const tooOld = kitRangeRefusal({ id: ref.id, version: ref.version, kit: entry.kit });
-        if (tooOld) throw new KitStop(`${tooOld} Nothing was spent.`, 'update_kit');
+        if (tooOld) {
+          this.deps.log.write('error', 'part needs another kit', { step: key, refusal: tooOld });
+          throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'kit_range');
+        }
       }
     }
     for (const { key, ref, slot } of wanted) {
@@ -403,26 +426,47 @@ class Maker {
       try {
         loaded = await this.deps.host.loader.load({ ref, lock, dev, home: this.deps.home, env: this.deps.env, signal: this.stop.signal });
       } catch (error) {
-        const words = `${error instanceof Error ? error.message : 'A part could not be loaded.'} Nothing was spent.`;
-        if (error instanceof PartLoadError && error.code === 'kit_range') throw new KitStop(words, 'update_kit');
-        if (error instanceof PartLoadError && error.code === 'unreachable') throw new KitStop(`${words} Run the same command again in a minute.`, 'stop');
-        throw new KitStop(words, 'change_request');
+        this.deps.log.write('error', 'part could not be loaded', {
+          step: key,
+          part: `${ref.id}@${ref.version}`,
+          code: error instanceof PartLoadError ? error.code : null,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw loadStop(error);
       }
       const m = loaded.manifest;
-      if (m.id !== ref.id || m.version !== ref.version) throw new KitStop(`Part ${ref.id} ${ref.version} loaded as another version. Nothing was spent.`, 'change_request');
+      const refused = (why: string, fields: Record<string, unknown> = {}) =>
+        this.deps.log.write('error', why, { step: key, part: `${ref.id}@${ref.version}`, ...fields });
+      if (m.id !== ref.id || m.version !== ref.version) {
+        refused('part loaded as another version', { loaded: `${m.id}@${m.version}` });
+        throw new KitStop(`A part this video uses loaded as another version, so it can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'manifest_mismatch');
+      }
       const refusal = interfaceRefusal(m);
-      if (refusal) throw new KitStop(`${refusal} Nothing was spent.`, 'update_kit');
-      if (slot && (m.layer !== slot || m.kind !== SLOT_KIND[slot])) throw new KitStop(`Part ${ref.id} can’t fill the ${slot} layer. Nothing was spent.`, 'change_request');
+      if (refusal) {
+        refused('part needs another interface', { refusal });
+        throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'interface');
+      }
+      if (slot && (m.layer !== slot || m.kind !== SLOT_KIND[slot])) {
+        refused('part can’t fill its layer', { slot, layer: m.layer ?? null, kind: m.kind });
+        throw new KitStop(`A part this video uses can’t do the job its plan gives it. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'wrong_layer');
+      }
       const lockModels = lock ? lock.parts[ref.id].models : m.needs.models;
       const paid = m.needs.network || m.needs.models.length > 0 || m.kind.startsWith('generate_');
-      if (paid && (!Array.isArray(lockModels) || lockModels.length === 0)) throw new KitStop(`Part ${ref.id} orders paid pieces but this video’s parts list allows it none. Nothing was spent.`, 'change_request');
+      if (paid && (!Array.isArray(lockModels) || lockModels.length === 0)) {
+        refused('paid part has no models in the parts list');
+        throw new KitStop(`A part this video uses would order paid pieces its approved price doesn’t allow. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'no_models');
+      }
       const missing = this.missingNeeds(m.needs);
-      if (missing) throw new KitStop(`This computer can’t run part ${ref.id}: ${missing}. Run the computer check, then make the video again. Nothing was spent.`, 'refused');
+      if (missing) {
+        refused('part needs what this computer lacks', { missing });
+        throw new KitStop(`This computer can’t make this video: ${missing}. Run the computer check, then make the video again. Nothing was spent.`, 'refused', 'needs_missing');
+      }
       try {
         assertCheckable(m.inputs);
         assertCheckable(m.outputs);
       } catch (error) {
-        throw new KitStop(`Part ${ref.id} can’t be checked by this kit (${(error as Error).message}). Nothing was spent.`, 'update_kit');
+        refused('part schema can’t be checked', { error: (error as Error).message });
+        throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'schema');
       }
       this.parts.set(key, loaded);
     }
@@ -459,7 +503,7 @@ class Maker {
     };
     for (const step of this.style.style.timeline) {
       const loaded = this.parts.get(step.id)!;
-      const { inputs, round } = fixed(step.id, bindInputs(step.inputs as Record<string, unknown> | undefined, scope, step.id));
+      const { inputs, round } = fixed(step.id, this.bind(step.id, step.inputs as Record<string, unknown> | undefined, scope));
       const out = await this.runStep({ id: step.id, ref: step.part, loaded, inputs, models: this.modelsOf(step.part, loaded), fix: round }, hashes);
       outputs.set(step.id, out);
       if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
@@ -484,7 +528,10 @@ class Maker {
         continue;
       }
       const video = out.video;
-      if (!isFileRef(video) || video.media !== 'video') throw new KitStop(`The ${slot} layer made no video.`, 'change_request');
+      if (!isFileRef(video) || video.media !== 'video') {
+        this.deps.log.write('error', 'layer made no video', { step: id });
+        throw new KitStop(`Finishing this video gave back no video. ${PLAN_CHANGE}`, 'change_request', 'output_invalid');
+      }
       cut = video;
       if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
       if (slot === 'captions') {
@@ -494,6 +541,17 @@ class Maker {
     }
     if (!verdict || typeof verdict.pass !== 'boolean' || !Array.isArray(verdict.checks)) throw new KitStop('The final check gave no verdict.', 'change_request');
     return { cut, captions, verdict, steps: hashes };
+  }
+
+  /** A style step's inputs: a reference the kit can't resolve goes to the log, plain words to the person. */
+  private bind(stepId: string, inputs: Record<string, unknown> | undefined, scope: Parameters<typeof bindInputs>[1]): Record<string, unknown> {
+    try {
+      return bindInputs(inputs, scope, stepId);
+    } catch (error) {
+      if (!(error instanceof KitStop)) throw error;
+      this.deps.log.write('error', 'step inputs could not be bound', { step: stepId, error: error.message });
+      throw new KitStop(`One step of this video can’t get what it needs, so the video stopped there. ${PLAN_CHANGE}`, 'change_request', 'bad_input');
+    }
   }
 
   private modelsOf(ref: PartRef, loaded: LoadedPart): ModelNeed[] {
@@ -517,7 +575,7 @@ class Maker {
     const inputErrors = schemaErrors(manifest.inputs, spec.inputs, `${spec.id} inputs`);
     if (inputErrors.length) {
       this.deps.log.write('error', 'step inputs refused', { step: spec.id, errors: inputErrors });
-      throw new KitStop(`The style gave its ${spec.id} step something its part can’t take, so the video stopped before that step.`, 'change_request');
+      throw new KitStop(`One step of this video was given something it can’t take, so the video stopped there. ${PLAN_CHANGE}`, 'change_request', 'bad_input');
     }
     const hash = stepHash({ interface: manifest.interface, part: spec.ref, toolchain: this.toolchain, inputs: spec.inputs, fix: spec.fix });
     hashes[spec.id] = hash;
