@@ -212,3 +212,14 @@ describe('a provider failure', () => {
     expect(rerun.message).toBe(result.message);
   });
 });
+
+it('reports an error outside any step as one a new run may get past, in safe words', async () => {
+  const home = tempHome();
+  const base = fakeLine();
+  // The style manifest's download fails after the package view came back.
+  const line = { ...base, fetch: (async (input: any, init: any) => (new URL(String(input)).pathname === '/pkg/manifest' ? new Response('gone', { status: 404 }) : base.fetch(input, init))) as typeof fetch };
+  const result = await runMake({ home, line });
+  expect(result).toEqual({ status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
+  expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
+  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/HTTP 404/);
+});

@@ -399,8 +399,12 @@ class Maker {
       if (stop.reason === 'update_kit') return { status: 'update_kit', message: stop.message };
       return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message };
     }
-    this.deps.log.write('error', 'the run ended on an error', { error: error instanceof Error ? error.message : String(error) });
-    return { status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' };
+    this.deps.log.write('error', 'the run ended on an error', { step: this.at, error: error instanceof Error ? error.message : String(error) });
+    const message = 'This video could not be made right now. Run the same command again; what was made so far is kept.';
+    // Not a step's failure (a download or a disk write, say): a new run may get past it.
+    this.reportFailure(this.at, 'tool_failed', message);
+    await this.reporter?.flush().catch(() => undefined);
+    return { status: 'failed', message };
   }
 
   /** Tells the line once why the run gave up; the line's own refusals already ended it on its words. */
