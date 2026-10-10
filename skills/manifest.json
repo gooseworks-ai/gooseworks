@@ -2,9 +2,9 @@
   "package": "gooseworks",
   "version": "0.5.5",
   "entries": {
-    "gooseworks": "6a54a8962a390d34639d56226d9078b63a9005b0a8f5c65d7811f2ef5808cec4",
-    "goose-ads": "de1b0342fcc82942e1f9c6a3aa01818973c968cbdb65f7109d73761536d029f8",
-    "goose-video": "9226f2a3373ac4c8f94fdaaede34a30cac7951a160996d56971617097b2b2029",
+    "gooseworks": "1607a83169c7e882d90e7ef0f612260a2f5aabd239243152daed4fd9567f403a",
+    "goose-ads": "3e192358bcce96c192c82b0465a869392086c3426b8eea5a51f858174eb5f909",
+    "goose-video": "d99125c14351b4f1f23fc70b0491905dbe4435e99dabc3fd81e6f2f92bd7467f",
     "goose-video-local": "189cd2c24bbbb152d700847832b67ce651962959fd2381e878ed7ace6bc96a54",
     "make-custom-video": "08f8fd3ef2713064a7f41d5b18ef0407f746a095bcea4334754013c391a030db",
     "goose-product-photos": "b72df2f34b846f7d559067eec872d6aa6a350166ec61cf919c2278f7556c1832"

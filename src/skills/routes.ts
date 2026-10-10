@@ -108,6 +108,7 @@ export const BRAND_GROWTH_ROUTES: BrandGrowthRoute[] = [
     skills: ['meta-ads-analyzer', 'meta-ad-policy-checker', 'ad-to-landing-page-auditor'],
   },
   { job: 'Static ads', skills: ['goose-ads', 'remix-graphic-ad-from-reference'] },
+  { job: 'The page your ad lands on', skills: ['goose-pages'] },
   { job: 'Product photos', skills: ['goose-product-photos', 'product-photoshoot'] },
   { job: 'Written content and repurposing', skills: ['content-repurposing'] },
   { job: 'Graphics and animation', skills: ['goose-graphics', 'animate-image'] },

@@ -1,7 +1,7 @@
 /**
- * The CLI's goose-video and make-custom-video are our server's entry skills,
- * as built, and the skills the CLI writes itself carry the rulebook's rules
- * block. The fixture is the server's output; with GOOSEWORKS_APP_DIR pointing
+ * The server snapshots stay unchanged; make-custom-video ships verbatim and
+ * goose-video reuses all server rules with a compact CLI-owned introduction.
+ * Other CLI skills carry the rulebook's rules block. The fixture is the server's output; with GOOSEWORKS_APP_DIR pointing
  * at a gooseworks-app checkout, the fixture is checked against the server too.
  */
 import { execFileSync } from 'child_process';
@@ -19,11 +19,11 @@ interface ServerFixture {
 const fixture = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'server-entry-skills.json'), 'utf8')) as ServerFixture;
 const skill = (name: string) => getEntrySkills().find((entry) => entry.name === name)!.content;
 
-it('ships the server text unchanged', () => {
+it('keeps the server snapshot unchanged and ships its complete video rules', () => {
   expect(SERVER_VIDEO_ENTRY_SKILLS).toEqual(fixture.skills);
   expect(SERVER_ENTRY_SKILL_RULES).toEqual(fixture.rules);
   expect(SERVER_RULEBOOK_VERSION).toBe(fixture.rulebook_version);
-  expect(skill('goose-video')).toBe(fixture.skills['goose-video']);
+  expect(skill('goose-video').split('## Rules\n\n')[1]).toBe(fixture.skills['goose-video'].split('## Rules\n\n')[1]);
   expect(skill('make-custom-video')).toBe(fixture.skills['make-custom-video']);
 });
 

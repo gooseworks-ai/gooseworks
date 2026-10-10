@@ -15,7 +15,7 @@ tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ad
 # GooseWorks
 
 GooseWorks is a coworker with specialist skills for research, creative work, leads and web and
-social data. Hand specialist work to its skill; do data work here.
+social data. Route specialist work; do data work here.
 
 ## First steps
 
@@ -55,6 +55,7 @@ When the server's next_step says to make a video on this computer, run `goosewor
 | Long-form source material (calls, podcasts, videos) | `transcript-intelligence` |
 | Meta performance, policy, and landing-page match | `meta-ads-analyzer`, `meta-ad-policy-checker`, `ad-to-landing-page-auditor` |
 | Static ads | `goose-ads`, `remix-graphic-ad-from-reference` |
+| The page your ad lands on | `goose-pages` |
 | Product photos | `goose-product-photos`, `product-photoshoot` |
 | Written content and repurposing | `content-repurposing` |
 | Graphics and animation | `goose-graphics`, `animate-image` |

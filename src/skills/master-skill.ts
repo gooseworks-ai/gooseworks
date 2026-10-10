@@ -7,9 +7,8 @@
  *   - `goose-ads`            image ads: make, edit and study them.
  *   - `goose-product-photos` product photos.
  *   - `goose-video`, `make-custom-video`
- *                            our server's video entry skills, copied as built
- *                            (server-entry-skills.ts). Every answer's next_step
- *                            carries the step for the video's stage.
+ *                            the server's video flow and rules; goose-video has
+ *                            a compact CLI introduction with a page handoff.
  *   - `goose-video-local`    one line: run the kit when a next_step says so.
  *
  * Each skill names only the actions in the action contract, states no price,
@@ -28,6 +27,9 @@ export interface EntrySkill {
 
 /** The kit command, as the server's next_step gives it. */
 export const KIT_MAKE_COMMAND = 'gooseworks video make <id>';
+
+/** Shared delivery handoff; the catalog skill owns page creation and approval. */
+export const AD_PAGE_OFFER = 'After delivering each ad, ask "Want the page this ad lands on? I\'ll build it on the same angle." On yes, open goose-pages with catalog_fetch; pass it the brand, creative id and angle. It checks page_read angles/list to offer reuse of an existing page and its ad URL.';
 
 /**
  * THE registry of entry skills (GOOSE-3190) — one list, four consumers:
@@ -71,7 +73,7 @@ tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ad
 # GooseWorks
 
 GooseWorks is a coworker with specialist skills for research, creative work, leads and web and
-social data. Hand specialist work to its skill; do data work here.
+social data. Route specialist work; do data work here.
 
 ## First steps
 
@@ -164,6 +166,8 @@ direction with a one-line reason and offer at most two others.
 
 Then follow the next_step in every answer.
 
+${AD_PAGE_OFFER}
+
 ## Rules
 
 ${SERVER_ENTRY_SKILL_RULES.ads}
@@ -203,9 +207,34 @@ ${SERVER_ENTRY_SKILL_RULES.photos}
 `;
 }
 
-/** Our server's goose-video entry skill, as built. */
+/** The server's video flow, shortened to leave room for the delivery handoff. */
 export function getGooseVideoSkillContent(): string {
-  return SERVER_VIDEO_ENTRY_SKILLS['goose-video'];
+  // Keep the copied server artifact and all of its rules intact. Only this
+  // CLI-owned introduction differs; hosted clients receive the generated copy.
+  const rules = SERVER_VIDEO_ENTRY_SKILLS['goose-video'].split('## Rules\n\n')[1];
+  if (!rules) throw new Error('The server video entry skill is missing its rules block');
+  return `---
+name: goose-video
+description: Make a video ad with GooseWorks in this chat, then offer the page it lands on. Read the product and brand first, then video_formats; follow each next_step.
+version: 4.1.0
+---
+
+# GooseWorks video
+
+For an existing video, call video_read and follow its next_step. For a new video, follow this order; suggest nothing before step 5 and write no plan until they pick a style.
+
+1. Ask what the video is about only if they have not said.
+2. Read the brand with brand_read; ask which only when several fit.
+3. Unless they named a product or want none, offer products from brand_read. Use the only one; with none, continue without.
+4. Read kit, learnings and chosen products with brand_read, then knowledge_search: photos, specs, creative notes, what to say and avoid.
+5. Call video_formats with the request and product ids (empty for none or a style without products). The customer chooses; never recommend. A named available style counts as their pick. With a style card, say one short line and wait; otherwise list fitting styles with name, one line and exact price, then ask.
+6. Call video_create with the chosen style and products; its next_step guides scenes via video_change and what follows.
+
+${AD_PAGE_OFFER}
+
+## Rules
+
+${rules}`;
 }
 
 /** Our server's make-custom-video entry skill, as built. */
