@@ -32,7 +32,7 @@ import type {
   Timeline,
 } from '../part-interface';
 import { LineError, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
-import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandOver, type UploadCheck } from '../line/types';
+import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
 import { bindInputs } from './bind';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -44,7 +44,7 @@ import { isInside, runLayout, type RunLayout } from './paths';
 import { PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { ProgressBook } from './progress';
 import { ProgressReporter } from './progress-reporter';
-import { RunStore, takeRunLock, writeJson } from './save';
+import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
 import { withoutSignedLinks } from './secrets';
 import { fetchStyle, readLocalStyle, type LoadedStyle } from './style';
@@ -111,6 +111,20 @@ interface StepSpec {
 const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
+/** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
+const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing']);
+
+/** What a run was made from: a failure report only stands for a run made from the same. */
+interface ReportKey {
+  quote_id: string;
+  plan_sha256: string;
+  lock_sha256: string;
+  kit: string;
+  toolchain: string;
+}
+
+/** pending-report.json: a failure report the line never took. */
+type PendingReport = ReportKey & { report: 1; failure: ProgressFailure; saved_at: string };
 
 /** A part that would not load, in plain words: which part and why go to the log. */
 function loadStop(error: unknown): KitStop {
@@ -272,6 +286,9 @@ class Maker {
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
       this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
+      const replayed = await this.replayPending();
+      if (replayed) return replayed;
+      if (this.fatal) throw this.fatal;
       // Reports start now, so checking the style and parts never looks quiet.
       this.reporter.start();
       void this.reporter.send(true);
@@ -281,7 +298,67 @@ class Maker {
     } finally {
       this.reporter?.stopTimer();
       await this.reporter?.flush().catch(() => undefined);
+      await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
       await release();
+    }
+  }
+
+  private reportKey(): ReportKey | null {
+    try {
+      return {
+        quote_id: this.handed.quote_id,
+        plan_sha256: canonicalHash(withoutSignedLinks(this.handed.plan)),
+        lock_sha256: this.handed.parts_lock ? canonicalHash(this.handed.parts_lock) : '',
+        kit: KIT_VERSION,
+        toolchain: this.toolchain,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * An earlier run's failure report the line never took goes before anything else, when it still
+   * stands: the same plan, parts, kit and tools, and a code no new run gets past. Otherwise this
+   * run reports for itself.
+   */
+  private async replayPending(): Promise<MakeResult | null> {
+    const saved = await readJson<PendingReport>(this.layout.pendingReport);
+    if (!saved) return null;
+    const key = this.reportKey();
+    const stands =
+      saved.report === 1 &&
+      !!saved.failure &&
+      typeof saved.failure.code === 'string' &&
+      typeof saved.failure.detail === 'string' &&
+      !RESUMABLE_CODES.has(saved.failure.code) &&
+      !!key &&
+      (Object.keys(key) as Array<keyof ReportKey>).every((field) => saved[field] === key[field]);
+    if (!stands) {
+      this.deps.log.write('info', 'an earlier run’s failure report no longer stands', { code: saved.failure?.code ?? null });
+      await rm(this.layout.pendingReport, { force: true });
+      return null;
+    }
+    const sent = await this.reporter.replay(saved.failure);
+    this.deps.log.write(sent === 'taken' ? 'info' : 'warn', 'an earlier run’s failure report', { sent, step: saved.failure.step, code: saved.failure.code });
+    if (sent === 'unsent') return null;
+    await rm(this.layout.pendingReport, { force: true });
+    if (sent === 'refused') return null;
+    this.failureSent = true;
+    return { status: 'failed', message: saved.failure.detail };
+  }
+
+  /** Keeps a failure report the line never took for the next run; one taken, or a finished video, clears it. */
+  private async keepPendingReport(): Promise<void> {
+    if (!this.reporter || !this.layout) return;
+    const unsent = this.reporter.undelivered;
+    const key = unsent ? this.reportKey() : null;
+    if (unsent && key) {
+      const pending: PendingReport = { report: 1, ...key, failure: unsent, saved_at: this.now().toISOString() };
+      await writeJson(this.layout.pendingReport, pending);
+      this.deps.log.write('warn', 'the failure report was not taken; the next run sends it', { step: unsent.step, code: unsent.code });
+    } else if (this.failureSent || this.run?.status === 'done') {
+      await rm(this.layout.pendingReport, { force: true });
     }
   }
 

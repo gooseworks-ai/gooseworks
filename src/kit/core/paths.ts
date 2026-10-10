@@ -48,6 +48,8 @@ export interface RunLayout {
   pieces: string;
   final: string;
   upload: string;
+  /** A failure report the line never took, sent again by the next run. */
+  pendingReport: string;
   log: string;
 }
 
@@ -67,6 +69,7 @@ export function runLayout(home: string, videoId: string): RunLayout {
     pieces: path.join(root, 'pieces'),
     final: path.join(root, 'final'),
     upload: path.join(root, 'upload.json'),
+    pendingReport: path.join(root, 'pending-report.json'),
     log: path.join(root, 'log.ndjson'),
   };
 }

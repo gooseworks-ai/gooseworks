@@ -1,6 +1,6 @@
 // When the kit gives up, the line hears why once, in plain words: the step, a
 // code and words for the card, never a part id, a log or a path.
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { runLayout } from '../../src/kit/core/paths';
 import { PartLoadError } from '../../src/kit/parts/loader';
 import { VIDEO, fakeLine, lineRoute, runMake, style, tempHome, testHost, testParts } from './harness';
@@ -113,4 +113,48 @@ it('sends the report without the reason to an old line after the run’s own sig
   const refusedAt = reports.findIndex((r) => r.body.failure);
   expect(refusedAt).toBeGreaterThanOrEqual(0);
   expect(reports.slice(refusedAt + 1).some((r) => !r.body.failure)).toBe(true);
+});
+
+describe('a failure report the line never took', () => {
+  const unreachable = () => json(503, { error: { code: 'line_unavailable', error: 'The line could not be reached.', fix: 'Try again in a minute.', next: 'retry' } });
+  const badInput = () => testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
+
+  it('is kept in the run folder, then sent first by the next run, which ends on it', async () => {
+    const home = tempHome();
+    const first = await runMake({ home, line: fakeLine({ progress: (body) => (body.failure ? unreachable() : undefined) }), parts: badInput() });
+    expect(first.status).toBe('failed');
+    const pendingFile = runLayout(home, VIDEO).pendingReport;
+    const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
+    expect(pending.failure).toEqual({ step: 'clips', code: 'bad_input', detail: first.message });
+
+    const line = fakeLine();
+    const again = await runMake({ home, line });
+    expect(again).toEqual({ status: 'failed', message: first.message });
+    expect(lineRoute(line.seen, '/progress')[0].body.failure).toEqual(pending.failure);
+    expect(line.pieces).toHaveLength(0);
+    expect(existsSync(pendingFile)).toBe(false);
+  });
+
+  it('is dropped when the next run can carry on past it', async () => {
+    const home = tempHome();
+    const timedOut = testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('timeout', 'slow'); }) as any });
+    const first = await runMake({ home, line: fakeLine({ progress: (body) => (body.failure ? unreachable() : undefined) }), parts: timedOut });
+    expect(first.status).toBe('failed');
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure.code).toBe('timeout');
+
+    const line = fakeLine();
+    const again = await runMake({ home, line });
+    expect(again.status).toBe('done');
+    expect(failures(line)).toEqual([]);
+    expect(existsSync(runLayout(home, VIDEO).pendingReport)).toBe(false);
+  });
+
+  it('is dropped when the plan changed since', async () => {
+    const home = tempHome();
+    await runMake({ home, line: fakeLine({ progress: (body) => (body.failure ? unreachable() : undefined) }), parts: badInput() });
+    const line = fakeLine({ planBody: (body) => ({ ...body, scenes: body.scenes.slice(0, 1) }) });
+    const again = await runMake({ home, line });
+    expect(again.status).toBe('done');
+    expect(failures(line)).toEqual([]);
+  });
 });

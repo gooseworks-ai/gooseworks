@@ -93,9 +93,31 @@ export class ProgressReporter {
     return this.inFlight;
   }
 
-  /** Waits for the call in flight, so the last word reaches the card before the kit exits. */
-  async flush(): Promise<void> {
+  /** The failure report the line has not taken yet: it could not be reached. */
+  get undelivered(): ProgressFailure | null {
+    return this.failure;
+  }
+
+  /**
+   * Waits for the call in flight, so the last word reaches the card before the kit exits.
+   * False when a failure report is still unsent.
+   */
+  async flush(): Promise<boolean> {
     while (this.inFlight) await this.inFlight;
+    return this.failure === null;
+  }
+
+  /**
+   * Sends an earlier run's failure report now: taken with its reason, refused for good (an
+   * older line, or the line's own refusal), or unsent because the line could not be reached.
+   */
+  async replay(failure: ProgressFailure): Promise<'taken' | 'refused' | 'unsent'> {
+    await this.fail(failure);
+    const sent = await this.flush();
+    this.failure = null;
+    this.lastWord = false;
+    if (!sent) return 'unsent';
+    return this.failureRefused || this.lineRefused ? 'refused' : 'taken';
   }
 
   private async post(): Promise<void> {
@@ -117,6 +139,8 @@ export class ProgressReporter {
         return this.post();
       }
       if (error instanceof LineError && error.next !== 'retry') {
+        // The line's refusal ends the run on its own words; the report it refused is not kept to send again.
+        if (failure && this.failure === failure) this.failure = null;
         this.lineRefused = true;
         this.onStop([error.message, error.fix].filter(Boolean).join(' '), error.next, error.code);
         return;
