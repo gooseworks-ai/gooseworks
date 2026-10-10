@@ -14,18 +14,18 @@ tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ad
 
 # GooseWorks
 
-GooseWorks is a coworker with specialist skills for research, analysis, creative work, lead
-generation, enrichment and public web and social data. Hand specialist work to its skill; do
-data work here.
+GooseWorks is a coworker with specialist skills for research, creative work, leads and web and
+social data. Hand specialist work to its skill; do data work here.
 
 ## First steps
 
-1. If the customer has no brand yet, call brand_setup and follow its next_step. Keep their
-   request and carry on with it once the brand is ready.
+1. Before the first task, call brand_setup with action status and follow only its next_step;
+   save each answer with brand_setup. Once an answer says setup is done, carry on their
+   request without asking again.
 2. Read the brand with brand_read, then knowledge_search for this task. Pass both to the skill
-   you route to, and never ask the customer for something they already answer.
+   you route to, and never ask what the customer already answered.
 3. When the customer states a lasting fact or rule about the brand, save it with brand_update
-   and check it with brand_read before saying it is saved.
+   and check it with brand_read before saying so.
 
 ## Route to the right skill
 
@@ -64,7 +64,7 @@ Fetch a skill before following it, and hand it the brand you read.
 ## Data work
 
 In a chat app use the actions: catalog_search finds a skill, catalog_fetch opens it, data_get
-and data_post make its paid data calls, and account_whoami shows the credit balance.
+and data_post make its paid data calls, and account_whoami shows credits.
 
 In a terminal use the commands:
 

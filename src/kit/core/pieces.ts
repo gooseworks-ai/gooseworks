@@ -20,10 +20,18 @@ const MAX_RESULT_BYTES = 500 * 1024 * 1024;
 
 /** A piece the line refused or failed: final, or worth one new attempt. The line's words travel with it. */
 export class PieceFailure extends PartError {
-  constructor(code: 'provider_rejected' | 'provider_failed', readonly line: LineErrorBody) {
+  constructor(code: 'provider_rejected' | 'provider_failed', readonly line: LineErrorBody, readonly attempt = 1) {
     super(code, line.error);
   }
+
+  /** A provider failure whose piece has used both its attempts: no later run may order it again. */
+  get spent(): boolean {
+    return this.code === 'provider_failed' && this.attempt >= 2;
+  }
 }
+
+/** A piece the maker failed twice: the journal never lets a later run order it again. */
+export const FAILED_TWICE = 'One part of this video failed at its maker twice, so the video stopped there. Nothing was charged for that part. Ask for a fix to make it again.';
 
 /**
  * Every key this video sent for one piece, and how it ended, saved before the
@@ -152,9 +160,9 @@ function lineStop(error: LineError): KitStop {
 }
 
 /** A failed piece, by the line's next step: only a provider failure the line says to retry is retried. */
-function failureFor(failure: LineErrorBody): Error {
-  if (failure.next === 'retry' && failure.code !== 'provider_rejected') return new PieceFailure('provider_failed', failure);
-  if (failure.next === 'stop' && failure.code === 'provider_rejected') return new PieceFailure('provider_rejected', failure);
+function failureFor(failure: LineErrorBody, attempt: number): Error {
+  if (failure.next === 'retry' && failure.code !== 'provider_rejected') return new PieceFailure('provider_failed', failure, attempt);
+  if (failure.next === 'stop' && failure.code === 'provider_rejected') return new PieceFailure('provider_rejected', failure, attempt);
   return stopFor(failure);
 }
 
@@ -259,8 +267,9 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       let current: OrderState['attempts'][number];
       if (last?.outcome === 'failed') {
         const saved = last.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
-        if (saved.next !== 'retry' || saved.code === 'provider_rejected') throw failureFor(saved);
-        if (last.attempt >= 2) throw new KitStop([saved.error, saved.fix].filter(Boolean).join(' ') || 'This part of the video failed twice.', 'failed', saved.code);
+        if (saved.next !== 'retry' || saved.code === 'provider_rejected') throw failureFor(saved, last.attempt);
+        // The line's own words here say to try once more, which no run can do now.
+        if (last.attempt >= 2) throw new KitStop(FAILED_TWICE, 'failed', 'provider_failed');
         current = { attempt: last.attempt + 1, key: keyFor(last.attempt + 1), outcome: 'sent' };
         state.attempts.push(current);
       } else if (last) {
@@ -309,7 +318,7 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
         current.outcome = 'failed';
         current.failure = { code: failure.code, error: failure.error, fix: failure.fix, next: failure.next };
         await ctx.cache.saveOrder(state);
-        throw failureFor(failure);
+        throw failureFor(failure, current.attempt);
       }
       current.outcome = 'done';
       await ctx.cache.saveOrder(state);

@@ -272,6 +272,27 @@ describe('install command', () => {
     expect(examples).not.toMatch(/onboard me/);
   });
 
+  // The agent that ran the install carries on in the same session, so nothing
+  // it prints may send the user off to restart, even when MCP is unreachable.
+  it('never tells the user to restart, even when MCP is unreachable', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    // Once for Claude Code, once for Codex.
+    (verifyMcpReachable as jest.Mock)
+      .mockResolvedValueOnce({ ok: false, error: 'timeout' })
+      .mockResolvedValueOnce({ ok: false, error: 'timeout' });
+
+    const { createInstallCommand } = await import("../../src/commands/install");
+    const installCommand = createInstallCommand();
+    await installCommand.parseAsync(['node', 'test', '--claude', '--codex', '--mcp']);
+
+    expect(loggerModule.warn).toHaveBeenCalledTimes(2);
+    const printed = (['info', 'success', 'warn', 'example', 'done'] as const)
+      .flatMap((level) => (loggerModule[level] as jest.Mock).mock.calls.map((c) => String(c[0])))
+      .join('\n');
+    expect(printed).toMatch(/NOT reachable/);
+    expect(printed).not.toMatch(/restart|reopen/i);
+  });
+
   it('--codex without --mcp installs skill only, no MCP write', async () => {
     mockGetCredentials.mockReturnValue(mockCreds);
 

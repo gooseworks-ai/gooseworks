@@ -122,12 +122,21 @@ export interface ProgressStep {
   detail?: string;
 }
 
+/** Why the run gave up. `detail` is plain words the card shows as they are: never a log or a path. */
+export interface ProgressFailure {
+  step: string;
+  code: string;
+  detail: string;
+}
+
 export interface ProgressRequest {
   pieces_done: number;
   pieces_total: number;
   eta_seconds: number | null;
   note: string;
   steps?: ProgressStep[];
+  /** Sent once, when the run gives up. */
+  failure?: ProgressFailure;
 }
 
 export interface ProgressAnswer {

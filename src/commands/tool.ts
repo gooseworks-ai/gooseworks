@@ -53,21 +53,49 @@ function firstSentence(text: string | undefined): string {
   return (match ? match[1] : line.slice(0, 200)).trim();
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Text for the terminal: no escape or other control characters besides newlines and tabs. */
+function plainText(text: string): string {
+  return text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').trim();
+}
+
+/**
+ * The answer's card text and next step. Every GooseWorks answer carries
+ * `card` and `next_step`; the structured result (bare, or wrapped as
+ * { result }) keeps the card's `text_summary`, which the model's JSON text
+ * drops when a widget shows the card. An app on this bridge never draws one.
+ */
+function answerGuide(structured: unknown, texts: unknown[]): { card: string | null; next: string | null } {
+  const candidates = [structured, isRecord(structured) ? structured.result : undefined, ...texts];
+  const found = candidates.find((value): value is Record<string, unknown> => isRecord(value) && ('next_step' in value || 'card' in value));
+  if (!found) return { card: null, next: null };
+  const card = isRecord(found.card) && typeof found.card.text_summary === 'string' ? plainText(found.card.text_summary) : '';
+  const next = isRecord(found.next_step) && typeof found.next_step.note === 'string' ? plainText(found.next_step.note).replace(/\s+/g, ' ') : '';
+  return { card: card || null, next: next || null };
+}
+
 /**
  * What the agent reads. A JSON text block is the server's model view of the
  * result, so it is printed (pretty) and is enough. When the text is only a
  * sentence, the fields an agent acts on (`next_step`, ids, statuses) are in
  * `structuredContent.result`, so that is printed after it as "Data:".
- * Images and resources are described, never dumped.
+ * Images and resources are described, never dumped. An answer's card text
+ * follows under "Card:", and its next step is the last line ("Next: …"), so
+ * an agent that reads only text sees the card and what to do now.
  */
 export function formatToolResult(result: McpToolResult): string {
   const blocks = Array.isArray(result.content) ? result.content : [];
   const parts: string[] = [];
+  const texts: unknown[] = [];
   let sawJsonText = false;
   for (const block of blocks) {
     if (block.type === 'text' && typeof block.text === 'string') {
       try {
-        parts.push(JSON.stringify(JSON.parse(block.text), null, 2));
+        const parsed: unknown = JSON.parse(block.text);
+        texts.push(parsed);
+        parts.push(JSON.stringify(parsed, null, 2));
         sawJsonText = true;
       } catch {
         parts.push(block.text);
@@ -89,6 +117,9 @@ export function formatToolResult(result: McpToolResult): string {
     const json = JSON.stringify(data, null, 2);
     parts.push(parts.length ? `\nData:\n${json}` : json);
   }
+  const guide = answerGuide(structured, texts);
+  if (guide.card) parts.push(`\nCard:\n${guide.card}`);
+  if (guide.next) parts.push(`\nNext: ${guide.next}`);
   return parts.join('\n');
 }
 
@@ -120,7 +151,7 @@ async function withConnection<T>(timeoutSeconds: string | undefined, work: (mcp:
 export function createToolCommand(): Command {
   return new Command('tool')
     .description('Call a GooseWorks tool (the same tools as the GooseWorks MCP connector) with your saved sign-in')
-    .argument('[name]', 'Tool name, e.g. account_whoami or brand_onboarding')
+    .argument('[name]', 'Tool name, e.g. account_whoami or brand_setup')
     .argument('[args]', 'Arguments as a JSON object, or - to read them from stdin')
     .option('--list', 'List the tools, with the server\'s rules for using them')
     .option('--schema', 'Show the tool\'s description and input schema instead of calling it')
@@ -130,9 +161,9 @@ export function createToolCommand(): Command {
     .addHelpText('after', `
 Examples:
   $ gooseworks tool --list
-  $ gooseworks tool brand_onboarding --schema
+  $ gooseworks tool brand_setup --schema
   $ gooseworks tool account_whoami
-  $ gooseworks tool brand_onboarding '{"action":"status"}'
+  $ gooseworks tool brand_setup '{"action":"status"}'
 
 Use this when GooseWorks tools are not connected to your agent (for example
 a cloud sandbox). The server's rules still apply: paid work needs the user's

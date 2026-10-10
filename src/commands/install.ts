@@ -112,7 +112,7 @@ Examples:
             } else {
               logger.warn(
                 `GooseWorks MCP server NOT reachable (${mcp.error}). Ads creation requires it — ` +
-                  'restart Claude Code and check your connection; the goose-ads skill will fail without MCP.'
+                  'check your connection and run `gooseworks install --claude --mcp` again; the goose-ads skill will fail without MCP.'
               );
             }
           } else {
@@ -140,7 +140,7 @@ Examples:
             } else {
               logger.warn(
                 `GooseWorks MCP server NOT reachable (${mcp.error}). Ads creation requires it — ` +
-                  'restart Codex and check your connection; the goose-ads skill will fail without MCP.'
+                  'check your connection and run `gooseworks install --codex --mcp` again; the goose-ads skill will fail without MCP.'
               );
             }
           } else {
@@ -175,7 +175,7 @@ Examples:
     const agentNames = targetAgents.map((a) =>
       a === 'claude' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Cursor'
     ).join(' and ');
-    logger.done(`Setup complete! Open ${agentNames} and ask for the work you want done.`);
+    logger.done(`Setup complete! Ask ${agentNames} for the work you want done.`);
 
     console.log('');
     if (wantMcp) {

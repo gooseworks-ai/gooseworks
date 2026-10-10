@@ -87,6 +87,32 @@ describe('tool command', () => {
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('login --device --no-wait'));
     expect(mockConnect).not.toHaveBeenCalled();
   });
+
+  // A text-only agent on this bridge never sees a widget: it must get the
+  // card's text twin and the setup step, and a page name from Facebook must
+  // not reach the terminal as an escape sequence. --json stays the raw result.
+  it("prints an answer's card text and ends with its next step; --json stays raw", async () => {
+    const card = { type: 'setup_page', display_hint: 'widget', text_summary: '**Is this your Facebook page?**\n\nLoop \u001b[31mSocks\n\n1. Yes' };
+    const next_step = { note: 'Send their pick with brand_setup action page.', call: null };
+    const answer = { result: { stage: 'page' }, price: null, card, next_step };
+    // The model's JSON text drops text_summary while a widget shows the card.
+    const modelText = JSON.stringify({ ...answer, card: { type: 'setup_page', display_hint: 'widget' } });
+    const result = { content: [{ type: 'text', text: modelText }], structuredContent: { result: answer } };
+
+    const printed = formatToolResult(result);
+    expect(printed).toContain('Card:\n**Is this your Facebook page?**\n\nLoop [31mSocks\n\n1. Yes');
+    expect(printed).not.toContain('\u001b');
+    expect(printed.split('\n').pop()).toBe('Next: Send their pick with brand_setup action page.');
+
+    // The answer itself as structuredContent, with no card.
+    const bare = formatToolResult({ content: [{ type: 'text', text: '{}' }], structuredContent: { ...answer, card: null } });
+    expect(bare).not.toContain('Card:');
+    expect(bare.split('\n').pop()).toBe('Next: Send their pick with brand_setup action page.');
+
+    mockConnect.mockResolvedValue(fakeMcp({ callTool: jest.fn().mockResolvedValue(result) }) as never);
+    await run('brand_setup', '{"action":"status"}', '--json');
+    expect(JSON.parse(out.join('\n'))).toEqual(result);
+  });
 });
 
 describe('tool helpers', () => {

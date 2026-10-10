@@ -47,6 +47,8 @@ export interface LineScript {
   uploadDone?: (n: number) => Response | undefined;
   /** Answer for one download of a made piece's file; default: the file. */
   download?: (url: URL, n: number) => Response | undefined;
+  /** Answer for one progress report; default: making. */
+  progress?: (body: any, n: number) => Response | undefined;
 }
 
 export const style = {
@@ -143,6 +145,7 @@ export function fakeLine(script: LineScript = {}) {
   let downloadCount = 0;
   let putCount = 0;
   let doneCount = 0;
+  let progressCount = 0;
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = String(input);
     const headers: Record<string, string> = {};
@@ -194,7 +197,7 @@ export function fakeLine(script: LineScript = {}) {
     }
     const hosted = /^\/files\/([A-Za-z0-9_-]+)$/.exec(p);
     if (hosted && (init.method ?? 'GET') === 'GET') return json(200, { file_id: hosted[1], url: `https://files.test/hosted/${hosted[1]}?X-Amz-Signature=s`, expires_at: '' });
-    if (p === '/progress') return json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 });
+    if (p === '/progress') return script.progress?.(body, progressCount++) ?? json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 });
     if (p === '/upload') return json(200, { upload_id: 'up_1', attempt: 1, put: { url: 'https://store.test/up_1?X-Amz-Signature=s', headers: { 'x-amz-checksum-sha256': 'x' } }, expires_at: '' });
     if (p === '/upload/up_1/done') {
       const scripted = script.uploadDone?.(doneCount++);
@@ -319,6 +322,8 @@ export interface RunOptions {
   loads?: string[];
   worker?: { token: string; id: string };
   printed?: string[];
+  /** Replaces the test host built from `parts`. */
+  host?: KitHost;
   now?: () => Date;
   signal?: AbortSignal;
 }
@@ -336,7 +341,7 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     home: opts.home,
     env: {},
     line: client,
-    host: testHost(opts.parts ?? testParts(), opts.loads),
+    host: opts.host ?? testHost(opts.parts ?? testParts(), opts.loads),
     log: new KitLog((text) => printed.push(text), (text) => client.redact(text)),
     environment: 'staging',
     tools,
