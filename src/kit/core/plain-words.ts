@@ -37,11 +37,11 @@ const letters = (text: string) => (text.match(/\p{L}/gu) ?? []).length;
 
 /**
  * The plain sentences of `text`, at most `maxChars` characters, or `fallback` when the filter took out
- * most of it. `names` are ids the person must not see (parts, steps, layers); only the ones that
- * can't be read as a word (with a dash, dot, underscore, @ or digit) are matched.
+ * most of it. `names` are ids the person must not see (parts, steps, layers), matched as whole words in
+ * any case, even when one reads as a plain word.
  */
 export function plainWords(text: string, fallback: string, names: readonly string[] = [], maxChars = MAX_CHARS): string {
-  const ids = names.filter((name) => name && /[-_.@\d]/.test(name));
+  const ids = names.filter(Boolean);
   const sentences = text
     .split(/\r?\n+|(?<=[.!?])\s+/)
     .map((s) => s.replace(/\s+/g, ' ').trim())

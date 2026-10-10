@@ -55,8 +55,9 @@ describe('plain words from a part', () => {
     expect(plainWords('scenes[0].line is too long.', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('products[1].images[2] is too small.', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('Scenes.0 has no line.', FALLBACK)).toBe(FALLBACK);
-    // A step id that is also a word can't be told apart, so it stays.
-    expect(plainWords('The clips have no sound.', FALLBACK, ['clips'])).toBe('The clips have no sound.');
+    expect(plainWords('Step clips refused the label.', FALLBACK, ['clips'])).toBe(FALLBACK);
+    expect(plainWords('Clips refused the label.', FALLBACK, ['clips'])).toBe(FALLBACK);
+    expect(plainWords('The cuts are too short.', FALLBACK, ['cut'])).toBe('The cuts are too short.');
   });
 
   it('caps the words at 200 characters, at a sentence', () => {

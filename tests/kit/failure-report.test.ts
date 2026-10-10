@@ -86,6 +86,7 @@ describe('a part’s refusal of the plan', () => {
     ['a tool diagnostic with its own sentence', 'Conversion failed!', 'Conversion failed'],
     ['a missing file', 'No such file or directory', 'No such file'],
     ['a field path', 'scenes.0.line is too long.', 'scenes.0.line'],
+    ['a step id that reads as a word', 'Step clips refused the label.', 'Step clips refused'],
   ])('gives the generic words for a refusal with %s and keeps it in the log', async (_kind, detail, logged) => {
     const home = tempHome();
     const line = fakeLine();
