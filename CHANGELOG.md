@@ -1,5 +1,12 @@
 # gooseworks
 
+## 0.5.4
+
+### Patch Changes
+
+- 0d5e6e1: `gooseworks video make` saves every AAC audio track at 48 kHz, the rate the parts are tested at, so a 96 kHz music bed or voice no longer comes through at 96 kHz. Audio that is already 48 kHz comes out byte for byte as before.
+- 982d6b9: When a video fails the final check, `gooseworks video make` now reports the check's own words (for example "The video is too short.") from the check part's reasons, instead of a generic line. The words pass the same filter as other failure words, and the generic line is kept when the check gave none.
+
 ## 0.5.3
 
 ### Patch Changes
