@@ -87,7 +87,7 @@ export class TestPartError extends Error {
 /** The same encoder settings the kit core pins (C1, toolchain.ts encodeArgs). */
 function encodeArgs(preset: 'h264-master' | 'h264-intermediate' | 'aac'): string[] {
   const exact = ['-fflags', '+bitexact', '-flags', '+bitexact', '-map_metadata', '-1'];
-  if (preset === 'aac') return ['-c:a', 'aac', '-b:a', '192k', '-threads', '1', ...exact];
+  if (preset === 'aac') return ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-threads', '1', ...exact];
   const speed = preset === 'h264-master' ? ['-preset', 'medium', '-crf', '18'] : ['-preset', 'veryfast', '-crf', '12'];
   return ['-c:v', 'libx264', ...speed, '-pix_fmt', 'yuv420p', '-threads', '1', '-x264-params', 'threads=1:lookahead-threads=1', '-movflags', '+faststart', ...exact];
 }
