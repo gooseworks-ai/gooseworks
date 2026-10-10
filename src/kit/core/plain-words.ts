@@ -19,8 +19,8 @@ const TOOL_OUTPUT: readonly RegExp[] = [
   // part@version, snake_case and kebab-case ids: none is a plain word.
   /\b[a-z0-9]+(?:[-_.][a-z0-9]+)*@\d/i,
   /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/i,
-  // Field paths such as brand.cta or scenes.0.line.
-  /\b[a-z_]\w*\.[a-z_]\w*\b/,
+  // Field paths such as brand.cta, scenes.0.line, scenes[0].line or products[1].images[2].
+  /\b[a-z_]\w*(?:\.(?:[a-z_]\w*|\d+)|\[\w*\])+/i,
 ];
 
 function readsPlain(sentence: string, names: readonly string[]): boolean {
