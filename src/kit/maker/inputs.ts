@@ -4,7 +4,7 @@
 // however it is called.
 import { schemaErrors } from '../core/schema';
 import type { FileRef, PartContext } from '../part-interface';
-import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.0.0/part.json';
+import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.1.0/part.json';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
 

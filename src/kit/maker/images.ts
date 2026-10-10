@@ -141,3 +141,109 @@ export function cssDataUrls(css: string, depth = 0): Array<{ url: string; mime: 
   }
   return found;
 }
+
+export interface PictureGeometry {
+  format: 'png' | 'jpeg' | 'webp';
+  /** Stored pixels, before any EXIF orientation. */
+  width: number;
+  height: number;
+  /** EXIF orientation, 1 to 8, as the browser applies it: a JPEG's or PNG's; 1 when none (Chromium ignores WebP's). */
+  orientation: number;
+}
+
+/** The orientation tag of a TIFF block (an EXIF payload past "Exif\0\0"), or 1. */
+function tiffOrientation(tiff: Uint8Array): number {
+  if (tiff.length < 8) return 1;
+  const little = tiff[0] === 0x49 && tiff[1] === 0x49;
+  if (!little && !(tiff[0] === 0x4d && tiff[1] === 0x4d)) return 1;
+  const view = new DataView(tiff.buffer, tiff.byteOffset, tiff.byteLength);
+  const u16 = (at: number) => view.getUint16(at, little);
+  if (u16(2) !== 42) return 1;
+  const ifd = view.getUint32(4, little);
+  if (ifd + 2 > tiff.length) return 1;
+  const count = u16(ifd);
+  for (let i = 0; i < count; i++) {
+    const entry = ifd + 2 + i * 12;
+    if (entry + 12 > tiff.length) break;
+    if (u16(entry) === 0x0112 && u16(entry + 2) === 3) {
+      const value = u16(entry + 8);
+      return value >= 1 && value <= 8 ? value : 1;
+    }
+  }
+  return 1;
+}
+
+function jpegGeometry(data: Uint8Array): PictureGeometry | null {
+  let at = 2;
+  let orientation = 1;
+  let exifSeen = false;
+  while (at + 4 <= data.length) {
+    if (data[at] !== 0xff) return null;
+    const marker = data[at + 1];
+    if (marker === 0xff) {
+      at++;
+      continue;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      at += 2;
+      continue;
+    }
+    if (marker === 0xd9 || marker === 0xda) return null;
+    const length = (data[at + 2] << 8) | data[at + 3];
+    if (length < 2) return null;
+    const body = at + 4;
+    // Browsers apply the first EXIF block's orientation only.
+    if (marker === 0xe1 && !exifSeen && text(data, body, 6) === 'Exif\0\0') {
+      exifSeen = true;
+      orientation = tiffOrientation(data.subarray(body + 6, at + 2 + length));
+    }
+    const sof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (sof && body + 5 <= data.length) {
+      const height = (data[body + 1] << 8) | data[body + 2];
+      const width = (data[body + 3] << 8) | data[body + 4];
+      return width && height ? { format: 'jpeg', width, height, orientation } : null;
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+
+function webpGeometry(data: Uint8Array): PictureGeometry | null {
+  if (data.length < 30) return null;
+  const chunk = text(data, 12, 4);
+  const p = 20;
+  const u24 = (at: number) => data[at] | (data[at + 1] << 8) | (data[at + 2] << 16);
+  if (chunk === 'VP8X') return { format: 'webp', width: 1 + u24(p + 4), height: 1 + u24(p + 7), orientation: 1 };
+  if (chunk === 'VP8 ' && data[p + 3] === 0x9d && data[p + 4] === 0x01 && data[p + 5] === 0x2a) {
+    return { format: 'webp', width: (data[p + 6] | (data[p + 7] << 8)) & 0x3fff, height: (data[p + 8] | (data[p + 9] << 8)) & 0x3fff, orientation: 1 };
+  }
+  if (chunk === 'VP8L' && data[p] === 0x2f) {
+    const [b1, b2, b3, b4] = [data[p + 1], data[p + 2], data[p + 3], data[p + 4]];
+    return { format: 'webp', width: 1 + (b1 | ((b2 & 0x3f) << 8)), height: 1 + ((b2 >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10)), orientation: 1 };
+  }
+  return null;
+}
+
+/** A PNG, JPEG or WebP picture's format, stored size and orientation, read from its bytes; null for anything else. */
+export function pictureGeometry(data: Uint8Array): PictureGeometry | null {
+  if (data.length >= 24 && data[0] === 0x89 && text(data, 1, 3) === 'PNG' && text(data, 12, 4) === 'IHDR') {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const width = view.getUint32(16);
+    const height = view.getUint32(20);
+    let orientation = 1;
+    for (let at = 8; at + 12 <= data.length; ) {
+      const length = view.getUint32(at);
+      const type = text(data, at + 4, 4);
+      if (type === 'IEND') break;
+      if (type === 'eXIf') {
+        orientation = tiffOrientation(data.subarray(at + 8, at + 8 + length));
+        break;
+      }
+      at += 12 + length;
+    }
+    return width && height ? { format: 'png', width, height, orientation } : null;
+  }
+  if (data.length >= 4 && data[0] === 0xff && data[1] === 0xd8) return jpegGeometry(data);
+  if (data.length >= 12 && text(data, 0, 4) === 'RIFF' && text(data, 8, 4) === 'WEBP') return webpGeometry(data);
+  return null;
+}
