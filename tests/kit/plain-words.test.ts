@@ -14,6 +14,28 @@ describe('plain words from a part', () => {
     expect(plainWords('The sound is too quiet. Checked out.wav at -40 dB.', FALLBACK)).toBe('The sound is too quiet.');
   });
 
+  it('gives the fallback for a relative path, a slash or a file extension of any kind', () => {
+    expect(plainWords('The logo is missing from assets/logo.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The logo is missing from assets\\logo.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Use a picture or/and a line.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The logo in logo.heic can’t be read.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('The scene-2.clip file is empty.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Only .webp pictures can be used.', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it.each([
+    'Invalid data found when processing input',
+    'Error while decoding stream #0:0',
+    'Conversion failed!',
+    'No such file or directory',
+    'moov atom not found',
+    'Could not find codec parameters for the picture',
+    'Error opening input',
+    'Output file is empty, nothing was encoded',
+  ])('gives the fallback for the tool diagnostic %p without a tool name', (diagnostic) => {
+    expect(plainWords(diagnostic, FALLBACK)).toBe(FALLBACK);
+  });
+
   it('gives the fallback for a tool diagnostic', () => {
     expect(plainWords('[matroska,webm @ 0x792ac40000] File ended prematurely', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('ffmpeg exited with 1: Invalid data found when processing input', FALLBACK)).toBe(FALLBACK);
@@ -28,8 +50,14 @@ describe('plain words from a part', () => {
     expect(plainWords('layer-sound made no audio.', FALLBACK, ['layer-sound'])).toBe(FALLBACK);
     expect(plainWords('check-layer@1.0.0 found silence.', FALLBACK)).toBe(FALLBACK);
     expect(plainWords('loudness_lufs is below the floor.', FALLBACK)).toBe(FALLBACK);
-    // A step id that is also a word can't be told apart, so it stays.
-    expect(plainWords('The clips have no sound.', FALLBACK, ['clips'])).toBe('The clips have no sound.');
+    expect(plainWords('brand.cta should be an object.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('scenes.0.line is too long.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('scenes[0].line is too long.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('products[1].images[2] is too small.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Scenes.0 has no line.', FALLBACK)).toBe(FALLBACK);
+    expect(plainWords('Step clips refused the label.', FALLBACK, ['clips'])).toBe(FALLBACK);
+    expect(plainWords('Clips refused the label.', FALLBACK, ['clips'])).toBe(FALLBACK);
+    expect(plainWords('The cuts are too short.', FALLBACK, ['cut'])).toBe('The cuts are too short.');
   });
 
   it('caps the words at 200 characters, at a sentence', () => {
@@ -38,5 +66,13 @@ describe('plain words from a part', () => {
     expect(out.length).toBeLessThanOrEqual(200);
     expect(out).toMatch(/places\.$/);
     expect(plainWords('a'.repeat(250), FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('counts the full stop it adds toward the cap', () => {
+    expect(plainWords('a'.repeat(199), FALLBACK)).toBe(`${'a'.repeat(199)}.`);
+    expect(plainWords('a'.repeat(200), FALLBACK)).toBe(FALLBACK);
+    expect(plainWords(`${'a'.repeat(199)}.`, FALLBACK)).toBe(`${'a'.repeat(199)}.`);
+    expect(plainWords('a'.repeat(9), FALLBACK, [], 10)).toBe(`${'a'.repeat(9)}.`);
+    expect(plainWords('a'.repeat(10), FALLBACK, [], 10)).toBe(FALLBACK);
   });
 });

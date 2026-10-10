@@ -37,12 +37,120 @@ it('reports a failed step with its code and plain words, not its detail', async 
   expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
 });
 
+describe('a part’s refusal of the plan', () => {
+  const refusing = (code: string, detail: string, thrown = false) =>
+    testParts({
+      clipRun: (async (_inputs: unknown, ctx: any) => {
+        if (thrown) throw Object.assign(new Error(detail), { code, detail });
+        throw ctx.error(code, detail);
+      }) as any,
+    });
+
+  it('reaches the card and the person in the part’s own words', async () => {
+    const line = fakeLine();
+    const parts = refusing('bad_input', '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow.');
+    const result = await runMake({ home: tempHome(), line, parts });
+    expect(result).toEqual({
+      status: 'failed',
+      message: '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow. Change the plan, then make it again.',
+    });
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+  });
+
+  it('keeps a part’s numbers and finishes its sentence', async () => {
+    const line = fakeLine();
+    const result = await runMake({ home: tempHome(), line, parts: refusing('output_invalid', 'Would run 58.2 s, style allows 15–45 s, 9 photos', true) });
+    expect(result.message).toBe('Would run 58.2 s, style allows 15–45 s, 9 photos. Change the plan, then make it again.');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
+  });
+
+  it('keeps a refusal’s path, file name and ids off the card and in the log', async () => {
+    const home = tempHome();
+    const line = fakeLine();
+    const detail = 'The logo can’t be read. Tried /Users/someone/.gooseworks/videos/vid_1/plan/logo.png for clips.';
+    const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
+    expect(result.message).toBe('The logo can’t be read. Change the plan, then make it again.');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('logo.png');
+
+    const pathOnly = fakeLine();
+    const generic = await runMake({ home: tempHome(), line: pathOnly, parts: refusing('bad_input', 'missing /Users/someone/.gooseworks/videos/vid_1/plan/logo.png') });
+    expect(generic.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+  });
+
+  it.each([
+    ['a relative path', 'The logo is missing from assets/logo.', 'assets/logo'],
+    ['a backslash path', 'The logo is missing from assets\\logo.', 'logo'],
+    ['a file name', 'The logo in logo.heic can’t be read.', 'logo.heic'],
+    ['a bare tool diagnostic', 'Invalid data found when processing input', 'Invalid data found'],
+    ['a tool diagnostic with its own sentence', 'Conversion failed!', 'Conversion failed'],
+    ['a missing file', 'No such file or directory', 'No such file'],
+    ['a field path', 'scenes.0.line is too long.', 'scenes.0.line'],
+    ['a step id that reads as a word', 'Step clips refused the label.', 'Step clips refused'],
+  ])('gives the generic words for a refusal with %s and keeps it in the log', async (_kind, detail, logged) => {
+    const home = tempHome();
+    const line = fakeLine();
+    const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
+    expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
+  });
+
+  describe('at the card’s 200-character cap', () => {
+    const FIX = ' Change the plan, then make it again.';
+    const GENERIC = 'This video can’t be made from this plan. Change the plan, then make it again.';
+    // Plain words of exactly `n` characters, ending in `end`.
+    const refusal = (n: number, end = '') => `${'The row label is far too long for the card '.repeat(10).slice(0, n - end.length - 1)}x${end}`;
+    const make = async (detail: string) => {
+      const line = fakeLine();
+      const result = await runMake({ home: tempHome(), line, parts: refusing('bad_input', detail) });
+      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+      return result.message!;
+    };
+
+    it('fits a refusal with no full stop that ends at exactly 200', async () => {
+      const said = refusal(200 - FIX.length - 1);
+      const message = await make(said);
+      expect(message).toBe(`${said}.${FIX}`);
+      expect(message).toHaveLength(200);
+    });
+
+    it('gives the generic words when the added full stop would make 201', async () => {
+      expect(await make(refusal(200 - FIX.length))).toBe(GENERIC);
+    });
+
+    it('fits a refusal with its own full stop that ends at exactly 200', async () => {
+      const said = refusal(200 - FIX.length, '.');
+      const message = await make(said);
+      expect(message).toBe(`${said}${FIX}`);
+      expect(message).toHaveLength(200);
+    });
+
+    it('gives the generic words for a refusal one character over', async () => {
+      expect(await make(refusal(200 - FIX.length + 1, '.'))).toBe(GENERIC);
+    });
+  });
+
+  it('gives the generic words for the core’s own refusal and for a tool failure', async () => {
+    const line = fakeLine();
+    const parts = testParts({ clipRun: (async () => ({ clips: 'not files' })) as any });
+    const result = await runMake({ home: tempHome(), line, parts });
+    expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+
+    const failing = fakeLine();
+    const tool = await runMake({ home: tempHome(), line: failing, parts: testParts({ clip: { retry: { transient: 0 } }, clipRun: (async (_i: unknown, ctx: any) => { throw ctx.error('tool_failed', 'The encoder ran out of room.'); }) as any }) });
+    expect(tool.message).toBe('Part of this video could not be made. Run the same command again; what was made so far is kept.');
+    expect(failures(failing)).toEqual([{ step: 'clips', code: 'tool_failed', detail: tool.message }]);
+  });
+});
+
 it('reports a failed final check with the check’s own words', async () => {
   const line = fakeLine();
   const parts = testParts({ checkRun: (async () => ({ verdict: { pass: false, checks: [{ code: 'sound', status: 'fail', message: 'The video has no sound.' }] } })) as any });
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video has no sound.' }]);
+  expect(result.message).toBe('The video has no sound. The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.');
 });
 
 // check-layer 1.1.2's verdict: a failed check carries no message; its words are in `reasons[]`.

@@ -42,7 +42,7 @@ import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
-import { plainWords } from './plain-words';
+import { MAX_CHARS, plainWords } from './plain-words';
 import { ProgressBook } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
@@ -110,7 +110,8 @@ interface StepSpec {
 
 const CHECK_FAILED = 'The video didn’t pass the final check.';
 /** For a failure that repeats on every run of the same plan. */
-const PLAN_CHANGE = 'This video can’t be made from this plan. Change the plan, then make it again.';
+const PLAN_FIX = 'Change the plan, then make it again.';
+const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
@@ -167,8 +168,11 @@ function reasonFor(verdict: CheckVerdict, check: string | null): string {
   return ((check !== null && worded.find((r) => r.check === check)) || worded[0])?.message.trim() ?? '';
 }
 
-/** Plain words for a part's failure: the line's own words when it said them, never a part's detail. */
-function failureWords(error: PartError): string {
+/**
+ * Plain words for a part's failure: the line's own words when it said them, and a part's own refusal
+ * of the plan (it writes those for the person) when it reads as plain words. Any other detail stays in the log.
+ */
+function failureWords(error: PartError, names: readonly string[] = []): string {
   if (error instanceof PieceFailure && error.spent) return FAILED_TWICE;
   if (error instanceof PieceFailure) return [error.line.error, error.line.fix].filter(Boolean).join(' ');
   switch (error.code) {
@@ -182,10 +186,18 @@ function failureWords(error: PartError): string {
       return 'Part of this video took too long. Run the same command again; what was made so far is kept.';
     case 'bad_input':
     case 'output_invalid':
-      return PLAN_CHANGE;
+      return refusalWords(error, names);
     default:
       return 'Part of this video could not be made. Run the same command again; what was made so far is kept.';
   }
+}
+
+/** A part's refusal first, then what to do, within the card's length; the generic words when it has none. */
+function refusalWords(error: PartError, names: readonly string[]): string {
+  if (!error.fromPart || !error.detail) return PLAN_CHANGE;
+  const said = plainWords(error.detail, '', names, MAX_CHARS - PLAN_FIX.length - 1);
+  const words = said ? `${said.charAt(0).toUpperCase()}${said.slice(1)} ${PLAN_FIX}` : PLAN_CHANGE;
+  return words.length <= MAX_CHARS ? words : PLAN_CHANGE;
 }
 
 function checkLock(raw: unknown, videoId: string, plan: ApprovedPlan): PartsLock {
@@ -782,7 +794,7 @@ class Maker {
         if (stopped) throw stopped;
         this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
-        const words = failureWords(failure!);
+        const words = failureWords(failure!, this.idNames());
         const code = reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
         this.reportFailure(spec.id, code, words);
@@ -868,7 +880,7 @@ class Maker {
         if (!isInside(workDir, target)) throw new PartError('bad_input', 'a part may register only files in its own folder');
         return fileRef(target, media, tools.probe);
       },
-      error: (code, detail) => new PartError(code, detail),
+      error: (code, detail) => new PartError(code, detail, true),
       signal,
     };
     return ctx;
@@ -903,7 +915,8 @@ class Maker {
     await this.reporter.flush();
     this.run.status = 'failed';
     await this.saveRun();
-    return { status: 'failed', message: 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.' };
+    const notSent = 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.';
+    return { status: 'failed', message: detail === CHECK_FAILED ? notSent : `${detail} ${notSent}` };
   }
 
   /** Part, step and layer ids, which the person never sees. */
