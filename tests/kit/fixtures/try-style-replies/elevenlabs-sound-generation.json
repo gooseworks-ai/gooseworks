@@ -1,0 +1,16 @@
+{
+  "model": "/v1/sound-generation",
+  "provider": "elevenlabs",
+  "path": "POST /v1/sound-generation",
+  "request": {
+    "text": "A soft whoosh",
+    "duration_seconds": 1.5,
+    "model_id": "eleven_text_to_sound_v2",
+    "prompt_influence": 0.3
+  },
+  "answer": {
+    "file_url": "https://line.example.invalid/files/fixture/audio.mp3"
+  },
+  "pointer": "/file_url",
+  "provider_reply": "<mp3 bytes>"
+}

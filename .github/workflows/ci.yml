@@ -80,7 +80,10 @@ jobs:
       - name: Run the maker tests (none may skip)
         if: steps.maker.outputs.present == 'true'
         run: |
-          npx jest tests/kit/maker --runInBand --json --outputFile="$RUNNER_TEMP/maker.json"
+          tests="tests/kit/maker"
+          # try-style's stand-ins make their media with ffmpeg, so their tests run here too.
+          if [ -f tests/kit/try-style-replies.test.ts ]; then tests="$tests tests/kit/try-style-replies.test.ts"; fi
+          npx jest $tests --runInBand --json --outputFile="$RUNNER_TEMP/maker.json"
           node -e '
             const r = require(process.env.RUNNER_TEMP + "/maker.json");
             const skipped = r.testResults.flatMap((file) => file.assertionResults)
