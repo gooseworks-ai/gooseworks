@@ -1,7 +1,7 @@
 {
   "model": "/v1/music",
   "provider": "elevenlabs",
-  "path": "POST /v1/music?output_format=mp3_44100_128",
+  "path": "POST /v1/music",
   "request": {
     "prompt": "Warm lo-fi bed, soft keys, no vocals",
     "music_length_ms": 30000,

@@ -77,15 +77,40 @@ export type CallKind =
   | 'image'
   | 'unknown';
 
-/** A call's path without its query string, with one leading slash and no trailing one. */
-const plainPath = (p: string) => `/${p.split('?')[0].replace(/^\/+|\/+$/g, '')}`;
+/**
+ * A call's path with one leading slash and no trailing one. A query string is
+ * kept, so an ElevenLabs path with one matches no call kind and is refused, as
+ * the line refuses it (its paths are exact; the line always takes the default
+ * output format).
+ */
+const plainPath = (p: string) => `/${p.replace(/^\/+|\/+$/g, '')}`;
 
-/** A call's query string (`?output_format=...`), kept when an ElevenLabs call is forwarded; '' when none or unsafe. */
-function queryOf(p: string): string {
-  const i = p.indexOf('?');
-  if (i < 0) return '';
-  const q = p.slice(i + 1);
-  return /^[A-Za-z0-9_.=&-]{1,200}$/.test(q) ? `?${q}` : '';
+/** The line's song rules (gooseworks-app services/video-line/providers.ts songPlanMs, W0-13). */
+const SONG_PROMPT_ONLY_FIELDS = ['music_length_ms', 'prompt', 'force_instrumental', 'generation_mode'] as const;
+const SONG_SECTION_MS = { min: 3_000, max: 120_000 };
+const SONG_MAX_SECTIONS = 30;
+
+/**
+ * Why the line would refuse this `/v1/music/detailed` call before any spend, or
+ * null. Mirrors the line exactly, so a part that passes here passes there: no
+ * query on the path (the line always takes the default mp3_44100_128), none of
+ * the prompt-only fields beside the plan, and 1 to 30 `composition_plan.sections`
+ * each with a whole-number `duration_ms` from 3000 to 120000.
+ */
+export function songProblem(call: PieceCall): string | null {
+  if (call.path.includes('?')) return 'Send /v1/music/detailed with no query. The line always asks for the default output format, mp3_44100_128.';
+  const b = call.body ?? {};
+  const sent = SONG_PROMPT_ONLY_FIELDS.filter((f) => b[f] !== undefined && b[f] !== null);
+  if (sent.length) return `A song is priced by body.composition_plan, so ${sent.join(', ')} can't be sent with it. Set each section's duration_ms instead.`;
+  const sections = (b.composition_plan as { sections?: unknown } | null | undefined)?.sections;
+  if (!Array.isArray(sections) || !sections.length || sections.length > SONG_MAX_SECTIONS) return `A song needs body.composition_plan.sections, 1 to ${SONG_MAX_SECTIONS} of them.`;
+  for (const section of sections) {
+    const ms = (section as { duration_ms?: unknown } | null)?.duration_ms;
+    if (typeof ms !== 'number' || !Number.isInteger(ms) || ms < SONG_SECTION_MS.min || ms > SONG_SECTION_MS.max) {
+      return `Each song section needs a whole-number duration_ms from ${SONG_SECTION_MS.min} to ${SONG_SECTION_MS.max}.`;
+    }
+  }
+  return null;
 }
 
 export function callKind(call: PieceCall): CallKind {
@@ -156,10 +181,9 @@ export function usdEstimate(call: PieceCall, hostedSeconds: (ref: unknown) => nu
       return (ms / 60_000) * 0.15;
     }
     case 'song': {
-      // music_v1 plans have sections, music_v2 plans have chunks; both carry duration_ms.
-      const plan = b.composition_plan as { sections?: Array<{ duration_ms?: number }>; chunks?: Array<{ duration_ms?: number }> } | undefined;
-      const parts = [...(plan?.sections ?? []), ...(plan?.chunks ?? [])];
-      const ms = parts.reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 60_000;
+      // Priced by the plan's section lengths, as the line does (songProblem refuses anything else first).
+      const plan = b.composition_plan as { sections?: Array<{ duration_ms?: number }> } | undefined;
+      const ms = (plan?.sections ?? []).reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || 60_000;
       return (ms / 60_000) * 0.15;
     }
     case 'sfx':
@@ -388,14 +412,11 @@ export class FakeProvider implements Provider {
         return { kind: 'done', file: { path: await fakeAudio(ctx, seconds, 'silence'), mime: 'audio/mpeg' } };
       }
       case 'song': {
-        const plan = (b.composition_plan ?? null) as {
-          sections?: Array<{ section_name?: string; duration_ms?: number; lines?: string[] }>;
-          chunks?: Array<{ text?: string; duration_ms?: number }>;
-        } | null;
-        if (plan && b.music_length_ms !== undefined) return { kind: 'failed', code: 'provider_rejected', message: 'music_length_ms is refused together with a composition_plan.', next: 'stop' };
-        // music_v1 plans have sections with lines; music_v2 plans have chunks with text.
-        const sections = plan?.sections ?? (plan?.chunks ?? []).map((c) => ({ duration_ms: c.duration_ms, lines: typeof c.text === 'string' ? [c.text] : [] }));
-        const totalMs = sections.reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 30_000;
+        const problem = songProblem(call);
+        if (problem) return { kind: 'failed', code: 'provider_rejected', message: problem, next: 'stop' };
+        const plan = b.composition_plan as { sections: Array<{ section_name?: string; duration_ms: number; lines?: string[] }> };
+        const sections = plan.sections;
+        const totalMs = sections.reduce((a, s) => a + s.duration_ms, 0);
         const words: Array<{ word: string; start_ms: number; end_ms: number }> = [];
         let at = 0;
         for (const s of sections) {
@@ -666,57 +687,96 @@ export interface MimePart {
   body: Buffer;
 }
 
+/** The boundary from a Content-Type header, quoted or bare (the line's multipartBoundary). */
+function multipartBoundary(contentType: string): string | null {
+  const match = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
+  const boundary = match?.[1] ?? match?.[2];
+  return boundary && boundary.length <= 200 ? boundary : null;
+}
+
+/** Where a part's headers end: the first blank line (CRLF or LF), or the part's start when it has none. */
+function headerEnd(segment: Buffer): { at: number; size: number } | null {
+  if (segment[0] === 0x0a) return { at: 0, size: 1 };
+  if (segment[0] === 0x0d && segment[1] === 0x0a) return { at: 0, size: 2 };
+  const crlf = segment.indexOf('\r\n\r\n');
+  const lf = segment.indexOf('\n\n');
+  if (crlf === -1 && lf === -1) return null;
+  if (crlf !== -1 && (lf === -1 || crlf <= lf)) return { at: crlf, size: 4 };
+  return { at: lf, size: 2 };
+}
+
 /**
- * The parts of a `multipart/*` body (RFC 2046), or null when it isn't one.
- * The boundary comes from the Content-Type; lines may end in CRLF or LF.
+ * The parts of a multipart body, in order, or null when it isn't one. A port of
+ * the line's reader (gooseworks-app services/video-line/multipart.ts, W0-13), so
+ * real mode accepts exactly the replies production accepts: the boundary comes
+ * from the Content-Type, or from the body's first line when the header has none;
+ * CRLF and LF line ends both parse; binary safe.
  */
 export function parseMultipart(contentType: string, body: Buffer): MimePart[] | null {
-  if (!/^\s*multipart\//i.test(contentType)) return null;
-  const b = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
-  if (!b) return null;
-  const delimiter = Buffer.from(`--${b[1] ?? b[2]}`);
-  let at = body.indexOf(delimiter);
-  if (at < 0) return null;
-  const nl = body.indexOf('\r\n', at) === at + delimiter.length ? '\r\n' : '\n';
-  const next = Buffer.from(`${nl}--${b[1] ?? b[2]}`);
+  let boundary = multipartBoundary(contentType);
+  if (!boundary && body.subarray(0, 2).toString('latin1') === '--') {
+    const eol = body.indexOf('\n');
+    const first = body.subarray(2, eol === -1 ? Math.min(body.length, 202) : eol).toString('latin1').trim();
+    boundary = first && first.length <= 200 ? first : null;
+  }
+  if (!boundary) return null;
+  const dash = Buffer.from(`--${boundary}`, 'latin1');
+  const delimiter = Buffer.from(`\n--${boundary}`, 'latin1');
+  // The first delimiter may open the body; every later one follows a line break.
+  let start = body.subarray(0, dash.length).equals(dash) ? 0 : body.indexOf(delimiter);
+  if (start === -1) return null;
+  if (start > 0) start += 1;
   const parts: MimePart[] = [];
+  let cursor = start + dash.length;
   for (;;) {
-    let start = at + delimiter.length;
-    if (body.subarray(start, start + 2).toString() === '--') return parts; // the close delimiter
-    const eol = body.indexOf(nl, start);
-    if (eol < 0) return null;
-    start = eol + nl.length;
-    const end = body.indexOf(next, start);
-    if (end < 0) return null;
-    const chunk = body.subarray(start, end);
-    const blank = chunk.indexOf(`${nl}${nl}`);
-    const noHeaders = chunk.subarray(0, nl.length).toString() === nl;
-    const headerText = noHeaders ? '' : blank < 0 ? chunk.toString('latin1') : chunk.subarray(0, blank).toString('latin1');
-    const content = noHeaders ? chunk.subarray(nl.length) : blank < 0 ? Buffer.alloc(0) : chunk.subarray(blank + 2 * nl.length);
+    if (body.subarray(cursor, cursor + 2).toString('latin1') === '--') return parts; // the close delimiter
+    const eol = body.indexOf('\n', cursor);
+    if (eol === -1) return null;
+    const contentStart = eol + 1;
+    const next = body.indexOf(delimiter, contentStart);
+    if (next === -1) return null;
+    // The line break before the next delimiter belongs to the delimiter.
+    const contentEnd = next > contentStart && body[next - 1] === 0x0d ? next - 1 : next;
+    const segment = body.subarray(contentStart, contentEnd);
+    const end = headerEnd(segment);
     const headers: Record<string, string> = {};
-    for (const line of headerText.split(nl)) {
-      const i = line.indexOf(':');
-      if (i > 0) headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    if (end) {
+      for (const line of segment.subarray(0, end.at).toString('latin1').split(/\r?\n/)) {
+        const colon = line.indexOf(':');
+        if (colon > 0) headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
+      }
     }
-    parts.push({ headers, body: Buffer.from(content) });
-    at = end + nl.length;
+    parts.push({ headers, body: Buffer.from(end ? segment.subarray(end.at + end.size) : segment) });
+    cursor = next + delimiter.length;
   }
 }
 
-const AUDIO_EXT: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav' };
+/** The line's audio extensions (services/video-line/providers.ts AUDIO_EXT). */
+const AUDIO_EXT: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/flac': 'flac',
+  'audio/aac': 'aac',
+  'audio/mp4': 'm4a',
+};
 
 /**
- * A `/v1/music/detailed` reply as the line hands it on (MASTER-PLAN §4.8): the
- * `application/json` part verbatim as `json`, and the `audio/*` part as the
- * file. Parts are found by their Content-Type, not their order (ElevenLabs
- * does not document either). Null when either part is missing or the JSON
- * part doesn't parse.
+ * A `/v1/music/detailed` reply as the line hands it on (MASTER-PLAN §4.8; the
+ * line's songReply): the `application/json` (or `+json`) part verbatim as
+ * `json`, and the `audio/*` part as the file, with its type as sent. Parts are
+ * found by their Content-Type, not their order. Null when either part is
+ * missing or the JSON part doesn't parse.
  */
 export function songReply(contentType: string, body: Buffer): { json: unknown; audio: { bytes: Buffer; mime: string; ext: string } } | null {
   const parts = parseMultipart(contentType, body);
   if (!parts) return null;
   const typeOf = (p: MimePart) => (p.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-  const jsonPart = parts.find((p) => typeOf(p) === 'application/json');
+  const jsonPart = parts.find((p) => typeOf(p) === 'application/json' || typeOf(p).endsWith('+json'));
   const audioPart = parts.find((p) => typeOf(p).startsWith('audio/'));
   if (!jsonPart || !audioPart || !audioPart.body.length) return null;
   let json: unknown;
@@ -726,7 +786,7 @@ export function songReply(contentType: string, body: Buffer): { json: unknown; a
     return null;
   }
   const mime = typeOf(audioPart);
-  return { json, audio: { bytes: audioPart.body, mime: AUDIO_EXT[mime] === 'mp3' ? 'audio/mpeg' : mime, ext: AUDIO_EXT[mime] ?? 'mp3' } };
+  return { json, audio: { bytes: audioPart.body, mime, ext: AUDIO_EXT[mime] ?? (mime.slice('audio/'.length).replace(/[^a-z0-9]/g, '') || 'bin') } };
 }
 
 /** Every https link in a provider's JSON, swapped for a local mirror link. */
@@ -838,9 +898,10 @@ export class RealProvider implements Provider {
   async order(call: PieceCall, ctx: ProviderContext): Promise<ProviderAnswer> {
     const kind = callKind(call);
     if (kind === 'unknown') return { kind: 'refused', code: 'not_allowed', message: `try-style does not forward ${call.provider} ${plainPath(call.path)}.` };
-    // Never send a song's length together with its plan (MASTER-PLAN §4.8), and refuse it before anything is reserved, as the stand-in does.
-    if (kind === 'song' && call.body.composition_plan != null && call.body.music_length_ms !== undefined) {
-      return { kind: 'failed', code: 'provider_rejected', message: 'music_length_ms is refused together with a composition_plan.', next: 'stop' };
+    // A song the line would refuse is refused here before anything is reserved or sent, as the stand-in does (MASTER-PLAN §4.8).
+    if (kind === 'song') {
+      const problem = songProblem(call);
+      if (problem) return { kind: 'failed', code: 'provider_rejected', message: problem, next: 'stop' };
     }
     const key = this.key(call.provider);
     if (!key) return { kind: 'refused', code: 'no_key', message: `${call.provider === 'fal' ? 'FAL_KEY (FAL_API_KEY in --env-file)' : 'ELEVENLABS_API_KEY'} was not given.` };
@@ -987,7 +1048,7 @@ export class RealProvider implements Provider {
 
   private async elevenlabs(call: PieceCall, ctx: ProviderContext, key: string): Promise<ProviderAnswer> {
     const p = plainPath(call.path);
-    const res = await this.fetchImpl(`${ELEVENLABS}${p}${queryOf(call.path)}`, { method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(call.body) });
+    const res = await this.fetchImpl(`${ELEVENLABS}${p}`, { method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(call.body) });
     if (!res.ok) {
       const text = (await res.text().catch(() => '')).slice(0, 300);
       const rejected = [400, 404, 413, 415, 422].includes(res.status);

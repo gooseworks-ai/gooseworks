@@ -198,18 +198,52 @@ describe('try-style real mode: /v1/music/detailed', () => {
     expect(songReply('application/json', Buffer.from(json))).toBeNull();
   });
 
+  it('reads replies the way the line does: no boundary parameter, a +json part, an audio/mp4 part', () => {
+    const json = JSON.stringify(contract.answer.json);
+    const body = Buffer.from(`--zz9\r\nContent-Type: application/vnd.song+json\r\n\r\n${json}\r\n--zz9\r\nContent-Type: audio/mp4\r\n\r\nM4Abytes\r\n--zz9--\r\n`);
+    const song = songReply('multipart/mixed', body)!;
+    expect(song.json).toEqual(contract.answer.json);
+    expect(song.audio).toMatchObject({ mime: 'audio/mp4', ext: 'm4a' });
+    expect(song.audio.bytes.toString()).toBe('M4Abytes');
+    // An audio part's type is kept as sent, as the line keeps it.
+    const mp3 = Buffer.from(`--zz9\nContent-Type: application/json\n\n${json}\n--zz9\nContent-Type: audio/mp3\n\nID3\n--zz9--\n`);
+    expect(songReply('multipart/mixed; boundary=zz9', mp3)!.audio).toMatchObject({ mime: 'audio/mp3', ext: 'mp3' });
+  });
+
+  it('refuses, in both modes, every song the line refuses, before anything is reserved or sent', async () => {
+    const plan = contract.request.composition_plan;
+    const bad: Array<[string, string, Record<string, unknown>]> = [
+      ['a query on the path', '/v1/music/detailed?output_format=mp3_44100_128', contract.request],
+      ['a prompt beside the plan', '/v1/music/detailed', { ...contract.request, prompt: 'a song' }],
+      ['force_instrumental beside the plan', '/v1/music/detailed', { ...contract.request, force_instrumental: false }],
+      ['no sections (a music_v2 chunks plan)', '/v1/music/detailed', { ...contract.request, composition_plan: { chunks: [{ text: 'la', duration_ms: 8000 }] } }],
+      ['a section under 3 s', '/v1/music/detailed', { ...contract.request, composition_plan: { ...plan, sections: [{ ...plan.sections[0], duration_ms: 2999 }] } }],
+      ['a fractional section', '/v1/music/detailed', { ...contract.request, composition_plan: { ...plan, sections: [{ ...plan.sections[0], duration_ms: 8000.5 }] } }],
+    ];
+    for (const [why, p, body] of bad) {
+      const dir = tmp();
+      const fetchImpl = jest.fn(async () => new Response('{}', { status: 200 }));
+      const realAnswer = await real(dir, fetchImpl).order({ provider: 'elevenlabs', path: p, body }, ctxFor(dir));
+      expect([why, realAnswer.kind]).toEqual([why, expect.stringMatching(/^(failed|refused)$/)]);
+      expect([why, fetchImpl.mock.calls.length]).toEqual([why, 0]);
+      expect(existsSync(path.join(dir, 'spend.jsonl')) ? readFileSync(path.join(dir, 'spend.jsonl'), 'utf8').trim() : '').toBe('');
+      const fakeAnswer = await new FakeProvider().order({ provider: 'elevenlabs', path: p, body }, ctxFor(dir) as any);
+      expect([why, fakeAnswer.kind]).toEqual([why, expect.stringMatching(/^(failed|refused)$/)]);
+    }
+  });
+
   it('forwards the call and hands the kit {json, file_url} in the contract shape', async () => {
     const dir = tmp();
     const fetchImpl = jest.fn(async () => new Response(bytes, { status: 200, headers: { 'content-type': headers.content_type, ...headers.headers } }));
     const l = line(real(dir, fetchImpl), dir);
-    const call = { provider: 'elevenlabs', path: '/v1/music/detailed?output_format=mp3_44100_128', body: contract.request };
+    const call = { provider: 'elevenlabs', path: '/v1/music/detailed', body: contract.request };
     const answer = await js(post(l, '/pieces', { idempotency_key: 'song:1', piece_key: 'song.track', inputs_hash: 'hsong00001', call }));
     expect(answer.status).toBe('done');
     expect(shapeProblems(contract.answer, answer.result)).toEqual([]);
     expect(answer.result.json).toEqual(contract.answer.json);
     expect((await (await l.fetch(answer.result.file_url)).arrayBuffer()).byteLength).toBe(headers.audio_part_bytes);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://api.elevenlabs.io/v1/music/detailed?output_format=mp3_44100_128');
+    expect(url).toBe('https://api.elevenlabs.io/v1/music/detailed');
     expect(JSON.parse(String(init.body))).toEqual(contract.request);
     const ledger = readFileSync(path.join(dir, 'spend.jsonl'), 'utf8');
     expect(ledger.trim().split('\n').map((x) => JSON.parse(x).event)).toEqual(['reserve', 'done']);

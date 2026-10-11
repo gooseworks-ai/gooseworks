@@ -1,7 +1,7 @@
 {
   "model": "/v1/music/detailed",
   "provider": "elevenlabs",
-  "path": "POST /v1/music/detailed?output_format=mp3_44100_128",
+  "path": "POST /v1/music/detailed",
   "request": {
     "composition_plan": {
       "positive_global_styles": [
