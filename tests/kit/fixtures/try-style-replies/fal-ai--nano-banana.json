@@ -1,0 +1,27 @@
+{
+  "model": "fal-ai/nano-banana",
+  "provider": "fal",
+  "path": "fal-ai/nano-banana",
+  "request": {
+    "prompt": "A bottle on a marble counter, soft window light",
+    "num_images": 1,
+    "aspect_ratio": "9:16",
+    "output_format": "png"
+  },
+  "answer": {
+    "json": {
+      "images": [
+        {
+          "url": "https://v3b.fal.media/files/b/fixture/still.png",
+          "content_type": "image/png",
+          "file_name": "still.png",
+          "file_size": 1834512,
+          "width": 768,
+          "height": 1344
+        }
+      ],
+      "description": ""
+    }
+  },
+  "pointer": "/json/images/0/url"
+}

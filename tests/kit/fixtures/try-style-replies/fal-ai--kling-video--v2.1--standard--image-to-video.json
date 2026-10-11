@@ -1,0 +1,23 @@
+{
+  "model": "fal-ai/kling-video/v2.1/standard/image-to-video",
+  "provider": "fal",
+  "path": "fal-ai/kling-video/v2.1/standard/image-to-video",
+  "request": {
+    "prompt": "Slow push-in on the product",
+    "image_url": "https://example.invalid/still.png",
+    "duration": "5",
+    "negative_prompt": "blur, distort, and low quality",
+    "cfg_scale": 0.5
+  },
+  "answer": {
+    "json": {
+      "video": {
+        "url": "https://v3b.fal.media/files/b/fixture/clip.mp4",
+        "content_type": "video/mp4",
+        "file_name": "clip.mp4",
+        "file_size": 4404019
+      }
+    }
+  },
+  "pointer": "/json/video/url"
+}

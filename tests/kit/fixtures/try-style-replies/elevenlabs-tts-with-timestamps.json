@@ -1,0 +1,165 @@
+{
+  "model": "/v1/text-to-speech/{voice_id}/with-timestamps",
+  "provider": "elevenlabs",
+  "path": "POST /v1/text-to-speech/{voice_id}/with-timestamps",
+  "request": {
+    "text": "Hi there.",
+    "model_id": "eleven_v3",
+    "voice_settings": {
+      "stability": 0.5,
+      "similarity_boost": 0.75,
+      "style": 0.0,
+      "use_speaker_boost": true,
+      "speed": 1.0
+    }
+  },
+  "answer": {
+    "json": {
+      "alignment": {
+        "characters": [
+          "H",
+          "i",
+          " ",
+          "t",
+          "h",
+          "e",
+          "r",
+          "e",
+          "."
+        ],
+        "character_start_times_seconds": [
+          0.0,
+          0.07,
+          0.15,
+          0.21,
+          0.28,
+          0.35,
+          0.41,
+          0.48,
+          0.55
+        ],
+        "character_end_times_seconds": [
+          0.07,
+          0.15,
+          0.21,
+          0.28,
+          0.35,
+          0.41,
+          0.48,
+          0.55,
+          0.7
+        ]
+      },
+      "normalized_alignment": {
+        "characters": [
+          "H",
+          "i",
+          " ",
+          "t",
+          "h",
+          "e",
+          "r",
+          "e",
+          "."
+        ],
+        "character_start_times_seconds": [
+          0.0,
+          0.07,
+          0.15,
+          0.21,
+          0.28,
+          0.35,
+          0.41,
+          0.48,
+          0.55
+        ],
+        "character_end_times_seconds": [
+          0.07,
+          0.15,
+          0.21,
+          0.28,
+          0.35,
+          0.41,
+          0.48,
+          0.55,
+          0.7
+        ]
+      }
+    },
+    "file_url": "https://line.example.invalid/files/fixture/audio.mp3"
+  },
+  "pointer": "/file_url",
+  "provider_reply": {
+    "audio_base64": "<base64 mp3>",
+    "alignment": {
+      "characters": [
+        "H",
+        "i",
+        " ",
+        "t",
+        "h",
+        "e",
+        "r",
+        "e",
+        "."
+      ],
+      "character_start_times_seconds": [
+        0.0,
+        0.07,
+        0.15,
+        0.21,
+        0.28,
+        0.35,
+        0.41,
+        0.48,
+        0.55
+      ],
+      "character_end_times_seconds": [
+        0.07,
+        0.15,
+        0.21,
+        0.28,
+        0.35,
+        0.41,
+        0.48,
+        0.55,
+        0.7
+      ]
+    },
+    "normalized_alignment": {
+      "characters": [
+        "H",
+        "i",
+        " ",
+        "t",
+        "h",
+        "e",
+        "r",
+        "e",
+        "."
+      ],
+      "character_start_times_seconds": [
+        0.0,
+        0.07,
+        0.15,
+        0.21,
+        0.28,
+        0.35,
+        0.41,
+        0.48,
+        0.55
+      ],
+      "character_end_times_seconds": [
+        0.07,
+        0.15,
+        0.21,
+        0.28,
+        0.35,
+        0.41,
+        0.48,
+        0.55,
+        0.7
+      ]
+    }
+  }
+}

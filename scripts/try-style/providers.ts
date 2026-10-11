@@ -77,7 +77,16 @@ export type CallKind =
   | 'image'
   | 'unknown';
 
-const plainPath = (p: string) => `/${p.replace(/^\/+|\/+$/g, '')}`;
+/** A call's path without its query string, with one leading slash and no trailing one. */
+const plainPath = (p: string) => `/${p.split('?')[0].replace(/^\/+|\/+$/g, '')}`;
+
+/** A call's query string (`?output_format=...`), kept when an ElevenLabs call is forwarded; '' when none or unsafe. */
+function queryOf(p: string): string {
+  const i = p.indexOf('?');
+  if (i < 0) return '';
+  const q = p.slice(i + 1);
+  return /^[A-Za-z0-9_.=&-]{1,200}$/.test(q) ? `?${q}` : '';
+}
 
 export function callKind(call: PieceCall): CallKind {
   const p = plainPath(call.path);
@@ -147,8 +156,10 @@ export function usdEstimate(call: PieceCall, hostedSeconds: (ref: unknown) => nu
       return (ms / 60_000) * 0.15;
     }
     case 'song': {
-      const plan = b.composition_plan as { sections?: Array<{ duration_ms?: number }> } | undefined;
-      const ms = (plan?.sections ?? []).reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 60_000;
+      // music_v1 plans have sections, music_v2 plans have chunks; both carry duration_ms.
+      const plan = b.composition_plan as { sections?: Array<{ duration_ms?: number }>; chunks?: Array<{ duration_ms?: number }> } | undefined;
+      const parts = [...(plan?.sections ?? []), ...(plan?.chunks ?? [])];
+      const ms = parts.reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 60_000;
       return (ms / 60_000) * 0.15;
     }
     case 'sfx':
@@ -319,6 +330,39 @@ export function spreadChunks(lines: string[], start: number, end: number) {
   return words.map((text, i) => ({ text, timestamp: [+(start + i * step).toFixed(3), +(start + (i + 0.85) * step).toFixed(3)] as [number, number] }));
 }
 
+/** fal's `File` object, in the key order fal's replies use: {url, content_type, file_name, file_size}. */
+function falFile(ctx: ProviderContext, file: string, mime: string) {
+  return { url: ctx.publish(file), content_type: mime, file_name: path.basename(file), file_size: statSync(file).size };
+}
+
+/** A whole-number seed derived from the piece, so a stand-in's seed is stable across runs. */
+const seedFor = (ctx: ProviderContext) => parseInt(createHash('sha256').update(ctx.idempotency_key).digest('hex').slice(0, 7), 16);
+
+/**
+ * fal's video reply for a model, exactly as its schema returns it (MASTER-PLAN
+ * §4.8; contracts/replies, W0-62): every model gives `video`; Seedance adds
+ * `seed`; MiniMax H3 adds `seed`, `timings` and `expanded_prompt`. Kling, Veo
+ * and veed give `video` alone.
+ */
+export function falVideoReply(model: string, video: Record<string, unknown>, seed: number): Record<string, unknown> {
+  const m = model.toLowerCase();
+  if (m.startsWith('minimax/h3')) return { video, seed, timings: null, expanded_prompt: null };
+  if (m.startsWith('bytedance/seedance')) return { video, seed };
+  return { video };
+}
+
+/**
+ * fal's image reply for a model: nano-banana adds `description`; gpt-image-2
+ * gives `images` alone. Other image models keep this runner's older shape
+ * (`images` and `seed`), which nothing in the contract checks yet.
+ */
+export function falImageReply(model: string, images: Array<Record<string, unknown>>, seed: number): Record<string, unknown> {
+  const m = model.toLowerCase();
+  if (m.startsWith('fal-ai/nano-banana')) return { images, description: '' };
+  if (m.startsWith('openai/gpt-image')) return { images };
+  return { images, seed };
+}
+
 /** Seconds of speech the fake voice takes for `text`. */
 export const TTS_SECONDS_PER_CHAR = 0.065;
 
@@ -344,9 +388,13 @@ export class FakeProvider implements Provider {
         return { kind: 'done', file: { path: await fakeAudio(ctx, seconds, 'silence'), mime: 'audio/mpeg' } };
       }
       case 'song': {
-        const plan = (b.composition_plan ?? null) as { sections?: Array<{ section_name?: string; duration_ms?: number; lines?: string[] }> } | null;
+        const plan = (b.composition_plan ?? null) as {
+          sections?: Array<{ section_name?: string; duration_ms?: number; lines?: string[] }>;
+          chunks?: Array<{ text?: string; duration_ms?: number }>;
+        } | null;
         if (plan && b.music_length_ms !== undefined) return { kind: 'failed', code: 'provider_rejected', message: 'music_length_ms is refused together with a composition_plan.', next: 'stop' };
-        const sections = plan?.sections ?? [];
+        // music_v1 plans have sections with lines; music_v2 plans have chunks with text.
+        const sections = plan?.sections ?? (plan?.chunks ?? []).map((c) => ({ duration_ms: c.duration_ms, lines: typeof c.text === 'string' ? [c.text] : [] }));
         const totalMs = sections.reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 30_000;
         const words: Array<{ word: string; start_ms: number; end_ms: number }> = [];
         let at = 0;
@@ -364,7 +412,7 @@ export class FakeProvider implements Provider {
           kind: 'done',
           json: {
             composition_plan: plan,
-            song_metadata: { title: 'Stand-in song', description: 'try-style fake', genres: [], languages: ['en'], is_explicit: false },
+            song_metadata: { title: 'Stand-in song', description: 'try-style fake', genres: ['stand-in'], languages: ['en'], is_explicit: false },
             words_timestamps: words,
           },
           file: { path: file, mime: 'audio/mpeg' },
@@ -378,8 +426,9 @@ export class FakeProvider implements Provider {
         const audio = firstHosted(b.audio_url, ctx);
         if (!audio) return { kind: 'failed', code: 'provider_rejected', message: 'Whisper needs audio_url.', next: 'stop' };
         const seconds = (await probe(ctx.tools, audio.path)).duration_s;
-        const chunks = spreadChunks(ctx.planLines, Math.min(0.1, seconds / 10), Math.max(0, seconds - 0.1));
-        return { kind: 'done', json: { text: chunks.map((c) => c.text).join(' '), chunks, inferred_languages: ['en'], diarization_segments: [] } };
+        // fal Whisper's word chunks carry a leading space, and `text` is them joined.
+        const chunks = spreadChunks(ctx.planLines, Math.min(0.1, seconds / 10), Math.max(0, seconds - 0.1)).map((c) => ({ timestamp: c.timestamp, text: ` ${c.text}` }));
+        return { kind: 'done', json: { text: chunks.map((c) => c.text).join(''), chunks, inferred_languages: ['en'], diarization_segments: [] } };
       }
       case 'cutout': {
         const img = firstHosted(b.image_url, ctx);
@@ -394,22 +443,22 @@ export class FakeProvider implements Provider {
         const images = [];
         for (let i = 0; i < n; i++) {
           const made = await fakeImage(call, ctx, i);
-          images.push({ url: ctx.publish(made.file), width: made.w, height: made.h, content_type: made.mime, file_name: path.basename(made.file) });
+          images.push({ ...falFile(ctx, made.file, made.mime), width: made.w, height: made.h });
         }
-        return { kind: 'done', json: { images, description: '', seed: 1 } };
+        return { kind: 'done', json: falImageReply(modelOf(call), images, seedFor(ctx)) };
       }
       case 'lipsync': {
         const audio = firstHosted(b.audio_url, ctx);
         if (!audio) return { kind: 'failed', code: 'provider_rejected', message: 'lipsync needs audio_url.', next: 'stop' };
         const seconds = (await probe(ctx.tools, audio.path)).duration_s;
         const made = await fakeVideo(call, ctx, seconds, audio.path);
-        return { kind: 'done', json: { video: { url: ctx.publish(made.file), content_type: 'video/mp4', file_name: path.basename(made.file), width: made.w, height: made.h } } };
+        return { kind: 'done', json: falVideoReply(modelOf(call), falFile(ctx, made.file, 'video/mp4'), seedFor(ctx)) };
       }
       case 'video': {
         const model = modelOf(call).toLowerCase();
         const seconds = videoSeconds(b) ?? (model.includes('veo') ? 8 : 5);
         const made = await fakeVideo(call, ctx, seconds, videoHasAudio(model, b) ? 'tone' : null);
-        return { kind: 'done', json: { video: { url: ctx.publish(made.file), content_type: 'video/mp4', file_name: path.basename(made.file), width: made.w, height: made.h }, seed: num(b.seed) ?? 1 } };
+        return { kind: 'done', json: falVideoReply(modelOf(call), falFile(ctx, made.file, 'video/mp4'), num(b.seed) ?? seedFor(ctx)) };
       }
       default:
         return { kind: 'refused', code: 'no_stand_in', message: `try-style has no stand-in for ${call.provider} ${plainPath(call.path)}; add one in scripts/try-style/providers.ts and its README row.` };
@@ -571,6 +620,10 @@ export interface RealOptions {
 }
 
 const FAL_QUEUE = 'https://queue.fal.run';
+/** fal's storage API (the one @fal-ai/client's storage.upload uses). */
+const FAL_STORAGE_INITIATE = 'https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3';
+/** fal's client switches to a multipart upload above 90 MB; this runner does not. */
+const FAL_STORAGE_MAX_BYTES = 90 * 1024 * 1024;
 /** Float slack in cap comparisons, so a call priced exactly at a cap passes. */
 const CENT_FRACTION = 1e-9;
 const FAL_PRICES = 'https://api.fal.ai/v1/models/pricing';
@@ -587,20 +640,93 @@ export function isFalQueueUrl(value: unknown): value is string {
   }
 }
 
-/** A hosted file as a data URI, which fal accepts for any file input. */
-function dataUri(file: HostedFile): string {
-  return `data:${file.mime};base64,${readFileSync(file.path).toString('base64')}`;
+const isHttps = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'https:' && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+};
+
+/** A link on this computer (the local line's own links): fal can't fetch it. */
+const LOCAL_LINK = /^https?:\/\/(127\.\d+\.\d+\.\d+|localhost|\[::1\]|0\.0\.0\.0)(:\d+)?(\/|$)/i;
+
+/** A fal payload that can't be sent as it is (a local link, or a file fal storage would not take). */
+export class PayloadError extends Error {}
+
+// ---------------------------------------------------------------------------
+// ElevenLabs /v1/music/detailed: a multipart/mixed reply
+// ---------------------------------------------------------------------------
+
+export interface MimePart {
+  /** Header names lower-cased. */
+  headers: Record<string, string>;
+  body: Buffer;
 }
 
-function withDataUris(value: unknown, ctx: ProviderContext): unknown {
-  if (typeof value === 'string' && HOSTED.test(value)) {
-    const f = ctx.hosted(value);
-    if (!f) throw new Error(`no hosted file ${value}`);
-    return dataUri(f);
+/**
+ * The parts of a `multipart/*` body (RFC 2046), or null when it isn't one.
+ * The boundary comes from the Content-Type; lines may end in CRLF or LF.
+ */
+export function parseMultipart(contentType: string, body: Buffer): MimePart[] | null {
+  if (!/^\s*multipart\//i.test(contentType)) return null;
+  const b = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
+  if (!b) return null;
+  const delimiter = Buffer.from(`--${b[1] ?? b[2]}`);
+  let at = body.indexOf(delimiter);
+  if (at < 0) return null;
+  const nl = body.indexOf('\r\n', at) === at + delimiter.length ? '\r\n' : '\n';
+  const next = Buffer.from(`${nl}--${b[1] ?? b[2]}`);
+  const parts: MimePart[] = [];
+  for (;;) {
+    let start = at + delimiter.length;
+    if (body.subarray(start, start + 2).toString() === '--') return parts; // the close delimiter
+    const eol = body.indexOf(nl, start);
+    if (eol < 0) return null;
+    start = eol + nl.length;
+    const end = body.indexOf(next, start);
+    if (end < 0) return null;
+    const chunk = body.subarray(start, end);
+    const blank = chunk.indexOf(`${nl}${nl}`);
+    const noHeaders = chunk.subarray(0, nl.length).toString() === nl;
+    const headerText = noHeaders ? '' : blank < 0 ? chunk.toString('latin1') : chunk.subarray(0, blank).toString('latin1');
+    const content = noHeaders ? chunk.subarray(nl.length) : blank < 0 ? Buffer.alloc(0) : chunk.subarray(blank + 2 * nl.length);
+    const headers: Record<string, string> = {};
+    for (const line of headerText.split(nl)) {
+      const i = line.indexOf(':');
+      if (i > 0) headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    }
+    parts.push({ headers, body: Buffer.from(content) });
+    at = end + nl.length;
   }
-  if (Array.isArray(value)) return value.map((v) => withDataUris(v, ctx));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withDataUris(v, ctx)]));
-  return value;
+}
+
+const AUDIO_EXT: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav' };
+
+/**
+ * A `/v1/music/detailed` reply as the line hands it on (MASTER-PLAN §4.8): the
+ * `application/json` part verbatim as `json`, and the `audio/*` part as the
+ * file. Parts are found by their Content-Type, not their order (ElevenLabs
+ * does not document either). Null when either part is missing or the JSON
+ * part doesn't parse.
+ */
+export function songReply(contentType: string, body: Buffer): { json: unknown; audio: { bytes: Buffer; mime: string; ext: string } } | null {
+  const parts = parseMultipart(contentType, body);
+  if (!parts) return null;
+  const typeOf = (p: MimePart) => (p.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  const jsonPart = parts.find((p) => typeOf(p) === 'application/json');
+  const audioPart = parts.find((p) => typeOf(p).startsWith('audio/'));
+  if (!jsonPart || !audioPart || !audioPart.body.length) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(jsonPart.body.toString('utf8'));
+  } catch {
+    return null;
+  }
+  const mime = typeOf(audioPart);
+  return { json, audio: { bytes: audioPart.body, mime: AUDIO_EXT[mime] === 'mp3' ? 'audio/mpeg' : mime, ext: AUDIO_EXT[mime] ?? 'mp3' } };
 }
 
 /** Every https link in a provider's JSON, swapped for a local mirror link. */
@@ -633,6 +759,8 @@ export class RealProvider implements Provider {
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly prices = new Map<string, Promise<{ unit_price: number; unit: string } | null>>();
+  /** sha256 → the fal storage link of a hosted file already uploaded this run. */
+  private readonly falUploads = new Map<string, Promise<string>>();
 
   constructor(private readonly opts: RealOptions) {
     this.fetchImpl = opts.fetch ?? fetch;
@@ -710,14 +838,24 @@ export class RealProvider implements Provider {
   async order(call: PieceCall, ctx: ProviderContext): Promise<ProviderAnswer> {
     const kind = callKind(call);
     if (kind === 'unknown') return { kind: 'refused', code: 'not_allowed', message: `try-style does not forward ${call.provider} ${plainPath(call.path)}.` };
-    // Its multipart reply is not parsed here, and the line does not carry it yet (GOOSE-4015 W0-13).
-    if (kind === 'song') return { kind: 'refused', code: 'not_allowed', message: 'try-style does not forward /v1/music/detailed in real mode yet.' };
     const key = this.key(call.provider);
     if (!key) return { kind: 'refused', code: 'no_key', message: `${call.provider === 'fal' ? 'FAL_KEY (FAL_API_KEY in --env-file)' : 'ELEVENLABS_API_KEY'} was not given.` };
     const usd = await this.estimate(call, ctx, key);
     if (usd == null) return { kind: 'refused', code: 'price_unknown', message: `try-style has no price for ${modelOf(call)}, so it will not send it. Add one to usdEstimate.` };
-    if (this.spent + usd > this.opts.capUsd + CENT_FRACTION) {
-      return { kind: 'refused', code: 'over_run_cap', message: `This call (~$${usd.toFixed(3)}) would take the run past its cap of $${this.opts.capUsd}.` };
+    const overCap = () => this.spent + usd > this.opts.capUsd + CENT_FRACTION;
+    const capRefusal = (): ProviderAnswer => ({ kind: 'refused', code: 'over_run_cap', message: `This call (~$${usd.toFixed(3)}) would take the run past its cap of $${this.opts.capUsd}.` });
+    if (overCap()) return capRefusal();
+    // Files a fal payload names go to fal storage first (free; fal can't fetch this computer's links).
+    let body = call.body;
+    if (call.provider === 'fal') {
+      try {
+        body = (await this.falPayload(call.body, ctx, key)) as Record<string, unknown>;
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 200) : 'unknown error';
+        if (error instanceof PayloadError) return { kind: 'refused', code: 'payload_not_sendable', message };
+        return { kind: 'failed', code: 'provider_failed', message: `A file could not be put in fal storage: ${message}`, next: 'retry' };
+      }
+      if (overCap()) return capRefusal(); // another piece of this run spent while the files went up
     }
     // The run cap is taken before the ledger lock, so two pieces of this run can't both pass it.
     this.spent += usd;
@@ -739,7 +877,7 @@ export class RealProvider implements Provider {
 
     let answer: ProviderAnswer;
     try {
-      answer = call.provider === 'fal' ? await this.fal(call, ctx, key) : await this.elevenlabs(call, ctx, key);
+      answer = call.provider === 'fal' ? await this.fal(call, body, ctx, key) : await this.elevenlabs(call, ctx, key);
     } catch (error) {
       answer = { kind: 'failed', code: 'provider_failed', message: `The call could not be completed: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`, next: 'stop' };
     }
@@ -754,10 +892,66 @@ export class RealProvider implements Provider {
     return answer.kind === 'done' ? { ...answer, usd } : answer;
   }
 
-  private async fal(call: PieceCall, ctx: ProviderContext, key: string): Promise<ProviderAnswer> {
+  /**
+   * Puts one hosted file in fal storage and returns its fal link, the way
+   * @fal-ai/client's storage.upload does: POST the name and type to fal's
+   * storage API (with the key), then PUT the bytes to the signed upload link it
+   * returns (without the key). Each file goes up once per run.
+   */
+  private hostOnFal(file: HostedFile, key: string): Promise<string> {
+    const id = file.sha256 || createHash('sha256').update(readFileSync(file.path)).digest('hex');
+    if (!this.falUploads.has(id)) {
+      const upload = (async () => {
+        const bytes = readFileSync(file.path);
+        if (bytes.length > FAL_STORAGE_MAX_BYTES) throw new PayloadError(`A ${Math.round(bytes.length / 1e6)} MB file is too big for this runner's fal storage upload (90 MB at most).`);
+        const init = await this.fetchImpl(FAL_STORAGE_INITIATE, {
+          method: 'POST',
+          headers: { Authorization: `Key ${key}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ content_type: file.mime, file_name: path.basename(file.path) }),
+        });
+        if (!init.ok) throw new Error(`fal storage answered ${init.status}`);
+        const slot = (await init.json().catch(() => null)) as { upload_url?: unknown; file_url?: unknown } | null;
+        if (!isHttps(slot?.upload_url) || !isHttps(slot?.file_url)) throw new Error('fal storage gave no https upload link');
+        // The signed link carries its own permission: the key is never sent to it.
+        const put = await this.fetchImpl(slot.upload_url, { method: 'PUT', headers: { 'content-type': file.mime }, body: bytes });
+        if (!put.ok) throw new Error(`the fal storage upload answered ${put.status}`);
+        return slot.file_url;
+      })();
+      // A failed upload is not kept, so the kit's retry tries again.
+      upload.catch(() => this.falUploads.delete(id));
+      this.falUploads.set(id, upload);
+    }
+    return this.falUploads.get(id)!;
+  }
+
+  /** The payload with each `gooseworks-file:<id>` swapped for its fal storage link. Refuses links on this computer. */
+  private async falPayload(value: unknown, ctx: ProviderContext, key: string): Promise<unknown> {
+    if (typeof value === 'string') {
+      if (HOSTED.test(value)) {
+        const f = ctx.hosted(value);
+        if (!f) throw new PayloadError(`The payload names ${value}, which this run never hosted.`);
+        return this.hostOnFal(f, key);
+      }
+      if (LOCAL_LINK.test(value)) throw new PayloadError('The payload names a link on this computer, which fal cannot fetch; a part must send files as file refs.');
+      return value;
+    }
+    if (Array.isArray(value)) {
+      const out: unknown[] = [];
+      for (const v of value) out.push(await this.falPayload(v, ctx, key));
+      return out;
+    }
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) out[k] = await this.falPayload(v, ctx, key);
+      return out;
+    }
+    return value;
+  }
+
+  private async fal(call: PieceCall, body: Record<string, unknown>, ctx: ProviderContext, key: string): Promise<ProviderAnswer> {
     const endpoint = plainPath(call.path).slice(1);
     const headers = { Authorization: `Key ${key}`, 'content-type': 'application/json' };
-    const submit = await this.fetchImpl(`${FAL_QUEUE}/${endpoint}`, { method: 'POST', headers, body: JSON.stringify(withDataUris(call.body, ctx)) });
+    const submit = await this.fetchImpl(`${FAL_QUEUE}/${endpoint}`, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!submit.ok) {
       const text = (await submit.text().catch(() => '')).slice(0, 300);
       const rejected = [400, 404, 413, 415, 422].includes(submit.status);
@@ -789,13 +983,22 @@ export class RealProvider implements Provider {
 
   private async elevenlabs(call: PieceCall, ctx: ProviderContext, key: string): Promise<ProviderAnswer> {
     const p = plainPath(call.path);
-    const res = await this.fetchImpl(`${ELEVENLABS}${p}`, { method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(call.body) });
+    const res = await this.fetchImpl(`${ELEVENLABS}${p}${queryOf(call.path)}`, { method: 'POST', headers: { 'xi-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(call.body) });
     if (!res.ok) {
       const text = (await res.text().catch(() => '')).slice(0, 300);
       const rejected = [400, 404, 413, 415, 422].includes(res.status);
       return { kind: 'failed', code: rejected ? 'provider_rejected' : 'provider_failed', message: `ElevenLabs answered ${res.status}: ${text}`, next: rejected ? 'stop' : 'retry' };
     }
+    if (p === '/v1/music/detailed') {
+      // multipart/mixed: the JSON part verbatim, and the audio part as the file.
+      const song = songReply(res.headers.get('content-type') ?? '', Buffer.from(await res.arrayBuffer()));
+      if (!song) return { kind: 'failed', code: 'provider_failed', message: 'ElevenLabs sent a song reply without a JSON part and an audio part.', next: 'stop' };
+      const songFile = path.join(ctx.workDir, nameFor(ctx, song.audio.ext));
+      writeFileSync(songFile, song.audio.bytes);
+      return { kind: 'done', json: song.json, file: { path: songFile, mime: song.audio.mime } };
+    }
     const file = path.join(ctx.workDir, nameFor(ctx, 'mp3'));
+    // with-timestamps: the audio arrives as base64 inside the JSON; the line keeps the rest as json.
     if (p.endsWith('/with-timestamps')) {
       const parsed = (await res.json()) as Record<string, unknown>;
       if (typeof parsed.audio_base64 !== 'string') return { kind: 'failed', code: 'provider_failed', message: 'ElevenLabs sent no audio.', next: 'stop' };
