@@ -155,6 +155,33 @@ withFfmpeg('try-style stand-ins answer in the contract shape (one test per model
   });
 });
 
+/** The loudest sample of an audio file, in dB (-Infinity for digital zero). */
+function maxVolumeDb(file: string): number {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8' });
+  const m = /max_volume:\s*(-inf|-?[\d.]+) dB/.exec(r.stderr);
+  if (!m) throw new Error(`volumedetect printed no max_volume: ${r.stderr.slice(-300)}`);
+  return m[1] === '-inf' ? -Infinity : Number(m[1]);
+}
+
+withFfmpeg('try-style stand-ins: what can be heard', () => {
+  // In a song style (song-driven-music-video, stopmotion-pack-film) the song is the only sound,
+  // and the check layer fails `sound` on a silent track. A music bed sits under a voice, which the check judges instead.
+  it('makes the song stand-in audible and keeps the music bed silent', async () => {
+    const l = line(new FakeProvider(), tmp());
+    const fileOf = async (name: string) => {
+      const c = fixture(name);
+      const answer = await js(post(l, '/pieces', { idempotency_key: `${name}:loud`, piece_key: 'music.track', inputs_hash: `h${name.replace(/[^A-Za-z0-9]/g, '').slice(0, 40)}loud`, call: callFor(c, { image: '', audio: '' }) }));
+      expect(answer.status).toBe('done');
+      const file = path.join(tmp(), 'track.mp3');
+      writeFileSync(file, Buffer.from(await (await l.fetch(answer.result.file_url)).arrayBuffer()));
+      return file;
+    };
+    expect(maxVolumeDb(await fileOf('elevenlabs-music-detailed.json'))).toBeGreaterThan(-40);
+    // mp3 silence decodes to about -91 dB, not digital zero.
+    expect(maxVolumeDb(await fileOf('elevenlabs-music.json'))).toBeLessThan(-60);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Real mode, with every provider stubbed: no network, no key, no spend.
 // ---------------------------------------------------------------------------

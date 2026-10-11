@@ -428,7 +428,8 @@ export class FakeProvider implements Provider {
           sw.forEach((word, i) => words.push({ word, start_ms: Math.round(at + lead + i * step), end_ms: Math.round(at + lead + (i + 0.85) * step) }));
           at += ms;
         }
-        const file = await fakeAudio(ctx, totalMs / 1000, 'silence');
+        // Audible: in a song style the song is the only sound, and the check fails `sound` on a silent track.
+        const file = await fakeAudio(ctx, totalMs / 1000, 'tone');
         return {
           kind: 'done',
           json: {
