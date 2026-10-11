@@ -399,6 +399,7 @@ const RUNTIME = String.raw`(function () {
     speech: DATA.speech || [],
     media: DATA.media || [],
     facts: DATA.facts || {},
+    footage: DATA.footage || [],
     sceneAt: sceneAt,
     render: function (fn) { if (typeof fn === 'function') renderers.push(fn); },
     ready: function (promise) { waits.push(Promise.resolve(promise)); }

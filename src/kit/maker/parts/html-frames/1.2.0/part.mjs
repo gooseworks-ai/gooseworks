@@ -2,7 +2,7 @@
 
 // src/kit/maker/make.ts
 import { createHash as createHash2 } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile3, rm as rm2, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile4, rm as rm3, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
 import * as path3 from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -1127,9 +1127,24 @@ var inputs = {
             minimum: 0
           },
           crop: {
-            type: [
-              "object",
-              "null"
+            description: "A source box [x0, y0, x1, y1] in 0..1 of the source, as plan.footage gives it.",
+            anyOf: [
+              {
+                type: "null"
+              },
+              {
+                type: "array",
+                minItems: 4,
+                maxItems: 4,
+                items: {
+                  type: "number",
+                  minimum: 0,
+                  maximum: 1
+                }
+              },
+              {
+                type: "object"
+              }
             ]
           },
           fit: {
@@ -1303,8 +1318,8 @@ function quietBandOf(gray, width, height) {
       bestScore = score;
     }
   }
-  const round = (n) => Math.round(n * 1e4) / 1e4;
-  return { y0: round(best / height), y1: round(Math.min(height, best + band) / height) };
+  const round2 = (n) => Math.round(n * 1e4) / 1e4;
+  return { y0: round2(best / height), y1: round2(Math.min(height, best + band) / height) };
 }
 async function quietBands(tools, file, info, times, dir) {
   const width = MEASURE_WIDTH;
@@ -1571,6 +1586,42 @@ function brandOf(value, fail) {
   }
   return { name, logo, colors, fonts, cta };
 }
+function mediaOf(value, fail) {
+  if (value === void 0 || value === null) return [];
+  if (!Array.isArray(value)) fail("media should be a list");
+  const ids = /* @__PURE__ */ new Set();
+  return value.map((raw, i) => {
+    const at = `media[${i}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    if (typeof raw.id !== "string" || !raw.id) fail(`${at}.id should be text`);
+    if (ids.has(raw.id)) fail(`${at}.id "${raw.id}" is used twice`);
+    ids.add(raw.id);
+    return { id: raw.id, image: fileOf(raw.image, `${at}.image`, ["image"], fail) };
+  });
+}
+function secondsOf(ms) {
+  return typeof ms === "number" && Number.isFinite(ms) ? Math.round(ms) / 1e3 : null;
+}
+function footageOf(value, fail) {
+  if (value === void 0 || value === null) return [];
+  if (!Array.isArray(value)) fail("footage should be a list");
+  return value.map((raw, index) => {
+    const at = `footage[${index}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    const start = secondsOf(raw.start_ms);
+    const end = secondsOf(raw.end_ms);
+    if (start !== null && end !== null && end < start) fail(`${at} ends before it starts`);
+    return {
+      index,
+      scene_id: typeof raw.scene_id === "string" && raw.scene_id ? raw.scene_id : null,
+      kind: typeof raw.kind === "string" && raw.kind ? raw.kind : "video",
+      start_s: start,
+      end_s: end,
+      crop: raw.crop ?? null,
+      fit: typeof raw.fit === "string" && raw.fit ? raw.fit : null
+    };
+  });
+}
 function readInputs(raw, ctx, measured = {}) {
   const fail = (detail) => {
     throw ctx.error("bad_input", detail);
@@ -1653,14 +1704,141 @@ function readInputs(raw, ctx, measured = {}) {
     output,
     scale,
     values,
-    under
+    under,
+    media: mediaOf(raw.media, fail),
+    footage: footageOf(raw.footage, fail),
+    facts: raw.facts === true
   };
 }
 
 // src/kit/maker/page.ts
 import { createHash } from "node:crypto";
-import { mkdir, readFile as readFile2, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile as readFile3, stat, writeFile } from "node:fs/promises";
 import * as path2 from "node:path";
+
+// src/kit/maker/facts.ts
+import { readFile as readFile2, rm as rm2 } from "node:fs/promises";
+var FACTS_SIZE = 128;
+var BORDER = Math.max(1, Math.round(3 / 96 * FACTS_SIZE));
+var ORIENT = {
+  1: [],
+  2: ["hflip"],
+  3: ["hflip", "vflip"],
+  4: ["vflip"],
+  5: ["transpose=0"],
+  6: ["transpose=1"],
+  7: ["transpose=3"],
+  8: ["transpose=2"]
+};
+function hex(r, g, b) {
+  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+}
+var round = (value, places = 4) => Math.round(value * 10 ** places) / 10 ** places;
+function pictureFacts(rgba, n, size) {
+  const at = (x, y) => (y * n + x) * 4;
+  let seeThrough = 0;
+  let lumSum = 0;
+  let lumCount = 0;
+  const border = [];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = at(x, y);
+      const a = rgba[i + 3];
+      if (a < 200) seeThrough++;
+      if (a >= 128) {
+        lumSum += 0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2];
+        lumCount++;
+      }
+      if (x < BORDER || y < BORDER || x >= n - BORDER || y >= n - BORDER) border.push([rgba[i], rgba[i + 1], rgba[i + 2], a]);
+    }
+  }
+  const alpha = seeThrough / (n * n) > 0.04;
+  const opaque = border.filter((p) => p[3] >= 200);
+  const avg = [0, 1, 2].map((k) => opaque.reduce((s, p) => s + p[k], 0) / Math.max(1, opaque.length));
+  const spread = Math.max(...[0, 1, 2].map((k) => Math.sqrt(opaque.reduce((s, p) => s + (p[k] - avg[k]) ** 2, 0) / Math.max(1, opaque.length))));
+  const even = !alpha && opaque.length > border.length * 0.9 && spread < 14;
+  const plate = even ? hex(avg[0], avg[1], avg[2]) : null;
+  const near = (i) => even && Math.abs(rgba[i] - avg[0]) + Math.abs(rgba[i + 1] - avg[1]) + Math.abs(rgba[i + 2] - avg[2]) < 40;
+  const buckets = /* @__PURE__ */ new Map();
+  for (let i = 0; i < rgba.length; i += 4) {
+    const [r, g, b, a] = [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]];
+    if (a < 200 || near(i)) continue;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max > 238 && min > 225 || max < 22) continue;
+    const key = r >> 5 << 6 | g >> 5 << 3 | b >> 5;
+    const bucket = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    bucket.n++;
+    bucket.r += r;
+    bucket.g += g;
+    bucket.b += b;
+    buckets.set(key, bucket);
+  }
+  const top = [...buckets.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0])[0]?.[1];
+  const accent = top && top.n >= n * n * 5e-3 ? hex(top.r / top.n, top.g / top.n, top.b / top.n) : null;
+  return {
+    alpha,
+    plate,
+    accent,
+    luminance: round(lumCount ? lumSum / lumCount / 255 : 0, 3),
+    width: size.width,
+    height: size.height,
+    subject: alpha || even ? subjectOf(rgba, n, alpha ? (i) => rgba[i + 3] >= 128 : (i) => rgba[i + 3] >= 128 && !near(i)) : null
+  };
+}
+function subjectOf(rgba, n, inSubject) {
+  const mask = new Uint8Array(n * n);
+  for (let p = 0; p < n * n; p++) mask[p] = inSubject(p * 4) ? 1 : 0;
+  const kept = (x, y) => {
+    const p = y * n + x;
+    if (!mask[p]) return false;
+    return x > 0 && mask[p - 1] === 1 || x < n - 1 && mask[p + 1] === 1 || y > 0 && mask[p - n] === 1 || y < n - 1 && mask[p + n] === 1;
+  };
+  let [x0, y0, x1, y1] = [n, n, -1, -1];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (!kept(x, y)) continue;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+  }
+  if (x1 < 0) return null;
+  const half = y0 + Math.max(1, Math.ceil((y1 - y0 + 1) / 2));
+  let [tx0, tx1] = [n, -1];
+  for (let y = y0; y < half; y++) {
+    for (let x = 0; x < n; x++) {
+      if (!kept(x, y)) continue;
+      tx0 = Math.min(tx0, x);
+      tx1 = Math.max(tx1, x);
+    }
+  }
+  return {
+    x: round(x0 / n),
+    y: round(y0 / n),
+    w: round((x1 + 1 - x0) / n),
+    h: round((y1 + 1 - y0) / n),
+    top_cx: round(tx1 < 0 ? (x0 + x1 + 1) / 2 / n : (tx0 + tx1 + 1) / 2 / n)
+  };
+}
+async function measurePicture(tools, data, shape, size, scratch) {
+  const filters = [...ORIENT[shape.orientation], "format=rgba", `scale=${FACTS_SIZE}:${FACTS_SIZE}:flags=area`, "setsar=1", "format=rgba"];
+  try {
+    await tools.exec(
+      "ffmpeg",
+      ["-hide_banner", "-y", "-loglevel", "error", "-noautorotate", "-f", `${shape.format}_pipe`, "-i", "pipe:0", "-frames:v", "1", "-vf", filters.join(","), "-f", "rawvideo", "-pix_fmt", "rgba", "-threads", "1", scratch],
+      { stdin: data }
+    );
+    const rgba = await readFile2(scratch);
+    if (rgba.length !== FACTS_SIZE * FACTS_SIZE * 4) return null;
+    return pictureFacts(rgba, FACTS_SIZE, size);
+  } catch {
+    return null;
+  } finally {
+    await rm2(scratch, { force: true }).catch(() => void 0);
+  }
+}
 
 // src/kit/maker/runtime.ts
 var PAGE_EPOCH_MS = 17672256e5;
@@ -2024,6 +2202,7 @@ var RUNTIME = String.raw`(function () {
     speech: DATA.speech || [],
     media: DATA.media || [],
     facts: DATA.facts || {},
+    footage: DATA.footage || [],
     sceneAt: sceneAt,
     render: function (fn) { if (typeof fn === 'function') renderers.push(fn); },
     ready: function (promise) { waits.push(Promise.resolve(promise)); }
@@ -2319,7 +2498,7 @@ function runtimeScript(data) {
 var KIT_FOLDER = "_kit";
 var MAX_PICTURE_PX = 2048;
 var RESIZABLE = /* @__PURE__ */ new Set(["image/png", "image/webp", "image/jpeg"]);
-var ORIENT = {
+var ORIENT2 = {
   1: [],
   2: ["hflip"],
   3: ["hflip", "vflip"],
@@ -2347,7 +2526,7 @@ var COLOR = /^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla)\([0-9.,%\s/]+\))$/;
 async function readChecked(ref, fail) {
   let data;
   try {
-    data = await readFile2(ref.path);
+    data = await readFile3(ref.path);
   } catch {
     return fail(`the file ${path2.basename(ref.path)} could not be read`);
   }
@@ -2375,6 +2554,13 @@ function fontOf(ref, fail) {
 }
 function familyOf(ref) {
   return path2.basename(ref.path, path2.extname(ref.path)).replace(/[^A-Za-z0-9 _-]/g, "-");
+}
+function loadedSize(shape, capped) {
+  const turned = shape.orientation >= 5;
+  const [width, height] = turned ? [shape.height, shape.width] : [shape.width, shape.height];
+  if (!capped || Math.max(width, height) <= MAX_PICTURE_PX) return { width, height };
+  const k = MAX_PICTURE_PX / Math.max(width, height);
+  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
 }
 function injectFirst(html, head) {
   const text2 = html.replace(/^\uFEFF/, "");
@@ -2412,6 +2598,15 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
   const url = (relFromDir) => path2.relative(path2.dirname(entry), path2.join(dir, ...relFromDir.split("/"))).split(path2.sep).join("/");
   const placed = /* @__PURE__ */ new Map();
   const preload = [];
+  const facts = {};
+  const measure = async (pageUrl, data2, capped) => {
+    if (!spec.facts || !ctx.tools || facts[pageUrl]) return;
+    const shape = pictureGeometry(data2);
+    if (!shape) return;
+    const got = await measurePicture(ctx.tools, data2, shape, loadedSize(shape, capped), path2.join(dir, KIT_FOLDER, "facts.rgba"));
+    if (got) facts[pageUrl] = got;
+    else ctx.log.warn("a picture could not be measured for the page", { file: pageUrl });
+  };
   const staging = /* @__PURE__ */ new Map();
   for (const ref of pageFiles) {
     const rel = path2.relative(base, ref.path).split(path2.sep).join("/");
@@ -2434,7 +2629,10 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     if (ref === spec.template) continue;
     if (ref.media === "image") still(ref, data2);
     await put(target, data2);
-    if (ref.media === "image") preload.push(url(rel));
+    if (ref.media === "image") {
+      preload.push(url(rel));
+      await measure(url(rel), data2, false);
+    }
   }
   const faces = [];
   const families = [];
@@ -2460,7 +2658,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     const to = shape.format === "jpeg" ? "jpg" : "png";
     const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}-${MAX_PICTURE_PX}.${to}`;
     const target = path2.join(dir, ...rel.split("/"));
-    const filters = [...ORIENT[shape.orientation], `scale=${w}:${h}:flags=lanczos`, "setsar=1", ...to === "png" ? ["format=rgba"] : []];
+    const filters = [...ORIENT2[shape.orientation], `scale=${w}:${h}:flags=lanczos`, "setsar=1", ...to === "png" ? ["format=rgba"] : []];
     const quality = to === "jpg" ? ["-q:v", "2"] : [];
     const exact = ["-fflags", "+bitexact", "-flags", "+bitexact", "-map_metadata", "-1", "-threads", "1"];
     try {
@@ -2496,6 +2694,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     } else await put(path2.join(dir, ...rel.split("/")), data2);
     preload.push(url(rel));
     staging.set(ref.sha256, url(rel));
+    await measure(url(rel), data2, RESIZABLE.has(ref.mime));
     return url(rel);
   };
   const products = [];
@@ -2504,6 +2703,9 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     for (const image of product.images) images.push(await media(image));
     products.push({ id: product.id, name: product.name, images });
   }
+  const extraMedia = [];
+  for (const item of spec.media) extraMedia.push({ id: item.id, url: await media(item.image) });
+  const footage = spec.footage.map((f) => ({ scene_id: f.scene_id, kind: f.kind, start_s: f.start_s, end_s: f.end_s, crop: f.crop, fit: f.fit }));
   const scenes = [];
   for (const scene of spec.scenes) {
     const picture = scene.picture && typeof scene.picture === "object" ? await media(scene.picture) : scene.picture;
@@ -2517,6 +2719,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
       image,
       speaker: scene.speaker,
       extra: scene.extra,
+      footage: footage.filter((f) => f.scene_id === scene.id),
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps
     });
@@ -2547,6 +2750,9 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     fonts: families,
     values: spec.values,
     under: spec.under ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] } : null,
+    media: extraMedia,
+    facts,
+    footage,
     preload
   };
   const head = `<meta charset="utf-8"><style id="kit-fonts">${faces.join("")}:root{${variables.join(";")}}</style><script>${runtimeScript(data)}</script>`;
@@ -2651,7 +2857,7 @@ async function makeVideo(rawInputs, ctx, options = {}) {
   let finished = false;
   try {
     for (const dir of scratch) {
-      await rm2(dir, { recursive: true, force: true });
+      await rm3(dir, { recursive: true, force: true });
       await mkdir2(dir, { recursive: true });
     }
     if (spec.under) {
@@ -2667,7 +2873,7 @@ async function makeVideo(rawInputs, ctx, options = {}) {
       const args = spec.under ? alphaSegmentArgs({ framesDir, framePattern: FRAME_PATTERN, start, count, fps: spec.fps, out: segment }) : segmentArgs({ tools: ctx.tools, framesDir, start, count, fps: spec.fps, out: segment });
       await encodeInto(args, segment);
       segments.push(segment);
-      for (let i = start; i < start + count; i++) await rm2(path3.join(framesDir, frameName(i)), { force: true });
+      for (let i = start; i < start + count; i++) await rm3(path3.join(framesDir, frameName(i)), { force: true });
       release(frameBytes);
     };
     const checked = (value) => {
@@ -2707,7 +2913,7 @@ async function makeVideo(rawInputs, ctx, options = {}) {
         const file = path3.join(framesDir, frameName(index));
         reserve(frameBound);
         await page.screenshot({ path: file, type: "png", omitBackground: !!spec.under });
-        const png = await readFile3(file);
+        const png = await readFile4(file);
         release(frameBound - Math.min(frameBound, png.length));
         if (png.length > frameBound) reserve(png.length - frameBound);
         segmentBytes += png.length;
@@ -2770,8 +2976,8 @@ async function makeVideo(rawInputs, ctx, options = {}) {
     finished = true;
     return { video, seconds, timeline: timelineOf(spec, logo), frameHashes };
   } finally {
-    for (const dir of scratch) await rm2(dir, { recursive: true, force: true }).catch(() => void 0);
-    if (!finished) await rm2(out, { force: true }).catch(() => void 0);
+    for (const dir of scratch) await rm3(dir, { recursive: true, force: true }).catch(() => void 0);
+    if (!finished) await rm3(out, { force: true }).catch(() => void 0);
   }
 }
 

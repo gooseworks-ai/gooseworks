@@ -61,6 +61,26 @@ export interface BrandSpec {
   cta: { text: string; url: string | null } | null;
 }
 
+/** An extra picture the page shows by id (1.2.0 `media`): a cast still, a screen. */
+export interface MediaSpec {
+  id: string;
+  image: FileRef;
+}
+
+/**
+ * One plan.footage entry, as the page sees it (1.2.0 `footage`): its window and
+ * framing only. The file is never put in the page; a frame page cannot play video.
+ */
+export interface FootageSpec {
+  index: number;
+  scene_id: string | null;
+  kind: string;
+  start_s: number | null;
+  end_s: number | null;
+  crop: unknown;
+  fit: string | null;
+}
+
 export interface MakerSpec {
   template: FileRef;
   frames: FileRef[];
@@ -83,6 +103,12 @@ export interface MakerSpec {
   values: Record<string, unknown>;
   /** The video the page is drawn over (1.2.0), or null for a video of the page alone. */
   under: UnderSpec | null;
+  /** Extra pictures by id (1.2.0), staged as kit.media. */
+  media: MediaSpec[];
+  /** plan.footage windows (1.2.0), never the files. */
+  footage: FootageSpec[];
+  /** Measure every picture into kit.facts (1.2.0). */
+  facts: boolean;
 }
 
 /** What the maker measured before reading the inputs: the video to draw over, read with ffprobe. */
@@ -208,6 +234,45 @@ function brandOf(value: unknown, fail: Fail): BrandSpec | null {
   return { name, logo, colors, fonts, cta };
 }
 
+function mediaOf(value: unknown, fail: Fail): MediaSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail('media should be a list');
+  const ids = new Set<string>();
+  return value.map((raw, i) => {
+    const at = `media[${i}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    if (typeof raw.id !== 'string' || !raw.id) fail(`${at}.id should be text`);
+    if (ids.has(raw.id)) fail(`${at}.id "${raw.id}" is used twice`);
+    ids.add(raw.id);
+    return { id: raw.id, image: fileOf(raw.image, `${at}.image`, ['image'], fail) };
+  });
+}
+
+function secondsOf(ms: unknown): number | null {
+  return typeof ms === 'number' && Number.isFinite(ms) ? Math.round(ms) / 1000 : null;
+}
+
+function footageOf(value: unknown, fail: Fail): FootageSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail('footage should be a list');
+  return value.map((raw, index) => {
+    const at = `footage[${index}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    const start = secondsOf(raw.start_ms);
+    const end = secondsOf(raw.end_ms);
+    if (start !== null && end !== null && end < start) fail(`${at} ends before it starts`);
+    return {
+      index,
+      scene_id: typeof raw.scene_id === 'string' && raw.scene_id ? raw.scene_id : null,
+      kind: typeof raw.kind === 'string' && raw.kind ? raw.kind : 'video',
+      start_s: start,
+      end_s: end,
+      crop: raw.crop ?? null,
+      fit: typeof raw.fit === 'string' && raw.fit ? raw.fit : null,
+    };
+  });
+}
+
 /** Reads the part's inputs into a render plan, or throws bad_input naming the problem. */
 export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measured: Measured = {}): MakerSpec {
   const fail: Fail = (detail) => {
@@ -305,5 +370,8 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
     scale,
     values,
     under,
+    media: mediaOf(raw.media, fail),
+    footage: footageOf(raw.footage, fail),
+    facts: raw.facts === true,
   };
 }
