@@ -10,9 +10,10 @@
 //   GOOSE_KIT_STYLES_DIR=<goose-studio>/one-shot-videos \
 //   npx tsx scripts/try-style.ts --style <id> --plan plan.json --brand brand.json --out <dir>
 //
-// Writes <out>/final/final.mp4, <out>/verdict.json, <out>/contact.png and
-// <out>/pieces.jsonl. See scripts/try-style/README.md.
-import { createHash, randomUUID } from 'crypto';
+// Writes <out>/final/final.mp4, <out>/verdict.json, <out>/contact.png,
+// <out>/run.json, <out>/pieces.jsonl and (real mode) <out>/spend.json.
+// See scripts/try-style/README.md.
+import { randomUUID } from 'crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,14 +26,17 @@ import { createKitBrowserSupport } from '../src/kit/maker/browser';
 import { FixtureFiles, freezeBrand, planBody } from './try-style/fixtures';
 import { API, tryLine } from './try-style/line';
 import { ffmpegFor, probe, run } from './try-style/media';
+import { fileSha, MAX_NIGHT_CAP_USD, readEnvKeys, realGateProblems } from './try-style/gates';
 import { FakeProvider, RealProvider, SpendLedger, type Provider } from './try-style/providers';
 
 const USAGE = `Usage: npx tsx scripts/try-style.ts --style <id> --plan <plan.json> --brand <brand.json> --out <dir>
   [--providers fake|real] [--cap-usd <n>] [--spend-ledger <file>] [--night-cap-usd <n>]
-  [--fixtures <dir>]... [--tools-home <dir>] [--fresh]
+  [--env-file <.env>] [--reason <text>] [--fixtures <dir>]... [--tools-home <dir>] [--fresh]
 
 Environment: GOOSE_KIT_PARTS_DIR (a goose-skills checkout), GOOSE_KIT_STYLES_DIR (a folder of <style>/style.json).
-Real providers read FAL_KEY and ELEVENLABS_API_KEY from the environment and need --cap-usd and --spend-ledger.`;
+Real providers need --cap-usd (at most the style's cost.high_usd and $40), --spend-ledger, and a passing
+stand-in run of the same style file in a folder next to --out. Keys come from --env-file (FAL_API_KEY or
+FAL_KEY, ELEVENLABS_API_KEY) or, without it, from the environment.`;
 
 interface Args {
   style: string;
@@ -43,10 +47,14 @@ interface Args {
   capUsd: number | null;
   nightCapUsd: number;
   ledger: string | null;
+  envFile: string | null;
+  reason: string | null;
   fixtures: string[];
   toolsHome: string;
   fresh: boolean;
 }
+
+const VALUE_FLAGS = new Set(['style', 'plan', 'brand', 'out', 'providers', 'cap-usd', 'night-cap-usd', 'spend-ledger', 'env-file', 'reason', 'fixtures', 'tools-home']);
 
 function parseArgs(argv: string[]): Args {
   const get = new Map<string, string[]>();
@@ -59,6 +67,7 @@ function parseArgs(argv: string[]): Args {
       flags.add(name);
       continue;
     }
+    if (!VALUE_FLAGS.has(name)) throw new Error(`Unknown flag --${name}`);
     const value = inline ?? argv[++i];
     if (value === undefined) throw new Error(`--${name} needs a value`);
     get.set(name, [...(get.get(name) ?? []), value]);
@@ -75,7 +84,8 @@ function parseArgs(argv: string[]): Args {
   const providers = (one('providers', false) || 'fake') as Args['providers'];
   if (providers !== 'fake' && providers !== 'real') throw new Error('--providers is fake or real');
   const cap = one('cap-usd', false);
-  const night = one('night-cap-usd', false) || process.env.GOOSE_TRY_NIGHT_CAP_USD || '200';
+  const night = one('night-cap-usd', false) || process.env.GOOSE_TRY_NIGHT_CAP_USD || String(MAX_NIGHT_CAP_USD);
+  const envFile = one('env-file', false);
   return {
     style: one('style'),
     plan: path.resolve(one('plan')),
@@ -85,6 +95,8 @@ function parseArgs(argv: string[]): Args {
     capUsd: cap ? Number(cap) : null,
     nightCapUsd: Number(night),
     ledger: one('spend-ledger', false) || process.env.GOOSE_TRY_SPEND_LEDGER || null,
+    envFile: envFile ? path.resolve(envFile) : null,
+    reason: one('reason', false).trim() || null,
     fixtures: [...(get.get('fixtures') ?? []), ...(process.env.GOOSE_TRY_FIXTURES ?? '').split(path.delimiter).filter(Boolean)].map((d) => path.resolve(d)),
     toolsHome: path.resolve(one('tools-home', false) || process.env.GOOSE_TRY_TOOLS_HOME || path.join(os.homedir(), '.gooseworks-try-style')),
     fresh: flags.has('fresh'),
@@ -150,30 +162,34 @@ async function main(): Promise<number> {
     return 2;
   }
   const style = readJson(styleFile);
+  const styleSha = fileSha(styleFile);
+  const runId = `${args.style}:${path.basename(args.out)}:${randomUUID().slice(0, 8)}`;
 
-  // The provider first: real mode refuses to start without its caps.
+  // The provider first: real mode refuses to start without every gate.
   let provider: Provider;
   let real: RealProvider | null = null;
   if (args.providers === 'real') {
-    if (args.capUsd == null || !Number.isFinite(args.capUsd) || args.capUsd <= 0) {
-      console.error('--providers real needs --cap-usd <dollars> for this run.');
-      return 2;
-    }
     if (!args.ledger) {
       console.error('--providers real needs --spend-ledger <file> (or GOOSE_TRY_SPEND_LEDGER).');
       return 2;
     }
-    if (!Number.isFinite(args.nightCapUsd) || args.nightCapUsd <= 0) {
-      console.error('--night-cap-usd must be a positive number.');
-      return 2;
-    }
     const ledger = new SpendLedger(path.resolve(args.ledger));
-    const spent = ledger.total();
-    if (spent >= args.nightCapUsd) {
-      console.error(`The spend ledger already holds $${spent.toFixed(2)}, at or past the night cap of $${args.nightCapUsd}. Nothing was sent.`);
+    const problems = realGateProblems({ style, styleId: args.style, styleSha, out: args.out, capUsd: args.capUsd, nightCapUsd: args.nightCapUsd, reason: args.reason, ledger });
+    if (problems.length) {
+      console.error(`Real mode refused; nothing was sent:\n- ${problems.join('\n- ')}`);
       return 3;
     }
-    real = new RealProvider({ capUsd: args.capUsd, nightCapUsd: args.nightCapUsd, ledger, run: `${args.style}:${path.basename(args.out)}`, env: process.env });
+    let keys: { fal?: string; elevenlabs?: string };
+    if (args.envFile) {
+      if (!existsSync(args.envFile)) {
+        console.error(`No env file at ${args.envFile}.`);
+        return 2;
+      }
+      keys = readEnvKeys(args.envFile);
+    } else {
+      keys = { fal: process.env.FAL_KEY || process.env.FAL_API_KEY, elevenlabs: process.env.ELEVENLABS_API_KEY };
+    }
+    real = new RealProvider({ capUsd: args.capUsd!, nightCapUsd: args.nightCapUsd, ledger, run_id: runId, style_id: args.style, style_sha: styleSha, ...(args.reason ? { reason: args.reason } : {}), keys });
     provider = real;
   } else {
     provider = new FakeProvider();
@@ -222,6 +238,8 @@ async function main(): Promise<number> {
   rmSync(path.join(args.out, 'final'), { recursive: true, force: true });
   rmSync(path.join(args.out, 'verdict.json'), { force: true });
   rmSync(path.join(args.out, 'contact.png'), { force: true });
+  rmSync(path.join(args.out, 'run.json'), { force: true });
+  rmSync(path.join(args.out, 'spend.json'), { force: true });
   mkdirSync(work, { recursive: true });
 
   const line = tryLine({
@@ -311,12 +329,53 @@ async function main(): Promise<number> {
       2,
     )}\n`,
   );
+  let contactProblem: string | null = null;
   if (video) {
     try {
       await contactSheet(tools.ffmpeg.path, tools.ffprobe.path, video, path.join(args.out, 'contact.png'));
     } catch (error) {
-      say((error as Error).message);
+      contactProblem = (error as Error).message;
+      say(contactProblem);
     }
+  }
+
+  // run.json: what was run, so a later real run can find this stand-in (MASTER-PLAN §4.11).
+  let outputSeconds: number | null = null;
+  if (video) outputSeconds = (await probe({ ffmpeg: tools.ffmpeg.path, ffprobe: tools.ffprobe.path, drawtext: false, font: null }, video).catch(() => null))?.duration_s ?? null;
+  const partVersions: Record<string, string> = {};
+  for (const step of (style.timeline as Array<{ id?: string; part?: unknown }> | undefined) ?? []) {
+    const part = step?.part as { id?: unknown; version?: unknown } | string | undefined;
+    if (!step?.id || !part) continue;
+    if (typeof part === 'string') partVersions[step.id] = part;
+    else if (typeof part.id === 'string') partVersions[step.id] = `${part.id}@${String(part.version)}`;
+  }
+  const failed = result.status !== 'done' || fails.length > 0 || !video || !existsSync(path.join(args.out, 'contact.png'));
+  writeFileSync(
+    path.join(args.out, 'run.json'),
+    `${JSON.stringify(
+      {
+        run_id: runId,
+        providers: provider.mode,
+        style_id: args.style,
+        style_version: style.version ?? null,
+        style_sha: styleSha,
+        status: failed ? 'failed' : 'done',
+        kit_status: result.status,
+        checks_failed: fails.map((c) => c.code),
+        parts_dir: path.resolve(partsDir),
+        part_versions: partVersions,
+        layer_versions: Object.fromEntries(Object.entries(layersOf(partsDir)).map(([k, v]) => [k, `${v.id}@${v.version}`])),
+        seconds,
+        output_seconds: outputSeconds,
+        seconds_per_output_second: outputSeconds ? +(seconds / outputSeconds).toFixed(2) : null,
+        ...(args.reason ? { reason: args.reason } : {}),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  if (real) {
+    writeFileSync(path.join(args.out, 'spend.json'), `${JSON.stringify({ run_id: runId, style_id: args.style, style_sha: styleSha, usd_estimate: +real.runSpentUsd.toFixed(4), cap_usd: args.capUsd, ledger: path.resolve(args.ledger!) }, null, 2)}\n`);
   }
 
   // Summary.
@@ -324,11 +383,11 @@ async function main(): Promise<number> {
   for (const c of checks) say(`  ${c.status.padEnd(14)} ${c.code}${c.status === 'fail' ? `  found ${JSON.stringify(c.found)} expected ${JSON.stringify(c.expected)}` : ''}`);
   if (result.status !== 'done') for (const l of lastProblems(path.join(runRoot, 'log.ndjson'))) say(`  log: ${l.slice(0, 600)}`);
   if (real) say(`spent about $${real.runSpentUsd.toFixed(3)} this run (ledger: ${args.ledger})`);
+  if (contactProblem || (video && !existsSync(path.join(args.out, 'contact.png')))) say('no contact sheet was made, so this run does not count as passing');
   if (line.refused.length) say(`${line.refused.length} call(s) to other addresses were refused`);
   say(`out: ${args.out} (${seconds} s)`);
-  const hash = createHash('sha256').update(readFileSync(styleFile)).digest('hex').slice(0, 12);
-  say(`style file sha256 ${hash}…`);
-  return result.status === 'done' && fails.length === 0 ? 0 : 1;
+  say(`style file sha256 ${styleSha.slice(0, 12)}…`);
+  return failed ? 1 : 0;
 }
 
 main().then(

@@ -14,7 +14,7 @@
 // reply JSON without audio_base64. Parts read them through results[].pointer
 // against { json, file_url }. README.md in this folder has the table.
 import { createHash } from 'crypto';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import * as path from 'path';
 import { brightFor, drawtext, even, ff, probe, type Ffmpeg } from './media';
 
@@ -415,53 +415,145 @@ export class FakeProvider implements Provider {
 }
 
 // ---------------------------------------------------------------------------
-// Real provider
+// Spend ledger
 // ---------------------------------------------------------------------------
 
-export interface SpendRecord {
-  time: string;
-  piece: string;
+/** One ledger line (MASTER-PLAN §4.11). Never a key, a header or a signed link. */
+export interface SpendLine {
+  ts: string;
+  run_id: string;
+  style_id: string;
+  style_sha: string;
+  step: string;
+  piece_key: string;
+  provider: string;
   model: string;
-  usd_estimate: number;
-  status: 'done' | 'failed' | 'unknown' | 'refused';
-  provider?: string;
-  run?: string;
-  note?: string;
+  est_usd: number;
+  event: 'reserve' | 'done' | 'failed';
+  /** On a `failed` line: false when the provider refused at submit, so the reserve is released. */
+  billed?: boolean;
+  reason?: string;
 }
 
-/** The night's spend ledger: one JSON line per paid call. */
+/** A ledger nobody can read safely: real mode refuses to spend against it. */
+export class LedgerError extends Error {}
+
+const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * The night's spend ledger: one JSON line per event. A `reserve` line is
+ * written (under a lock shared by every runner) before a paid call is sent,
+ * and a `done` or `failed` line after. The total counts every reserve, so a
+ * crash mid-call leaves its reserve counted. Older lines that carry
+ * `usd_estimate` (this runner's first format) count at that value.
+ */
 export class SpendLedger {
   constructor(readonly file: string) {}
 
-  total(): number {
-    if (!existsSync(this.file)) return 0;
-    let sum = 0;
-    for (const line of readFileSync(this.file, 'utf8').split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const r = JSON.parse(line) as { usd_estimate?: unknown };
-        if (typeof r.usd_estimate === 'number' && Number.isFinite(r.usd_estimate)) sum += r.usd_estimate;
-      } catch {
-        // A line another writer broke counts as nothing; it is never rewritten.
-      }
-    }
-    return sum;
+  private lines(): Array<Record<string, unknown>> {
+    if (!existsSync(this.file)) return [];
+    const out: Array<Record<string, unknown>> = [];
+    readFileSync(this.file, 'utf8')
+      .split('\n')
+      .forEach((line, i) => {
+        if (!line.trim()) return;
+        let r: unknown;
+        try {
+          r = JSON.parse(line);
+        } catch {
+          throw new LedgerError(`The spend ledger ${this.file} has an unreadable line ${i + 1}; fix it by hand before spending.`);
+        }
+        if (!r || typeof r !== 'object' || Array.isArray(r)) throw new LedgerError(`The spend ledger ${this.file} line ${i + 1} is not an object.`);
+        const o = r as Record<string, unknown>;
+        const usd = 'event' in o ? o.est_usd : o.usd_estimate;
+        if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) throw new LedgerError(`The spend ledger ${this.file} line ${i + 1} has no usable amount.`);
+        out.push(o);
+      });
+    return out;
   }
 
-  add(record: SpendRecord): void {
-    appendFileSync(this.file, `${JSON.stringify(record)}\n`);
+  /** USD the ledger holds: every reserve, less reserves released by an unbilled failure. */
+  total(): number {
+    let sum = 0;
+    for (const o of this.lines()) {
+      if (!('event' in o)) sum += o.usd_estimate as number;
+      else if (o.event === 'reserve') sum += o.est_usd as number;
+      else if (o.event === 'failed' && o.billed === false) sum -= o.est_usd as number;
+    }
+    return Math.max(0, sum);
+  }
+
+  /** Whether an earlier run already sent (or reserved) a paid call for this style. */
+  hasRealRun(styleId: string): boolean {
+    return this.lines().some((o) =>
+      'event' in o ? o.style_id === styleId && o.event === 'reserve' : typeof o.run === 'string' && o.run.split(':')[0] === styleId && o.status !== 'refused',
+    );
+  }
+
+  /** Runs `fn` while holding the ledger's lock file (shared with every other runner). */
+  locked<T>(fn: () => T): T {
+    const lock = `${this.file}.lock`;
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      try {
+        closeSync(openSync(lock, 'wx'));
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        try {
+          if (Date.now() - statSync(lock).mtimeMs > 30_000) unlinkSync(lock); // left by a crash
+        } catch {
+          // gone already
+        }
+        if (Date.now() > deadline) throw new LedgerError(`The spend ledger lock ${lock} stayed taken for 15 s.`);
+        sleepSync(25);
+      }
+    }
+    try {
+      return fn();
+    } finally {
+      try {
+        unlinkSync(lock);
+      } catch {
+        // gone already
+      }
+    }
+  }
+
+  add(line: SpendLine): void {
+    appendFileSync(this.file, `${JSON.stringify(line)}\n`);
+  }
+
+  /**
+   * Checks the night cap and writes the reserve as one step under the lock.
+   * Returns the night total before this call, or null when it would pass `nightCapUsd`.
+   */
+  reserve(line: SpendLine, nightCapUsd: number): { ok: true } | { ok: false; night: number } {
+    return this.locked(() => {
+      const night = this.total();
+      if (night + line.est_usd > nightCapUsd) return { ok: false as const, night };
+      this.add(line);
+      return { ok: true as const };
+    });
   }
 }
 
+// ---------------------------------------------------------------------------
+// Real provider
+// ---------------------------------------------------------------------------
+
 export interface RealOptions {
-  /** USD this run may spend, at the runner's list prices. */
+  /** USD this run may spend, at the runner's estimates. */
   capUsd: number;
   /** USD the whole ledger may reach. */
   nightCapUsd: number;
   ledger: SpendLedger;
-  /** A short name for this run in the ledger. */
-  run: string;
-  env: NodeJS.ProcessEnv;
+  run_id: string;
+  style_id: string;
+  style_sha: string;
+  reason?: string;
+  /** The two keys, read by the runner from --env-file (or the environment). Never passed on. */
+  keys: { fal?: string; elevenlabs?: string };
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   /** Longest wait for one fal job. */
@@ -469,7 +561,19 @@ export interface RealOptions {
 }
 
 const FAL_QUEUE = 'https://queue.fal.run';
+const FAL_PRICES = 'https://api.fal.ai/v1/models/pricing';
 const ELEVENLABS = 'https://api.elevenlabs.io';
+
+/** True only for an https link on exactly fal's queue origin (never a look-alike host). */
+export function isFalQueueUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const u = new URL(value);
+    return u.origin === FAL_QUEUE && u.protocol === 'https:' && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
 
 /** A hosted file as a data URI, which fal accepts for any file input. */
 function dataUri(file: HostedFile): string {
@@ -495,76 +599,143 @@ function mirrored(value: unknown, ctx: ProviderContext): unknown {
   return value;
 }
 
+/**
+ * Units a fal price is quoted in, read from the request; null when this
+ * runner can't tell (then only the runner's own table prices the call).
+ */
+export function falUnits(unit: string, call: PieceCall, audioSeconds: number | null): number | null {
+  const u = unit.trim().toLowerCase();
+  const kind = callKind(call);
+  if (u === 'images' || u === 'image') return num(call.body.num_images) ?? 1;
+  if (u === 'videos' || u === 'video' || u === 'requests' || u === 'request') return 1;
+  if (u === 'seconds' || u === 'second') {
+    if (kind === 'lipsync') return audioSeconds;
+    if (kind === 'video') return videoSeconds(call.body) ?? (modelOf(call).includes('veo') ? 8 : 10);
+  }
+  return null;
+}
+
 export class RealProvider implements Provider {
   readonly mode = 'real' as const;
   private spent = 0;
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly prices = new Map<string, Promise<{ unit_price: number; unit: string } | null>>();
 
   constructor(private readonly opts: RealOptions) {
     this.fetchImpl = opts.fetch ?? fetch;
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  /** USD this run has sent so far, at list price. */
+  /** USD this run has sent so far, at the runner's estimates. */
   get runSpentUsd(): number {
     return this.spent;
   }
 
   private key(provider: string): string | null {
-    const value = provider === 'fal' ? this.opts.env.FAL_KEY : provider === 'elevenlabs' ? this.opts.env.ELEVENLABS_API_KEY : undefined;
+    const value = provider === 'fal' ? this.opts.keys.fal : provider === 'elevenlabs' ? this.opts.keys.elevenlabs : undefined;
     return value && value.trim() ? value.trim() : null;
   }
 
-  private refuse(call: PieceCall, ctx: ProviderContext, code: string, message: string): ProviderAnswer {
-    this.opts.ledger.add({ time: new Date().toISOString(), piece: ctx.piece_key, model: modelOf(call), usd_estimate: 0, status: 'refused', provider: call.provider, run: this.opts.run, note: code });
-    return { kind: 'refused', code, message };
+  /** fal's live list price for an endpoint (a free GET), or null when it can't be read. */
+  private livePrice(endpoint: string, key: string) {
+    if (!this.prices.has(endpoint)) {
+      this.prices.set(
+        endpoint,
+        (async () => {
+          const res = await this.fetchImpl(`${FAL_PRICES}?endpoint_id=${encodeURIComponent(endpoint)}`, { headers: { Authorization: `Key ${key}` } });
+          if (!res.ok) return null;
+          const body = (await res.json()) as { prices?: Array<{ endpoint_id?: string; unit_price?: unknown; unit?: unknown; currency?: unknown }> };
+          const p = body.prices?.find((x) => x.endpoint_id === endpoint);
+          if (!p || typeof p.unit_price !== 'number' || !Number.isFinite(p.unit_price) || typeof p.unit !== 'string' || (p.currency && p.currency !== 'USD')) return null;
+          return { unit_price: p.unit_price, unit: p.unit };
+        })().catch(() => null),
+      );
+    }
+    return this.prices.get(endpoint)!;
+  }
+
+  /**
+   * The estimate for a call: the higher of the runner's own (deliberately high)
+   * table and fal's live list price times the request's units. Null when neither
+   * can price it.
+   */
+  async estimate(call: PieceCall, ctx: ProviderContext, key: string): Promise<number | null> {
+    const kind = callKind(call);
+    let audioSeconds: number | null = null;
+    if (kind === 'lipsync') {
+      const f = firstHosted(call.body.audio_url, ctx);
+      audioSeconds = f ? (await probe(ctx.tools, f.path)).duration_s : null;
+      if (audioSeconds == null) return null;
+    }
+    const table = usdEstimate(call, () => audioSeconds);
+    let live: number | null = null;
+    if (call.provider === 'fal') {
+      const price = await this.livePrice(plainPath(call.path).slice(1), key);
+      const units = price ? falUnits(price.unit, call, audioSeconds) : null;
+      if (price && units != null) live = price.unit_price * units;
+    }
+    if (table == null && live == null) return null;
+    return Math.max(table ?? 0, live ?? 0);
+  }
+
+  private line(call: PieceCall, ctx: ProviderContext, usd: number, event: SpendLine['event'], extra: Partial<SpendLine> = {}): SpendLine {
+    return {
+      ts: new Date().toISOString(),
+      run_id: this.opts.run_id,
+      style_id: this.opts.style_id,
+      style_sha: this.opts.style_sha,
+      step: ctx.piece_key.split('.')[0] ?? '',
+      piece_key: ctx.piece_key,
+      provider: call.provider,
+      model: modelOf(call),
+      est_usd: +usd.toFixed(4),
+      event,
+      ...(this.opts.reason ? { reason: this.opts.reason } : {}),
+      ...extra,
+    };
   }
 
   async order(call: PieceCall, ctx: ProviderContext): Promise<ProviderAnswer> {
     const kind = callKind(call);
-    if (kind === 'unknown') return this.refuse(call, ctx, 'not_allowed', `try-style does not forward ${call.provider} ${plainPath(call.path)}.`);
+    if (kind === 'unknown') return { kind: 'refused', code: 'not_allowed', message: `try-style does not forward ${call.provider} ${plainPath(call.path)}.` };
     // Its multipart reply is not parsed here, and the line does not carry it yet (GOOSE-4015 W0-13).
-    if (kind === 'song') return this.refuse(call, ctx, 'not_allowed', 'try-style does not forward /v1/music/detailed in real mode yet.');
-    const hostedSeconds = (ref: unknown) => {
-      const f = firstHosted(ref, ctx);
-      return f ? Math.max(1, f.bytes / 16_000) : null; // a rough upper bound; the real length is probed below when it matters
-    };
-    let usd = usdEstimate(call, hostedSeconds);
-    if (kind === 'lipsync') {
-      const f = firstHosted(call.body.audio_url, ctx);
-      if (f) usd = (await probe(ctx.tools, f.path)).duration_s * 0.15;
-    }
-    if (usd == null) return this.refuse(call, ctx, 'price_unknown', `try-style has no price for ${modelOf(call)}, so it will not send it. Add one to usdEstimate.`);
-    if (this.spent + usd > this.opts.capUsd) {
-      return this.refuse(call, ctx, 'over_run_cap', `This call (~$${usd.toFixed(3)}) would take the run past its cap of $${this.opts.capUsd}.`);
-    }
-    const night = this.opts.ledger.total();
-    if (night + usd > this.opts.nightCapUsd) {
-      return this.refuse(call, ctx, 'over_night_cap', `This call (~$${usd.toFixed(3)}) would take the night's spend ($${night.toFixed(2)}) past $${this.opts.nightCapUsd}.`);
-    }
+    if (kind === 'song') return { kind: 'refused', code: 'not_allowed', message: 'try-style does not forward /v1/music/detailed in real mode yet.' };
     const key = this.key(call.provider);
-    if (!key) return this.refuse(call, ctx, 'no_key', `${call.provider === 'fal' ? 'FAL_KEY' : 'ELEVENLABS_API_KEY'} is not set in this shell.`);
-
+    if (!key) return { kind: 'refused', code: 'no_key', message: `${call.provider === 'fal' ? 'FAL_KEY (FAL_API_KEY in --env-file)' : 'ELEVENLABS_API_KEY'} was not given.` };
+    const usd = await this.estimate(call, ctx, key);
+    if (usd == null) return { kind: 'refused', code: 'price_unknown', message: `try-style has no price for ${modelOf(call)}, so it will not send it. Add one to usdEstimate.` };
+    if (this.spent + usd > this.opts.capUsd) {
+      return { kind: 'refused', code: 'over_run_cap', message: `This call (~$${usd.toFixed(3)}) would take the run past its cap of $${this.opts.capUsd}.` };
+    }
+    // The run cap is taken before the ledger lock, so two pieces of this run can't both pass it.
     this.spent += usd;
+    let reserved: { ok: true } | { ok: false; night: number };
+    try {
+      reserved = this.opts.ledger.reserve(this.line(call, ctx, usd, 'reserve'), this.opts.nightCapUsd);
+    } catch (error) {
+      this.spent -= usd;
+      return { kind: 'refused', code: 'ledger_unusable', message: error instanceof Error ? error.message : 'The spend ledger could not be written.' };
+    }
+    if (!reserved.ok) {
+      this.spent -= usd;
+      return { kind: 'refused', code: 'over_night_cap', message: `This call (~$${usd.toFixed(3)}) would take the night's spend ($${reserved.night.toFixed(2)}) past $${this.opts.nightCapUsd}.` };
+    }
+
     let answer: ProviderAnswer;
     try {
       answer = call.provider === 'fal' ? await this.fal(call, ctx, key) : await this.elevenlabs(call, ctx, key);
     } catch (error) {
       answer = { kind: 'failed', code: 'provider_failed', message: `The call could not be completed: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`, next: 'stop' };
     }
-    // A refusal at submit (4xx) was not billed; anything else counts at its estimate.
+    // A refusal at submit (4xx) was not billed; anything else stays counted at its estimate.
     const billed = !(answer.kind === 'failed' && answer.code === 'provider_rejected');
     if (!billed) this.spent -= usd;
-    this.opts.ledger.add({
-      time: new Date().toISOString(),
-      piece: ctx.piece_key,
-      model: modelOf(call),
-      usd_estimate: billed ? +usd.toFixed(4) : 0,
-      status: answer.kind === 'done' ? 'done' : answer.kind === 'failed' ? 'failed' : 'unknown',
-      provider: call.provider,
-      run: this.opts.run,
-    });
+    try {
+      this.opts.ledger.add(this.line(call, ctx, usd, answer.kind === 'done' ? 'done' : 'failed', answer.kind === 'done' ? {} : { billed }));
+    } catch {
+      // The reserve is already counted; a missing closing line only over-counts.
+    }
     return answer.kind === 'done' ? { ...answer, usd } : answer;
   }
 
@@ -578,8 +749,9 @@ export class RealProvider implements Provider {
       return { kind: 'failed', code: rejected ? 'provider_rejected' : 'provider_failed', message: `fal answered ${submit.status}: ${text}`, next: rejected ? 'stop' : 'retry' };
     }
     const job = (await submit.json()) as { request_id?: string; status_url?: string; response_url?: string };
-    if (!job.status_url || !job.response_url || !job.status_url.startsWith(FAL_QUEUE) || !job.response_url.startsWith(FAL_QUEUE)) {
-      return { kind: 'failed', code: 'provider_failed', message: 'fal gave no job to follow.', next: 'stop' };
+    // The key is only ever sent to fal's own queue origin.
+    if (!isFalQueueUrl(job.status_url) || !isFalQueueUrl(job.response_url)) {
+      return { kind: 'failed', code: 'provider_failed', message: 'fal gave no job to follow on its own queue address.', next: 'stop' };
     }
     const deadline = Date.now() + (this.opts.maxWaitMs ?? 20 * 60_000);
     for (;;) {

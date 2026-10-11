@@ -6,7 +6,7 @@
 
 **Key points**
 - **Free by default.** Paid calls get labelled stand-ins of the right size, length and timing. Nothing leaves the computer.
-- **Real calls only on request**, with `--providers real`, a per-run cap and a night cap. Every real call is priced first and written to a spend ledger.
+- **Real calls only on request**, with `--providers real`, after a passing stand-in run of the same style file, under a per-run cap and a night cap. Every real call is priced first and reserved in a spend ledger before it is sent.
 - **Proves wiring, not looks.** A stand-in run proves step order, bindings, lengths, captions, the end card, layers and the check. It says nothing about how a generated picture or voice looks or sounds.
 
 ---
@@ -29,9 +29,11 @@ npx tsx scripts/try-style.ts \
 | `--fresh` | Start the run over (removes this run's folder under `--out` only) |
 | `--fixtures <dir>` | Extra folders to find files and `media/index.json` in (repeatable; also `GOOSE_TRY_FIXTURES`) |
 | `--providers fake\|real` | Default `fake` |
-| `--cap-usd <n>` | Real mode: the most this run may spend (required) |
+| `--cap-usd <n>` | Real mode: the most this run may spend (required; at most the style's `cost.high_usd` and at most 40) |
 | `--spend-ledger <file>` | Real mode: the ledger (required; also `GOOSE_TRY_SPEND_LEDGER`) |
-| `--night-cap-usd <n>` | Real mode: the most the whole ledger may reach. Default 200 (also `GOOSE_TRY_NIGHT_CAP_USD`) |
+| `--night-cap-usd <n>` | Real mode: the most the whole ledger may reach. Default and maximum 200 (also `GOOSE_TRY_NIGHT_CAP_USD`) |
+| `--env-file <.env>` | Real mode: read `FAL_API_KEY` (as `FAL_KEY`) or `FAL_KEY`, and `ELEVENLABS_API_KEY`, from this file only. Without it, the same names are read from the environment |
+| `--reason "<text>"` | Real mode: required for a second real run of a style the ledger already holds; written on every ledger line |
 | `--tools-home <dir>` | Where the kit's pinned ffmpeg and headless browser are set up once. Default `~/.gooseworks-try-style` |
 
 **Outputs in `--out`**
@@ -42,16 +44,19 @@ npx tsx scripts/try-style.ts \
 | `final/checked-cut.mp4` | Only when the check failed: the cut the check judged |
 | `verdict.json` | The check layer's verdict (`pass`, `checks[]`), plus `run` (status, message, seconds, spend) |
 | `contact.png` | One frame per second, six across |
+| `run.json` | `run_id`, `providers`, `style_id`, `style_sha` (sha256 of the style file), `status` (`done` only when the video was made, no check failed and the contact sheet exists), part and layer versions, `seconds`, `seconds_per_output_second`. Real mode's stand-in gate reads it |
+| `spend.json` | Real mode only: this run's estimate, cap and ledger path |
 | `pieces.jsonl` | One line per paid piece: key, provider, model, mode, status, and the estimate in real mode |
 | `home/videos/<id>/` | The kit's own run folder: `log.ndjson`, each step's `record.json` and outputs |
 
-The exit code is 0 only when the video was made and no check failed.
+The exit code is 0 only when the video was made, no check failed and the contact sheet was made.
 
 ## How it works
 
 - **The line** (`line.ts`) answers the kit on `http://127.0.0.1:47999`, an address nothing listens on. It answers the hand-over, pieces, hosted files, progress and upload. Every other address is refused.
 - **The hand-over** carries the plan, the brand, `styleHash(style.json)`, `parts_lock: null` and the layer set from the parts folder's `layers.json`. With no lock, the kit loads parts from `GOOSE_KIT_PARTS_DIR` and takes models from each part's manifest.
-- **Tools.** The script sets up the kit's own pinned ffmpeg (only from its GitHub release) and headless browser in `--tools-home`, then passes them to the kit. Secret-looking environment variables are never passed to the kit.
+- **Tools.** The script sets up the kit's own pinned ffmpeg (only from its GitHub release) and headless browser in `--tools-home` once, then passes them to the kit, so step hashes match a customer's machine. To use other copies, set `FFMPEG_PATH` and `FFPROBE_PATH` (the kit's own override) and `PLAYWRIGHT_BROWSERS_PATH`. `KIT_FFMPEG` and `PLAYWRIGHT_CORE_PATH` (the goose-skills part-test variables) are not read. Secret-looking environment variables are never passed to the kit.
+- **Resume.** Finished provider answers are kept in `<out>/line/answers/<inputs_hash>.json`, and the links handed out in `<out>/line/served.json` and `mirrors.json`, so a resumed run never orders a finished piece again. `--fresh` clears them.
 
 ## Naming files in a plan or brand
 
@@ -88,15 +93,21 @@ Files a part sends (`gooseworks-file:<id>` in a payload) are hosted by the line 
 ## Real mode
 
 ```bash
-FAL_KEY=... ELEVENLABS_API_KEY=... npx tsx scripts/try-style.ts ... \
-  --providers real --cap-usd 1 --spend-ledger <file>
+npx tsx scripts/try-style.ts ... --out $SCRATCH/runs/<style>-real-1 \
+  --providers real --cap-usd <style cost.high_usd> --spend-ledger $SCRATCH/spend.jsonl \
+  --env-file /Users/akhil/projects/content-goose/.env
 ```
 
-- **Keys come from the environment only.** They are never printed, logged or written, and never passed to the kit or its parts.
-- **Each call is priced before it is sent**, at a deliberately high list price (`usdEstimate` in `providers.ts`). A call with no known price is refused.
-- **Caps.** A call is refused when it would take this run past `--cap-usd`, or the ledger's total past `--night-cap-usd`. A refusal stops the video, as an over-quote stop would.
-- **The ledger** gets one JSON line per call, written when the call ends: `{time, piece, model, usd_estimate, status, provider, run}`. `status` is `done`, `failed`, `unknown` or `refused` (refused lines count $0). A call the provider refused at submit counts $0. The night total is the sum of `usd_estimate` over every line.
-- **fal** is called through its queue API (`queue.fal.run`), polled every 3 s for up to 20 minutes. Result links in fal's answer are served to the kit through the local line.
+- **Gates, checked before anything is read or sent** (`gates.ts`; any one refuses the run, exit 3):
+  - a folder next to `--out` holds a passing stand-in run of the same style id and the **same style file sha256** (`run.json` with `providers: "fake"` and `status: "done"`, `verdict.json` with no `fail`, `final/final.mp4`);
+  - `--cap-usd` is at most the style's `cost.high_usd` and at most 40 (a style with no `cost.high_usd` is refused);
+  - `--night-cap-usd` is at most 200, and the ledger is below it;
+  - the ledger holds no earlier real run of this style id, unless `--reason` is given.
+- **Keys** come from `--env-file` (only those two names are read, and nothing is put in the environment), else from the environment. They are never printed, logged or written, and never passed to the kit or its parts.
+- **Each call is priced before it is sent:** the higher of the runner's own deliberately high table (`usdEstimate`) and, for fal, the live list price (`GET api.fal.ai/v1/models/pricing`) times the units read from the request (images, seconds). A call neither can price is refused.
+- **Caps.** A call is refused when it would take this run past `--cap-usd`, or the ledger past the night cap. A refusal stops the video, as an over-quote stop would.
+- **The ledger.** Under a lock file shared by every runner, the night total is checked and a `reserve` line written before the call; a `done` or `failed` line follows. Lines: `{ts, run_id, style_id, style_sha, step, piece_key, provider, model, est_usd, event, billed?, reason?}`. The night total is every reserve, less reserves a provider refused at submit (`failed` with `billed: false`); a crash leaves the reserve counted. Lines from this runner's first format (`usd_estimate`) count at that value. An unreadable line refuses all spending until it is fixed by hand.
+- **fal** is called through its queue API (`queue.fal.run`), polled every 3 s for up to 20 minutes. The key is only sent to that exact origin. Result links in fal's answer are served to the kit through the local line.
 - **Not forwarded:** `/v1/music/detailed` (the line does not carry it yet, and its multipart reply is not parsed here).
 
 ## Known gaps

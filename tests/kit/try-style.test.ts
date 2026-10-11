@@ -6,7 +6,8 @@ import * as path from 'path';
 import { styleHash } from '../../src/kit/core/style';
 import { API, tryLine } from '../../scripts/try-style/line';
 import { FixtureFiles, freezeBrand, planBody } from '../../scripts/try-style/fixtures';
-import { callKind, evenAlignment, RealProvider, SpendLedger, spreadChunks, usdEstimate, type Provider, type ProviderAnswer } from '../../scripts/try-style/providers';
+import { callKind, evenAlignment, falUnits, isFalQueueUrl, RealProvider, SpendLedger, spreadChunks, usdEstimate, type Provider, type ProviderAnswer, type RealOptions } from '../../scripts/try-style/providers';
+import { fileSha, passingFakeRuns, readEnvKeys, realGateProblems } from '../../scripts/try-style/gates';
 
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'try-style-'));
 const style = { id: 'demo', version: '1.0.0', timeline: [], layers: { brand: false, captions: false, sound: true, check: true }, duration: { min_seconds: 1, max_seconds: 9 }, aspects: ['9:16'] };
@@ -113,46 +114,183 @@ describe('try-style providers', () => {
 describe('try-style real mode caps', () => {
   const call = { provider: 'elevenlabs', path: '/v1/music', body: { music_length_ms: 30_000, model_id: 'music_v1' } };
   const ctx = (dir: string) => ({ piece_key: 'music.bed', idempotency_key: 'k', hosted: () => null, planLines: [], workDir: dir, publish: (f: string) => f, mirror: (u: string) => u, tools });
+  const real = (dir: string, over: Partial<RealOptions> = {}) =>
+    new RealProvider({
+      capUsd: 1,
+      nightCapUsd: 200,
+      ledger: new SpendLedger(path.join(dir, 'spend.jsonl')),
+      run_id: 'r1',
+      style_id: 'demo',
+      style_sha: 'abc',
+      keys: { elevenlabs: 'sk-secret-value', fal: 'fal-secret-value' },
+      fetch: jest.fn() as any,
+      sleep: async () => undefined,
+      ...over,
+    });
 
   it('refuses a call past the run cap and never sends it', async () => {
     const dir = tmp();
-    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
     const fetchImpl = jest.fn();
-    const real = new RealProvider({ capUsd: 0.2, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: fetchImpl as any });
-    const answer = await real.order(call, ctx(dir));
-    expect(answer).toMatchObject({ kind: 'refused', code: 'over_run_cap' });
+    const r = real(dir, { capUsd: 0.2, fetch: fetchImpl as any });
+    expect(await r.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'over_run_cap' });
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(readFileSync(ledger.file, 'utf8')).toContain('"status":"refused"');
   });
 
-  it('refuses past the night cap counted from the ledger', async () => {
+  it('refuses past the night cap counted from the ledger, old lines included', async () => {
     const dir = tmp();
-    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
-    ledger.add({ time: 'x', piece: 'p', model: 'm', usd_estimate: 199.9, status: 'done' });
-    const real = new RealProvider({ capUsd: 5, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: jest.fn() as any });
-    expect(await real.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'over_night_cap' });
+    writeFileSync(path.join(dir, 'spend.jsonl'), `${JSON.stringify({ time: 'x', piece: 'p', model: 'm', usd_estimate: 199.9, status: 'done', run: 'other:x' })}\n`);
+    const fetchImpl = jest.fn();
+    const r = real(dir, { capUsd: 5, fetch: fetchImpl as any });
+    expect(await r.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'over_night_cap' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(r.runSpentUsd).toBe(0);
   });
 
-  it('records a made call at its estimate, without the key', async () => {
+  it('refuses to spend against a ledger it cannot read', async () => {
     const dir = tmp();
-    mkdirSync(dir, { recursive: true });
-    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
-    const fetchImpl = jest.fn(async () => new Response(Buffer.from('ID3audio'), { status: 200 }));
-    const real = new RealProvider({ capUsd: 1, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: fetchImpl as any });
-    const answer = await real.order(call, ctx(dir));
+    writeFileSync(path.join(dir, 'spend.jsonl'), 'not json\n');
+    const fetchImpl = jest.fn();
+    expect(await real(dir, { fetch: fetchImpl as any }).order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'ledger_unusable' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('writes the reserve before the call and done after, without the key', async () => {
+    const dir = tmp();
+    const ledgerFile = path.join(dir, 'spend.jsonl');
+    let atSend = '';
+    const fetchImpl = jest.fn(async () => {
+      atSend = readFileSync(ledgerFile, 'utf8');
+      return new Response(Buffer.from('ID3audio'), { status: 200 });
+    });
+    const r = real(dir, { fetch: fetchImpl as any });
+    const answer = await r.order(call, ctx(dir));
     expect(answer.kind).toBe('done');
+    expect(JSON.parse(atSend.trim())).toMatchObject({ event: 'reserve', est_usd: 0.5, style_id: 'demo', style_sha: 'abc', run_id: 'r1', step: 'music', piece_key: 'music.bed', provider: 'elevenlabs', model: 'music_v1' });
     const sent = (fetchImpl.mock.calls[0] as unknown[])[1] as RequestInit;
     expect((sent.headers as Record<string, string>)['xi-api-key']).toBe('sk-secret-value');
-    const text = readFileSync(ledger.file, 'utf8');
-    expect(text).not.toContain('sk-secret-value');
-    expect(JSON.parse(text.trim())).toMatchObject({ piece: 'music.bed', model: 'music_v1', usd_estimate: 0.5, status: 'done' });
-    expect(real.runSpentUsd).toBeCloseTo(0.5);
+    const text = readFileSync(ledgerFile, 'utf8');
+    expect(text).not.toContain('secret-value');
+    expect(text.trim().split('\n').map((l) => JSON.parse(l).event)).toEqual(['reserve', 'done']);
+    expect(new SpendLedger(ledgerFile).total()).toBeCloseTo(0.5);
+    expect(r.runSpentUsd).toBeCloseTo(0.5);
   });
 
-  it('refuses with no key in the environment', async () => {
+  it('keeps a reserve counted when the call fails, and releases one refused at submit', async () => {
     const dir = tmp();
-    const real = new RealProvider({ capUsd: 1, nightCapUsd: 200, ledger: new SpendLedger(path.join(dir, 's.jsonl')), run: 't', env: {}, fetch: jest.fn() as any });
-    expect(await real.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'no_key' });
+    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
+    await real(dir, { ledger, fetch: jest.fn(async () => new Response('busy', { status: 503 })) as any }).order(call, ctx(dir));
+    expect(ledger.total()).toBeCloseTo(0.5);
+    await real(dir, { ledger, fetch: jest.fn(async () => new Response('bad', { status: 422 })) as any }).order(call, ctx(dir));
+    expect(ledger.total()).toBeCloseTo(0.5);
+  });
+
+  it('refuses with no key', async () => {
+    const dir = tmp();
+    expect(await real(dir, { keys: {} }).order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'no_key' });
+  });
+
+  it('sends the fal key only to fal\'s own queue origin', async () => {
+    expect(isFalQueueUrl('https://queue.fal.run/x/requests/1/status')).toBe(true);
+    expect(isFalQueueUrl('https://queue.fal.run.evil.example/x')).toBe(false);
+    expect(isFalQueueUrl('https://queue.fal.run@evil.example/x')).toBe(false);
+    expect(isFalQueueUrl('http://queue.fal.run/x')).toBe(false);
+    const dir = tmp();
+    const fetchImpl = jest.fn(async (url: string) => {
+      if (url.startsWith('https://api.fal.ai/v1/models/pricing')) return new Response(JSON.stringify({ prices: [{ endpoint_id: 'fal-ai/nano-banana', unit_price: 0.0398, unit: 'images', currency: 'USD' }] }));
+      return new Response(JSON.stringify({ request_id: '1', status_url: 'https://queue.fal.run.evil.example/s', response_url: 'https://queue.fal.run.evil.example/r' }));
+    });
+    const answer = await real(dir, { fetch: fetchImpl as any }).order({ provider: 'fal', path: 'fal-ai/nano-banana', body: { prompt: 'x' } }, ctx(dir));
+    expect(answer).toMatchObject({ kind: 'failed', code: 'provider_failed' });
+    expect(fetchImpl.mock.calls.map((c) => String(c[0])).some((u) => u.includes('evil'))).toBe(false);
+  });
+
+  it('prices a fal call at the higher of its own table and the live list price', async () => {
+    const dir = tmp();
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ prices: [{ endpoint_id: 'fal-ai/kling-video/v3/standard/image-to-video', unit_price: 0.5, unit: 'seconds', currency: 'USD' }] })));
+    const r = real(dir, { fetch: fetchImpl as any });
+    const video = { provider: 'fal', path: 'fal-ai/kling-video/v3/standard/image-to-video', body: { duration: '5' } };
+    expect(await r.estimate(video, ctx(dir), 'k')).toBeCloseTo(2.5);
+    expect(falUnits('images', { provider: 'fal', path: 'fal-ai/nano-banana', body: { num_images: 2 } }, null)).toBe(2);
+    expect(falUnits('1000 tokens', video, null)).toBeNull();
+    const unknown = jest.fn(async () => new Response('{}', { status: 500 }));
+    expect(await real(dir, { fetch: unknown as any }).estimate({ provider: 'fal', path: 'some/model-x', body: {} }, ctx(dir), 'k')).toBeNull();
+  });
+});
+
+describe('try-style real mode gates', () => {
+  const style = { id: 'demo', version: '1.0.0', cost: { high_usd: 2 } };
+  function fakeRun(parent: string, name: string, over: Record<string, unknown> = {}, checks = [{ code: 'a', status: 'pass' }]) {
+    const dir = path.join(parent, name);
+    mkdirSync(path.join(dir, 'final'), { recursive: true });
+    writeFileSync(path.join(dir, 'final', 'final.mp4'), 'mp4');
+    writeFileSync(path.join(dir, 'run.json'), JSON.stringify({ providers: 'fake', style_id: 'demo', style_sha: 'sha1', status: 'done', ...over }));
+    writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ pass: true, checks }));
+    return dir;
+  }
+  const gate = (parent: string, over: Partial<Parameters<typeof realGateProblems>[0]> = {}) =>
+    realGateProblems({ style, styleId: 'demo', styleSha: 'sha1', out: path.join(parent, 'demo-real-1'), capUsd: 2, nightCapUsd: 200, reason: null, ledger: new SpendLedger(path.join(parent, 'spend.jsonl')), ...over });
+
+  it('refuses without a passing stand-in run of the same style file next to the run', () => {
+    const parent = tmp();
+    expect(gate(parent).join()).toMatch(/No passing stand-in run/);
+    fakeRun(parent, 'demo-fake-1', { style_sha: 'other' });
+    fakeRun(parent, 'demo-fake-2', {}, [{ code: 'a', status: 'fail' }]);
+    fakeRun(parent, 'demo-fake-3', { providers: 'real' });
+    fakeRun(parent, 'demo-fake-4', { status: 'failed' });
+    expect(passingFakeRuns(path.join(parent, 'demo-real-1'), 'demo', 'sha1')).toEqual([]);
+    fakeRun(parent, 'demo-fake-5');
+    expect(gate(parent)).toEqual([]);
+  });
+
+  it('refuses a cap above the style\'s high_usd, above $40, or with no high_usd', () => {
+    const parent = tmp();
+    fakeRun(parent, 'demo-fake-1');
+    expect(gate(parent, { capUsd: 2.5 }).join()).toMatch(/above the style's cost.high_usd/);
+    expect(gate(parent, { capUsd: 41, style: { cost: { high_usd: 100 } } }).join()).toMatch(/\$40 limit/);
+    expect(gate(parent, { style: { id: 'demo' } }).join()).toMatch(/no cost.high_usd/);
+    expect(gate(parent, { capUsd: null }).join()).toMatch(/needs --cap-usd/);
+    expect(gate(parent, { nightCapUsd: 500 }).join()).toMatch(/no higher than 200/);
+  });
+
+  it('allows one real run per style unless a reason is given', () => {
+    const parent = tmp();
+    fakeRun(parent, 'demo-fake-1');
+    const ledger = new SpendLedger(path.join(parent, 'spend.jsonl'));
+    ledger.add({ ts: 't', run_id: 'r0', style_id: 'demo', style_sha: 'sha1', step: 'music', piece_key: 'music.bed', provider: 'elevenlabs', model: 'm', est_usd: 0.1, event: 'reserve' });
+    expect(gate(parent, { ledger }).join()).toMatch(/needs --reason/);
+    expect(gate(parent, { ledger, reason: 'music failed; fixed the prompt' })).toEqual([]);
+    const legacy = new SpendLedger(path.join(parent, 'legacy.jsonl'));
+    writeFileSync(legacy.file, `${JSON.stringify({ time: 'x', piece: 'p', model: 'm', usd_estimate: 0.1, status: 'done', run: 'demo:demo-real-1' })}\n`);
+    expect(legacy.hasRealRun('demo')).toBe(true);
+    expect(legacy.hasRealRun('other')).toBe(false);
+  });
+
+  it('reads only the two keys from an env file, FAL_API_KEY as FAL_KEY', () => {
+    const dir = tmp();
+    const file = path.join(dir, '.env');
+    writeFileSync(file, 'OTHER=1\nFAL_API_KEY="fal-123"\nexport ELEVENLABS_API_KEY=el-456 # note\n');
+    expect(readEnvKeys(file)).toEqual({ fal: 'fal-123', elevenlabs: 'el-456' });
+    expect(fileSha(file)).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+describe('try-style line resume', () => {
+  it('replays a finished piece from disk in a new process instead of ordering it again', async () => {
+    const dir = tmp();
+    const audio = path.join(dir, 'pieces', 'a.mp3');
+    mkdirSync(path.dirname(audio), { recursive: true });
+    writeFileSync(audio, 'mp3');
+    const order = jest.fn(async (): Promise<ProviderAnswer> => ({ kind: 'done', file: { path: audio, mime: 'audio/mpeg' }, json: { remote: 'https://v3.fal.media/x.mp4' } }));
+    const provider: Provider = { mode: 'real', order: async (_c, c) => ({ ...(await order()), json: { remote: c.mirror('https://v3.fal.media/x.mp4') } }) };
+    const request = { idempotency_key: 'music.bed:h1:1', piece_key: 'music.bed', inputs_hash: 'h1abcdef01', call: { provider: 'elevenlabs', path: '/v1/music', body: {} } };
+    const first = await js(post(line(provider, dir), '/pieces', request));
+    await new Promise((r) => setTimeout(r, 20));
+    const again = line(provider, dir);
+    const second = await js(post(again, '/pieces', request));
+    expect(order).toHaveBeenCalledTimes(1);
+    expect(second.result).toEqual(first.result);
+    expect(await (await again.fetch(second.result.file_url)).text()).toBe('mp3');
+    expect(second.result.json.remote).toMatch(/^http:\/\/127\.0\.0\.1:47999\/mirror\/[a-f0-9]{24}$/);
   });
 });
 

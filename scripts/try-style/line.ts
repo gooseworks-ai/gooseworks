@@ -5,7 +5,7 @@
 // every other address: nothing leaves this computer through it except, in
 // real mode, the result links a provider itself returned.
 import { createHash, randomUUID } from 'crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import * as path from 'path';
 import { styleHash } from '../../src/kit/core/style';
 import { HOSTED_FILE_PREFIX } from '../../src/kit/line/types';
@@ -58,6 +58,12 @@ const lineError = (status: number, code: string, error: string, next: 'retry' | 
 
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 
+function atomicWrite(file: string, text: string) {
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, text);
+  renameSync(temp, file);
+}
+
 function bodyOf(init: RequestInit | undefined): any {
   if (!init?.body) return undefined;
   if (typeof init.body === 'string') return JSON.parse(init.body);
@@ -96,26 +102,46 @@ export function tryLine(opts: TryLineOptions) {
   const outDir = path.join(opts.workDir, 'pieces');
   mkdirSync(hostedDir, { recursive: true });
   mkdirSync(outDir, { recursive: true });
+  const answersDir = path.join(opts.workDir, 'answers');
+  mkdirSync(answersDir, { recursive: true });
   const hosted = new Map<string, HostedFile & { done: boolean }>();
   for (const [id, f] of opts.lineFiles ?? []) hosted.set(id, { ...f, done: true });
-  const served = new Map<string, string>(); // /out/<name> → local path
-  const mirrors = new Map<string, string>(); // /mirror/<n> → remote https link
+  // Links handed out are kept on disk, so a resumed run (a new process) still serves them.
+  const servedFile = path.join(opts.workDir, 'served.json');
+  const mirrorsFile = path.join(opts.workDir, 'mirrors.json');
+  const loadMap = (file: string) => new Map<string, string>(existsSync(file) ? Object.entries(JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>) : []);
+  const saveMap = (file: string, map: Map<string, string>) => atomicWrite(file, JSON.stringify(Object.fromEntries(map)));
+  const served = loadMap(servedFile); // /out/<name> → local path
+  const mirrors = loadMap(mirrorsFile); // /mirror/<id> → remote https link
   const jobs = new Map<string, Promise<ProviderAnswer>>();
   const settled = new Map<string, ProviderAnswer>();
   const lines = planLines(opts.body);
-  let upload: { bytes: Buffer | null; result: 'pass' } = { bytes: null, result: 'pass' };
+  // The uploaded video is kept on disk too: a resumed run may confirm an upload an earlier process sent.
+  const uploadFile = path.join(opts.workDir, 'uploaded.mp4');
+  let upload: { bytes: Buffer | null; result: 'pass' } = { bytes: existsSync(uploadFile) ? readFileSync(uploadFile) : null, result: 'pass' };
   const refused: string[] = [];
 
   const log = (entry: PieceLog) => appendFileSync(opts.pieceLog, `${JSON.stringify(entry)}\n`);
   const publish = (file: string) => {
-    const name = `${served.size + 1}-${path.basename(file)}`;
-    served.set(name, file);
+    const name = `${sha(Buffer.from(path.resolve(file))).slice(0, 12)}-${path.basename(file)}`;
+    if (served.get(name) !== file) {
+      served.set(name, file);
+      saveMap(servedFile, served);
+    }
     return `${API}/out/${encodeURIComponent(name)}`;
   };
   const mirror = (remote: string) => {
-    const id = String(mirrors.size + 1);
-    mirrors.set(id, remote);
+    const id = sha(Buffer.from(remote)).slice(0, 24);
+    if (mirrors.get(id) !== remote) {
+      mirrors.set(id, remote);
+      saveMap(mirrorsFile, mirrors);
+    }
     return `${API}/mirror/${id}`;
+  };
+  /** A finished answer is kept by inputs_hash, so a resumed run never orders the same piece again. */
+  const answerFile = (request: any) => {
+    const id = typeof request?.inputs_hash === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(request.inputs_hash) ? request.inputs_hash : sha(Buffer.from(String(request?.idempotency_key)));
+    return path.join(answersDir, `${id}.json`);
   };
 
   const handOver = (deviceId: string) => ({
@@ -144,7 +170,14 @@ export function tryLine(opts: TryLineOptions) {
     if (!call || typeof key !== 'string') return lineError(400, 'invalid_input', 'A piece needs a call and a key.');
     const model = typeof call.body?.model_id === 'string' && call.provider === 'elevenlabs' ? (call.body.model_id as string) : call.path;
     const base = { piece_key: request.piece_key, idempotency_key: key, provider: call.provider, path: call.path, model, mode: opts.provider.mode };
-    if (!jobs.has(key)) {
+    if (!jobs.has(key) && !settled.has(key)) {
+      const saved = answerFile(request);
+      if (existsSync(saved)) {
+        settled.set(key, JSON.parse(readFileSync(saved, 'utf8')) as ProviderAnswer);
+        log({ time: new Date().toISOString(), ...base, status: 'done', note: 'replayed from an earlier run' });
+      }
+    }
+    if (!jobs.has(key) && !settled.has(key)) {
       const ctx: ProviderContext = {
         piece_key: request.piece_key,
         idempotency_key: key,
@@ -164,6 +197,13 @@ export function tryLine(opts: TryLineOptions) {
       jobs.set(key, job);
       void job.then((a) => {
         settled.set(key, a);
+        if (a.kind === 'done') {
+          try {
+            atomicWrite(answerFile(request), JSON.stringify(a));
+          } catch {
+            // the answer still serves this run
+          }
+        }
         log({ time: new Date().toISOString(), ...base, status: a.kind, ...(a.kind === 'done' && a.usd !== undefined ? { usd_estimate: +a.usd.toFixed(4) } : {}), ...(a.kind !== 'done' ? { note: a.message.slice(0, 300) } : {}) });
       });
       // A fake answer is ready at once; give it a moment before saying "running".
@@ -246,6 +286,7 @@ export function tryLine(opts: TryLineOptions) {
     }
     if (method === 'PUT' && p === '/upload-slot/up_1') {
       upload = { bytes: bufferOf(init.body), result: 'pass' };
+      writeFileSync(uploadFile, upload.bytes!);
       return new Response(null, { status: 200 });
     }
     if (!p.startsWith(`${PREFIX}${opts.videoId}/`)) return lineError(404, 'not_found', 'No such route.');
