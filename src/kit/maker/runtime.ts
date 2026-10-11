@@ -33,6 +33,8 @@
 //   case on a case-insensitive disk; the zip comes only from the pinned,
 //   checksummed browser download, so it is first-party too.
 //
+import { CUE_SOUNDS } from './cues';
+
 // Plain ES2020 in a string: nothing here is compiled, so the page runs exactly
 // this text. Keep it free of backticks and "${".
 
@@ -364,6 +366,39 @@ const RUNTIME = String.raw`(function () {
   // Frame data for the page.
   var renderers = [];
   var waits = [];
+  // 1.2.0 sound cues: marked before the page is ready, mixed by the maker at their frames.
+  var SOUNDS = __KIT_SOUNDS__;
+  var cues = [];
+  var cuesClosed = false;
+  function cue(name, at_s, options) {
+    if (cuesClosed) {
+      report('The frame page marks a sound cue after it got ready. Mark every cue before kit.ready settles.');
+      return;
+    }
+    if (typeof name !== 'string' || SOUNDS.indexOf(name) < 0) {
+      report('The frame page asks for the sound "' + String(name).slice(0, 40) + '"; the sounds are ' + SOUNDS.join(', ') + '.');
+      return;
+    }
+    if (typeof at_s !== 'number' || !isFinite(at_s) || at_s < 0 || at_s >= DATA.duration_s) {
+      report('The frame page marks a sound cue at ' + String(at_s).slice(0, 40) + ' s, outside the video (0 to ' + DATA.duration_s + ' s).');
+      return;
+    }
+    var gain = 1;
+    var max_s = null;
+    if (options !== undefined && options !== null) {
+      if (typeof options !== 'object') { report('The frame page gives sound cue options that are not an object.'); return; }
+      if (options.gain !== undefined) {
+        if (typeof options.gain !== 'number' || !isFinite(options.gain) || options.gain < 0 || options.gain > 4) { report('The frame page gives a sound cue a gain outside 0 to 4.'); return; }
+        gain = options.gain;
+      }
+      if (options.max_s !== undefined && options.max_s !== null) {
+        if (typeof options.max_s !== 'number' || !isFinite(options.max_s) || options.max_s <= 0 || options.max_s > 10) { report('The frame page gives a sound cue a max_s outside 0 to 10 seconds.'); return; }
+        max_s = options.max_s;
+      }
+    }
+    if (cues.length >= 500) { report('The frame page marks more than 500 sound cues.'); return; }
+    cues.push({ sound: name, at_s: at_s, gain: gain, max_s: max_s });
+  }
   function sceneAt(t) {
     var scenes = DATA.scenes;
     for (var i = scenes.length - 1; i >= 0; i--) {
@@ -401,7 +436,8 @@ const RUNTIME = String.raw`(function () {
     facts: DATA.facts || {},
     sceneAt: sceneAt,
     render: function (fn) { if (typeof fn === 'function') renderers.push(fn); },
-    ready: function (promise) { waits.push(Promise.resolve(promise)); }
+    ready: function (promise) { waits.push(Promise.resolve(promise)); },
+    cue: cue
   });
   window.kit = kit;
 
@@ -643,7 +679,11 @@ const RUNTIME = String.raw`(function () {
       syncAnimations();
       await settle();
       syncAnimations();
-      return take();
+      // Cues are a pure function of the page's data: none may be marked once it is ready.
+      cuesClosed = true;
+      var started = await take();
+      started.cues = cues.slice();
+      return started;
     },
     frame: async function (index) {
       findRoots();
@@ -695,5 +735,7 @@ export function scriptJson(value: unknown): string {
 
 /** The runtime with this page's data in it. */
 export function runtimeScript(data: unknown): string {
-  return RUNTIME.replace('__KIT_DATA__', () => scriptJson(data)).replace('__KIT_EPOCH__', String(PAGE_EPOCH_MS));
+  return RUNTIME.replace('__KIT_DATA__', () => scriptJson(data))
+    .replace('__KIT_EPOCH__', String(PAGE_EPOCH_MS))
+    .replace('__KIT_SOUNDS__', () => scriptJson(CUE_SOUNDS));
 }

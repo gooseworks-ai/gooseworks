@@ -6,6 +6,194 @@ import { mkdir as mkdir2, readFile as readFile3, rm as rm2, stat as stat2, write
 import * as path3 from "node:path";
 import { pathToFileURL } from "node:url";
 
+// src/kit/maker/cues.ts
+var CUE_SOUNDS = ["tick", "tap", "pop", "chime", "whoosh", "swoosh", "notify", "click"];
+var CUE_RATE = 48e3;
+var CUE_CEILING = 0.891;
+var CUT_FADE_S = 5e-3;
+var SILENCE = 1 / 2048;
+function isSound(value) {
+  return typeof value === "string" && CUE_SOUNDS.includes(value);
+}
+function cuesOf(report) {
+  const raw = report && typeof report === "object" ? report.cues : void 0;
+  if (!Array.isArray(raw)) return [];
+  const cues = [];
+  for (const item of raw.slice(0, 500)) {
+    if (!item || typeof item !== "object") continue;
+    const { sound, at_s, gain, max_s } = item;
+    if (!isSound(sound) || typeof at_s !== "number" || !Number.isFinite(at_s) || at_s < 0) continue;
+    cues.push({
+      sound,
+      at_s,
+      gain: typeof gain === "number" && Number.isFinite(gain) && gain >= 0 && gain <= 4 ? gain : 1,
+      max_s: typeof max_s === "number" && Number.isFinite(max_s) && max_s > 0 && max_s <= 10 ? max_s : null
+    });
+  }
+  return cues;
+}
+function readWav(data) {
+  if (data.length < 12) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const tag = (at) => String.fromCharCode(data[at], data[at + 1], data[at + 2], data[at + 3]);
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
+  let format = null;
+  let body = null;
+  for (let at = 12; at + 8 <= data.length; ) {
+    const id = tag(at);
+    const size = view.getUint32(at + 4, true);
+    if (id === "fmt " && size >= 16) {
+      format = { code: view.getUint16(at + 8, true), channels: view.getUint16(at + 10, true), rate: view.getUint32(at + 12, true), bits: view.getUint16(at + 22, true) };
+    } else if (id === "data") {
+      body = { at: at + 8, size: Math.min(size, data.length - at - 8) };
+    }
+    at += 8 + size + size % 2;
+  }
+  if (!format || !body || format.code !== 1 && format.code !== 65534 || format.bits !== 16 || format.channels < 1 || format.channels > 2) return null;
+  const frames = Math.floor(body.size / (2 * format.channels));
+  const channels = Array.from({ length: format.channels }, () => new Float32Array(frames));
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < format.channels; c++) channels[c][i] = view.getInt16(body.at + (i * format.channels + c) * 2, true) / 32768;
+  }
+  return { rate: format.rate, channels };
+}
+function bankSound(pcm) {
+  const length = pcm.channels[0].length;
+  const mono = new Float32Array(length);
+  for (const channel of pcm.channels) for (let i = 0; i < length; i++) mono[i] += channel[i] / pcm.channels.length;
+  let start = 0;
+  while (start < length && Math.abs(mono[start]) <= SILENCE) start++;
+  return mono.subarray(start);
+}
+function frameSample(frame, fps) {
+  return Math.round(frame * CUE_RATE / fps);
+}
+function mixCues(opts) {
+  const length = frameSample(opts.frames, opts.fps);
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  if (opts.bed && opts.bed.length) {
+    const l = opts.bed[0];
+    const r = opts.bed[1] ?? opts.bed[0];
+    left.set(l.subarray(0, Math.min(length, l.length)));
+    right.set(r.subarray(0, Math.min(length, r.length)));
+  }
+  const placed = [];
+  const fade = Math.max(1, Math.round(CUT_FADE_S * CUE_RATE));
+  for (const cue of opts.cues) {
+    const sound = opts.bank.get(cue.sound);
+    if (!sound || !sound.length) continue;
+    const frame = Math.min(opts.frames - 1, Math.max(0, Math.ceil(cue.at_s * opts.fps - 1e-6)));
+    const sample = frameSample(frame, opts.fps);
+    let take = Math.min(sound.length, length - sample);
+    const cut = cue.max_s !== null && Math.round(cue.max_s * CUE_RATE) < take;
+    if (cut) take = Math.round(cue.max_s * CUE_RATE);
+    for (let i = 0; i < take; i++) {
+      const tail = take - i;
+      const v = sound[i] * cue.gain * (cut && tail <= fade ? tail / fade : 1);
+      left[sample + i] += v;
+      right[sample + i] += v;
+    }
+    placed.push({ ...cue, frame, sample });
+  }
+  let peak = 0;
+  for (let i = 0; i < length; i++) peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
+  const gain = peak > CUE_CEILING ? CUE_CEILING / peak : 1;
+  if (gain !== 1) {
+    for (let i = 0; i < length; i++) {
+      left[i] *= gain;
+      right[i] *= gain;
+    }
+  }
+  return { channels: [left, right], placed, gain };
+}
+function wavBytes(channels, rate = CUE_RATE) {
+  const frames = channels[0]?.length ?? 0;
+  const count = channels.length;
+  const size = frames * count * 2;
+  const data = new Uint8Array(44 + size);
+  const view = new DataView(data.buffer);
+  const put = (at, text2) => {
+    for (let i = 0; i < 4; i++) data[at + i] = text2.charCodeAt(i);
+  };
+  put(0, "RIFF");
+  view.setUint32(4, 36 + size, true);
+  put(8, "WAVE");
+  put(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, count, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * count * 2, true);
+  view.setUint16(32, count * 2, true);
+  view.setUint16(34, 16, true);
+  put(36, "data");
+  view.setUint32(40, size, true);
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < count; c++) {
+      const v = Math.max(-1, Math.min(1, channels[c][i]));
+      view.setInt16(44 + (i * count + c) * 2, Math.round(v * 32767), true);
+    }
+  }
+  return data;
+}
+function bedArgs(opts) {
+  return [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-i",
+    opts.under,
+    "-map",
+    "0:a:0",
+    "-vn",
+    "-t",
+    opts.seconds.toFixed(6),
+    "-ac",
+    "2",
+    "-ar",
+    String(CUE_RATE),
+    "-c:a",
+    "pcm_s16le",
+    "-fflags",
+    "+bitexact",
+    "-flags",
+    "+bitexact",
+    "-map_metadata",
+    "-1",
+    opts.out
+  ];
+}
+function muxArgs(opts) {
+  return [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-i",
+    opts.picture,
+    "-i",
+    opts.audio,
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a:0",
+    "-c:v",
+    "copy",
+    ...opts.tools.encodeArgs("aac"),
+    "-ac",
+    "2",
+    "-t",
+    opts.seconds.toFixed(6),
+    "-movflags",
+    "+faststart",
+    opts.out
+  ];
+}
+
 // src/kit/maker/encode.ts
 var SEGMENT_FRAMES = 60;
 var FRAME_PATTERN = "f%06d.png";
@@ -2121,6 +2309,39 @@ var RUNTIME = String.raw`(function () {
   // Frame data for the page.
   var renderers = [];
   var waits = [];
+  // 1.2.0 sound cues: marked before the page is ready, mixed by the maker at their frames.
+  var SOUNDS = __KIT_SOUNDS__;
+  var cues = [];
+  var cuesClosed = false;
+  function cue(name, at_s, options) {
+    if (cuesClosed) {
+      report('The frame page marks a sound cue after it got ready. Mark every cue before kit.ready settles.');
+      return;
+    }
+    if (typeof name !== 'string' || SOUNDS.indexOf(name) < 0) {
+      report('The frame page asks for the sound "' + String(name).slice(0, 40) + '"; the sounds are ' + SOUNDS.join(', ') + '.');
+      return;
+    }
+    if (typeof at_s !== 'number' || !isFinite(at_s) || at_s < 0 || at_s >= DATA.duration_s) {
+      report('The frame page marks a sound cue at ' + String(at_s).slice(0, 40) + ' s, outside the video (0 to ' + DATA.duration_s + ' s).');
+      return;
+    }
+    var gain = 1;
+    var max_s = null;
+    if (options !== undefined && options !== null) {
+      if (typeof options !== 'object') { report('The frame page gives sound cue options that are not an object.'); return; }
+      if (options.gain !== undefined) {
+        if (typeof options.gain !== 'number' || !isFinite(options.gain) || options.gain < 0 || options.gain > 4) { report('The frame page gives a sound cue a gain outside 0 to 4.'); return; }
+        gain = options.gain;
+      }
+      if (options.max_s !== undefined && options.max_s !== null) {
+        if (typeof options.max_s !== 'number' || !isFinite(options.max_s) || options.max_s <= 0 || options.max_s > 10) { report('The frame page gives a sound cue a max_s outside 0 to 10 seconds.'); return; }
+        max_s = options.max_s;
+      }
+    }
+    if (cues.length >= 500) { report('The frame page marks more than 500 sound cues.'); return; }
+    cues.push({ sound: name, at_s: at_s, gain: gain, max_s: max_s });
+  }
   function sceneAt(t) {
     var scenes = DATA.scenes;
     for (var i = scenes.length - 1; i >= 0; i--) {
@@ -2158,7 +2379,8 @@ var RUNTIME = String.raw`(function () {
     facts: DATA.facts || {},
     sceneAt: sceneAt,
     render: function (fn) { if (typeof fn === 'function') renderers.push(fn); },
-    ready: function (promise) { waits.push(Promise.resolve(promise)); }
+    ready: function (promise) { waits.push(Promise.resolve(promise)); },
+    cue: cue
   });
   window.kit = kit;
 
@@ -2400,7 +2622,11 @@ var RUNTIME = String.raw`(function () {
       syncAnimations();
       await settle();
       syncAnimations();
-      return take();
+      // Cues are a pure function of the page's data: none may be marked once it is ready.
+      cuesClosed = true;
+      var started = await take();
+      started.cues = cues.slice();
+      return started;
     },
     frame: async function (index) {
       findRoots();
@@ -2444,7 +2670,7 @@ function scriptJson(value) {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").split(String.fromCharCode(8232)).join("\\u2028").split(String.fromCharCode(8233)).join("\\u2029");
 }
 function runtimeScript(data) {
-  return RUNTIME.replace("__KIT_DATA__", () => scriptJson(data)).replace("__KIT_EPOCH__", String(PAGE_EPOCH_MS));
+  return RUNTIME.replace("__KIT_DATA__", () => scriptJson(data)).replace("__KIT_EPOCH__", String(PAGE_EPOCH_MS)).replace("__KIT_SOUNDS__", () => scriptJson(CUE_SOUNDS));
 }
 
 // src/kit/maker/page.ts
@@ -2793,6 +3019,7 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
   const total = spec.frameCount;
   const frameHashes = [];
   let logo = null;
+  let cues = [];
   const segments = [];
   const name = "video.mp4";
   const out = path3.join(ctx.workDir, name);
@@ -2840,6 +3067,7 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
       );
       if (started === null) throw ctx.error("tool_failed", "the frame page lost the kit runtime");
       checked(started);
+      cues = cuesOf(started);
       let segmentStart = 0;
       let segmentBytes = 0;
       for (let index = 0; index < total; index++) {
@@ -2889,6 +3117,9 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
     reserve(Buffer.byteLength(listText));
     await writeFile2(list, listText);
     await mkdir2(ctx.workDir, { recursive: true });
+    const seconds = total / spec.fps;
+    const picture = cues.length ? path3.join(segmentsDir, "picture.mp4") : out;
+    const underSound = !!spec.under?.info.hasAudio;
     if (spec.under) {
       const args = compositeArgs({
         tools: ctx.tools,
@@ -2897,12 +3128,43 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
         size: spec.output,
         fps: spec.fps,
         frames: total,
-        hasAudio: spec.under.info.hasAudio,
-        out
+        // With cues, the video's sound is the bed of the cue mix instead.
+        hasAudio: underSound && !cues.length,
+        out: picture
       });
-      await encodeInto(args, out);
-    } else await encodeInto(concatArgs(list, out), out);
-    const seconds = total / spec.fps;
+      await encodeInto(args, picture);
+    } else await encodeInto(concatArgs(list, picture), picture);
+    if (cues.length) {
+      stopIfAsked();
+      const partDir = ctx.part?.dir;
+      if (!partDir) throw ctx.error("tool_failed", "the part's sound bank is missing");
+      const bank = /* @__PURE__ */ new Map();
+      for (const sound of new Set(cues.map((cue) => cue.sound))) {
+        let pcm;
+        try {
+          pcm = readWav(await readFile3(path3.join(partDir, "assets", "sfx", `${sound}.wav`)));
+        } catch {
+          pcm = null;
+        }
+        if (!pcm || pcm.rate !== 48e3) throw ctx.error("tool_failed", `the part's sound "${sound}" could not be read`);
+        bank.set(sound, bankSound(pcm));
+      }
+      let bed = null;
+      if (spec.under && underSound) {
+        const bedFile = path3.join(segmentsDir, "bed.wav");
+        await encodeInto(bedArgs({ under: spec.under.file.path, seconds, out: bedFile }), bedFile);
+        const pcm = readWav(await readFile3(bedFile));
+        if (!pcm) throw ctx.error("tool_failed", "the sound of the video drawn over could not be read");
+        bed = pcm.channels;
+      }
+      const mix = mixCues({ cues, bank, fps: spec.fps, frames: total, bed });
+      const mixFile = path3.join(segmentsDir, "cues.wav");
+      const bytes = wavBytes(mix.channels);
+      reserve(bytes.length);
+      await writeFile2(mixFile, bytes);
+      await encodeInto(muxArgs({ tools: ctx.tools, picture, audio: mixFile, seconds, out }), out);
+      ctx.log.info("sound cues mixed", { cues: mix.placed.length, gain: mix.gain, sounds: CUE_SOUNDS.filter((s) => bank.has(s)) });
+    }
     const info = await ctx.tools.probe(out);
     const streams = await ctx.tools.exec("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt,nb_frames", "-of", "json", out]);
     const stream = JSON.parse(streams.stdout).streams?.[0];
@@ -2912,6 +3174,7 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
     if (info.duration_s === void 0 || Math.abs(info.duration_s - seconds) > 1.5 / spec.fps + 0.01) wrong.push(`length ${info.duration_s}s`);
     if (stream?.pix_fmt !== "yuv420p") wrong.push(`pixels ${stream?.pix_fmt ?? "unknown"}`);
     if (stream?.nb_frames !== void 0 && Number(stream.nb_frames) !== total) wrong.push(`${stream.nb_frames} frames`);
+    if (cues.length && !info.has_audio) wrong.push("no sound for its cues");
     if (wrong.length) throw ctx.error("output_invalid", `the encoded video is wrong: ${wrong.join(", ")}`);
     const video = await ctx.file(name, "video");
     ctx.log.info("frames rendered", { frames: total, seconds, width: spec.output.width, height: spec.output.height });

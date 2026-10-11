@@ -8,6 +8,14 @@
   "runtime": "node",
   "entry": "part.mjs",
   "files": [
+    "assets/sfx/chime.wav",
+    "assets/sfx/click.wav",
+    "assets/sfx/notify.wav",
+    "assets/sfx/pop.wav",
+    "assets/sfx/swoosh.wav",
+    "assets/sfx/tap.wav",
+    "assets/sfx/tick.wav",
+    "assets/sfx/whoosh.wav",
     "part.mjs"
   ],
   "kit": ">=1.0.0 <2.0.0",
@@ -36,7 +44,8 @@
         "png",
         "mjpeg",
         "aac",
-        "rawvideo"
+        "rawvideo",
+        "pcm_s16le"
       ]
     },
     "network": false,
