@@ -72,7 +72,7 @@ export function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
   // The style's caption zone, in the video's pixels; it takes the place of any caption zone of a video drawn over.
   const captions = spec.captionZone ? zoneOnVideo(spec.captionZone, spec.scale, spec.output) : null;
   if (captions) zones.push({ use: 'captions' as const, ...captions });
-  const carried = (timeline.safe_zones ?? []).filter((zone) => !captions || zone.use !== 'captions');
+  const carried = (timeline.safe_zones ?? []).filter((zone) => !spec.captionZone || zone.use !== 'captions');
   const all = [...zones, ...carried].slice(0, 8);
   if (all.length) timeline.safe_zones = all;
   else delete timeline.safe_zones;

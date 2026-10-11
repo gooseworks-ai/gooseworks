@@ -14,6 +14,7 @@ import {
   speechTimes,
   startsOfHolds,
   wordsByScene,
+  zoneOnVideo,
   type PaceSpec,
   type SpeechEntry,
   type SpokenWord,
@@ -407,6 +408,7 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
   if (raw.caption_zone !== undefined && raw.caption_zone !== null) {
     captionZone = clipZone(raw.caption_zone as unknown as Zone, design);
     if (!captionZone) fail(`caption_zone lies outside the ${design.width}x${design.height} page`);
+    if (!zoneOnVideo(captionZone, scale, output)) fail(`caption_zone is less than a pixel of the ${output.width}x${output.height} video`);
   }
   const endCardScenes = typeof raw.end_card_scenes === 'number' ? raw.end_card_scenes : 0;
   if (endCardScenes > scenes.length) fail(`end_card_scenes is ${endCardScenes}, but there are only ${scenes.length} scenes`);

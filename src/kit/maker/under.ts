@@ -295,7 +295,7 @@ export function passThroughTimeline(
   const zones = (under.safe_zones ?? [])
     .map((z) => fitZone(z, fit, out))
     .filter((z): z is NonNullable<typeof z> => !!z)
-    .slice(0, 7);
+    .slice(0, 8);
   if (zones.length) timeline.safe_zones = zones;
   return timeline;
 }

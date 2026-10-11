@@ -139,6 +139,12 @@ describe('the timeline of a video drawn over', () => {
     // The logo sat outside the kept middle; the captions zone is moved into it.
     expect(out.safe_zones).toEqual([{ use: 'captions', x: 289, y: 1067, w: 142, h: 119 }]);
   });
+
+  it('carries all eight zones of the video drawn over', () => {
+    const eight = Array.from({ length: 8 }, (_, k) => ({ use: 'logo' as const, x: 100 + k * 10, y: 100, w: 50, h: 50 }));
+    const out = passThroughTimeline({ ...underTimeline, safe_zones: eight }, { duration_s: 3, width: 1080, height: 1920, fps: 30 });
+    expect(out.safe_zones).toHaveLength(8);
+  });
 });
 
 describe('the last pass', () => {

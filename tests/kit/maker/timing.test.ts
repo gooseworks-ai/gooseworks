@@ -138,6 +138,10 @@ describe('caption zone and end card on the timeline', () => {
     expect(() => spec({ caption_zone: { x: 0, y: 2000, w: 100, h: 100 } })).toThrow(/caption_zone lies outside the 1080x1920 page/);
   });
 
+  it('refuses a zone that rounds to no pixel of the video', () => {
+    expect(() => spec({ short_side: 720, caption_zone: { x: 100.2, y: 100.2, w: 1, h: 1 } })).toThrow(/caption_zone is less than a pixel of the 720x1280 video/);
+  });
+
   it('puts the logo first, then the caption zone; end_card_scenes 0 adds no end card', () => {
     const timeline = timelineOf(spec({ caption_zone: { x: 0, y: 0, w: 1080, h: 200 }, end_card_scenes: 0 }), { x: 10, y: 10, w: 100, h: 50 });
     expect(timeline.safe_zones?.map((z) => z.use)).toEqual(['logo', 'captions']);

@@ -1776,7 +1776,7 @@ function passThroughTimeline(under, out, scenes) {
   };
   if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
   const fit = coverFit({ width: under.width, height: under.height }, out);
-  const zones = (under.safe_zones ?? []).map((z) => fitZone(z, fit, out)).filter((z) => !!z).slice(0, 7);
+  const zones = (under.safe_zones ?? []).map((z) => fitZone(z, fit, out)).filter((z) => !!z).slice(0, 8);
   if (zones.length) timeline.safe_zones = zones;
   return timeline;
 }
@@ -2018,6 +2018,7 @@ function readInputs(raw, ctx, measured = {}) {
   if (raw.caption_zone !== void 0 && raw.caption_zone !== null) {
     captionZone = clipZone(raw.caption_zone, design);
     if (!captionZone) fail(`caption_zone lies outside the ${design.width}x${design.height} page`);
+    if (!zoneOnVideo(captionZone, scale, output)) fail(`caption_zone is less than a pixel of the ${output.width}x${output.height} video`);
   }
   const endCardScenes = typeof raw.end_card_scenes === "number" ? raw.end_card_scenes : 0;
   if (endCardScenes > scenes.length) fail(`end_card_scenes is ${endCardScenes}, but there are only ${scenes.length} scenes`);
@@ -3164,7 +3165,7 @@ function timelineOf(spec, logo) {
   }
   const captions = spec.captionZone ? zoneOnVideo(spec.captionZone, spec.scale, spec.output) : null;
   if (captions) zones.push({ use: "captions", ...captions });
-  const carried = (timeline.safe_zones ?? []).filter((zone) => !captions || zone.use !== "captions");
+  const carried = (timeline.safe_zones ?? []).filter((zone) => !spec.captionZone || zone.use !== "captions");
   const all = [...zones, ...carried].slice(0, 8);
   if (all.length) timeline.safe_zones = all;
   else delete timeline.safe_zones;
