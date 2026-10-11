@@ -1,0 +1,182 @@
+// scripts/try-style: the fake line stays local, the providers' answers keep the
+// line's shapes, and real mode never spends past its caps or writes a key.
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { styleHash } from '../../src/kit/core/style';
+import { API, tryLine } from '../../scripts/try-style/line';
+import { FixtureFiles, freezeBrand, planBody } from '../../scripts/try-style/fixtures';
+import { callKind, evenAlignment, RealProvider, SpendLedger, spreadChunks, usdEstimate, type Provider, type ProviderAnswer } from '../../scripts/try-style/providers';
+
+const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'try-style-'));
+const style = { id: 'demo', version: '1.0.0', timeline: [], layers: { brand: false, captions: false, sound: true, check: true }, duration: { min_seconds: 1, max_seconds: 9 }, aspects: ['9:16'] };
+const tools = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', drawtext: false, font: null };
+
+function line(provider: Provider, dir = tmp()) {
+  return tryLine({
+    videoId: 'try_demo',
+    style,
+    body: { aspect: '9:16', scenes: [{ id: 's1', line: 'Hello there friend' }] },
+    brand: { name: 'B' },
+    layers: { check: { id: 'check-layer', version: '1.2.0' } },
+    planFiles: new Map(),
+    provider,
+    tools,
+    workDir: dir,
+    pieceLog: path.join(dir, 'pieces.jsonl'),
+  });
+}
+
+const stub = (answer: (call: any, ctx: any) => ProviderAnswer | Promise<ProviderAnswer>): Provider => ({ mode: 'fake', order: async (call, ctx) => answer(call, ctx) });
+const js = async (r: Response | Promise<Response>): Promise<any> => (await r).json();
+const post = (l: ReturnType<typeof line>, route: string, body?: unknown) =>
+  l.fetch(`${API}/v1/video-line/try_demo${route}`, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+describe('try-style fake line', () => {
+  it('refuses every address but its own', async () => {
+    const l = line(stub(() => ({ kind: 'done' })));
+    await expect(l.fetch('https://queue.fal.run/fal-ai/whisper', { method: 'POST' })).rejects.toThrow(/refused/);
+    await expect(l.fetch('https://api.gooseworks.ai/v1/video-line/x/device', { method: 'POST' })).rejects.toThrow(/refused/);
+    expect(l.refused).toHaveLength(2);
+  });
+
+  it('hands over the plan with the style hash and no parts lock', async () => {
+    const l = line(stub(() => ({ kind: 'done' })));
+    const answer = await js(post(l, '/device', { device: { device_id: 'd1' } }));
+    expect(answer.line.parts_lock).toBeNull();
+    expect(answer.line.plan.style_hash).toBe(styleHash(style));
+    expect(answer.line.style_package.style_hash).toBe(styleHash(style));
+    expect(answer.line.plan.body.scenes[0].line).toBe('Hello there friend');
+  });
+
+  it('hosts a file and hands the provider its bytes', async () => {
+    let seen: string | null = null;
+    const l = line(
+      stub((call, ctx) => {
+        seen = readFileSync(ctx.hosted(call.body.image_url)!.path, 'utf8');
+        return { kind: 'done', json: { images: [{ url: `${API}/out/x.png` }] } };
+      }),
+    );
+    const slot = await js(post(l, '/files', { sha256: 'x', bytes: 3, content_type: 'image/png', filename: 'a.png' }));
+    await l.fetch(slot.put.url, { method: 'PUT', body: Buffer.from('abc') });
+    const done = await js(post(l, `/files/${slot.file_id}/done`));
+    expect(done.ref).toBe(`gooseworks-file:${slot.file_id}`);
+    const answer = await js(post(l, '/pieces', { idempotency_key: 'k1', piece_key: 'stills.image-a', call: { provider: 'fal', path: 'fal-ai/nano-banana/edit', body: { image_url: done.ref } } }));
+    expect(seen).toBe('abc');
+    expect(answer.status).toBe('done');
+    expect(answer.result.json.images[0].url).toContain('/out/');
+  });
+
+  it('serves a provider file as file_url, and a refusal as a stop', async () => {
+    const dir = tmp();
+    const audio = path.join(dir, 'a.mp3');
+    writeFileSync(audio, 'mp3');
+    const l = line(stub((call) => (call.path === '/v1/music' ? { kind: 'done', file: { path: audio, mime: 'audio/mpeg' } } : { kind: 'refused', code: 'over_run_cap', message: 'too much' })), dir);
+    const done = await js(post(l, '/pieces', { idempotency_key: 'k1', piece_key: 'music.bed', call: { provider: 'elevenlabs', path: '/v1/music', body: { model_id: 'music_v1' } } }));
+    expect(await (await l.fetch(done.result.file_url)).text()).toBe('mp3');
+    const refused = await post(l, '/pieces', { idempotency_key: 'k2', piece_key: 'x.y', call: { provider: 'fal', path: 'fal-ai/veo3', body: {} } });
+    expect(refused.status).toBe(402);
+    expect((await js(refused)).error).toMatchObject({ code: 'over_run_cap', next: 'stop' });
+  });
+});
+
+describe('try-style providers', () => {
+  it('knows each call the parts make', () => {
+    expect(callKind({ provider: 'elevenlabs', path: '/v1/text-to-speech/abc/with-timestamps', body: {} })).toBe('tts_timestamps');
+    expect(callKind({ provider: 'elevenlabs', path: '/v1/music/detailed', body: {} })).toBe('song');
+    expect(callKind({ provider: 'elevenlabs', path: '/v1/sound-generation', body: {} })).toBe('sfx');
+    expect(callKind({ provider: 'fal', path: 'fal-ai/whisper', body: {} })).toBe('whisper');
+    expect(callKind({ provider: 'fal', path: 'fal-ai/birefnet/v2', body: {} })).toBe('cutout');
+    expect(callKind({ provider: 'fal', path: 'veed/fabric-1.0', body: {} })).toBe('lipsync');
+    expect(callKind({ provider: 'fal', path: 'bytedance/seedance-2.0/image-to-video', body: {} })).toBe('video');
+    expect(callKind({ provider: 'fal', path: 'minimax/h3-max/reference-to-video', body: {} })).toBe('video');
+    expect(callKind({ provider: 'fal', path: 'openai/gpt-image-2/edit', body: {} })).toBe('image');
+    expect(callKind({ provider: 'fal', path: 'some/other-model', body: {} })).toBe('unknown');
+  });
+
+  it('prices calls before they are sent, and has no price for an unknown model', () => {
+    expect(usdEstimate({ provider: 'elevenlabs', path: '/v1/music', body: { music_length_ms: 60_000 } })).toBeCloseTo(1.0);
+    expect(usdEstimate({ provider: 'fal', path: 'bytedance/seedance-2.0/reference-to-video', body: { duration: 5, resolution: '1080p' } })).toBeCloseTo(3.5);
+    expect(usdEstimate({ provider: 'fal', path: 'fal-ai/flux/dev', body: {} })).toBeNull();
+  });
+
+  it('spreads timings evenly, like the shapes the parts read', () => {
+    const a = evenAlignment('abcd', 2);
+    expect(a.character_start_times_seconds).toEqual([0, 0.5, 1, 1.5]);
+    expect(a.character_end_times_seconds.at(-1)).toBe(2);
+    const chunks = spreadChunks(['one two', 'three four'], 0, 4);
+    expect(chunks.map((c) => c.text)).toEqual(['one', 'two', 'three', 'four']);
+    expect(chunks[2].timestamp[0]).toBe(2);
+  });
+});
+
+describe('try-style real mode caps', () => {
+  const call = { provider: 'elevenlabs', path: '/v1/music', body: { music_length_ms: 30_000, model_id: 'music_v1' } };
+  const ctx = (dir: string) => ({ piece_key: 'music.bed', idempotency_key: 'k', hosted: () => null, planLines: [], workDir: dir, publish: (f: string) => f, mirror: (u: string) => u, tools });
+
+  it('refuses a call past the run cap and never sends it', async () => {
+    const dir = tmp();
+    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
+    const fetchImpl = jest.fn();
+    const real = new RealProvider({ capUsd: 0.2, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: fetchImpl as any });
+    const answer = await real.order(call, ctx(dir));
+    expect(answer).toMatchObject({ kind: 'refused', code: 'over_run_cap' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(readFileSync(ledger.file, 'utf8')).toContain('"status":"refused"');
+  });
+
+  it('refuses past the night cap counted from the ledger', async () => {
+    const dir = tmp();
+    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
+    ledger.add({ time: 'x', piece: 'p', model: 'm', usd_estimate: 199.9, status: 'done' });
+    const real = new RealProvider({ capUsd: 5, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: jest.fn() as any });
+    expect(await real.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'over_night_cap' });
+  });
+
+  it('records a made call at its estimate, without the key', async () => {
+    const dir = tmp();
+    mkdirSync(dir, { recursive: true });
+    const ledger = new SpendLedger(path.join(dir, 'spend.jsonl'));
+    const fetchImpl = jest.fn(async () => new Response(Buffer.from('ID3audio'), { status: 200 }));
+    const real = new RealProvider({ capUsd: 1, nightCapUsd: 200, ledger, run: 't', env: { ELEVENLABS_API_KEY: 'sk-secret-value' }, fetch: fetchImpl as any });
+    const answer = await real.order(call, ctx(dir));
+    expect(answer.kind).toBe('done');
+    const sent = (fetchImpl.mock.calls[0] as unknown[])[1] as RequestInit;
+    expect((sent.headers as Record<string, string>)['xi-api-key']).toBe('sk-secret-value');
+    const text = readFileSync(ledger.file, 'utf8');
+    expect(text).not.toContain('sk-secret-value');
+    expect(JSON.parse(text.trim())).toMatchObject({ piece: 'music.bed', model: 'music_v1', usd_estimate: 0.5, status: 'done' });
+    expect(real.runSpentUsd).toBeCloseTo(0.5);
+  });
+
+  it('refuses with no key in the environment', async () => {
+    const dir = tmp();
+    const real = new RealProvider({ capUsd: 1, nightCapUsd: 200, ledger: new SpendLedger(path.join(dir, 's.jsonl')), run: 't', env: {}, fetch: jest.fn() as any });
+    expect(await real.order(call, ctx(dir))).toMatchObject({ kind: 'refused', code: 'no_key' });
+  });
+});
+
+describe('try-style fixtures', () => {
+  it('turns media ids into frozen files and asset ids into hosted files', () => {
+    const root = tmp();
+    mkdirSync(path.join(root, 'media'));
+    writeFileSync(path.join(root, 'media', 'p.png'), 'png-bytes');
+    writeFileSync(path.join(root, 'media', 'f.mp4'), 'mp4-bytes');
+    writeFileSync(path.join(root, 'media', 'index.json'), JSON.stringify({ media: { 'fx-p': { file: 'media/p.png', mime: 'image/png' }, 'fx-f': { file: 'media/f.mp4', mime: 'video/mp4' } } }));
+    const files = new FixtureFiles([root]);
+    const body = planBody(
+      { scenes: [{ id: 's1', line: null, image_asset_id: 'fx-p' }], products: [{ id: 'p', name: 'P', images: ['fx-p'] }], footage: [{ asset_id: 'fx-f', start_ms: 0, end_ms: 1000 }] },
+      { aspects: ['9:16'] },
+      files,
+      root,
+    ) as any;
+    expect(files.missing).toEqual([]);
+    expect(body.products[0].images[0]).toMatchObject({ url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:47999\/f\/[a-f0-9]{64}$/), bytes: 9, mime: 'image/png' });
+    expect(body.scenes[0].image).toMatchObject({ ref: expect.stringMatching(/^gooseworks-file:m[a-f0-9]{20}$/), mime: 'image/png' });
+    expect(Object.keys(body.footage[0].file).sort()).toEqual(['bytes', 'file_id', 'mime', 'ref', 'sha256']);
+    expect(body.music).toBeNull();
+    const brand = freezeBrand({ name: 'B', logo: { url: 'media/p.png', sha256: 'wrong', bytes: 9, mime: 'image/png' } }, files, root);
+    expect((brand.logo as any).url).toContain('/f/');
+    expect(files.problems).toEqual(['media/p.png does not match its sha256']);
+  });
+});

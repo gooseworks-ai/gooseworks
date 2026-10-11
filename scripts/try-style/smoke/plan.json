@@ -1,0 +1,10 @@
+{
+  "aspect": "9:16",
+  "voice": "abcVoice123",
+  "music": "warm",
+  "scenes": [
+    { "id": "s1", "line": "Mornings used to start with a mess on the counter.", "on_screen": null, "picture": null },
+    { "id": "s2", "line": "Now everything I need sits in one tidy jar.", "on_screen": null, "picture": null },
+    { "id": "s3", "line": "Try it this week and see the difference.", "on_screen": null, "picture": null }
+  ]
+}
