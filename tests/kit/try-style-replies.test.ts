@@ -7,7 +7,7 @@
 // The contracts in fixtures/try-style-replies/ are copied from the W0-62
 // recordings (fal's OpenAPI schemas, ElevenLabs' public OpenAPI, the line's own
 // code). One test per model: a new model gets a fixture and a test.
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import * as os from 'os';
@@ -103,8 +103,14 @@ function callFor(c: any, refs: { image: string; audio: string }) {
   return { provider: c.provider, path: p, body: withRefs(c.request, refs) as Record<string, unknown> };
 }
 
+// The stand-ins and these tests make media with the ffmpeg on PATH. CI's `check`
+// job has none, so they skip there; the `maker` job installs it and runs them.
+const onPath = (name: string): boolean => spawnSync('which', [name], { encoding: 'utf8' }).status === 0;
+const withFfmpeg = onPath('ffmpeg') && onPath('ffprobe') ? describe : describe.skip;
+
 let media: { dir: string; png: string; mp3: string };
 beforeAll(() => {
+  if (!onPath('ffmpeg')) return;
   const dir = tmp();
   const png = path.join(dir, 'ref.png');
   const mp3 = path.join(dir, 'line.mp3');
@@ -113,7 +119,7 @@ beforeAll(() => {
   media = { dir, png, mp3 };
 });
 
-describe('try-style stand-ins answer in the contract shape (one test per model)', () => {
+withFfmpeg('try-style stand-ins answer in the contract shape (one test per model)', () => {
   it('has a contract for every model in MASTER-PLAN §4.8', () => {
     expect(CONTRACTS).toHaveLength(20);
   });
@@ -173,7 +179,7 @@ const headersOf = (init: any): Record<string, string> => (init?.headers ?? {}) a
 const sentWithKey = (calls: unknown[][], key: string) =>
   calls.filter((c) => Object.values(headersOf(c[1])).some((v) => String(v).includes(key))).map((c) => new URL(String(c[0])).origin);
 
-describe('try-style real mode: /v1/music/detailed', () => {
+withFfmpeg('try-style real mode: /v1/music/detailed', () => {
   const headers = fixture('elevenlabs-music-detailed.multipart.headers.json');
   const bytes = readFileSync(path.join(FIX, 'elevenlabs-music-detailed.multipart'));
   const contract = fixture('elevenlabs-music-detailed.json');
@@ -287,7 +293,7 @@ function ctxFor(dir: string, hosted: Record<string, { path: string; mime: string
   };
 }
 
-describe('try-style real mode: /with-timestamps', () => {
+withFfmpeg('try-style real mode: /with-timestamps', () => {
   it('splits the base64 audio from the alignment, exactly as the line does', async () => {
     const dir = tmp();
     const contract = fixture('elevenlabs-tts-with-timestamps.json');
@@ -303,7 +309,7 @@ describe('try-style real mode: /with-timestamps', () => {
   });
 });
 
-describe('try-style real mode: payload files go to fal storage', () => {
+withFfmpeg('try-style real mode: payload files go to fal storage', () => {
   const contract = fixture('openai--gpt-image-2--edit.json');
   const endpoint = 'openai/gpt-image-2/edit';
 
