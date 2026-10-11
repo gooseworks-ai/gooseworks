@@ -462,5 +462,6 @@ describe('try-style style folder', () => {
     stageStyle(styles, refStyle.id, runRoot);
     expect(readFileSync(path.join(runRoot, 'dev-styles', refStyle.id, 'frames', 'ref.png'), 'utf8')).toBe('edited');
     expect(() => stageStyle(styles, 'no-such-style', runRoot)).toThrow(/No style no-such-style/);
+    for (const bad of ['..', '../x', 'a/b', '', '.hidden']) expect(() => stageStyle(styles, bad, runRoot)).toThrow(/Bad style name/);
   });
 });
