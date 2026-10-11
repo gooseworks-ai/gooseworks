@@ -925,6 +925,7 @@ var inputs = {
       maximum: 60
     },
     fps: {
+      description: "Frames per second. Default 30; drawn over a video (under), that video's own rate, rounded and kept to 1-60.",
       type: "integer",
       minimum: 1,
       maximum: 60,
@@ -950,7 +951,7 @@ var inputs = {
       }
     },
     under_timeline: {
-      description: "The timeline of the video drawn over. kit.scenes take its scene times by id (in order when no id matches and the counts match). When it is one scene (one clip, say) and the plan has several, the plan's scenes share it evenly on whole frames and become this step's scenes; any other count mismatch is refused. Its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
+      description: "The timeline of the video drawn over. kit.scenes take its scene start times by id (in order when no id matches and the counts match); each runs to the next one's start, so a gap between its scenes belongs to the scene before it on the page. When it is one scene (one clip, say) and the plan has several, the plan's scenes share it evenly on whole frames and become this step's scenes; any other count mismatch is refused. Its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
       type: "object",
       additionalProperties: false,
       required: [
