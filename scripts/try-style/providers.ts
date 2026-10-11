@@ -125,9 +125,12 @@ function videoSeconds(body: Record<string, unknown>): number | null {
 }
 
 /**
- * USD at a deliberately high list price, or null when this runner has no
- * price for the call (then real mode refuses it). Rates were read from the
- * providers' public price pages and the plans' audits; each is rounded up.
+ * USD at list price, or null when this runner has no price for the call (then
+ * real mode refuses it). ElevenLabs rates are the app's own
+ * (gooseworks-app routes/lib/media-proxy-cost.ts: TTS $0.10 per 1k characters,
+ * music $0.15 per minute), which styles' cost.high_usd is built from. fal rates
+ * here are a fallback for when fal's live list price can't be read or its unit
+ * can't be counted from the request (RealProvider.estimate prefers the live one).
  */
 export function usdEstimate(call: PieceCall, hostedSeconds: (ref: unknown) => number | null = () => null): number | null {
   const kind = callKind(call);
@@ -137,16 +140,16 @@ export function usdEstimate(call: PieceCall, hostedSeconds: (ref: unknown) => nu
     case 'tts':
     case 'tts_timestamps': {
       const chars = typeof b.text === 'string' ? b.text.length : 0;
-      return Math.max(0.001, (chars / 1000) * 0.3);
+      return Math.max(0.0001, (chars / 1000) * 0.1);
     }
     case 'music': {
       const ms = num(b.music_length_ms) ?? 30_000;
-      return (ms / 60_000) * 1.0;
+      return (ms / 60_000) * 0.15;
     }
     case 'song': {
       const plan = b.composition_plan as { sections?: Array<{ duration_ms?: number }> } | undefined;
       const ms = (plan?.sections ?? []).reduce((a, s) => a + (num(s.duration_ms) ?? 0), 0) || num(b.music_length_ms) || 60_000;
-      return (ms / 60_000) * 1.0;
+      return (ms / 60_000) * 0.15;
     }
     case 'sfx':
       return (num(b.duration_seconds) ?? 5) * 0.012;
@@ -525,13 +528,20 @@ export class SpendLedger {
   }
 
   /**
-   * Checks the night cap and writes the reserve as one step under the lock.
-   * Returns the night total before this call, or null when it would pass `nightCapUsd`.
+   * Checks the night cap (and, with `firstRunOnly`, that no other run already
+   * reserved for this style) and writes the reserve, as one step under the lock.
    */
-  reserve(line: SpendLine, nightCapUsd: number): { ok: true } | { ok: false; night: number } {
+  reserve(line: SpendLine, nightCapUsd: number, firstRunOnly = false): { ok: true } | { ok: false; night: number; otherRun?: string } {
     return this.locked(() => {
+      const lines = this.lines();
       const night = this.total();
-      if (night + line.est_usd > nightCapUsd) return { ok: false as const, night };
+      if (firstRunOnly) {
+        const other = lines.find((o) =>
+          'event' in o ? o.event === 'reserve' && o.style_id === line.style_id && o.run_id !== line.run_id : typeof o.run === 'string' && o.run.split(':')[0] === line.style_id && o.status !== 'refused',
+        );
+        if (other) return { ok: false as const, night, otherRun: String(other.run_id ?? other.run) };
+      }
+      if (night + line.est_usd > nightCapUsd + 1e-9) return { ok: false as const, night };
       this.add(line);
       return { ok: true as const };
     });
@@ -561,6 +571,8 @@ export interface RealOptions {
 }
 
 const FAL_QUEUE = 'https://queue.fal.run';
+/** Float slack in cap comparisons, so a call priced exactly at a cap passes. */
+const CENT_FRACTION = 1e-9;
 const FAL_PRICES = 'https://api.fal.ai/v1/models/pricing';
 const ELEVENLABS = 'https://api.elevenlabs.io';
 
@@ -656,9 +668,9 @@ export class RealProvider implements Provider {
   }
 
   /**
-   * The estimate for a call: the higher of the runner's own (deliberately high)
-   * table and fal's live list price times the request's units. Null when neither
-   * can price it.
+   * The estimate for a call: for fal, the live list price times the units read
+   * from the request (MASTER-PLAN §4.11); the runner's own table when that can't
+   * be read or counted, and for ElevenLabs. Null when neither can price it.
    */
   async estimate(call: PieceCall, ctx: ProviderContext, key: string): Promise<number | null> {
     const kind = callKind(call);
@@ -675,8 +687,7 @@ export class RealProvider implements Provider {
       const units = price ? falUnits(price.unit, call, audioSeconds) : null;
       if (price && units != null) live = price.unit_price * units;
     }
-    if (table == null && live == null) return null;
-    return Math.max(table ?? 0, live ?? 0);
+    return live ?? table;
   }
 
   private line(call: PieceCall, ctx: ProviderContext, usd: number, event: SpendLine['event'], extra: Partial<SpendLine> = {}): SpendLine {
@@ -705,17 +716,21 @@ export class RealProvider implements Provider {
     if (!key) return { kind: 'refused', code: 'no_key', message: `${call.provider === 'fal' ? 'FAL_KEY (FAL_API_KEY in --env-file)' : 'ELEVENLABS_API_KEY'} was not given.` };
     const usd = await this.estimate(call, ctx, key);
     if (usd == null) return { kind: 'refused', code: 'price_unknown', message: `try-style has no price for ${modelOf(call)}, so it will not send it. Add one to usdEstimate.` };
-    if (this.spent + usd > this.opts.capUsd) {
+    if (this.spent + usd > this.opts.capUsd + CENT_FRACTION) {
       return { kind: 'refused', code: 'over_run_cap', message: `This call (~$${usd.toFixed(3)}) would take the run past its cap of $${this.opts.capUsd}.` };
     }
     // The run cap is taken before the ledger lock, so two pieces of this run can't both pass it.
     this.spent += usd;
-    let reserved: { ok: true } | { ok: false; night: number };
+    let reserved: ReturnType<SpendLedger['reserve']>;
     try {
-      reserved = this.opts.ledger.reserve(this.line(call, ctx, usd, 'reserve'), this.opts.nightCapUsd);
+      reserved = this.opts.ledger.reserve(this.line(call, ctx, usd, 'reserve'), this.opts.nightCapUsd, !this.opts.reason);
     } catch (error) {
       this.spent -= usd;
       return { kind: 'refused', code: 'ledger_unusable', message: error instanceof Error ? error.message : 'The spend ledger could not be written.' };
+    }
+    if (!reserved.ok && reserved.otherRun) {
+      this.spent -= usd;
+      return { kind: 'refused', code: 'second_real_run', message: `Another run (${reserved.otherRun}) already spent on ${this.opts.style_id}; a second real run needs --reason.` };
     }
     if (!reserved.ok) {
       this.spent -= usd;
@@ -761,6 +776,8 @@ export class RealProvider implements Provider {
       if (!status?.ok) continue;
       const s = ((await status.json().catch(() => null)) as { status?: string } | null)?.status;
       if (s === 'COMPLETED') break;
+      // Any other named state but waiting or working is the end of the job.
+      if (typeof s === 'string' && s !== 'IN_QUEUE' && s !== 'IN_PROGRESS') return { kind: 'failed', code: 'provider_failed', message: `fal ended the job as ${s.slice(0, 40)}.`, next: 'stop' };
     }
     const result = await this.fetchImpl(job.response_url, { headers: { Authorization: `Key ${key}` } });
     if (!result.ok) {
