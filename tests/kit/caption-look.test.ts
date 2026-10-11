@@ -1,6 +1,7 @@
 // Rule: a style's caption look (traits.caption_look) reaches every layer as
 // expect.caption_look, copied as written. Styles without one hand over the
 // same expectation as before, so the captions layer keeps its default look.
+import { rmSync } from 'fs';
 import { expectationOf } from '../../src/kit/core/run';
 import type { ApprovedPlan } from '../../src/kit/line/types';
 import type { LoadedStyle } from '../../src/kit/core/style';
@@ -59,9 +60,14 @@ describe('the caption look in the expectation', () => {
       }) as never,
     });
     const line = fakeLine({ style: { ...style, traits: { ...style.traits, caption_look: look } } });
-    const result = await runMake({ home: tempHome(), line, parts });
-    expect(result.status).toBe('done');
-    expect(seen).toHaveLength(1);
-    expect((seen[0] as { caption_look?: unknown }).caption_look).toEqual(look);
+    const home = tempHome();
+    try {
+      const result = await runMake({ home, line, parts });
+      expect(result.status).toBe('done');
+      expect(seen).toHaveLength(1);
+      expect((seen[0] as { caption_look?: unknown }).caption_look).toEqual(look);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
