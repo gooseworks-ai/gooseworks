@@ -553,6 +553,31 @@ export interface OutputExpectation {
   qc_flags: string[];
   /** Approved lines from plan.scenes[].line, for speech_matches_script. */
   script?: string[];
+  /**
+   * style traits.caption_look, copied as written when the style sets one.
+   * Absent means the captions layer draws its default look (`plate`).
+   */
+  caption_look?: CaptionLook;
+}
+
+/**
+ * How the captions layer draws captions (style traits.caption_look). A layer
+ * version that does not know a preset draws `plate` and logs a warning; it
+ * never refuses. Captions are never drawn inside timeline.end_card.
+ */
+export interface CaptionLook {
+  preset: 'plate' | 'stroke' | 'karaoke' | 'pill' | 'serif-word' | 'sentence';
+  /** Words per caption, 1-8. */
+  max_words?: number;
+  /** Caption centre as a share of the height, 0.40-0.82; clamped into the safe band. */
+  y?: number;
+  font?: 'sans_bold' | 'serif' | 'rounded' | 'brand';
+  /** Words drawn in the highlight colour. */
+  highlight?: Array<'brand' | 'cta'>;
+  /** #RRGGBB; default brand.colors.primary, else #FFD400. */
+  highlight_color?: string;
+  case?: 'as_written' | 'lower' | 'upper';
+  skip_first_scene?: boolean;
 }
 
 /**
