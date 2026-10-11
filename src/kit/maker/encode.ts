@@ -8,6 +8,12 @@ export const SEGMENT_FRAMES = 60;
 
 export const FRAME_PATTERN = 'f%06d.png';
 
+/**
+ * The 1.2.0 size rule: every final H.264 encode caps its rate, appended right
+ * after the kit's h264-master settings, so a busy page cannot make a huge file.
+ */
+export const MASTER_RATE_CAP = ['-maxrate', '16M', '-bufsize', '32M'];
+
 export function frameName(index: number): string {
   return `f${String(index).padStart(6, '0')}.png`;
 }
@@ -33,6 +39,7 @@ export function segmentArgs(opts: {
     '-frames:v', String(opts.count),
     '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p',
     ...opts.tools.encodeArgs('h264-master'),
+    ...MASTER_RATE_CAP,
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
