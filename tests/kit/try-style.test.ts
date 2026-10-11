@@ -1,6 +1,6 @@
 // scripts/try-style: the fake line stays local, the providers' answers keep the
 // line's shapes, and real mode never spends past its caps or writes a key.
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { styleHash } from '../../src/kit/core/style';
@@ -8,6 +8,13 @@ import { API, tryLine } from '../../scripts/try-style/line';
 import { FixtureFiles, freezeBrand, planBody } from '../../scripts/try-style/fixtures';
 import { callKind, evenAlignment, falUnits, isFalQueueUrl, RealProvider, SpendLedger, spreadChunks, usdEstimate, type Provider, type ProviderAnswer, type RealOptions } from '../../scripts/try-style/providers';
 import { fileSha, passingFakeRuns, readEnvKeys, realGateProblems } from '../../scripts/try-style/gates';
+import { stageStyle } from '../../scripts/try-style/dev-styles';
+import { KitLog } from '../../src/kit/core/log';
+import { makeVideo } from '../../src/kit/core/run';
+import type { LoadedPart } from '../../src/kit/core/host';
+import { VideoLine } from '../../src/kit/line/client';
+import type { PartContext } from '../../src/kit/part-interface';
+import { fileSchema, MODEL, partsLock, style as harnessStyle, testHost, testParts, tools as harnessTools } from './harness';
 
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'try-style-'));
 const style = { id: 'demo', version: '1.0.0', timeline: [], layers: { brand: false, captions: false, sound: true, check: true }, duration: { min_seconds: 1, max_seconds: 9 }, aspects: ['9:16'] };
@@ -348,5 +355,113 @@ describe('try-style fixtures', () => {
     const brand = freezeBrand({ name: 'B', logo: { url: 'media/p.png', sha256: 'wrong', bytes: 9, mime: 'image/png' } }, files, root);
     expect((brand.logo as any).url).toContain('/f/');
     expect(files.problems).toEqual(['media/p.png does not match its sha256']);
+  });
+});
+
+describe('try-style style folder', () => {
+  // A step that sends one of the style's own files to a provider (whiteboard-explainer's
+  // style_refs picture). The kit hosts only files inside the video's folder, so the runner
+  // hands the kit a copy of the style under <run folder>/dev-styles/.
+  const refStyle = {
+    ...harnessStyle,
+    id: 'ref-style',
+    timeline: [{ id: 'clips', part: { id: 'clip-maker', version: '1.0.0' }, inputs: { scenes: { from: 'plan.scenes' }, style_refs: [{ asset: 'frames/ref.png' }] } }],
+    assets: { fonts: [], frames: ['frames/ref.png'] },
+  };
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4d60000000049454e44ae426082', 'hex');
+
+  function stylesFolder(): string {
+    const dir = tmp();
+    mkdirSync(path.join(dir, refStyle.id, 'frames'), { recursive: true });
+    writeFileSync(path.join(dir, refStyle.id, 'style.json'), JSON.stringify(refStyle));
+    writeFileSync(path.join(dir, refStyle.id, 'frames', 'ref.png'), PNG);
+    return dir;
+  }
+
+  async function make(stylesDir: (runRoot: string) => string) {
+    const out = tmp();
+    const home = path.join(out, 'home');
+    const work = path.join(out, 'line');
+    mkdirSync(work, { recursive: true });
+    const sent: Buffer[] = [];
+    const clip = path.join(work, 'clip.mp4');
+    writeFileSync(clip, 'mp4');
+    const provider: Provider = {
+      mode: 'fake',
+      order: async (call, ctx) => {
+        for (const ref of call.body.style_refs as string[]) sent.push(readFileSync(ctx.hosted(ref)!.path));
+        return { kind: 'done', file: { path: clip, mime: 'video/mp4' } };
+      },
+    };
+    const l = tryLine({
+      videoId: 'try_ref-style',
+      style: refStyle,
+      body: { aspect: '9:16', scenes: [{ id: 's1', line: 'One line', on_screen: null, picture: null }], products: [], voice: null, music: null, cast: [], answers: {}, footage: [] },
+      brand: { name: 'B', logo: null, colors: {}, fonts: {}, pronunciations: [], cta: null },
+      layers: partsLock().layers,
+      planFiles: new Map(),
+      provider,
+      tools,
+      workDir: work,
+      pieceLog: path.join(out, 'pieces.jsonl'),
+    });
+    const parts = testParts({
+      clip: { inputs: { type: 'object', additionalProperties: false, required: ['scenes', 'style_refs'], properties: { scenes: { type: 'array' }, style_refs: { type: 'array', items: fileSchema('image') } } } },
+      clipRun: (async (inputs: any, ctx: PartContext) => {
+        const got = await ctx.line!.order({ piece: 'scene-1', provider: 'fal', path: MODEL, body: { style_refs: inputs.style_refs }, results: [{ pointer: '/file_url', name: 'scene-1.mp4', media: 'video' }] });
+        writeFileSync(path.join(ctx.workDir, 'cut.mp4'), Buffer.from(got.files['scene-1.mp4'].sha256));
+        return { video: await ctx.file('cut.mp4', 'video'), timeline: { duration_s: 5, width: 1080, height: 1920, fps: 30, scenes: [], speech: [] } };
+      }) as LoadedPart['run'],
+    });
+    const client = new VideoLine({ apiBase: API, deviceId: '11111111-2222-4333-8444-555555555555', login: 'try-style-local', fetch: l.fetch, sleep: async () => undefined });
+    const result = await makeVideo('try_ref-style', {
+      home,
+      // No parts lock, as the runner hands over: the parts folder only has to be set (the test host loads the parts).
+      env: { GOOSE_KIT_PARTS_DIR: tmp(), GOOSE_KIT_STYLES_DIR: stylesDir(path.join(home, 'videos', 'try_ref-style')) },
+      line: client,
+      host: testHost(parts),
+      log: new KitLog(() => undefined, (text) => client.redact(text)),
+      environment: 'local',
+      tools: harnessTools,
+      sleep: async () => undefined,
+      heartbeatMs: 3_600_000,
+    });
+    await l.settle();
+    const log = path.join(home, 'videos', 'try_ref-style', 'log.ndjson');
+    return { result, sent, log: existsSync(log) ? readFileSync(log, 'utf8') : '' };
+  }
+
+  it('orders a piece that sends a style file, from the copy in the run folder', async () => {
+    const styles = stylesFolder();
+    const original = fileSha(path.join(styles, refStyle.id, 'style.json'));
+    const { result, sent, log } = await make((runRoot) => {
+      const copy = stageStyle(styles, refStyle.id, runRoot);
+      expect(copy).toBe(path.join(runRoot, 'dev-styles'));
+      return copy;
+    });
+    expect(result.status).toBe('done');
+    expect(log).not.toContain('outside this video');
+    expect(sent).toEqual([PNG]);
+    // The copy is byte for byte the style, so the sha the runner records is the original file's.
+    expect(fileSha(path.join(styles, refStyle.id, 'style.json'))).toBe(original);
+  });
+
+  it('without the copy, the kit refuses to send a file from outside the video', async () => {
+    const styles = stylesFolder();
+    const { result, sent, log } = await make(() => styles);
+    expect(result.status).not.toBe('done');
+    expect(log).toContain('a file outside this video was named in a payload');
+    expect(sent).toEqual([]);
+  });
+
+  it('copies afresh each run, so an edited style is what the kit reads', () => {
+    const styles = stylesFolder();
+    const runRoot = path.join(tmp(), 'videos', 'try_ref-style');
+    stageStyle(styles, refStyle.id, runRoot);
+    writeFileSync(path.join(styles, refStyle.id, 'frames', 'ref.png'), 'edited');
+    stageStyle(styles, refStyle.id, runRoot);
+    expect(readFileSync(path.join(runRoot, 'dev-styles', refStyle.id, 'frames', 'ref.png'), 'utf8')).toBe('edited');
+    expect(() => stageStyle(styles, 'no-such-style', runRoot)).toThrow(/No style no-such-style/);
+    for (const bad of ['..', '../x', 'a/b', '', '.hidden']) expect(() => stageStyle(styles, bad, runRoot)).toThrow(/Bad style name/);
   });
 });
