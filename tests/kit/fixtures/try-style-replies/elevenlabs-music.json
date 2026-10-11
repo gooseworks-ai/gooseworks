@@ -1,0 +1,16 @@
+{
+  "model": "/v1/music",
+  "provider": "elevenlabs",
+  "path": "POST /v1/music",
+  "request": {
+    "prompt": "Warm lo-fi bed, soft keys, no vocals",
+    "music_length_ms": 30000,
+    "force_instrumental": true,
+    "model_id": "music_v1"
+  },
+  "answer": {
+    "file_url": "https://line.example.invalid/files/fixture/audio.mp3"
+  },
+  "pointer": "/file_url",
+  "provider_reply": "<mp3 bytes>"
+}

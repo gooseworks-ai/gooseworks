@@ -1,0 +1,24 @@
+{
+  "model": "fal-ai/veo3/image-to-video",
+  "provider": "fal",
+  "path": "fal-ai/veo3/image-to-video",
+  "request": {
+    "prompt": "She lifts the jacket and turns",
+    "image_url": "https://example.invalid/still.png",
+    "duration": "4s",
+    "resolution": "1080p",
+    "aspect_ratio": "9:16",
+    "generate_audio": false
+  },
+  "answer": {
+    "json": {
+      "video": {
+        "url": "https://v3b.fal.media/files/b/fixture/clip.mp4",
+        "content_type": "video/mp4",
+        "file_name": "clip.mp4",
+        "file_size": 4404019
+      }
+    }
+  },
+  "pointer": "/json/video/url"
+}

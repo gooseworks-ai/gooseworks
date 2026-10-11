@@ -1,0 +1,30 @@
+{
+  "model": "fal-ai/nano-banana/edit",
+  "provider": "fal",
+  "path": "fal-ai/nano-banana/edit",
+  "request": {
+    "prompt": "Put this product on a marble counter",
+    "image_urls": [
+      "https://example.invalid/ref-1.png"
+    ],
+    "num_images": 1,
+    "aspect_ratio": "9:16",
+    "output_format": "png"
+  },
+  "answer": {
+    "json": {
+      "images": [
+        {
+          "url": "https://v3b.fal.media/files/b/fixture/still.png",
+          "content_type": "image/png",
+          "file_name": "still.png",
+          "file_size": 1834512,
+          "width": 768,
+          "height": 1344
+        }
+      ],
+      "description": ""
+    }
+  },
+  "pointer": "/json/images/0/url"
+}

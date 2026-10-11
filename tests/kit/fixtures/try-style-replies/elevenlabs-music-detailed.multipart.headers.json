@@ -1,0 +1,9 @@
+{
+  "content_type": "multipart/mixed; boundary=elevenlabs-fixture-boundary-7d3f",
+  "headers": {
+    "song-id": "fixture-song-0001"
+  },
+  "body_file": "elevenlabs-music-detailed.multipart",
+  "body_bytes": 1795,
+  "audio_part_bytes": 416
+}
