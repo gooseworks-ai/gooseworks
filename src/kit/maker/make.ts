@@ -199,7 +199,7 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
     }
     if (spec.under) {
       const times = spec.scenes.map((scene) => ({ start_s: spec.sceneFrames[scene.index] / spec.fps, end_s: spec.sceneFrames[scene.index + 1] / spec.fps }));
-      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir);
+      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir, spec.output);
     }
     const built = await buildPage(spec, pageDir, ctx, reserve);
 

@@ -401,7 +401,7 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
 
   const values = raw.values ?? {};
   if (!isObject(values)) fail('values should be an object');
-  if (JSON.stringify(values).length > 64 * 1024) fail('values is larger than 64 KB');
+  if (Buffer.byteLength(JSON.stringify(values), 'utf8') > 64 * 1024) fail('values is larger than 64 KB');
 
   let captionZone: Zone | null = null;
   if (raw.caption_zone !== undefined && raw.caption_zone !== null) {

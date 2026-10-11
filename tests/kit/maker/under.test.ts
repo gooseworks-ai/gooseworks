@@ -7,6 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readInputs } from '../../../src/kit/maker/inputs';
 import { makeVideo } from '../../../src/kit/maker/make';
+import { segmentArgs } from '../../../src/kit/maker/encode';
 import { compositeArgs, passThroughTimeline, quietBandOf, underIsShared, underSceneFrames } from '../../../src/kit/maker/under';
 import type { Timeline } from '../../../src/kit/part-interface';
 import { TestPartError, describeMedia, fileRef, partContext, pixelAt, runFfmpeg } from './helpers';
@@ -155,6 +156,13 @@ describe('the last pass', () => {
     const args = compositeArgs({ ...base, hasAudio: false });
     expect(args.join(' ')).not.toContain('0:a');
     expect(args).toContain('-an');
+  });
+
+  it('caps the rate right after the master settings (the size rule)', () => {
+    const args = compositeArgs({ ...base, hasAudio: false }).join(' ');
+    expect(args).toContain('-c:v libx264 -maxrate 16M -bufsize 32M');
+    const segment = segmentArgs({ tools, framesDir: '/f', start: 0, count: 60, fps: 30, out: '/s.mp4' }).join(' ');
+    expect(segment).toContain('-c:v libx264 -maxrate 16M -bufsize 32M');
   });
 });
 

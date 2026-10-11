@@ -197,6 +197,7 @@ function muxArgs(opts) {
 // src/kit/maker/encode.ts
 var SEGMENT_FRAMES = 60;
 var FRAME_PATTERN = "f%06d.png";
+var MASTER_RATE_CAP = ["-maxrate", "16M", "-bufsize", "32M"];
 function frameName(index) {
   return `f${String(index).padStart(6, "0")}.png`;
 }
@@ -218,6 +219,7 @@ function segmentArgs(opts) {
     "-vf",
     "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
     ...opts.tools.encodeArgs("h264-master"),
+    ...MASTER_RATE_CAP,
     "-c:v",
     "libx264",
     "-pix_fmt",
@@ -1372,7 +1374,7 @@ var inputs = {
       }
     },
     facts: {
-      description: "Measure every picture the page gets into kit.facts[url]: {alpha, plate, accent, luminance, width, height, subject {x, y, w, h, top_cx}} (sizes as 0..1 fractions). Default false.",
+      description: "Measure every PNG, JPEG and WebP picture the page gets into kit.facts[url]: {alpha, plate, accent, luminance, width, height, subject {x, y, w, h, top_cx}} (sizes as 0..1 fractions). An SVG, GIF or AVIF picture gets no entry. Default false.",
       type: "boolean"
     }
   },
@@ -1613,9 +1615,9 @@ function quietBandOf(gray, width, height) {
   const round2 = (n) => Math.round(n * 1e4) / 1e4;
   return { y0: round2(best / height), y1: round2(Math.min(height, best + band) / height) };
 }
-async function quietBands(tools, file, info, times, dir) {
+async function quietBands(tools, file, info, times, dir, page) {
   const width = MEASURE_WIDTH;
-  const height = Math.max(2, Math.round(info.height / info.width * width));
+  const height = Math.max(2, Math.round(page.height / page.width * width));
   const bands = [];
   for (let i = 0; i < times.length; i++) {
     const middle = Math.min(Math.max(0, (times[i].start_s + times[i].end_s) / 2), Math.max(0, info.seconds - 0.05));
@@ -1634,7 +1636,7 @@ async function quietBands(tools, file, info, times, dir) {
       "1",
       "-an",
       "-vf",
-      `scale=${width}:${height}:flags=area,format=gray`,
+      `${coverFilter({ width, height })},format=gray`,
       "-f",
       "rawvideo",
       "-pix_fmt",
@@ -1728,6 +1730,7 @@ function compositeArgs(opts) {
     "-frames:v",
     String(opts.frames),
     ...opts.tools.encodeArgs("h264-master"),
+    ...MASTER_RATE_CAP,
     "-c:v",
     "libx264",
     "-pix_fmt",
@@ -2009,7 +2012,7 @@ function readInputs(raw, ctx, measured = {}) {
   }
   const values = raw.values ?? {};
   if (!isObject(values)) fail("values should be an object");
-  if (JSON.stringify(values).length > 64 * 1024) fail("values is larger than 64 KB");
+  if (Buffer.byteLength(JSON.stringify(values), "utf8") > 64 * 1024) fail("values is larger than 64 KB");
   let captionZone = null;
   if (raw.caption_zone !== void 0 && raw.caption_zone !== null) {
     captionZone = clipZone(raw.caption_zone, design);
@@ -3249,7 +3252,7 @@ async function makeOrSkip(rawInputs, ctx, options = {}) {
     }
     if (spec.under) {
       const times = spec.scenes.map((scene) => ({ start_s: spec.sceneFrames[scene.index] / spec.fps, end_s: spec.sceneFrames[scene.index + 1] / spec.fps }));
-      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir);
+      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir, spec.output);
     }
     const built = await buildPage(spec, pageDir, ctx, reserve);
     const refusePage = (problems) => {

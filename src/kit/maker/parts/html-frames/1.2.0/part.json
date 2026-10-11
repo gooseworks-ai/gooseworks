@@ -803,7 +803,7 @@
         }
       },
       "facts": {
-        "description": "Measure every picture the page gets into kit.facts[url]: {alpha, plate, accent, luminance, width, height, subject {x, y, w, h, top_cx}} (sizes as 0..1 fractions). Default false.",
+        "description": "Measure every PNG, JPEG and WebP picture the page gets into kit.facts[url]: {alpha, plate, accent, luminance, width, height, subject {x, y, w, h, top_cx}} (sizes as 0..1 fractions). An SVG, GIF or AVIF picture gets no entry. Default false.",
         "type": "boolean"
       }
     },

@@ -265,3 +265,11 @@ kit.render(function (t, frame) {
     }
   }, 180_000);
 });
+
+describe('values', () => {
+  it('counts the 64 KB limit in UTF-8 bytes', () => {
+    // 30,000 three-byte characters: about 29 K characters but about 88 KB.
+    expect(() => read({ duration_s: 3, values: { label: '語'.repeat(30_000) } })).toThrow(/values is larger than 64 KB/);
+    expect(read({ duration_s: 3, values: { label: 'a'.repeat(30_000) } }).values).toEqual({ label: 'a'.repeat(30_000) });
+  });
+});

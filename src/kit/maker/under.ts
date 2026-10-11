@@ -7,6 +7,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, KitTools, Timeline } from '../part-interface';
+import { MASTER_RATE_CAP } from './encode';
 
 /** What the maker measures of the video it draws over. */
 export interface UnderInfo {
@@ -125,8 +126,9 @@ export function quietBandOf(gray: Uint8Array, width: number, height: number): Qu
 }
 
 /**
- * Each scene's quiet band, from the video's frame at the middle of the scene.
- * Frames are read one at a time as raw grey pixels into `dir`.
+ * Each scene's quiet band, from the video's frame at the middle of the scene,
+ * fitted to the page the way the last pass fits it (cover, centre crop), so the
+ * band describes what shows. Frames are read one at a time as raw grey pixels into `dir`.
  */
 export async function quietBands(
   tools: Pick<KitTools, 'exec'>,
@@ -134,9 +136,10 @@ export async function quietBands(
   info: UnderInfo,
   times: Array<{ start_s: number; end_s: number }>,
   dir: string,
+  page: { width: number; height: number },
 ): Promise<QuietBand[]> {
   const width = MEASURE_WIDTH;
-  const height = Math.max(2, Math.round((info.height / info.width) * width));
+  const height = Math.max(2, Math.round((page.height / page.width) * width));
   const bands: QuietBand[] = [];
   for (let i = 0; i < times.length; i++) {
     const middle = Math.min(Math.max(0, (times[i].start_s + times[i].end_s) / 2), Math.max(0, info.seconds - 0.05));
@@ -145,7 +148,7 @@ export async function quietBands(
       '-hide_banner', '-nostdin', '-loglevel', 'error', '-y',
       '-ss', middle.toFixed(3), '-i', file,
       '-frames:v', '1', '-an',
-      '-vf', `scale=${width}:${height}:flags=area,format=gray`,
+      '-vf', `${coverFilter({ width, height })},format=gray`,
       '-f', 'rawvideo', '-pix_fmt', 'gray', out,
     ]);
     const gray = await readFile(out);
@@ -239,6 +242,7 @@ export function compositeArgs(opts: {
     ...(opts.hasAudio ? ['-map', '0:a:0'] : []),
     '-frames:v', String(opts.frames),
     ...opts.tools.encodeArgs('h264-master'),
+    ...MASTER_RATE_CAP,
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
