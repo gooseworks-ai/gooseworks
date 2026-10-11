@@ -9,6 +9,7 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { FileRef, KitPage, PartContext, Timeline } from '../part-interface';
+import { CUE_SOUNDS, bankSound, bedArgs, cuesOf, mixCues, muxArgs, readWav, wavBytes, type Cue, type CueSound } from './cues';
 import { FRAME_PATTERN, SEGMENT_FRAMES, concatArgs, concatList, frameName, pngSize, segmentArgs } from './encode';
 import { isAnimatedImage } from './images';
 import { isFileRef, readInputs, type MakerSpec } from './inputs';
@@ -27,7 +28,10 @@ export interface MakerResult {
 /** One frame may take this long before the maker gives up on the page. */
 const FRAME_TIMEOUT_MS = 60_000;
 
-type MakerContext = Pick<PartContext, 'workDir' | 'tmpDir' | 'tools' | 'browser' | 'progress' | 'log' | 'error' | 'signal' | 'file'>;
+type MakerContext = Pick<PartContext, 'workDir' | 'tmpDir' | 'tools' | 'browser' | 'progress' | 'log' | 'error' | 'signal' | 'file'> & {
+  /** The part's folder; its assets/sfx bank is read only when the page marks sound cues. */
+  part?: Pick<PartContext['part'], 'dir'>;
+};
 
 /** Where the page drew the brand's logo, in the page's CSS pixels. */
 interface LogoRect {
@@ -155,6 +159,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
   const total = spec.frameCount;
   const frameHashes: string[] = [];
   let logo: LogoRect | null = null;
+  let cues: Cue[] = [];
   const segments: string[] = [];
   const name = 'video.mp4';
   const out = path.join(ctx.workDir, name);
@@ -208,6 +213,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
       );
       if (started === null) throw ctx.error('tool_failed', 'the frame page lost the kit runtime');
       checked(started);
+      cues = cuesOf(started);
 
       let segmentStart = 0;
       let segmentBytes = 0;
@@ -263,6 +269,10 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
     reserve(Buffer.byteLength(listText));
     await writeFile(list, listText);
     await mkdir(ctx.workDir, { recursive: true });
+    const seconds = total / spec.fps;
+    // With sound cues the picture is made first, then the cue mix is added to it as AAC in one more pass.
+    const picture = cues.length ? path.join(segmentsDir, 'picture.mp4') : out;
+    const underSound = !!spec.under?.info.hasAudio;
     if (spec.under) {
       const args = compositeArgs({
         tools: ctx.tools,
@@ -271,14 +281,46 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
         size: spec.output,
         fps: spec.fps,
         frames: total,
-        hasAudio: spec.under.info.hasAudio,
-        out,
+        // With cues, the video's sound is the bed of the cue mix instead.
+        hasAudio: underSound && !cues.length,
+        out: picture,
       });
-      await encodeInto(args, out);
-    } else await encodeInto(concatArgs(list, out), out);
+      await encodeInto(args, picture);
+    } else await encodeInto(concatArgs(list, picture), picture);
+
+    if (cues.length) {
+      stopIfAsked();
+      const partDir = ctx.part?.dir;
+      if (!partDir) throw ctx.error('tool_failed', "the part's sound bank is missing");
+      const bank = new Map<CueSound, Float32Array>();
+      for (const sound of new Set(cues.map((cue) => cue.sound))) {
+        let pcm;
+        try {
+          pcm = readWav(await readFile(path.join(partDir, 'assets', 'sfx', `${sound}.wav`)));
+        } catch {
+          pcm = null;
+        }
+        if (!pcm || pcm.rate !== 48_000) throw ctx.error('tool_failed', `the part's sound "${sound}" could not be read`);
+        bank.set(sound, bankSound(pcm));
+      }
+      let bed: Float32Array[] | null = null;
+      if (spec.under && underSound) {
+        const bedFile = path.join(segmentsDir, 'bed.wav');
+        await encodeInto(bedArgs({ under: spec.under.file.path, seconds, out: bedFile }), bedFile);
+        const pcm = readWav(await readFile(bedFile));
+        if (!pcm) throw ctx.error('tool_failed', 'the sound of the video drawn over could not be read');
+        bed = pcm.channels;
+      }
+      const mix = mixCues({ cues, bank, fps: spec.fps, frames: total, bed });
+      const mixFile = path.join(segmentsDir, 'cues.wav');
+      const bytes = wavBytes(mix.channels);
+      reserve(bytes.length);
+      await writeFile(mixFile, bytes);
+      await encodeInto(muxArgs({ tools: ctx.tools, picture, audio: mixFile, seconds, out }), out);
+      ctx.log.info('sound cues mixed', { cues: mix.placed.length, gain: mix.gain, sounds: CUE_SOUNDS.filter((s) => bank.has(s)) });
+    }
 
     // The output check: the size the aspect asks for, the length the frames make, H.264 in yuv420p.
-    const seconds = total / spec.fps;
     const info = await ctx.tools.probe(out);
     const streams = await ctx.tools.exec('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=pix_fmt,nb_frames', '-of', 'json', out]);
     const stream = (JSON.parse(streams.stdout) as { streams?: Array<{ pix_fmt?: string; nb_frames?: string }> }).streams?.[0];
@@ -288,6 +330,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
     if (info.duration_s === undefined || Math.abs(info.duration_s - seconds) > 1.5 / spec.fps + 0.01) wrong.push(`length ${info.duration_s}s`);
     if (stream?.pix_fmt !== 'yuv420p') wrong.push(`pixels ${stream?.pix_fmt ?? 'unknown'}`);
     if (stream?.nb_frames !== undefined && Number(stream.nb_frames) !== total) wrong.push(`${stream.nb_frames} frames`);
+    if (cues.length && !info.has_audio) wrong.push('no sound for its cues');
     if (wrong.length) throw ctx.error('output_invalid', `the encoded video is wrong: ${wrong.join(', ')}`);
 
     const video = await ctx.file(name, 'video');
