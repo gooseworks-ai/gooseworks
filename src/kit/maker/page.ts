@@ -7,7 +7,8 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type { FileRef, PartContext } from '../part-interface';
-import { cssDataUrls, isAnimatedImage, pictureGeometry } from './images';
+import { measurePicture, type PictureFacts } from './facts';
+import { cssDataUrls, isAnimatedImage, pictureGeometry, type PictureGeometry } from './images';
 import type { MakerSpec } from './inputs';
 import { runtimeScript } from './runtime';
 
@@ -97,6 +98,19 @@ export function familyOf(ref: FileRef): string {
 }
 
 /**
+ * The size a picture loads at in the page: as shown (turned by its EXIF
+ * orientation), and no more than MAX_PICTURE_PX on its long side when the
+ * maker stages it smaller (`capped`, the same sum as `smaller` in buildPage).
+ */
+function loadedSize(shape: PictureGeometry, capped: boolean): { width: number; height: number } {
+  const turned = shape.orientation >= 5;
+  const [width, height] = turned ? [shape.height, shape.width] : [shape.width, shape.height];
+  if (!capped || Math.max(width, height) <= MAX_PICTURE_PX) return { width, height };
+  const k = MAX_PICTURE_PX / Math.max(width, height);
+  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
+}
+
+/**
  * Puts the kit's head first in the document, right after the doctype, so it
  * runs before anything of the page's own, even a script placed before <head>.
  * The parser files it into the head the page then continues.
@@ -153,6 +167,17 @@ export async function buildPage(
   const url = (relFromDir: string) => path.relative(path.dirname(entry), path.join(dir, ...relFromDir.split('/'))).split(path.sep).join('/');
   const placed = new Map<string, string>();
   const preload: string[] = [];
+  // 1.2.0 `facts`: every picture the page gets, measured from the checked bytes, by the URL the page uses.
+  const facts: Record<string, PictureFacts> = {};
+  const measure = async (pageUrl: string, data: Buffer, capped: boolean) => {
+    if (!spec.facts || !ctx.tools || facts[pageUrl]) return;
+    const shape = pictureGeometry(data);
+    // Only PNG, JPEG and WebP are measured; an SVG, GIF or AVIF picture has no facts.
+    if (!shape) return;
+    const got = await measurePicture(ctx.tools, data, shape, loadedSize(shape, capped), path.join(dir, KIT_FOLDER, 'facts.rgba'));
+    if (got) facts[pageUrl] = got;
+    else ctx.log.warn('a picture could not be measured for the page', { file: pageUrl });
+  };
   const staging = new Map<string, string>();
   for (const ref of pageFiles) {
     const rel = path.relative(base, ref.path).split(path.sep).join('/');
@@ -177,7 +202,10 @@ export async function buildPage(
     if (ref === spec.template) continue;
     if (ref.media === 'image') still(ref, data);
     await put(target, data);
-    if (ref.media === 'image') preload.push(url(rel));
+    if (ref.media === 'image') {
+      preload.push(url(rel));
+      await measure(url(rel), data, false);
+    }
   }
 
   // Fonts: the style's under their file names, the brand's under fixed names.
@@ -249,6 +277,7 @@ export async function buildPage(
     } else await put(path.join(dir, ...rel.split('/')), data);
     preload.push(url(rel));
     staging.set(ref.sha256, url(rel));
+    await measure(url(rel), data, RESIZABLE.has(ref.mime));
     return url(rel);
   };
   const products = [];
@@ -257,6 +286,10 @@ export async function buildPage(
     for (const image of product.images) images.push(await media(image));
     products.push({ id: product.id, name: product.name, images });
   }
+  // 1.2.0 `media`: extra pictures by id. `footage`: the plan's clip windows only, never the files.
+  const extraMedia = [];
+  for (const item of spec.media) extraMedia.push({ id: item.id, url: await media(item.image) });
+  const footage = spec.footage.map((f) => ({ scene_id: f.scene_id, kind: f.kind, start_s: f.start_s, end_s: f.end_s, crop: f.crop, fit: f.fit }));
   const scenes = [];
   for (const scene of spec.scenes) {
     const picture = scene.picture && typeof scene.picture === 'object' ? await media(scene.picture) : scene.picture;
@@ -271,6 +304,7 @@ export async function buildPage(
       speaker: scene.speaker,
       extra: scene.extra,
       words: spec.words[scene.index] ?? [],
+      footage: footage.filter((f) => f.scene_id === scene.id),
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
     });
@@ -309,6 +343,9 @@ export async function buildPage(
     under: spec.under
       ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] }
       : null,
+    media: extraMedia,
+    facts,
+    footage,
     preload,
   };
   const head =
