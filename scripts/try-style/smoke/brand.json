@@ -1,0 +1,6 @@
+{
+  "name": "Smoke Test Co",
+  "logo": "media/creator.png",
+  "colors": { "primary": "#1d3557", "background": "#f1faee", "text": "#14213d" },
+  "cta": { "text": "Try it at example.com", "url": "https://example.com" }
+}
