@@ -1,0 +1,175 @@
+{
+  "id": "try-paid-parts",
+  "version": "1.0.0",
+  "title": "try-style smoke: every paid part (transcribe-whisper left out: it cannot send its m4a through the line)",
+  "traits": {
+    "needs_browser": false,
+    "speech": "none",
+    "captions": false,
+    "end_card": false,
+    "qc_flags": []
+  },
+  "duration": {
+    "min_seconds": 3,
+    "max_seconds": 60
+  },
+  "aspects": [
+    "9:16"
+  ],
+  "timeline": [
+    {
+      "id": "voice",
+      "part": {
+        "id": "voice-elevenlabs",
+        "version": "1.0.1"
+      },
+      "inputs": {
+        "scenes": {
+          "from": "plan.scenes"
+        },
+        "voice_id": {
+          "from": "plan.voice"
+        }
+      }
+    },
+    {
+      "id": "stills",
+      "part": {
+        "id": "image-nano-banana",
+        "version": "1.0.1"
+      },
+      "inputs": {
+        "model": "fal-ai/nano-banana/edit",
+        "aspect_ratio": "9:16",
+        "images": [
+          {
+            "id": "kitchen",
+            "prompt": "A bright kitchen counter with the product",
+            "references": [
+              {
+                "from": "brand.logo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "clips",
+      "part": {
+        "id": "video-seedance-2",
+        "version": "1.0.1"
+      },
+      "inputs": {
+        "resolution": "720p",
+        "clips": [
+          {
+            "id": "c1",
+            "prompt": "The product turns slowly on a table",
+            "references": [
+              {
+                "from": "brand.logo"
+              }
+            ],
+            "seconds": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "host",
+      "part": {
+        "id": "creator-h3",
+        "version": "1.0.2"
+      },
+      "inputs": {
+        "scenes": {
+          "from": "plan.scenes"
+        },
+        "character": {
+          "image": {
+            "from": "brand.logo"
+          },
+          "identity": "A woman in her 30s with short dark hair, in a sunny kitchen"
+        },
+        "max_seconds": 40,
+        "resolution": "480P"
+      }
+    },
+    {
+      "id": "sfx",
+      "part": {
+        "id": "sfx-elevenlabs",
+        "version": "1.0.1"
+      },
+      "inputs": {
+        "effects": [
+          {
+            "id": "pop",
+            "prompt": "a soft pop",
+            "seconds": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "music",
+      "part": {
+        "id": "music-elevenlabs",
+        "version": "1.0.2"
+      },
+      "inputs": {
+        "mood": {
+          "from": "plan.music"
+        },
+        "brief": "Light bed, instrumental.",
+        "seconds": 30
+      }
+    },
+    {
+      "id": "cut",
+      "part": {
+        "id": "assemble",
+        "version": "1.0.2"
+      },
+      "inputs": {
+        "clips": [
+          {
+            "video": {
+              "from": "step.host.video"
+            }
+          }
+        ],
+        "width": 1080,
+        "height": 1920,
+        "clip_audio": "keep"
+      }
+    },
+    {
+      "id": "mix",
+      "part": {
+        "id": "audio-mix",
+        "version": "1.0.1"
+      },
+      "inputs": {
+        "video": {
+          "from": "step.cut.video"
+        },
+        "music": {
+          "from": "step.music.audio"
+        },
+        "keep_video_audio": true
+      }
+    }
+  ],
+  "layers": {
+    "brand": false,
+    "captions": false,
+    "sound": true,
+    "check": true
+  },
+  "assets": {
+    "fonts": [],
+    "frames": []
+  }
+}
