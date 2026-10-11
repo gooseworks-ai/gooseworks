@@ -17,7 +17,7 @@ import { atomicWrite } from './save';
 export interface StyleFile {
   id: string;
   version: string;
-  traits: { needs_browser?: boolean; speech?: string; captions?: boolean; end_card?: boolean; qc_flags?: string[] };
+  traits: { needs_browser?: boolean; speech?: string; captions?: boolean; end_card?: boolean; qc_flags?: string[]; caption_look?: unknown };
   duration: { min_seconds: number; max_seconds: number };
   aspects: string[];
   timeline: StyleStep[];
