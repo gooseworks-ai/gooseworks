@@ -22,6 +22,9 @@
         "hflip",
         "vflip",
         "overlay",
+        "crop",
+        "fps",
+        "setpts",
         "adelay",
         "amix",
         "volume",
@@ -32,7 +35,8 @@
         "libx264",
         "png",
         "mjpeg",
-        "aac"
+        "aac",
+        "rawvideo"
       ]
     },
     "network": false,

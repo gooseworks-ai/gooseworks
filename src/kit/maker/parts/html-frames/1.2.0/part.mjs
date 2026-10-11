@@ -2,8 +2,8 @@
 
 // src/kit/maker/make.ts
 import { createHash as createHash2 } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile2, rm, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
-import * as path2 from "node:path";
+import { mkdir as mkdir2, readFile as readFile3, rm as rm2, stat as stat2, writeFile as writeFile2 } from "node:fs/promises";
+import * as path3 from "node:path";
 import { pathToFileURL } from "node:url";
 
 // src/kit/maker/encode.ts
@@ -1225,6 +1225,237 @@ var inputs = {
   ]
 };
 
+// src/kit/maker/under.ts
+import { readFile, rm } from "node:fs/promises";
+import * as path from "node:path";
+var QUIET_SAFE = { top: 0.15, bottom: 0.85, height: 0.15 };
+var MEASURE_WIDTH = 96;
+function numberOf(value) {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isFinite(n) ? n : void 0;
+}
+function rateOf(value) {
+  if (typeof value !== "string") return null;
+  const [a, b] = value.split("/").map(Number);
+  const rate = b ? a / b : a;
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+async function probeUnder(tools, file) {
+  let parsed;
+  try {
+    const { stdout } = await tools.exec("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=codec_type,width,height,duration,avg_frame_rate,r_frame_rate:format=duration",
+      "-of",
+      "json",
+      file
+    ]);
+    parsed = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const streams = parsed.streams ?? [];
+  const video = streams.find((s) => s.codec_type === "video");
+  if (!video) return null;
+  const width = numberOf(video.width);
+  const height = numberOf(video.height);
+  const seconds = numberOf(video.duration) ?? numberOf(parsed.format?.duration);
+  if (!width || !height || !seconds || seconds <= 0) return null;
+  return {
+    seconds,
+    width,
+    height,
+    fps: rateOf(video.avg_frame_rate) ?? rateOf(video.r_frame_rate),
+    hasAudio: streams.some((s) => s.codec_type === "audio")
+  };
+}
+function coverFit(from, to) {
+  const scale = Math.max(to.width / from.width, to.height / from.height);
+  return { scale, offsetX: (from.width * scale - to.width) / 2, offsetY: (from.height * scale - to.height) / 2 };
+}
+function coverFilter(size) {
+  return `scale=${size.width}:${size.height}:force_original_aspect_ratio=increase:flags=bicubic,crop=${size.width}:${size.height},setsar=1`;
+}
+function quietBandOf(gray, width, height) {
+  const rows = new Float64Array(height);
+  for (let y = 0; y < height; y++) {
+    let sum = 0;
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      const v = gray[row + x];
+      if (x + 1 < width) sum += Math.abs(gray[row + x + 1] - v);
+      if (y + 1 < height) sum += Math.abs(gray[row + width + x] - v);
+    }
+    rows[y] = sum / width;
+  }
+  const band = Math.max(1, Math.round(QUIET_SAFE.height * height));
+  const first = Math.ceil(QUIET_SAFE.top * height);
+  const last = Math.max(first, Math.floor(QUIET_SAFE.bottom * height) - band);
+  let best = first;
+  let bestScore = Infinity;
+  for (let y0 = first; y0 <= last; y0++) {
+    let score = 0;
+    for (let y = y0; y < y0 + band && y < height; y++) score += rows[y];
+    if (score <= bestScore + 1e-9) {
+      best = y0;
+      bestScore = score;
+    }
+  }
+  const round = (n) => Math.round(n * 1e4) / 1e4;
+  return { y0: round(best / height), y1: round(Math.min(height, best + band) / height) };
+}
+async function quietBands(tools, file, info, times, dir) {
+  const width = MEASURE_WIDTH;
+  const height = Math.max(2, Math.round(info.height / info.width * width));
+  const bands = [];
+  for (let i = 0; i < times.length; i++) {
+    const middle = Math.min(Math.max(0, (times[i].start_s + times[i].end_s) / 2), Math.max(0, info.seconds - 0.05));
+    const out = path.join(dir, `quiet-${i}.gray`);
+    await tools.exec("ffmpeg", [
+      "-hide_banner",
+      "-nostdin",
+      "-loglevel",
+      "error",
+      "-y",
+      "-ss",
+      middle.toFixed(3),
+      "-i",
+      file,
+      "-frames:v",
+      "1",
+      "-an",
+      "-vf",
+      `scale=${width}:${height}:flags=area,format=gray`,
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "gray",
+      out
+    ]);
+    const gray = await readFile(out);
+    await rm(out, { force: true });
+    bands.push(gray.length >= width * height ? quietBandOf(gray, width, height) : { y0: 0.7, y1: 0.85 });
+  }
+  return bands;
+}
+function underSceneFrames(ids, timeline, fps, frameCount) {
+  const byId = new Map(timeline.scenes.map((s) => [s.id, s]));
+  const matched = ids.map((id) => byId.get(id) ?? null);
+  let spans;
+  if (matched.every((s) => s)) spans = matched;
+  else if (timeline.scenes.length === ids.length) spans = ids.map((id, i) => byId.get(id) ?? timeline.scenes[i]);
+  else return null;
+  const frames = spans.map((s) => Math.min(frameCount, Math.max(0, Math.round(s.start_s * fps))));
+  for (let i = 1; i < frames.length; i++) if (frames[i] < frames[i - 1]) return null;
+  frames.push(frameCount);
+  return frames;
+}
+function alphaSegmentArgs(opts) {
+  return [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-framerate",
+    String(opts.fps),
+    "-start_number",
+    String(opts.start),
+    "-i",
+    `${opts.framesDir}/${opts.framePattern}`,
+    "-frames:v",
+    String(opts.count),
+    "-c:v",
+    "png",
+    "-pix_fmt",
+    "rgba",
+    "-fflags",
+    "+bitexact",
+    "-flags",
+    "+bitexact",
+    "-map_metadata",
+    "-1",
+    "-an",
+    "-r",
+    String(opts.fps),
+    opts.out
+  ];
+}
+function compositeArgs(opts) {
+  const seconds = (opts.frames / opts.fps).toFixed(6);
+  const graph = [
+    `[0:v]setpts=PTS-STARTPTS,fps=${opts.fps},${coverFilter(opts.size)}[base]`,
+    `[1:v]setpts=PTS-STARTPTS,format=rgba[page]`,
+    `[base][page]overlay=0:0:format=auto:eof_action=pass:shortest=0,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p[v]`
+  ].join(";");
+  return [
+    "-hide_banner",
+    "-nostdin",
+    "-loglevel",
+    "error",
+    "-y",
+    "-i",
+    opts.under,
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    opts.list,
+    "-filter_complex",
+    graph,
+    "-map",
+    "[v]",
+    ...opts.hasAudio ? ["-map", "0:a:0"] : [],
+    "-frames:v",
+    String(opts.frames),
+    ...opts.tools.encodeArgs("h264-master"),
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-colorspace",
+    "bt709",
+    "-color_primaries",
+    "bt709",
+    "-color_trc",
+    "bt709",
+    "-color_range",
+    "tv",
+    ...opts.hasAudio ? [...opts.tools.encodeArgs("aac"), "-t", seconds] : ["-an"],
+    "-r",
+    String(opts.fps),
+    opts.out
+  ];
+}
+function fitZone(zone, fit, size) {
+  const x0 = Math.max(0, zone.x * fit.scale - fit.offsetX);
+  const y0 = Math.max(0, zone.y * fit.scale - fit.offsetY);
+  const x1 = Math.min(size.width, (zone.x + zone.w) * fit.scale - fit.offsetX);
+  const y1 = Math.min(size.height, (zone.y + zone.h) * fit.scale - fit.offsetY);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  return { ...zone, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) };
+}
+function passThroughTimeline(under, out) {
+  const end = out.duration_s;
+  const cut = (items) => items.filter((item) => item.start_s < end).map((item) => item.end_s > end ? { ...item, end_s: end } : item);
+  const timeline = {
+    duration_s: out.duration_s,
+    width: out.width,
+    height: out.height,
+    fps: out.fps,
+    scenes: cut(under.scenes.map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
+    speech: cut(under.speech)
+  };
+  if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
+  const fit = coverFit({ width: under.width, height: under.height }, out);
+  const zones = (under.safe_zones ?? []).map((z) => fitZone(z, fit, out)).filter((z) => !!z).slice(0, 7);
+  if (zones.length) timeline.safe_zones = zones;
+  return timeline;
+}
+
 // src/kit/maker/inputs.ts
 var DESIGN_SIZE = {
   "9:16": { width: 1080, height: 1920 },
@@ -1244,6 +1475,7 @@ var LIMITS = {
   maxWords: 200,
   textChars: 2e3
 };
+var LENGTH_SOURCES = ["duration_s", "scene_s", "pace", "speech", "under"];
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -1339,7 +1571,7 @@ function brandOf(value, fail) {
   }
   return { name, logo, colors, fonts, cta };
 }
-function readInputs(raw, ctx) {
+function readInputs(raw, ctx, measured = {}) {
   const fail = (detail) => {
     throw ctx.error("bad_input", detail);
   };
@@ -1361,23 +1593,48 @@ function readInputs(raw, ctx) {
   const aspect = raw.aspect;
   if (typeof aspect !== "string" || !(aspect in DESIGN_SIZE)) fail(`aspect should be one of ${Object.keys(DESIGN_SIZE).join(", ")}`);
   const design = DESIGN_SIZE[aspect];
-  const fps = raw.fps ?? 30;
+  const given = LENGTH_SOURCES.filter((key) => raw[key] !== void 0 && raw[key] !== null);
+  if (given.length !== 1) fail("give exactly one of duration_s (the whole video), scene_s (each scene), pace, speech or under (a video to draw over)");
+  const source = given[0];
+  let under = null;
+  if (source === "under") {
+    const file = fileOf(raw.under, "under", ["video"], fail);
+    if (!isObject(raw.under_timeline)) fail("under_timeline should be the timeline of the video to draw over");
+    const timeline = raw.under_timeline;
+    const info = measured.under === void 0 ? null : measured.under;
+    if (measured.under === null) fail("the video to draw over could not be read");
+    const seconds2 = info?.seconds ?? (typeof file.duration_s === "number" ? file.duration_s : timeline.duration_s);
+    under = {
+      file,
+      timeline,
+      info: info ?? { seconds: seconds2, width: timeline.width, height: timeline.height, fps: timeline.fps, hasAudio: false }
+    };
+  } else if (raw.under_timeline !== void 0 && raw.under_timeline !== null) fail("under_timeline is given without under");
+  if (source === "pace" || source === "speech") fail(`${source} is not supported by this build of html-frames yet`);
+  const underFps = under?.info.fps ? Math.min(LIMITS.maxFps, Math.max(1, Math.round(under.info.fps))) : null;
+  const fps = raw.fps ?? underFps ?? 30;
   if (typeof fps !== "number" || !Number.isInteger(fps) || fps < 1 || fps > LIMITS.maxFps) fail(`fps should be a whole number from 1 to ${LIMITS.maxFps}`);
   const shortSide = raw.short_side ?? 1080;
   if (!SHORT_SIDES.includes(shortSide)) fail(`short_side should be ${SHORT_SIDES.join(" or ")}`);
   const scale = shortSide / 1080;
   const output = { width: Math.round(design.width * scale), height: Math.round(design.height * scale) };
-  const hasTotal = raw.duration_s !== void 0 && raw.duration_s !== null;
-  const hasPerScene = raw.scene_s !== void 0 && raw.scene_s !== null;
-  if (hasTotal === hasPerScene) fail("give exactly one of duration_s (the whole video) or scene_s (each scene)");
-  const seconds = hasTotal ? raw.duration_s : raw.scene_s * scenes.length;
+  const seconds = under ? under.info.seconds : source === "duration_s" ? raw.duration_s : raw.scene_s * scenes.length;
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < LIMITS.minSeconds || seconds > LIMITS.maxSeconds) {
     fail(`the video would be ${String(seconds)} seconds; it must be ${LIMITS.minSeconds} to ${LIMITS.maxSeconds}`);
   }
   const frameCount = Math.round(seconds * fps);
   if (frameCount < scenes.length) fail(`${scenes.length} scenes need at least ${scenes.length} frames; the video has ${frameCount}`);
-  const sceneFrames = scenes.map((_, i) => Math.round(i * frameCount / scenes.length));
-  sceneFrames.push(frameCount);
+  let sceneFrames;
+  if (under) {
+    const fromUnder = underSceneFrames(scenes.map((scene) => scene.id), under.timeline, fps, frameCount);
+    if (!fromUnder) {
+      fail(`the plan's ${scenes.length} scenes do not match the ${under.timeline.scenes.length} scenes of the video to draw over (by id or in order)`);
+    }
+    sceneFrames = fromUnder;
+  } else {
+    sceneFrames = scenes.map((_, i) => Math.round(i * frameCount / scenes.length));
+    sceneFrames.push(frameCount);
+  }
   const values = raw.values ?? {};
   if (!isObject(values)) fail("values should be an object");
   if (JSON.stringify(values).length > 64 * 1024) fail("values is larger than 64 KB");
@@ -1395,14 +1652,15 @@ function readInputs(raw, ctx) {
     design,
     output,
     scale,
-    values
+    values,
+    under
   };
 }
 
 // src/kit/maker/page.ts
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import * as path from "node:path";
+import { mkdir, readFile as readFile2, stat, writeFile } from "node:fs/promises";
+import * as path2 from "node:path";
 
 // src/kit/maker/runtime.ts
 var PAGE_EPOCH_MS = 17672256e5;
@@ -2089,19 +2347,19 @@ var COLOR = /^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla)\([0-9.,%\s/]+\))$/;
 async function readChecked(ref, fail) {
   let data;
   try {
-    data = await readFile(ref.path);
+    data = await readFile2(ref.path);
   } catch {
-    return fail(`the file ${path.basename(ref.path)} could not be read`);
+    return fail(`the file ${path2.basename(ref.path)} could not be read`);
   }
   const sha = createHash("sha256").update(data).digest("hex");
-  if (sha !== ref.sha256) fail(`the file ${path.basename(ref.path)} changed after it was checked`);
+  if (sha !== ref.sha256) fail(`the file ${path2.basename(ref.path)} changed after it was checked`);
   return data;
 }
 function commonFolder(files) {
-  let common = path.dirname(files[0]);
+  let common = path2.dirname(files[0]);
   for (const file of files.slice(1)) {
-    while (path.relative(common, file).startsWith("..")) {
-      const up = path.dirname(common);
+    while (path2.relative(common, file).startsWith("..")) {
+      const up = path2.dirname(common);
       if (up === common) break;
       common = up;
     }
@@ -2110,13 +2368,13 @@ function commonFolder(files) {
 }
 function fontOf(ref, fail) {
   const fromMime = ref.mime.startsWith("font/") ? ref.mime.slice(5) : "";
-  const fromName = path.extname(ref.path).slice(1).toLowerCase();
+  const fromName = path2.extname(ref.path).slice(1).toLowerCase();
   const kind = FONT_FORMAT[fromMime] ?? FONT_FORMAT[fromName];
-  if (!kind) fail(`the font ${path.basename(ref.path)} is not ttf, otf, woff or woff2`);
+  if (!kind) fail(`the font ${path2.basename(ref.path)} is not ttf, otf, woff or woff2`);
   return kind;
 }
 function familyOf(ref) {
-  return path.basename(ref.path, path.extname(ref.path)).replace(/[^A-Za-z0-9 _-]/g, "-");
+  return path2.basename(ref.path, path2.extname(ref.path)).replace(/[^A-Za-z0-9 _-]/g, "-");
 }
 function injectFirst(html, head) {
   const text2 = html.replace(/^\uFEFF/, "");
@@ -2131,8 +2389,8 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
   const fail = (detail) => {
     throw ctx.error("bad_input", detail);
   };
-  await mkdir(path.join(dir, KIT_FOLDER, "fonts"), { recursive: true });
-  await mkdir(path.join(dir, KIT_FOLDER, "media"), { recursive: true });
+  await mkdir(path2.join(dir, KIT_FOLDER, "fonts"), { recursive: true });
+  await mkdir(path2.join(dir, KIT_FOLDER, "media"), { recursive: true });
   let bytes = 0;
   const put = async (target, data2) => {
     const size = Buffer.byteLength(data2);
@@ -2141,22 +2399,22 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     bytes += size;
   };
   const still = (ref, data2) => {
-    if (isAnimatedImage(data2)) fail(`the picture ${path.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
+    if (isAnimatedImage(data2)) fail(`the picture ${path2.basename(ref.path)} moves on its own; frame pages take still pictures and draw any motion themselves`);
   };
   const openTrees = (ref, data2) => {
     if (/\bshadowroot(mode)?\s*=\s*["']?closed/i.test(data2.toString("utf8"))) {
-      fail(`the frame ${path.basename(ref.path)} declares a closed shadow root; use an open one`);
+      fail(`the frame ${path2.basename(ref.path)} declares a closed shadow root; use an open one`);
     }
   };
   const pageFiles = [spec.template, ...spec.frames];
   const base = commonFolder(pageFiles.map((f) => f.path));
-  const entry = path.join(dir, path.relative(base, spec.template.path));
-  const url = (relFromDir) => path.relative(path.dirname(entry), path.join(dir, ...relFromDir.split("/"))).split(path.sep).join("/");
+  const entry = path2.join(dir, path2.relative(base, spec.template.path));
+  const url = (relFromDir) => path2.relative(path2.dirname(entry), path2.join(dir, ...relFromDir.split("/"))).split(path2.sep).join("/");
   const placed = /* @__PURE__ */ new Map();
   const preload = [];
   const staging = /* @__PURE__ */ new Map();
   for (const ref of pageFiles) {
-    const rel = path.relative(base, ref.path).split(path.sep).join("/");
+    const rel = path2.relative(base, ref.path).split(path2.sep).join("/");
     if (rel.split("/")[0] === KIT_FOLDER) fail(`the frame ${rel} uses the folder name ${KIT_FOLDER}, which the kit keeps for itself`);
     const known = placed.get(rel);
     if (known !== void 0) {
@@ -2171,8 +2429,8 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
         if (isAnimatedImage(inline.bytes)) fail(`the stylesheet ${rel} names a picture that moves on its own; frame pages take still pictures and draw any motion themselves`);
       }
     }
-    const target = path.join(dir, ...rel.split("/"));
-    await mkdir(path.dirname(target), { recursive: true });
+    const target = path2.join(dir, ...rel.split("/"));
+    await mkdir(path2.dirname(target), { recursive: true });
     if (ref === spec.template) continue;
     if (ref.media === "image") still(ref, data2);
     await put(target, data2);
@@ -2184,7 +2442,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     if (families.includes(family)) fail(`two fonts are both called ${family}`);
     const kind = fontOf(ref, fail);
     const name = `${ref.sha256.slice(0, 16)}.${kind.ext}`;
-    await put(path.join(dir, KIT_FOLDER, "fonts", name), await readChecked(ref, fail));
+    await put(path2.join(dir, KIT_FOLDER, "fonts", name), await readChecked(ref, fail));
     faces.push(`@font-face{font-family:${cssString(family)};src:url(${cssString(url(`${KIT_FOLDER}/fonts/${name}`))}) format(${cssString(kind.format)});font-display:block;}`);
     families.push(family);
   };
@@ -2201,7 +2459,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     const [w, h] = [Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k))];
     const to = shape.format === "jpeg" ? "jpg" : "png";
     const rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}-${MAX_PICTURE_PX}.${to}`;
-    const target = path.join(dir, ...rel.split("/"));
+    const target = path2.join(dir, ...rel.split("/"));
     const filters = [...ORIENT[shape.orientation], `scale=${w}:${h}:flags=lanczos`, "setsar=1", ...to === "png" ? ["format=rgba"] : []];
     const quality = to === "jpg" ? ["-q:v", "2"] : [];
     const exact = ["-fflags", "+bitexact", "-flags", "+bitexact", "-map_metadata", "-1", "-threads", "1"];
@@ -2213,7 +2471,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
       );
     } catch (error) {
       ctx.log.warn("a picture could not be scaled down for the page", {
-        file: path.basename(ref.path),
+        file: path2.basename(ref.path),
         size: `${width}x${height}`,
         error: String(error?.stderr ?? error?.message ?? error).slice(-300)
       });
@@ -2223,7 +2481,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
   };
   const media = async (ref) => {
     const ext = IMAGE_EXT[ref.mime];
-    if (!ext) fail(`the picture ${path.basename(ref.path)} is not png, jpg, webp, gif, avif or svg`);
+    if (!ext) fail(`the picture ${path2.basename(ref.path)} is not png, jpg, webp, gif, avif or svg`);
     let rel = `${KIT_FOLDER}/media/${ref.sha256.slice(0, 16)}.${ext}`;
     const staged = staging.get(ref.sha256);
     if (staged) return staged;
@@ -2232,10 +2490,10 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     const resized = RESIZABLE.has(ref.mime) ? await smaller(ref, data2) : null;
     if (resized) {
       rel = resized;
-      const size = (await stat(path.join(dir, ...rel.split("/")))).size;
+      const size = (await stat(path2.join(dir, ...rel.split("/")))).size;
       reserve(size);
       bytes += size;
-    } else await put(path.join(dir, ...rel.split("/")), data2);
+    } else await put(path2.join(dir, ...rel.split("/")), data2);
     preload.push(url(rel));
     staging.set(ref.sha256, url(rel));
     return url(rel);
@@ -2288,6 +2546,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     brand,
     fonts: families,
     values: spec.values,
+    under: spec.under ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] } : null,
     preload
   };
   const head = `<meta charset="utf-8"><style id="kit-fonts">${faces.join("")}:root{${variables.join(";")}}</style><script>${runtimeScript(data)}</script>`;
@@ -2299,11 +2558,9 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
 // src/kit/maker/make.ts
 var FRAME_TIMEOUT_MS = 6e4;
 function timelineOf(spec, logo) {
-  const timeline = {
-    duration_s: spec.frameCount / spec.fps,
-    width: spec.output.width,
-    height: spec.output.height,
-    fps: spec.fps,
+  const size = { duration_s: spec.frameCount / spec.fps, width: spec.output.width, height: spec.output.height, fps: spec.fps };
+  const timeline = spec.under ? passThroughTimeline(spec.under.timeline, size) : {
+    ...size,
     scenes: spec.scenes.map((scene) => ({
       id: scene.id,
       start_s: spec.sceneFrames[scene.index] / spec.fps,
@@ -2317,7 +2574,7 @@ function timelineOf(spec, logo) {
     const y0 = Math.max(0, Math.floor(logo.y * k));
     const x1 = Math.min(spec.output.width, Math.ceil((logo.x + logo.w) * k));
     const y1 = Math.min(spec.output.height, Math.ceil((logo.y + logo.h) * k));
-    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: "logo", x: x0, y: y0, w: x1 - x0, h: y1 - y0 }];
+    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: "logo", x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, ...timeline.safe_zones ?? []].slice(0, 8);
   }
   return timeline;
 }
@@ -2354,7 +2611,10 @@ function pageError(error) {
   return { code: shape.code, detail: String(shape.detail ?? shape.message ?? "") };
 }
 async function makeVideo(rawInputs, ctx, options = {}) {
-  const spec = readInputs(rawInputs, ctx);
+  const underRef = rawInputs && typeof rawInputs === "object" ? rawInputs.under : void 0;
+  let underInfo;
+  if (isFileRef2(underRef) && underRef.media === "video") underInfo = await probeUnder(ctx.tools, underRef.path);
+  const spec = readInputs(rawInputs, ctx, { under: underInfo });
   if (!ctx.browser) throw ctx.error("needs_missing", "the kit browser");
   const stopIfAsked = () => {
     if (ctx.signal.aborted) throw ctx.error("stopped");
@@ -2378,31 +2638,36 @@ async function makeVideo(rawInputs, ctx, options = {}) {
     if (size >= room) throw overLimit();
     reserve(size);
   };
-  const pageDir = path2.join(ctx.tmpDir, "page");
-  const framesDir = path2.join(ctx.tmpDir, "frames");
-  const segmentsDir = path2.join(ctx.tmpDir, "segments");
+  const pageDir = path3.join(ctx.tmpDir, "page");
+  const framesDir = path3.join(ctx.tmpDir, "frames");
+  const segmentsDir = path3.join(ctx.tmpDir, "segments");
   const scratch = [pageDir, framesDir, segmentsDir];
   const total = spec.frameCount;
   const frameHashes = [];
   let logo = null;
   const segments = [];
   const name = "video.mp4";
-  const out = path2.join(ctx.workDir, name);
+  const out = path3.join(ctx.workDir, name);
   let finished = false;
   try {
     for (const dir of scratch) {
-      await rm(dir, { recursive: true, force: true });
+      await rm2(dir, { recursive: true, force: true });
       await mkdir2(dir, { recursive: true });
+    }
+    if (spec.under) {
+      const times = spec.scenes.map((scene) => ({ start_s: spec.sceneFrames[scene.index] / spec.fps, end_s: spec.sceneFrames[scene.index + 1] / spec.fps }));
+      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir);
     }
     const built = await buildPage(spec, pageDir, ctx, reserve);
     const refusePage = (problems) => {
       throw ctx.error("bad_input", problems.slice(0, 3).join(" "));
     };
     const encodeSegment = async (start, count, frameBytes) => {
-      const segment = path2.join(segmentsDir, `seg-${String(segments.length + 1).padStart(5, "0")}.mp4`);
-      await encodeInto(segmentArgs({ tools: ctx.tools, framesDir, start, count, fps: spec.fps, out: segment }), segment);
+      const segment = path3.join(segmentsDir, `seg-${String(segments.length + 1).padStart(5, "0")}.${spec.under ? "mov" : "mp4"}`);
+      const args = spec.under ? alphaSegmentArgs({ framesDir, framePattern: FRAME_PATTERN, start, count, fps: spec.fps, out: segment }) : segmentArgs({ tools: ctx.tools, framesDir, start, count, fps: spec.fps, out: segment });
+      await encodeInto(args, segment);
       segments.push(segment);
-      for (let i = start; i < start + count; i++) await rm(path2.join(framesDir, frameName(i)), { force: true });
+      for (let i = start; i < start + count; i++) await rm2(path3.join(framesDir, frameName(i)), { force: true });
       release(frameBytes);
     };
     const checked = (value) => {
@@ -2439,10 +2704,10 @@ async function makeVideo(rawInputs, ctx, options = {}) {
           )
         );
         if (drawn.logo) logo = drawn.logo;
-        const file = path2.join(framesDir, frameName(index));
+        const file = path3.join(framesDir, frameName(index));
         reserve(frameBound);
-        await page.screenshot({ path: file, type: "png" });
-        const png = await readFile2(file);
+        await page.screenshot({ path: file, type: "png", omitBackground: !!spec.under });
+        const png = await readFile3(file);
         release(frameBound - Math.min(frameBound, png.length));
         if (png.length > frameBound) reserve(png.length - frameBound);
         segmentBytes += png.length;
@@ -2471,12 +2736,24 @@ async function makeVideo(rawInputs, ctx, options = {}) {
       await browser.close().catch(() => void 0);
     }
     stopIfAsked();
-    const list = path2.join(segmentsDir, "segments.txt");
+    const list = path3.join(segmentsDir, "segments.txt");
     const listText = concatList(segments);
     reserve(Buffer.byteLength(listText));
     await writeFile2(list, listText);
     await mkdir2(ctx.workDir, { recursive: true });
-    await encodeInto(concatArgs(list, out), out);
+    if (spec.under) {
+      const args = compositeArgs({
+        tools: ctx.tools,
+        under: spec.under.file.path,
+        list,
+        size: spec.output,
+        fps: spec.fps,
+        frames: total,
+        hasAudio: spec.under.info.hasAudio,
+        out
+      });
+      await encodeInto(args, out);
+    } else await encodeInto(concatArgs(list, out), out);
     const seconds = total / spec.fps;
     const info = await ctx.tools.probe(out);
     const streams = await ctx.tools.exec("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt,nb_frames", "-of", "json", out]);
@@ -2493,8 +2770,8 @@ async function makeVideo(rawInputs, ctx, options = {}) {
     finished = true;
     return { video, seconds, timeline: timelineOf(spec, logo), frameHashes };
   } finally {
-    for (const dir of scratch) await rm(dir, { recursive: true, force: true }).catch(() => void 0);
-    if (!finished) await rm(out, { force: true }).catch(() => void 0);
+    for (const dir of scratch) await rm2(dir, { recursive: true, force: true }).catch(() => void 0);
+    if (!finished) await rm2(out, { force: true }).catch(() => void 0);
   }
 }
 

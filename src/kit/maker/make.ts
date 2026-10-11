@@ -9,10 +9,11 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { FileRef, KitPage, PartContext, Timeline } from '../part-interface';
-import { SEGMENT_FRAMES, concatArgs, concatList, frameName, pngSize, segmentArgs } from './encode';
+import { FRAME_PATTERN, SEGMENT_FRAMES, concatArgs, concatList, frameName, pngSize, segmentArgs } from './encode';
 import { isAnimatedImage } from './images';
-import { readInputs, type MakerSpec } from './inputs';
+import { isFileRef, readInputs, type MakerSpec } from './inputs';
 import { buildPage } from './page';
+import { alphaSegmentArgs, compositeArgs, passThroughTimeline, probeUnder, quietBands, type UnderInfo } from './under';
 
 /** What the maker gives back; the part returns the first three. */
 export interface MakerResult {
@@ -37,18 +38,19 @@ interface LogoRect {
 }
 
 function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
-  const timeline: Timeline = {
-    duration_s: spec.frameCount / spec.fps,
-    width: spec.output.width,
-    height: spec.output.height,
-    fps: spec.fps,
-    scenes: spec.scenes.map((scene) => ({
-      id: scene.id,
-      start_s: spec.sceneFrames[scene.index] / spec.fps,
-      end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
-    })),
-    speech: [],
-  };
+  const size = { duration_s: spec.frameCount / spec.fps, width: spec.output.width, height: spec.output.height, fps: spec.fps };
+  // Drawn over a video, the video's own scenes, speech, end card and zones carry through.
+  const timeline: Timeline = spec.under
+    ? passThroughTimeline(spec.under.timeline, size)
+    : {
+        ...size,
+        scenes: spec.scenes.map((scene) => ({
+          id: scene.id,
+          start_s: spec.sceneFrames[scene.index] / spec.fps,
+          end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
+        })),
+        speech: [],
+      };
   // The logo's box on the output picture, so the final check can look for the logo where it is drawn.
   if (logo) {
     const k = spec.scale;
@@ -56,7 +58,7 @@ function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
     const y0 = Math.max(0, Math.floor(logo.y * k));
     const x1 = Math.min(spec.output.width, Math.ceil((logo.x + logo.w) * k));
     const y1 = Math.min(spec.output.height, Math.ceil((logo.y + logo.h) * k));
-    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: 'logo', x: x0, y: y0, w: x1 - x0, h: y1 - y0 }];
+    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: 'logo' as const, x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, ...(timeline.safe_zones ?? [])].slice(0, 8);
   }
   return timeline;
 }
@@ -112,7 +114,11 @@ function pageError(error: unknown): { code: string; detail: string } | null {
 }
 
 export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: MakerOptions = {}): Promise<MakerResult> {
-  const spec = readInputs(rawInputs, ctx);
+  // A video to draw over is measured first: its length is the video's length.
+  const underRef = rawInputs && typeof rawInputs === 'object' ? (rawInputs as { under?: unknown }).under : undefined;
+  let underInfo: UnderInfo | null | undefined;
+  if (isFileRef(underRef) && underRef.media === 'video') underInfo = await probeUnder(ctx.tools, underRef.path);
+  const spec = readInputs(rawInputs, ctx, { under: underInfo });
   if (!ctx.browser) throw ctx.error('needs_missing', 'the kit browser');
   const stopIfAsked = () => {
     if (ctx.signal.aborted) throw ctx.error('stopped');
@@ -158,14 +164,22 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
       await rm(dir, { recursive: true, force: true });
       await mkdir(dir, { recursive: true });
     }
+    if (spec.under) {
+      const times = spec.scenes.map((scene) => ({ start_s: spec.sceneFrames[scene.index] / spec.fps, end_s: spec.sceneFrames[scene.index + 1] / spec.fps }));
+      spec.under.quietBands = await quietBands(ctx.tools, spec.under.file.path, spec.under.info, times, framesDir);
+    }
     const built = await buildPage(spec, pageDir, ctx, reserve);
 
     const refusePage = (problems: string[]) => {
       throw ctx.error('bad_input', problems.slice(0, 3).join(' '));
     };
     const encodeSegment = async (start: number, count: number, frameBytes: number) => {
-      const segment = path.join(segmentsDir, `seg-${String(segments.length + 1).padStart(5, '0')}.mp4`);
-      await encodeInto(segmentArgs({ tools: ctx.tools, framesDir, start, count, fps: spec.fps, out: segment }), segment);
+      // Over a video, the page's frames keep their alpha until the last pass lays them over it.
+      const segment = path.join(segmentsDir, `seg-${String(segments.length + 1).padStart(5, '0')}.${spec.under ? 'mov' : 'mp4'}`);
+      const args = spec.under
+        ? alphaSegmentArgs({ framesDir, framePattern: FRAME_PATTERN, start, count, fps: spec.fps, out: segment })
+        : segmentArgs({ tools: ctx.tools, framesDir, start, count, fps: spec.fps, out: segment });
+      await encodeInto(args, segment);
       segments.push(segment);
       for (let i = start; i < start + count; i++) await rm(path.join(framesDir, frameName(i)), { force: true });
       release(frameBytes);
@@ -211,7 +225,7 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
         const file = path.join(framesDir, frameName(index));
         // Room for the largest PNG this size can be, then only what it took.
         reserve(frameBound);
-        await page.screenshot({ path: file, type: 'png' });
+        await page.screenshot({ path: file, type: 'png', omitBackground: !!spec.under });
         const png = await readFile(file);
         release(frameBound - Math.min(frameBound, png.length));
         if (png.length > frameBound) reserve(png.length - frameBound);
@@ -249,7 +263,19 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
     reserve(Buffer.byteLength(listText));
     await writeFile(list, listText);
     await mkdir(ctx.workDir, { recursive: true });
-    await encodeInto(concatArgs(list, out), out);
+    if (spec.under) {
+      const args = compositeArgs({
+        tools: ctx.tools,
+        under: spec.under.file.path,
+        list,
+        size: spec.output,
+        fps: spec.fps,
+        frames: total,
+        hasAudio: spec.under.info.hasAudio,
+        out,
+      });
+      await encodeInto(args, out);
+    } else await encodeInto(concatArgs(list, out), out);
 
     // The output check: the size the aspect asks for, the length the frames make, H.264 in yuv420p.
     const seconds = total / spec.fps;

@@ -3,8 +3,9 @@
 // kit core's schema checker, so the part refuses exactly what part.json does,
 // however it is called.
 import { schemaErrors } from '../core/schema';
-import type { FileRef, PartContext } from '../part-interface';
+import type { FileRef, PartContext, Timeline } from '../part-interface';
 import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.0/part.json';
+import { underSceneFrames, type UnderInfo, type UnderSpec } from './under';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -80,7 +81,17 @@ export interface MakerSpec {
   /** Device scale factor: output / design. */
   scale: number;
   values: Record<string, unknown>;
+  /** The video the page is drawn over (1.2.0), or null for a video of the page alone. */
+  under: UnderSpec | null;
 }
+
+/** What the maker measured before reading the inputs: the video to draw over, read with ffprobe. */
+export interface Measured {
+  under?: UnderInfo | null;
+}
+
+/** The inputs that set the video's length; exactly one is given. */
+const LENGTH_SOURCES = ['duration_s', 'scene_s', 'pace', 'speech', 'under'] as const;
 
 type Fail = (detail: string) => never;
 
@@ -198,7 +209,7 @@ function brandOf(value: unknown, fail: Fail): BrandSpec | null {
 }
 
 /** Reads the part's inputs into a render plan, or throws bad_input naming the problem. */
-export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): MakerSpec {
+export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measured: Measured = {}): MakerSpec {
   const fail: Fail = (detail) => {
     throw ctx.error('bad_input', detail);
   };
@@ -223,7 +234,30 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
   if (typeof aspect !== 'string' || !(aspect in DESIGN_SIZE)) fail(`aspect should be one of ${Object.keys(DESIGN_SIZE).join(', ')}`);
   const design = DESIGN_SIZE[aspect as Aspect];
 
-  const fps = raw.fps ?? 30;
+  const given = LENGTH_SOURCES.filter((key) => raw[key] !== undefined && raw[key] !== null);
+  if (given.length !== 1) fail('give exactly one of duration_s (the whole video), scene_s (each scene), pace, speech or under (a video to draw over)');
+  const source = given[0];
+
+  let under: UnderSpec | null = null;
+  if (source === 'under') {
+    const file = fileOf(raw.under, 'under', ['video'], fail);
+    if (!isObject(raw.under_timeline)) fail('under_timeline should be the timeline of the video to draw over');
+    const timeline = raw.under_timeline as unknown as Timeline;
+    const info = measured.under === undefined ? null : measured.under;
+    if (measured.under === null) fail('the video to draw over could not be read');
+    // Before it is measured (a dry read), the timeline's own length stands in.
+    const seconds = info?.seconds ?? (typeof file.duration_s === 'number' ? file.duration_s : timeline.duration_s);
+    under = {
+      file,
+      timeline,
+      info: info ?? { seconds, width: timeline.width, height: timeline.height, fps: timeline.fps, hasAudio: false },
+    };
+  } else if (raw.under_timeline !== undefined && raw.under_timeline !== null) fail('under_timeline is given without under');
+  if (source === 'pace' || source === 'speech') fail(`${source} is not supported by this build of html-frames yet`);
+
+  // Drawn over a video, the frame rate follows it unless the step sets one.
+  const underFps = under?.info.fps ? Math.min(LIMITS.maxFps, Math.max(1, Math.round(under.info.fps))) : null;
+  const fps = raw.fps ?? underFps ?? 30;
   if (typeof fps !== 'number' || !Number.isInteger(fps) || fps < 1 || fps > LIMITS.maxFps) fail(`fps should be a whole number from 1 to ${LIMITS.maxFps}`);
 
   const shortSide = raw.short_side ?? 1080;
@@ -231,18 +265,25 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
   const scale = (shortSide as number) / 1080;
   const output = { width: Math.round(design.width * scale), height: Math.round(design.height * scale) };
 
-  const hasTotal = raw.duration_s !== undefined && raw.duration_s !== null;
-  const hasPerScene = raw.scene_s !== undefined && raw.scene_s !== null;
-  if (hasTotal === hasPerScene) fail('give exactly one of duration_s (the whole video) or scene_s (each scene)');
-  const seconds = hasTotal ? raw.duration_s : (raw.scene_s as number) * scenes.length;
+  const seconds = under ? under.info.seconds : source === 'duration_s' ? raw.duration_s : (raw.scene_s as number) * scenes.length;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < LIMITS.minSeconds || seconds > LIMITS.maxSeconds) {
     fail(`the video would be ${String(seconds)} seconds; it must be ${LIMITS.minSeconds} to ${LIMITS.maxSeconds}`);
   }
   const frameCount = Math.round(seconds * fps);
   if (frameCount < scenes.length) fail(`${scenes.length} scenes need at least ${scenes.length} frames; the video has ${frameCount}`);
-  // Scenes share the video evenly, on whole frames, so every scene starts on a frame.
-  const sceneFrames = scenes.map((_, i) => Math.round((i * frameCount) / scenes.length));
-  sceneFrames.push(frameCount);
+  let sceneFrames: number[];
+  if (under) {
+    // Scenes take the real times of the video drawn over.
+    const fromUnder = underSceneFrames(scenes.map((scene) => scene.id), under.timeline, fps, frameCount);
+    if (!fromUnder) {
+      fail(`the plan's ${scenes.length} scenes do not match the ${under.timeline.scenes.length} scenes of the video to draw over (by id or in order)`);
+    }
+    sceneFrames = fromUnder;
+  } else {
+    // Scenes share the video evenly, on whole frames, so every scene starts on a frame.
+    sceneFrames = scenes.map((_, i) => Math.round((i * frameCount) / scenes.length));
+    sceneFrames.push(frameCount);
+  }
 
   const values = raw.values ?? {};
   if (!isObject(values)) fail('values should be an object');
@@ -263,5 +304,6 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
     output,
     scale,
     values,
+    under,
   };
 }

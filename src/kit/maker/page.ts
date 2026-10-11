@@ -304,6 +304,9 @@ export async function buildPage(
     brand,
     fonts: families,
     values: spec.values,
+    under: spec.under
+      ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] }
+      : null,
     preload,
   };
   const head =
