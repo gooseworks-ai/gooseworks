@@ -16,6 +16,7 @@ import { copyFile, mkdir, readFile, rm } from 'fs/promises';
 import * as path from 'path';
 import type {
   BrandKit,
+  CaptionLook,
   CheckVerdict,
   FileRef,
   FixHint,
@@ -209,12 +210,14 @@ function checkLock(raw: unknown, videoId: string, plan: ApprovedPlan): PartsLock
   return lock;
 }
 
-function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputExpectation {
+/** What the finished video must be, handed to every layer as `expect`. Exported for tests. */
+export function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputExpectation {
   const aspect = String(plan.body.aspect ?? style.aspects?.[0] ?? '');
   const size = ASPECT_SIZE[aspect];
   if (!size) throw new KitStop('This video’s shape can’t be made by the kit.', 'change_request');
   const scenes = Array.isArray(plan.body.scenes) ? (plan.body.scenes as Array<{ line?: unknown }>) : [];
   const script = scenes.map((s) => s?.line).filter((l): l is string => typeof l === 'string' && l.length > 0);
+  const captionLook = captionLookOf(style.traits?.caption_look);
   return {
     aspect: aspect as OutputExpectation['aspect'],
     ...size,
@@ -224,7 +227,14 @@ function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputE
     end_card: style.traits?.end_card === true,
     qc_flags: Array.isArray(style.traits?.qc_flags) ? style.traits.qc_flags : [],
     ...(script.length ? { script } : {}),
+    ...(captionLook ? { caption_look: captionLook } : {}),
   };
+}
+
+/** The style's caption look, copied as written when it is an object; the captions layer checks its fields. */
+function captionLookOf(look: unknown): CaptionLook | undefined {
+  if (!look || typeof look !== 'object' || Array.isArray(look)) return undefined;
+  return JSON.parse(JSON.stringify(look)) as CaptionLook;
 }
 
 function brandKit(materialized: unknown): BrandKit {
