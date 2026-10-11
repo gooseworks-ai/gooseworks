@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readInputs } from '../../../src/kit/maker/inputs';
 import { makeVideo } from '../../../src/kit/maker/make';
-import { compositeArgs, passThroughTimeline, quietBandOf, underSceneFrames } from '../../../src/kit/maker/under';
+import { compositeArgs, passThroughTimeline, quietBandOf, underIsShared, underSceneFrames } from '../../../src/kit/maker/under';
 import type { Timeline } from '../../../src/kit/part-interface';
 import { TestPartError, describeMedia, fileRef, partContext, pixelAt, runFfmpeg } from './helpers';
 
@@ -75,8 +75,28 @@ describe('scene times from the video drawn over', () => {
   });
 
   it('gives up when the scenes cannot be paired', () => {
-    const timeline = { scenes: [{ id: 'cut-1', start_s: 0, end_s: 2 }] };
-    expect(underSceneFrames(['s1', 's2'], timeline, 30, 60)).toBeNull();
+    const timeline = { scenes: [{ id: 'cut-1', start_s: 0, end_s: 1 }, { id: 'cut-2', start_s: 1, end_s: 2 }] };
+    expect(underSceneFrames(['s1', 's2', 's3'], timeline, 30, 60)).toBeNull();
+  });
+
+  it('shares a one-scene video evenly between several plan scenes, on whole frames', () => {
+    const timeline = { scenes: [{ id: 'clip', start_s: 0, end_s: 10 }] };
+    expect(underIsShared(['s1', 's2', 's3', 's4', 's5', 's6'], timeline)).toBe(true);
+    // 10 s at 30 fps over 6 scenes: 50 frames each, the same split as a video of a given length.
+    expect(underSceneFrames(['s1', 's2', 's3', 's4', 's5', 's6'], timeline, 30, 300)).toEqual([0, 50, 100, 150, 200, 250, 300]);
+    // An uneven count rounds each start to a whole frame.
+    expect(underSceneFrames(['a', 'b', 'c'], timeline, 30, 301)).toEqual([0, 100, 201, 301]);
+  });
+
+  it('keeps pairing a one-scene video with a one-scene plan by its own time', () => {
+    const timeline = { scenes: [{ id: 'clip', start_s: 0, end_s: 2 }] };
+    expect(underIsShared(['s1'], timeline)).toBe(false);
+    expect(underSceneFrames(['s1'], timeline, 30, 60)).toEqual([0, 60]);
+  });
+
+  it('gives up when a one-scene video is shorter than a frame per scene', () => {
+    const timeline = { scenes: [{ id: 'clip', start_s: 0, end_s: 0.1 }] };
+    expect(underSceneFrames(['a', 'b', 'c', 'd'], timeline, 30, 3)).toBeNull();
   });
 });
 
@@ -88,6 +108,27 @@ describe('the timeline of a video drawn over', () => {
     expect(out.speech).toEqual(underTimeline.speech);
     expect(out.end_card).toEqual({ start_s: 1.5, end_s: 1.8 });
     expect(out.safe_zones).toEqual([{ use: 'captions', x: 72, y: 933, w: 576, h: 133 }]);
+  });
+
+  it('takes the plan scenes that shared a one-scene video, and moves named speech to the scene it starts in', () => {
+    const one: Timeline = {
+      ...underTimeline,
+      scenes: [{ id: 'clip', start_s: 0, end_s: 2 }],
+      speech: [
+        { scene_id: 'clip', text: 'Hello', start_s: 0.2, end_s: 0.6 },
+        { scene_id: 'clip', text: 'Bye', start_s: 1.4, end_s: 1.9 },
+        { text: 'Unnamed', start_s: 1.0, end_s: 1.2 },
+      ],
+    };
+    const scenes = [{ id: 's1', start_s: 0, end_s: 1 }, { id: 's2', start_s: 1, end_s: 2 }];
+    const out = passThroughTimeline(one, { duration_s: 2, width: 1080, height: 1920, fps: 30 }, scenes);
+    expect(out.scenes).toEqual(scenes);
+    expect(out.speech).toEqual([
+      { scene_id: 's1', text: 'Hello', start_s: 0.2, end_s: 0.6 },
+      { scene_id: 's2', text: 'Bye', start_s: 1.4, end_s: 1.9 },
+      { text: 'Unnamed', start_s: 1.0, end_s: 1.2 },
+    ]);
+    expect(out.end_card).toEqual({ start_s: 1.5, end_s: 2 });
   });
 
   it('crops zones when the video is a different shape from the page', () => {
@@ -150,7 +191,22 @@ describe('under inputs', () => {
   });
 
   it('refuses plan scenes that do not match the video', () => {
-    expect(() => readInputs({ ...base(), scenes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }, errorCtx, measured)).toThrow(/do not match/);
+    expect(() => readInputs({ ...base(), scenes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }, errorCtx, measured)).toThrow(
+      "the plan's 3 scenes do not match the 2 scenes of the video to draw over (by id or in order)",
+    );
+  });
+
+  it('shares a one-scene video (one clip) evenly between the plan scenes', () => {
+    const oneClip: Timeline = { ...underTimeline, duration_s: 10, scenes: [{ id: 'clip', start_s: 0, end_s: 10 }], speech: [] };
+    const scenes = ['s1', 's2', 's3', 's4', 's5', 's6'].map((id) => ({ id }));
+    const spec = readInputs({ ...base(), scenes, under_timeline: oneClip }, errorCtx, { under: { seconds: 10, width: 720, height: 1280, fps: 30, hasAudio: false } });
+    expect([spec.frameCount, spec.sceneFrames]).toEqual([300, [0, 50, 100, 150, 200, 250, 300]]);
+  });
+
+  it('still refuses a one-scene video too short for a frame per plan scene', () => {
+    const oneClip: Timeline = { ...underTimeline, duration_s: 0.1, scenes: [{ id: 'clip', start_s: 0, end_s: 0.1 }], speech: [] };
+    const scenes = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+    expect(() => readInputs({ ...base(), scenes, under_timeline: oneClip }, errorCtx, { under: { seconds: 0.1, width: 720, height: 1280, fps: 30, hasAudio: false } })).toThrow(/bad_input/);
   });
 
   it('refuses a video it could not read', () => {
@@ -219,6 +275,43 @@ kit.render(function (t, frame) {
       expect(isRed(pixelAt(still, 250, Math.round(1280 * 0.7)))).toBe(true);
       expect(isGrey(pixelAt(still, 600, Math.round(1280 * 0.7)))).toBe(true);
       expect(isVideo(pixelAt(still, 250, Math.round(1280 * 0.3)))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it('draws a several-scene page over one clip, the scenes sharing it evenly', async () => {
+    const root = temp();
+    try {
+      const underFile = path.join(root, 'clip.mp4');
+      runFfmpeg(['-y', '-f', 'lavfi', '-i', 'color=c=gray:s=720x1280:r=30:d=1.2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', underFile]);
+      writeFileSync(
+        path.join(root, 'page.html'),
+        `<!doctype html><html><head><style>html,body{margin:0;background:transparent}</style></head>
+<body><div id="t"></div><script>
+kit.render(function (t, frame) { document.getElementById('t').textContent = frame.scene.id; });
+</script></body></html>`,
+      );
+      const { ctx } = partContext(root);
+      const oneClip: Timeline = { duration_s: 1.2, width: 720, height: 1280, fps: 30, scenes: [{ id: 'clip', start_s: 0, end_s: 1.2 }], speech: [] };
+      const made = await makeVideo(
+        {
+          template: fileRef(path.join(root, 'page.html')),
+          scenes: [{ id: 'a', on_screen: 'one' }, { id: 'b', on_screen: 'two' }, { id: 'c', on_screen: 'three' }],
+          aspect: '9:16',
+          max_words: 8,
+          short_side: 720,
+          under: fileRef(underFile),
+          under_timeline: oneClip,
+        },
+        ctx,
+      );
+      expect(made.frameHashes).toHaveLength(36);
+      expect(made.timeline.scenes).toEqual([
+        { id: 'a', start_s: 0, end_s: 0.4 },
+        { id: 'b', start_s: 0.4, end_s: 0.8 },
+        { id: 'c', start_s: 0.8, end_s: 1.2 },
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

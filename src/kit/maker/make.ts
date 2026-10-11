@@ -15,7 +15,7 @@ import { isAnimatedImage } from './images';
 import { isFileRef, readInputs, type MakerSpec } from './inputs';
 import { buildPage } from './page';
 import { zoneOnVideo } from './timing';
-import { alphaSegmentArgs, compositeArgs, passThroughTimeline, probeUnder, quietBands, type UnderInfo } from './under';
+import { alphaSegmentArgs, compositeArgs, passThroughTimeline, probeUnder, quietBands, underIsShared, type UnderInfo } from './under';
 
 /** What the maker gives back; the part returns the first three. */
 export interface MakerResult {
@@ -45,17 +45,16 @@ export interface LogoRect {
 export function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
   const size = { duration_s: spec.frameCount / spec.fps, width: spec.output.width, height: spec.output.height, fps: spec.fps };
   // Drawn over a video, the video's own scenes, speech, end card and zones carry through.
+  const scenes = spec.scenes.map((scene) => ({
+    id: scene.id,
+    start_s: spec.sceneFrames[scene.index] / spec.fps,
+    end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
+  }));
+  // Plan scenes that shared a one-scene video drawn over are this video's scenes.
+  const shared = spec.under && underIsShared(spec.scenes.map((scene) => scene.id), spec.under.timeline);
   const timeline: Timeline = spec.under
-    ? passThroughTimeline(spec.under.timeline, size)
-    : {
-        ...size,
-        scenes: spec.scenes.map((scene) => ({
-          id: scene.id,
-          start_s: spec.sceneFrames[scene.index] / spec.fps,
-          end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
-        })),
-        speech: spec.speech,
-      };
+    ? passThroughTimeline(spec.under.timeline, size, shared ? scenes : undefined)
+    : { ...size, scenes, speech: spec.speech };
   // The last end_card_scenes scenes are the end card (over a video, this replaces its own).
   if (spec.endCardScenes > 0) {
     timeline.end_card = { start_s: spec.sceneFrames[spec.scenes.length - spec.endCardScenes] / spec.fps, end_s: size.duration_s };

@@ -379,7 +379,7 @@
         }
       },
       "under_timeline": {
-        "description": "The timeline of the video drawn over. kit.scenes take its scene times by id (in order when no id matches); its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
+        "description": "The timeline of the video drawn over. kit.scenes take its scene times by id (in order when no id matches and the counts match). When it is one scene (one clip, say) and the plan has several, the plan's scenes share it evenly on whole frames and become this step's scenes; any other count mismatch is refused. Its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -861,6 +861,7 @@
   "outputs": {
     "type": "object",
     "additionalProperties": false,
+    "required": [],
     "properties": {
       "video": {
         "description": "H.264 in yuv420p, BT.709, at the aspect's size. Silent, unless it was drawn over a video with sound (that sound is kept as AAC) or the page marked sound cues.",

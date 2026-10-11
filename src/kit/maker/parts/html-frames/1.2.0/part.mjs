@@ -948,7 +948,7 @@ var inputs = {
       }
     },
     under_timeline: {
-      description: "The timeline of the video drawn over. kit.scenes take its scene times by id (in order when no id matches); its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
+      description: "The timeline of the video drawn over. kit.scenes take its scene times by id (in order when no id matches and the counts match). When it is one scene (one clip, say) and the plan has several, the plan's scenes share it evenly on whole frames and become this step's scenes; any other count mismatch is refused. Its speech, end_card and safe_zones pass through to this step's timeline. kit.under.quiet_band[i] is the emptiest band of scene i's middle frame.",
       type: "object",
       additionalProperties: false,
       required: [
@@ -1647,7 +1647,16 @@ async function quietBands(tools, file, info, times, dir) {
   }
   return bands;
 }
+function underIsShared(ids, timeline) {
+  return timeline.scenes.length === 1 && ids.length > 1;
+}
 function underSceneFrames(ids, timeline, fps, frameCount) {
+  if (underIsShared(ids, timeline)) {
+    if (frameCount < ids.length) return null;
+    const shared = ids.map((_, i) => Math.round(i * frameCount / ids.length));
+    shared.push(frameCount);
+    return shared;
+  }
   const byId = new Map(timeline.scenes.map((s) => [s.id, s]));
   const matched = ids.map((id) => byId.get(id) ?? null);
   let spans;
@@ -1745,16 +1754,21 @@ function fitZone(zone, fit, size) {
   if (x1 - x0 < 1 || y1 - y0 < 1) return null;
   return { ...zone, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) };
 }
-function passThroughTimeline(under, out) {
+function passThroughTimeline(under, out, scenes) {
   const end = out.duration_s;
   const cut = (items) => items.filter((item) => item.start_s < end).map((item) => item.end_s > end ? { ...item, end_s: end } : item);
+  let speech = cut(under.speech);
+  if (scenes?.length) {
+    const sceneAt = (t) => scenes.find((s) => t < s.end_s) ?? scenes[scenes.length - 1];
+    speech = speech.map((entry) => typeof entry.scene_id === "string" ? { ...entry, scene_id: sceneAt(entry.start_s).id } : entry);
+  }
   const timeline = {
     duration_s: out.duration_s,
     width: out.width,
     height: out.height,
     fps: out.fps,
-    scenes: cut(under.scenes.map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
-    speech: cut(under.speech)
+    scenes: cut((scenes ?? under.scenes).map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
+    speech
   };
   if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
   const fit = coverFit({ width: under.width, height: under.height }, out);
@@ -3125,15 +3139,13 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
 var FRAME_TIMEOUT_MS = 6e4;
 function timelineOf(spec, logo) {
   const size = { duration_s: spec.frameCount / spec.fps, width: spec.output.width, height: spec.output.height, fps: spec.fps };
-  const timeline = spec.under ? passThroughTimeline(spec.under.timeline, size) : {
-    ...size,
-    scenes: spec.scenes.map((scene) => ({
-      id: scene.id,
-      start_s: spec.sceneFrames[scene.index] / spec.fps,
-      end_s: spec.sceneFrames[scene.index + 1] / spec.fps
-    })),
-    speech: spec.speech
-  };
+  const scenes = spec.scenes.map((scene) => ({
+    id: scene.id,
+    start_s: spec.sceneFrames[scene.index] / spec.fps,
+    end_s: spec.sceneFrames[scene.index + 1] / spec.fps
+  }));
+  const shared = spec.under && underIsShared(spec.scenes.map((scene) => scene.id), spec.under.timeline);
+  const timeline = spec.under ? passThroughTimeline(spec.under.timeline, size, shared ? scenes : void 0) : { ...size, scenes, speech: spec.speech };
   if (spec.endCardScenes > 0) {
     timeline.end_card = { start_s: spec.sceneFrames[spec.scenes.length - spec.endCardScenes] / spec.fps, end_s: size.duration_s };
   }

@@ -156,10 +156,20 @@ export async function quietBands(
 }
 
 /**
+ * True when the plan's scenes share the video drawn over evenly: that video is
+ * one scene (one clip, say) and the plan has several.
+ */
+export function underIsShared(ids: string[], timeline: Pick<Timeline, 'scenes'>): boolean {
+  return timeline.scenes.length === 1 && ids.length > 1;
+}
+
+/**
  * Scene start frames from the timeline of the video drawn over. Each plan scene
  * takes the time of the timeline scene with its id; when ids do not match and
- * both list the same number of scenes, they pair in order. Returns null when
- * the scenes cannot be paired.
+ * both list the same number of scenes, they pair in order. When that video is
+ * one scene and the plan has several, the plan's scenes share it evenly on
+ * whole frames, as they share a video of a given length. Returns null when the
+ * scenes cannot be paired.
  */
 export function underSceneFrames(
   ids: string[],
@@ -167,6 +177,12 @@ export function underSceneFrames(
   fps: number,
   frameCount: number,
 ): number[] | null {
+  if (underIsShared(ids, timeline)) {
+    if (frameCount < ids.length) return null;
+    const shared = ids.map((_, i) => Math.round((i * frameCount) / ids.length));
+    shared.push(frameCount);
+    return shared;
+  }
   const byId = new Map(timeline.scenes.map((s) => [s.id, s]));
   const matched = ids.map((id) => byId.get(id) ?? null);
   let spans: Array<{ start_s: number }>;
@@ -245,19 +261,30 @@ function fitZone<Z extends { x: number; y: number; w: number; h: number }>(zone:
 /**
  * The timeline of a video drawn over: the video's own scenes, speech, end card
  * and safe zones carried through (cut to the new length, zones moved to the
- * new picture), with this video's length, size and frame rate.
+ * new picture), with this video's length, size and frame rate. When the plan's
+ * scenes shared a one-scene video (`scenes` given), they are the scenes, and a
+ * speech entry that names a scene names the one it starts in.
  */
-export function passThroughTimeline(under: Timeline, out: { duration_s: number; width: number; height: number; fps: number }): Timeline {
+export function passThroughTimeline(
+  under: Timeline,
+  out: { duration_s: number; width: number; height: number; fps: number },
+  scenes?: Array<{ id: string; start_s: number; end_s: number }>,
+): Timeline {
   const end = out.duration_s;
   const cut = <T extends { start_s: number; end_s: number }>(items: T[]) =>
     items.filter((item) => item.start_s < end).map((item) => (item.end_s > end ? { ...item, end_s: end } : item));
+  let speech = cut(under.speech);
+  if (scenes?.length) {
+    const sceneAt = (t: number) => scenes.find((s) => t < s.end_s) ?? scenes[scenes.length - 1];
+    speech = speech.map((entry) => (typeof entry.scene_id === 'string' ? { ...entry, scene_id: sceneAt(entry.start_s).id } : entry));
+  }
   const timeline: Timeline = {
     duration_s: out.duration_s,
     width: out.width,
     height: out.height,
     fps: out.fps,
-    scenes: cut(under.scenes.map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
-    speech: cut(under.speech),
+    scenes: cut((scenes ?? under.scenes).map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
+    speech,
   };
   if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
   const fit = coverFit({ width: under.width, height: under.height }, out);
