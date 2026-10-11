@@ -4,7 +4,7 @@
 // however it is called.
 import { schemaErrors } from '../core/schema';
 import type { FileRef, PartContext } from '../part-interface';
-import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.1.0/part.json';
+import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.0/part.json';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -40,6 +40,10 @@ export interface SceneSpec {
   picture: FileRef | string | null;
   /** A picture the customer uploaded for this scene (a partner's icon, a screen), as a file. */
   image: FileRef | null;
+  /** The cast key of who says this scene (1.2.0). */
+  speaker: string | null;
+  /** The style's own scene fields (1.2.0), passed to the page as they are. */
+  extra: Record<string, unknown> | null;
 }
 
 export interface ProductSpec {
@@ -139,7 +143,10 @@ function scenesOf(value: unknown, maxWords: number, fail: Fail): SceneSpec[] {
     if (isFileRef(raw.picture)) picture = fileOf(raw.picture, `${at}.picture`, ['image'], fail);
     else picture = optionalText(raw.picture, `${at}.picture`, fail);
     const image = raw.image === undefined || raw.image === null ? null : fileOf(raw.image, `${at}.image`, ['image'], fail);
-    return { id, index, line, on_screen: onScreen, picture, image };
+    const speaker = optionalText(raw.speaker, `${at}.speaker`, fail);
+    if (raw.extra !== undefined && raw.extra !== null && !isObject(raw.extra)) fail(`${at}.extra should be an object`);
+    const extra = isObject(raw.extra) ? raw.extra : null;
+    return { id, index, line, on_screen: onScreen, picture, image, speaker, extra };
   });
 }
 

@@ -268,6 +268,8 @@ export async function buildPage(
       on_screen: scene.on_screen,
       picture,
       image,
+      speaker: scene.speaker,
+      extra: scene.extra,
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
     });
