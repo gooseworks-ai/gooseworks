@@ -5,6 +5,20 @@
 import { schemaErrors } from '../core/schema';
 import type { FileRef, PartContext, Timeline } from '../part-interface';
 import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.0/part.json';
+import {
+  clipZone,
+  countWords,
+  framesOfStarts,
+  isBlankScene,
+  paceHolds,
+  speechTimes,
+  startsOfHolds,
+  wordsByScene,
+  type PaceSpec,
+  type SpeechEntry,
+  type SpokenWord,
+  type Zone,
+} from './timing';
 import { underSceneFrames, type UnderInfo, type UnderSpec } from './under';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
@@ -83,6 +97,16 @@ export interface MakerSpec {
   values: Record<string, unknown>;
   /** The video the page is drawn over (1.2.0), or null for a video of the page alone. */
   under: UnderSpec | null;
+  /** The voice track the scenes were timed by, or the speech of the video drawn over; else empty (1.2.0). */
+  speech: SpeechEntry[];
+  /** Each scene's spoken words, in video seconds (kit.scenes[i].words). */
+  words: SpokenWord[][];
+  /** Where captions may go, in the page's CSS pixels, kept to the page (1.2.0). */
+  captionZone: Zone | null;
+  /** How many of the last scenes are the end card; 0 for none (1.2.0). */
+  endCardScenes: number;
+  /** skip_blank asked for nothing and no scene has text: the step makes nothing (1.2.0). */
+  skip: boolean;
 }
 
 /** What the maker measured before reading the inputs: the video to draw over, read with ffprobe. */
@@ -125,11 +149,7 @@ function optionalText(value: unknown, at: string, fail: Fail): string | null {
   return value;
 }
 
-/** Words as a reader counts them: runs of letters or digits, joined by ' or -. */
-export function countWords(text: string | null): number {
-  if (!text) return 0;
-  return text.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
-}
+export { countWords };
 
 function scenesOf(value: unknown, maxWords: number, fail: Fail): SceneSpec[] {
   if (!Array.isArray(value) || value.length === 0) fail('scenes should list at least one scene');
@@ -253,7 +273,6 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
       info: info ?? { seconds, width: timeline.width, height: timeline.height, fps: timeline.fps, hasAudio: false },
     };
   } else if (raw.under_timeline !== undefined && raw.under_timeline !== null) fail('under_timeline is given without under');
-  if (source === 'pace' || source === 'speech') fail(`${source} is not supported by this build of html-frames yet`);
 
   // Drawn over a video, the frame rate follows it unless the step sets one.
   const underFps = under?.info.fps ? Math.min(LIMITS.maxFps, Math.max(1, Math.round(under.info.fps))) : null;
@@ -265,14 +284,44 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
   const scale = (shortSide as number) / 1080;
   const output = { width: Math.round(design.width * scale), height: Math.round(design.height * scale) };
 
-  const seconds = under ? under.info.seconds : source === 'duration_s' ? raw.duration_s : (raw.scene_s as number) * scenes.length;
+  // Scenes timed by a voice track or held by their words start where these say.
+  const speechIn = source === 'speech' ? (raw.speech as SpeechEntry[]) : null;
+  let timed: { starts: number[]; seconds: number } | null = null;
+  if (speechIn) {
+    const times = speechTimes(scenes.map((scene) => scene.id), speechIn, typeof raw.tail_s === 'number' ? raw.tail_s : 0);
+    if (typeof times === 'string') fail(times);
+    timed = times;
+  } else if (source === 'pace') {
+    const holds = paceHolds(scenes, raw.pace as unknown as PaceSpec);
+    if (typeof holds === 'string') fail(holds);
+    timed = startsOfHolds(holds);
+  }
+
+  const seconds = under
+    ? under.info.seconds
+    : timed
+      ? timed.seconds
+      : source === 'duration_s'
+        ? raw.duration_s
+        : (raw.scene_s as number) * scenes.length;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < LIMITS.minSeconds || seconds > LIMITS.maxSeconds) {
     fail(`the video would be ${String(seconds)} seconds; it must be ${LIMITS.minSeconds} to ${LIMITS.maxSeconds}`);
   }
   const frameCount = Math.round(seconds * fps);
   if (frameCount < scenes.length) fail(`${scenes.length} scenes need at least ${scenes.length} frames; the video has ${frameCount}`);
   let sceneFrames: number[];
-  if (under) {
+  if (timed) {
+    const frames = framesOfStarts(timed.starts, fps, frameCount);
+    if (!Array.isArray(frames)) {
+      const scene = scenes[frames.empty];
+      fail(
+        `scene ${frames.empty + 1} (${scene.id}) gets no time at ${fps} fps: ${
+          source === 'speech' ? 'the speech gives it none (a scene with no speech needs a gap, or tail_s at the end)' : 'its pace hold is too short'
+        }`,
+      );
+    }
+    sceneFrames = frames;
+  } else if (under) {
     // Scenes take the real times of the video drawn over.
     const fromUnder = underSceneFrames(scenes.map((scene) => scene.id), under.timeline, fps, frameCount);
     if (!fromUnder) {
@@ -288,6 +337,16 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
   const values = raw.values ?? {};
   if (!isObject(values)) fail('values should be an object');
   if (JSON.stringify(values).length > 64 * 1024) fail('values is larger than 64 KB');
+
+  let captionZone: Zone | null = null;
+  if (raw.caption_zone !== undefined && raw.caption_zone !== null) {
+    captionZone = clipZone(raw.caption_zone as unknown as Zone, design);
+    if (!captionZone) fail(`caption_zone lies outside the ${design.width}x${design.height} page`);
+  }
+  const endCardScenes = typeof raw.end_card_scenes === 'number' ? raw.end_card_scenes : 0;
+  if (endCardScenes > scenes.length) fail(`end_card_scenes is ${endCardScenes}, but there are only ${scenes.length} scenes`);
+
+  const speech = speechIn ?? under?.timeline.speech ?? [];
 
   return {
     template,
@@ -305,5 +364,10 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measur
     scale,
     values,
     under,
+    speech,
+    words: wordsByScene(speech, sceneFrames, fps),
+    captionZone,
+    endCardScenes,
+    skip: raw.skip_blank === true && scenes.every(isBlankScene),
   };
 }

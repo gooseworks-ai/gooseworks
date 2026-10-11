@@ -13,6 +13,7 @@ import { FRAME_PATTERN, SEGMENT_FRAMES, concatArgs, concatList, frameName, pngSi
 import { isAnimatedImage } from './images';
 import { isFileRef, readInputs, type MakerSpec } from './inputs';
 import { buildPage } from './page';
+import { zoneOnVideo } from './timing';
 import { alphaSegmentArgs, compositeArgs, passThroughTimeline, probeUnder, quietBands, type UnderInfo } from './under';
 
 /** What the maker gives back; the part returns the first three. */
@@ -30,14 +31,14 @@ const FRAME_TIMEOUT_MS = 60_000;
 type MakerContext = Pick<PartContext, 'workDir' | 'tmpDir' | 'tools' | 'browser' | 'progress' | 'log' | 'error' | 'signal' | 'file'>;
 
 /** Where the page drew the brand's logo, in the page's CSS pixels. */
-interface LogoRect {
+export interface LogoRect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
+export function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
   const size = { duration_s: spec.frameCount / spec.fps, width: spec.output.width, height: spec.output.height, fps: spec.fps };
   // Drawn over a video, the video's own scenes, speech, end card and zones carry through.
   const timeline: Timeline = spec.under
@@ -49,8 +50,13 @@ function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
           start_s: spec.sceneFrames[scene.index] / spec.fps,
           end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
         })),
-        speech: [],
+        speech: spec.speech,
       };
+  // The last end_card_scenes scenes are the end card (over a video, this replaces its own).
+  if (spec.endCardScenes > 0) {
+    timeline.end_card = { start_s: spec.sceneFrames[spec.scenes.length - spec.endCardScenes] / spec.fps, end_s: size.duration_s };
+  }
+  const zones: NonNullable<Timeline['safe_zones']> = [];
   // The logo's box on the output picture, so the final check can look for the logo where it is drawn.
   if (logo) {
     const k = spec.scale;
@@ -58,8 +64,15 @@ function timelineOf(spec: MakerSpec, logo: LogoRect | null): Timeline {
     const y0 = Math.max(0, Math.floor(logo.y * k));
     const x1 = Math.min(spec.output.width, Math.ceil((logo.x + logo.w) * k));
     const y1 = Math.min(spec.output.height, Math.ceil((logo.y + logo.h) * k));
-    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: 'logo' as const, x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, ...(timeline.safe_zones ?? [])].slice(0, 8);
+    if (x1 - x0 >= 4 && y1 - y0 >= 4) zones.push({ use: 'logo' as const, x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   }
+  // The style's caption zone, in the video's pixels; it takes the place of any caption zone of a video drawn over.
+  const captions = spec.captionZone ? zoneOnVideo(spec.captionZone, spec.scale, spec.output) : null;
+  if (captions) zones.push({ use: 'captions' as const, ...captions });
+  const carried = (timeline.safe_zones ?? []).filter((zone) => !captions || zone.use !== 'captions');
+  const all = [...zones, ...carried].slice(0, 8);
+  if (all.length) timeline.safe_zones = all;
+  else delete timeline.safe_zones;
   return timeline;
 }
 
@@ -113,12 +126,28 @@ function pageError(error: unknown): { code: string; detail: string } | null {
   return { code: shape.code, detail: String(shape.detail ?? shape.message ?? '') };
 }
 
+/** The video, refusing a step that skip_blank would leave empty. */
 export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: MakerOptions = {}): Promise<MakerResult> {
+  const made = await makeOrSkip(rawInputs, ctx, options);
+  if (!made) throw ctx.error('bad_input', 'no scene has on-screen text or a line, and skip_blank makes nothing for that');
+  return made;
+}
+
+/**
+ * What the part runs: the video, or null when skip_blank is on and no scene
+ * has on-screen text or a line (the step then gives no outputs, and the kit
+ * leaves out every reference to them).
+ */
+export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options: MakerOptions = {}): Promise<MakerResult | null> {
   // A video to draw over is measured first: its length is the video's length.
   const underRef = rawInputs && typeof rawInputs === 'object' ? (rawInputs as { under?: unknown }).under : undefined;
   let underInfo: UnderInfo | null | undefined;
   if (isFileRef(underRef) && underRef.media === 'video') underInfo = await probeUnder(ctx.tools, underRef.path);
   const spec = readInputs(rawInputs, ctx, { under: underInfo });
+  if (spec.skip) {
+    ctx.log.info('no scene has text; skip_blank makes nothing', { scenes: spec.scenes.length });
+    return null;
+  }
   if (!ctx.browser) throw ctx.error('needs_missing', 'the kit browser');
   const stopIfAsked = () => {
     if (ctx.signal.aborted) throw ctx.error('stopped');

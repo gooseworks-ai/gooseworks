@@ -270,6 +270,7 @@ export async function buildPage(
       image,
       speaker: scene.speaker,
       extra: scene.extra,
+      words: spec.words[scene.index] ?? [],
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps,
     });
@@ -304,6 +305,7 @@ export async function buildPage(
     brand,
     fonts: families,
     values: spec.values,
+    speech: spec.speech,
     under: spec.under
       ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] }
       : null,

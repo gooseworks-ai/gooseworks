@@ -926,7 +926,7 @@ var inputs = {
       }
     },
     speech: {
-      description: "A voice track timeline's speech (step.<voice>.timeline.speech). Scene i starts at its first speech entry; the video ends tail_s after the last one. Passed through to the output timeline and to kit.speech; kit.scenes[i].words lists the words spoken in scene i.",
+      description: "A voice track timeline's speech (step.<voice>.timeline.speech). Entries pair with scenes by scene_id, or in order when no entry has one and the counts match. Scene 1 starts at 0 and every other scene at its first speech entry; scenes with no speech share the gap before the next scene evenly. The video ends tail_s after the last entry. Passed through to the output timeline and to kit.speech; kit.scenes[i].words lists the words that start in scene i.",
       type: "array",
       minItems: 1,
       maxItems: 400,
@@ -991,7 +991,7 @@ var inputs = {
       maximum: 10
     },
     pace: {
-      description: "Each scene holds base_s + per_word_s for each word of its on_screen text (or its line when it has none), kept between min_s and max_s; the last scene holds at least last_min_s.",
+      description: "Each scene holds base_s + per_word_s for each word of its on_screen text (or its line when it has none), kept between min_s and max_s; the last scene holds at least last_min_s. The video is the sum of the holds.",
       type: "object",
       additionalProperties: false,
       required: [
@@ -1027,7 +1027,7 @@ var inputs = {
       }
     },
     caption_zone: {
-      description: "Where captions may go, in the page's CSS pixels (1080 on the short side). Reported in the video's pixels as timeline.safe_zones[use=captions], which the captions layer keeps to.",
+      description: "Where captions may go, in the page's CSS pixels (1080 on the short side), kept to the page. Reported in the video's pixels (rounded inward) as timeline.safe_zones[use=captions], which the captions layer keeps to; it replaces any caption zone of the video drawn over.",
       type: "object",
       additionalProperties: false,
       required: [
@@ -1056,13 +1056,13 @@ var inputs = {
       }
     },
     end_card_scenes: {
-      description: "The last this many scenes are the end card: timeline.end_card spans them, so no caption is drawn over them.",
+      description: "The last this many scenes are the end card: timeline.end_card spans them to the end, so no caption is drawn over them. Drawn over a video, it replaces that video's end card. 0 adds none.",
       type: "integer",
       minimum: 0,
       maximum: 30
     },
     skip_blank: {
-      description: "When no scene has on_screen text or a line, the step makes nothing (no video, no timeline) instead of a blank video.",
+      description: "When no scene has on_screen text or a line, the step makes nothing (no video, no timeline) instead of a blank video; the kit then leaves out every reference to its outputs.",
       type: "boolean"
     },
     media: {
@@ -1224,6 +1224,110 @@ var inputs = {
     }
   ]
 };
+
+// src/kit/maker/timing.ts
+function countWords(text2) {
+  if (!text2) return 0;
+  return text2.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+}
+function isBlankScene(scene) {
+  return !scene.on_screen?.trim() && !scene.line?.trim();
+}
+function speechByScene(ids, speech) {
+  const byScene = ids.map(() => []);
+  if (speech.some((entry) => typeof entry.scene_id === "string")) {
+    const index = new Map(ids.map((id, i) => [id, i]));
+    for (const entry of speech) {
+      if (typeof entry.scene_id !== "string") continue;
+      const i = index.get(entry.scene_id);
+      if (i === void 0) return `speech names scene "${entry.scene_id}", which is not one of the scenes`;
+      byScene[i].push(entry);
+    }
+    return byScene;
+  }
+  if (speech.length !== ids.length) {
+    return `speech has ${speech.length} entries without scene ids, so they cannot be paired with ${ids.length} scenes`;
+  }
+  speech.forEach((entry, i) => byScene[i].push(entry));
+  return byScene;
+}
+function speechTimes(ids, speech, tailS) {
+  for (const [k, entry] of speech.entries()) {
+    if (entry.end_s < entry.start_s) return `speech entry ${k + 1} ends (${entry.end_s} s) before it starts (${entry.start_s} s)`;
+  }
+  const byScene = speechByScene(ids, speech);
+  if (typeof byScene === "string") return byScene;
+  const seconds = Math.max(...speech.map((entry) => entry.end_s)) + tailS;
+  const first = byScene.map((entries) => entries.length ? Math.min(...entries.map((e) => e.start_s)) : null);
+  const last = byScene.map((entries) => entries.length ? Math.max(...entries.map((e) => e.end_s)) : null);
+  const starts = ids.map((_, i) => i === 0 ? 0 : first[i]);
+  for (let a = 1; a < ids.length; a++) {
+    if (starts[a] !== null) continue;
+    let b = a;
+    while (b + 1 < ids.length && starts[b + 1] === null) b++;
+    const to = b + 1 < ids.length ? starts[b + 1] : seconds;
+    const spoken = last.slice(0, a).filter((v) => v !== null);
+    const from = Math.min(to, Math.max(starts[a - 1], ...spoken));
+    const count = b - a + 1;
+    for (let k = 0; k < count; k++) starts[a + k] = from + (to - from) * k / count;
+    a = b;
+  }
+  return { starts, seconds };
+}
+function paceHolds(scenes, pace) {
+  const min = pace.min_s ?? 0;
+  const max = pace.max_s ?? Infinity;
+  if (min > max) return `pace.min_s (${min}) is more than pace.max_s (${max})`;
+  const holds = scenes.map((scene) => {
+    const words = countWords(scene.on_screen) || countWords(scene.line);
+    return Math.min(max, Math.max(min, pace.base_s + pace.per_word_s * words));
+  });
+  holds[holds.length - 1] = Math.max(holds[holds.length - 1], pace.last_min_s ?? 0);
+  return holds;
+}
+function startsOfHolds(holds) {
+  const starts = [];
+  let at = 0;
+  for (const hold of holds) {
+    starts.push(at);
+    at += hold;
+  }
+  return { starts, seconds: at };
+}
+function framesOfStarts(starts, fps, frameCount) {
+  const frames = starts.map((s, i) => i === 0 ? 0 : Math.min(frameCount, Math.max(0, Math.round(s * fps))));
+  frames.push(frameCount);
+  for (let i = 0; i + 1 < frames.length; i++) if (frames[i + 1] <= frames[i]) return { empty: i };
+  return frames;
+}
+function wordsByScene(speech, sceneFrames, fps) {
+  const scenes = sceneFrames.length - 1;
+  const out = Array.from({ length: scenes }, () => []);
+  const words = speech.flatMap((entry) => entry.words ?? []).slice().sort((a, b) => a.start_s - b.start_s);
+  for (const word of words) {
+    const frame = Math.round(word.start_s * fps);
+    let i = scenes - 1;
+    while (i > 0 && frame < sceneFrames[i]) i--;
+    out[i].push({ text: word.text, start_s: word.start_s, end_s: word.end_s });
+  }
+  return out;
+}
+function clipZone(zone, page) {
+  const x0 = Math.max(0, zone.x);
+  const y0 = Math.max(0, zone.y);
+  const x1 = Math.min(page.width, zone.x + zone.w);
+  const y1 = Math.min(page.height, zone.y + zone.h);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function zoneOnVideo(zone, scale, size) {
+  const x0 = Math.max(0, Math.ceil(zone.x * scale - 1e-6));
+  const y0 = Math.max(0, Math.ceil(zone.y * scale - 1e-6));
+  const x1 = Math.min(size.width, Math.floor((zone.x + zone.w) * scale + 1e-6));
+  const y1 = Math.min(size.height, Math.floor((zone.y + zone.h) * scale + 1e-6));
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 
 // src/kit/maker/under.ts
 import { readFile, rm } from "node:fs/promises";
@@ -1493,10 +1597,6 @@ function optionalText(value, at, fail) {
   if (value.length > LIMITS.textChars) fail(`${at} is longer than ${LIMITS.textChars} characters`);
   return value;
 }
-function countWords(text2) {
-  if (!text2) return 0;
-  return text2.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
-}
 function scenesOf(value, maxWords, fail) {
   if (!Array.isArray(value) || value.length === 0) fail("scenes should list at least one scene");
   if (value.length > LIMITS.scenes) fail(`scenes lists ${value.length} scenes; at most ${LIMITS.scenes} are allowed`);
@@ -1610,7 +1710,6 @@ function readInputs(raw, ctx, measured = {}) {
       info: info ?? { seconds: seconds2, width: timeline.width, height: timeline.height, fps: timeline.fps, hasAudio: false }
     };
   } else if (raw.under_timeline !== void 0 && raw.under_timeline !== null) fail("under_timeline is given without under");
-  if (source === "pace" || source === "speech") fail(`${source} is not supported by this build of html-frames yet`);
   const underFps = under?.info.fps ? Math.min(LIMITS.maxFps, Math.max(1, Math.round(under.info.fps))) : null;
   const fps = raw.fps ?? underFps ?? 30;
   if (typeof fps !== "number" || !Number.isInteger(fps) || fps < 1 || fps > LIMITS.maxFps) fail(`fps should be a whole number from 1 to ${LIMITS.maxFps}`);
@@ -1618,14 +1717,34 @@ function readInputs(raw, ctx, measured = {}) {
   if (!SHORT_SIDES.includes(shortSide)) fail(`short_side should be ${SHORT_SIDES.join(" or ")}`);
   const scale = shortSide / 1080;
   const output = { width: Math.round(design.width * scale), height: Math.round(design.height * scale) };
-  const seconds = under ? under.info.seconds : source === "duration_s" ? raw.duration_s : raw.scene_s * scenes.length;
+  const speechIn = source === "speech" ? raw.speech : null;
+  let timed = null;
+  if (speechIn) {
+    const times = speechTimes(scenes.map((scene) => scene.id), speechIn, typeof raw.tail_s === "number" ? raw.tail_s : 0);
+    if (typeof times === "string") fail(times);
+    timed = times;
+  } else if (source === "pace") {
+    const holds = paceHolds(scenes, raw.pace);
+    if (typeof holds === "string") fail(holds);
+    timed = startsOfHolds(holds);
+  }
+  const seconds = under ? under.info.seconds : timed ? timed.seconds : source === "duration_s" ? raw.duration_s : raw.scene_s * scenes.length;
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < LIMITS.minSeconds || seconds > LIMITS.maxSeconds) {
     fail(`the video would be ${String(seconds)} seconds; it must be ${LIMITS.minSeconds} to ${LIMITS.maxSeconds}`);
   }
   const frameCount = Math.round(seconds * fps);
   if (frameCount < scenes.length) fail(`${scenes.length} scenes need at least ${scenes.length} frames; the video has ${frameCount}`);
   let sceneFrames;
-  if (under) {
+  if (timed) {
+    const frames2 = framesOfStarts(timed.starts, fps, frameCount);
+    if (!Array.isArray(frames2)) {
+      const scene = scenes[frames2.empty];
+      fail(
+        `scene ${frames2.empty + 1} (${scene.id}) gets no time at ${fps} fps: ${source === "speech" ? "the speech gives it none (a scene with no speech needs a gap, or tail_s at the end)" : "its pace hold is too short"}`
+      );
+    }
+    sceneFrames = frames2;
+  } else if (under) {
     const fromUnder = underSceneFrames(scenes.map((scene) => scene.id), under.timeline, fps, frameCount);
     if (!fromUnder) {
       fail(`the plan's ${scenes.length} scenes do not match the ${under.timeline.scenes.length} scenes of the video to draw over (by id or in order)`);
@@ -1638,6 +1757,14 @@ function readInputs(raw, ctx, measured = {}) {
   const values = raw.values ?? {};
   if (!isObject(values)) fail("values should be an object");
   if (JSON.stringify(values).length > 64 * 1024) fail("values is larger than 64 KB");
+  let captionZone = null;
+  if (raw.caption_zone !== void 0 && raw.caption_zone !== null) {
+    captionZone = clipZone(raw.caption_zone, design);
+    if (!captionZone) fail(`caption_zone lies outside the ${design.width}x${design.height} page`);
+  }
+  const endCardScenes = typeof raw.end_card_scenes === "number" ? raw.end_card_scenes : 0;
+  if (endCardScenes > scenes.length) fail(`end_card_scenes is ${endCardScenes}, but there are only ${scenes.length} scenes`);
+  const speech = speechIn ?? under?.timeline.speech ?? [];
   return {
     template,
     frames,
@@ -1653,7 +1780,12 @@ function readInputs(raw, ctx, measured = {}) {
     output,
     scale,
     values,
-    under
+    under,
+    speech,
+    words: wordsByScene(speech, sceneFrames, fps),
+    captionZone,
+    endCardScenes,
+    skip: raw.skip_blank === true && scenes.every(isBlankScene)
   };
 }
 
@@ -2517,6 +2649,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
       image,
       speaker: scene.speaker,
       extra: scene.extra,
+      words: spec.words[scene.index] ?? [],
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps
     });
@@ -2546,6 +2679,7 @@ async function buildPage(spec, dir, ctx, reserve = () => void 0) {
     brand,
     fonts: families,
     values: spec.values,
+    speech: spec.speech,
     under: spec.under ? { duration_s: spec.frameCount / spec.fps, has_audio: spec.under.info.hasAudio, quiet_band: spec.under.quietBands ?? [] } : null,
     preload
   };
@@ -2566,16 +2700,26 @@ function timelineOf(spec, logo) {
       start_s: spec.sceneFrames[scene.index] / spec.fps,
       end_s: spec.sceneFrames[scene.index + 1] / spec.fps
     })),
-    speech: []
+    speech: spec.speech
   };
+  if (spec.endCardScenes > 0) {
+    timeline.end_card = { start_s: spec.sceneFrames[spec.scenes.length - spec.endCardScenes] / spec.fps, end_s: size.duration_s };
+  }
+  const zones = [];
   if (logo) {
     const k = spec.scale;
     const x0 = Math.max(0, Math.floor(logo.x * k));
     const y0 = Math.max(0, Math.floor(logo.y * k));
     const x1 = Math.min(spec.output.width, Math.ceil((logo.x + logo.w) * k));
     const y1 = Math.min(spec.output.height, Math.ceil((logo.y + logo.h) * k));
-    if (x1 - x0 >= 4 && y1 - y0 >= 4) timeline.safe_zones = [{ use: "logo", x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, ...timeline.safe_zones ?? []].slice(0, 8);
+    if (x1 - x0 >= 4 && y1 - y0 >= 4) zones.push({ use: "logo", x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   }
+  const captions = spec.captionZone ? zoneOnVideo(spec.captionZone, spec.scale, spec.output) : null;
+  if (captions) zones.push({ use: "captions", ...captions });
+  const carried = (timeline.safe_zones ?? []).filter((zone) => !captions || zone.use !== "captions");
+  const all = [...zones, ...carried].slice(0, 8);
+  if (all.length) timeline.safe_zones = all;
+  else delete timeline.safe_zones;
   return timeline;
 }
 async function withTimeout(work, ms, onTimeout) {
@@ -2610,11 +2754,15 @@ function pageError(error) {
   if (!shape || shape.code !== "bad_input" && shape.code !== "tool_failed") return null;
   return { code: shape.code, detail: String(shape.detail ?? shape.message ?? "") };
 }
-async function makeVideo(rawInputs, ctx, options = {}) {
+async function makeOrSkip(rawInputs, ctx, options = {}) {
   const underRef = rawInputs && typeof rawInputs === "object" ? rawInputs.under : void 0;
   let underInfo;
   if (isFileRef2(underRef) && underRef.media === "video") underInfo = await probeUnder(ctx.tools, underRef.path);
   const spec = readInputs(rawInputs, ctx, { under: underInfo });
+  if (spec.skip) {
+    ctx.log.info("no scene has text; skip_blank makes nothing", { scenes: spec.scenes.length });
+    return null;
+  }
   if (!ctx.browser) throw ctx.error("needs_missing", "the kit browser");
   const stopIfAsked = () => {
     if (ctx.signal.aborted) throw ctx.error("stopped");
@@ -2777,7 +2925,8 @@ async function makeVideo(rawInputs, ctx, options = {}) {
 
 // src/kit/maker/parts/html-frames/src/part.ts
 var run = async (inputs2, ctx) => {
-  const made = await makeVideo(inputs2, ctx);
+  const made = await makeOrSkip(inputs2, ctx);
+  if (!made) return {};
   return { video: made.video, seconds: made.seconds, timeline: made.timeline };
 };
 export {

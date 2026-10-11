@@ -536,7 +536,7 @@
         }
       },
       "speech": {
-        "description": "A voice track timeline's speech (step.<voice>.timeline.speech). Scene i starts at its first speech entry; the video ends tail_s after the last one. Passed through to the output timeline and to kit.speech; kit.scenes[i].words lists the words spoken in scene i.",
+        "description": "A voice track timeline's speech (step.<voice>.timeline.speech). Entries pair with scenes by scene_id, or in order when no entry has one and the counts match. Scene 1 starts at 0 and every other scene at its first speech entry; scenes with no speech share the gap before the next scene evenly. The video ends tail_s after the last entry. Passed through to the output timeline and to kit.speech; kit.scenes[i].words lists the words that start in scene i.",
         "type": "array",
         "minItems": 1,
         "maxItems": 400,
@@ -601,7 +601,7 @@
         "maximum": 10
       },
       "pace": {
-        "description": "Each scene holds base_s + per_word_s for each word of its on_screen text (or its line when it has none), kept between min_s and max_s; the last scene holds at least last_min_s.",
+        "description": "Each scene holds base_s + per_word_s for each word of its on_screen text (or its line when it has none), kept between min_s and max_s; the last scene holds at least last_min_s. The video is the sum of the holds.",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -637,7 +637,7 @@
         }
       },
       "caption_zone": {
-        "description": "Where captions may go, in the page's CSS pixels (1080 on the short side). Reported in the video's pixels as timeline.safe_zones[use=captions], which the captions layer keeps to.",
+        "description": "Where captions may go, in the page's CSS pixels (1080 on the short side), kept to the page. Reported in the video's pixels (rounded inward) as timeline.safe_zones[use=captions], which the captions layer keeps to; it replaces any caption zone of the video drawn over.",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -666,13 +666,13 @@
         }
       },
       "end_card_scenes": {
-        "description": "The last this many scenes are the end card: timeline.end_card spans them, so no caption is drawn over them.",
+        "description": "The last this many scenes are the end card: timeline.end_card spans them to the end, so no caption is drawn over them. Drawn over a video, it replaces that video's end card. 0 adds none.",
         "type": "integer",
         "minimum": 0,
         "maximum": 30
       },
       "skip_blank": {
-        "description": "When no scene has on_screen text or a line, the step makes nothing (no video, no timeline) instead of a blank video.",
+        "description": "When no scene has on_screen text or a line, the step makes nothing (no video, no timeline) instead of a blank video; the kit then leaves out every reference to its outputs.",
         "type": "boolean"
       },
       "media": {
