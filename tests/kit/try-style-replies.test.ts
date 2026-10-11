@@ -9,7 +9,7 @@
 // code). One test per model: a new model gets a fixture and a test.
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { API, tryLine } from '../../scripts/try-style/line';
@@ -216,6 +216,15 @@ describe('try-style real mode: /v1/music/detailed', () => {
     // Two 8 s sections at $0.15 a minute.
     expect(JSON.parse(ledger.split('\n')[0]).est_usd).toBeCloseTo(0.04);
     expect(ledger).not.toContain('secret-value');
+  });
+
+  it('refuses a plan sent with music_length_ms before anything is reserved or sent', async () => {
+    const dir = tmp();
+    const fetchImpl = jest.fn(async () => new Response('{}', { status: 200 }));
+    const answer = await real(dir, fetchImpl).order({ provider: 'elevenlabs', path: '/v1/music/detailed', body: { ...contract.request, music_length_ms: 16000 } }, ctxFor(dir));
+    expect(answer).toMatchObject({ kind: 'failed', code: 'provider_rejected', next: 'stop' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(existsSync(path.join(dir, 'spend.jsonl')) ? readFileSync(path.join(dir, 'spend.jsonl'), 'utf8').trim() : '').toBe('');
   });
 
   it('fails the piece when the reply is not the two-part song', async () => {

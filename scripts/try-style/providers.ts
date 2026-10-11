@@ -838,6 +838,10 @@ export class RealProvider implements Provider {
   async order(call: PieceCall, ctx: ProviderContext): Promise<ProviderAnswer> {
     const kind = callKind(call);
     if (kind === 'unknown') return { kind: 'refused', code: 'not_allowed', message: `try-style does not forward ${call.provider} ${plainPath(call.path)}.` };
+    // Never send a song's length together with its plan (MASTER-PLAN §4.8), and refuse it before anything is reserved, as the stand-in does.
+    if (kind === 'song' && call.body.composition_plan != null && call.body.music_length_ms !== undefined) {
+      return { kind: 'failed', code: 'provider_rejected', message: 'music_length_ms is refused together with a composition_plan.', next: 'stop' };
+    }
     const key = this.key(call.provider);
     if (!key) return { kind: 'refused', code: 'no_key', message: `${call.provider === 'fal' ? 'FAL_KEY (FAL_API_KEY in --env-file)' : 'ELEVENLABS_API_KEY'} was not given.` };
     const usd = await this.estimate(call, ctx, key);
