@@ -26,6 +26,7 @@ import { createKitBrowserSupport } from '../src/kit/maker/browser';
 import { FixtureFiles, freezeBrand, planBody } from './try-style/fixtures';
 import { API, tryLine } from './try-style/line';
 import { ffmpegFor, probe, run } from './try-style/media';
+import { stageStyle } from './try-style/dev-styles';
 import { fileSha, MAX_NIGHT_CAP_USD, readEnvKeys, realGateProblems } from './try-style/gates';
 import { FakeProvider, RealProvider, SpendLedger, type Provider } from './try-style/providers';
 
@@ -241,6 +242,9 @@ async function main(): Promise<number> {
   rmSync(path.join(args.out, 'run.json'), { force: true });
   rmSync(path.join(args.out, 'spend.json'), { force: true });
   mkdirSync(work, { recursive: true });
+  // The kit reads the style from a copy inside the run folder, so the style's own files can be sent to a provider
+  // (the kit hosts only files inside the video's folder). style_sha above stays the original file's.
+  const kitStylesDir = stageStyle(stylesDir, args.style, path.join(home, 'videos', videoId));
 
   const line = tryLine({
     videoId,
@@ -263,7 +267,7 @@ async function main(): Promise<number> {
   Object.assign(kitEnv, {
     GOOSEWORKS_API_BASE: API,
     GOOSE_KIT_PARTS_DIR: path.resolve(partsDir),
-    GOOSE_KIT_STYLES_DIR: path.resolve(stylesDir),
+    GOOSE_KIT_STYLES_DIR: kitStylesDir,
     PLAYWRIGHT_BROWSERS_PATH: browsersPath,
   });
   delete kitEnv.GOOSE_KIT_HOME;
