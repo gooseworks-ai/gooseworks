@@ -42,6 +42,8 @@ export interface ProviderContext {
   planLines: string[];
   /** Actual part-planned native dialogue windows; present only in the local fake runner. */
   fakeTake?: (call: PieceCall) => Promise<FakeTake | null>;
+  /** Current completed native take identities; excludes sidecars from superseded inputs. */
+  fakeTakeKeys?: () => string[];
   /** A folder this piece may write its stand-ins into. */
   workDir: string;
   /** Serves a local file through the fake line; returns its link. */
@@ -316,7 +318,7 @@ async function fakeVideo(call: PieceCall, ctx: ProviderContext, seconds: number,
   if (audio === 'tone') {
     const chunks = take ? takeChunks(take) : null;
     const gates = chunks?.map((c) => `between(t,${c.timestamp[0]},${c.timestamp[1]})`).join('+');
-    const src = gates ? `aevalsrc='0.006*sin(2*PI*97*t)+0.18*sin(2*PI*330*t)*min(1,${gates})':s=48000:d=${d.toFixed(3)}` : `sine=f=330:sample_rate=48000:d=${d.toFixed(3)}`;
+    const src = take ? `aevalsrc='0.006*sin(2*PI*97*t)+0.18*sin(2*PI*330*t)*min(1,${gates || '0'})':s=48000:d=${d.toFixed(3)}` : `sine=f=330:sample_rate=48000:d=${d.toFixed(3)}`;
     args.push('-f', 'lavfi', '-i', src);
   }
   else if (audio) args.push('-i', audio);
@@ -467,7 +469,8 @@ export class FakeProvider implements Provider {
         const seconds = (await probe(ctx.tools, audio.path)).duration_s;
         // fal Whisper's word chunks carry a leading space, and `text` is them joined.
         // Sidecars survive a resume that replays earlier video pieces without invoking this provider.
-        const takes = [...new Set(readdirSync(ctx.workDir).filter((f) => f.endsWith('.fake-take.json')).map((f) => readFileSync(path.join(ctx.workDir, f), 'utf8')))].map((s) => JSON.parse(s) as FakeTake).sort((a, b) => a.offset - b.offset);
+        const active = new Set(ctx.fakeTakeKeys?.() || []);
+        const takes = readdirSync(ctx.workDir).filter((f) => f.endsWith('.fake-take.json')).map((f) => JSON.parse(readFileSync(path.join(ctx.workDir, f), 'utf8')) as { idempotency_key: string; take: FakeTake }).filter((s) => active.has(s.idempotency_key)).map((s) => s.take).sort((a, b) => a.offset - b.offset);
         const native = takes.flatMap((take) => takeChunks(take).map((c) => ({ ...c, timestamp: c.timestamp.map((t) => +(t + take.offset).toFixed(3)) as [number, number] })));
         const sameLines = native.map((c) => c.text).join(' ') === ctx.planLines.join(' ');
         const timed = sameLines && native.length ? native : spreadChunks(ctx.planLines, Math.min(0.1, seconds / 10), Math.max(0, seconds - 0.1));
@@ -503,7 +506,7 @@ export class FakeProvider implements Provider {
         const seconds = videoSeconds(b) ?? (model.includes('veo') ? 8 : 5);
         const take = model.includes('seedance') && ctx.fakeTake ? await ctx.fakeTake(call) : null;
         const made = await fakeVideo(call, ctx, seconds, videoHasAudio(model, b) ? 'tone' : null, take);
-        if (take && videoHasAudio(model, b)) writeFileSync(path.join(ctx.workDir, nameFor(ctx, 'fake-take.json')), JSON.stringify(take));
+        if (take && videoHasAudio(model, b)) writeFileSync(path.join(ctx.workDir, nameFor(ctx, 'fake-take.json')), JSON.stringify({ idempotency_key: ctx.idempotency_key, take }));
         return { kind: 'done', json: falVideoReply(modelOf(call), falFile(ctx, made.file, 'video/mp4'), num(b.seed) ?? seedFor(ctx)) };
       }
       default:

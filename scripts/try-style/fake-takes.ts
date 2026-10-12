@@ -29,3 +29,17 @@ export async function fakeTakeFor(runRoot: string, partsDir: string, pieceKey: s
     line: (scenes.get(id) as any)?.line ?? null, start: job.windows[i].start, end: job.windows[i].end,
   })) };
 }
+
+/** Only pieces referenced by the current run's completed native take records. */
+export function fakeTakeKeysFor(runRoot: string): string[] {
+  const runPath = path.join(runRoot, 'run.json');
+  if (!existsSync(runPath)) return [];
+  const run = JSON.parse(readFileSync(runPath, 'utf8'));
+  return Object.keys(run.steps || {}).filter((id) => /^[a-zA-Z0-9_-]+$/.test(id)).flatMap((id) => {
+    const recordPath = path.join(runRoot, 'steps', id, 'record.json');
+    if (!existsSync(recordPath)) return [];
+    const record = JSON.parse(readFileSync(recordPath, 'utf8'));
+    if (record.status !== 'done' || record.part?.id !== 'video-seedance-2' || !['take', 'takes'].includes(record.inputs?.mode)) return [];
+    return (record.pieces || []).map((p: any) => p.idempotency_key).filter((k: unknown): k is string => typeof k === 'string');
+  });
+}

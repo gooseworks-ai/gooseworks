@@ -1,9 +1,9 @@
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { FakeProvider, type ProviderContext, type ProviderAnswer } from '../../scripts/try-style/providers';
-import type { FakeTake } from '../../scripts/try-style/fake-takes';
+import { fakeTakeKeysFor, type FakeTake } from '../../scripts/try-style/fake-takes';
 
 const available = spawnSync('ffmpeg', ['-version']).status === 0;
 const mediaTest = available ? it : it.skip;
@@ -53,6 +53,7 @@ mediaTest('native take audio and Whisper words share actual beat windows, with a
   expect(quiet).toBeLessThan(-45);
   expect(spoken - quiet).toBeGreaterThan(25);
   const ctx = context('heard.whisper');
+  ctx.fakeTakeKeys = () => ['takes.take-t1'];
   ctx.hosted = () => ({ path: file, mime: 'audio/wav', bytes: 1, sha256: 'x' });
   // A resumed runner has a new provider instance and replays the completed video piece.
   const heard = await new FakeProvider().order({ provider: 'fal', path: 'fal-ai/whisper', body: { audio_url: 'gooseworks-file:audio' } }, ctx);
@@ -63,4 +64,37 @@ mediaTest('native take audio and Whisper words share actual beat windows, with a
   expect(chunks[1].timestamp[1]).toBeLessThan(1.5);
   expect(chunks[2].timestamp[0]).toBeGreaterThan(2.5);
   expect(chunks[2].timestamp[1]).toBeLessThan(4);
+});
+
+mediaTest('an all-silent native take produces only a quiet ambience bed', async () => {
+  const take: FakeTake = { offset: 0, seconds: 4, beats: [{ line: null, start: 0, end: 4 }] };
+  const provider = new FakeProvider();
+  const file = video(await provider.order({ provider: 'fal', path: 'bytedance/seedance-2.0/reference-to-video', body: { duration: '4', resolution: '360p', generate_audio: true } }, context('silent.take', take)));
+  const db = 20 * Math.log10(rms(decode(file, ['-vn', '-ar', '48000', '-ac', '1', '-f', 'f32le'])));
+  expect(db).toBeGreaterThan(-60);
+  expect(db).toBeLessThan(-45);
+  const ctx = context('heard.silent'); ctx.planLines = []; ctx.fakeTakeKeys = () => ['silent.take'];
+  ctx.hosted = () => ({ path: file, mime: 'audio/wav', bytes: 1, sha256: 'x' });
+  const heard = await new FakeProvider().order({ provider: 'fal', path: 'fal-ai/whisper', body: { audio_url: 'gooseworks-file:a' } }, ctx);
+  expect(heard.kind === 'done' && (heard.json as any).chunks).toEqual([]);
+});
+mediaTest('changed-window replay selects current piece identity and excludes superseded sidecars', async () => {
+  const provider = new FakeProvider();
+  const call = { provider: 'fal', path: 'bytedance/seedance-2.0/reference-to-video', body: { duration: '4', resolution: '360p', generate_audio: true } };
+  const old = context('replay.take', { offset: 0, seconds: 4, beats: [{ line: 'Hello there.', start: 0, end: 1.5 }] }); old.idempotency_key = 'old-inputs';
+  await provider.order(call, old);
+  const current = context('replay.take', { offset: 0, seconds: 4, beats: [{ line: null, start: 0, end: 2.5 }, { line: 'Hello there.', start: 2.5, end: 4 }] }); current.idempotency_key = 'new-inputs';
+  const file = video(await provider.order(call, current));
+  const runRoot = mkdtempSync(path.join(os.tmpdir(), 'active-fake-takes-'));
+  mkdirSync(path.join(runRoot, 'steps', 'takes'), { recursive: true });
+  writeFileSync(path.join(runRoot, 'run.json'), JSON.stringify({ steps: { takes: { status: 'done' } } }));
+  writeFileSync(path.join(runRoot, 'steps', 'takes', 'record.json'), JSON.stringify({ status: 'done', part: { id: 'video-seedance-2' }, inputs: { mode: 'takes' }, pieces: [{ idempotency_key: 'new-inputs' }] }));
+  const ctx = context('heard.replay'); ctx.planLines = ['Hello there.']; ctx.fakeTakeKeys = () => fakeTakeKeysFor(runRoot);
+  ctx.hosted = () => ({ path: file, mime: 'audio/wav', bytes: 1, sha256: 'x' });
+  const heard = await new FakeProvider().order({ provider: 'fal', path: 'fal-ai/whisper', body: { audio_url: 'gooseworks-file:a' } }, ctx);
+  if (heard.kind !== 'done') throw new Error(JSON.stringify(heard));
+  const chunks = (heard.json as any).chunks;
+  expect(chunks.map((c: any) => c.text.trim())).toEqual(['Hello', 'there.']);
+  expect(chunks[0].timestamp[0]).toBeGreaterThan(2.5);
+  expect(chunks[1].timestamp[1]).toBeLessThan(4);
 });
