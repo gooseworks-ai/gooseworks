@@ -73,7 +73,7 @@ interface Tracked {
 /** What has been made so far, as the card shows it. */
 export class ProgressBook {
   private readonly steps = new Map<string, Tracked>();
-  note = 'Getting your video ready';
+  note = 'Getting the style ready';
 
   plan(steps: Array<{ id: string; row: RowKey | null; typical_s: number }>): void {
     for (const step of steps) {

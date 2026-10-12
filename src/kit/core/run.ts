@@ -499,6 +499,12 @@ class Maker {
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal), note });
     await this.loadParts(!!dev.parts);
 
+    // The card's rows show from here, all still to do, while the plan's files come down.
+    const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
+    this.book.plan([...this.style.style.timeline.map((s) => planned(s.id)), ...this.layersOn().map((slot) => planned(`layer-${slot}`))]);
+    this.book.note = 'Getting your files ready';
+    void this.reporter.send(true);
+
     // The plan's files, checked against the hashes frozen at the yes.
     this.at = 'plan-files';
     const planFiles = {
@@ -516,8 +522,6 @@ class Maker {
     this.brand = brandKit(await materialize(plan.brand, planFiles));
 
     this.book.note = 'Making your video';
-    const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
-    this.book.plan([...this.style.style.timeline.map((s) => planned(s.id)), ...this.layersOn().map((slot) => planned(`layer-${slot}`))]);
     void this.reporter.send(true);
 
     // The fixes already in force (after a restart) apply from the start.
