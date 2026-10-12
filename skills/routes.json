@@ -17,7 +17,7 @@
     {
       "skill": "goose-video",
       "when": "Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started",
-      "how": "Use goose-video: watch the reference first, read the brand, compare style constraints; check custom support when no style fits.",
+      "how": "Use goose-video: explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints.",
       "delivery": "entry"
     },
     {

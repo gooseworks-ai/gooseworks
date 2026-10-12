@@ -62,7 +62,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-video',
     when: 'Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started',
-    how: 'Use goose-video: watch the reference first, read the brand, compare style constraints; check custom support when no style fits.',
+    how: 'Use goose-video: explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints.',
     delivery: 'entry',
   },
   {
@@ -84,7 +84,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
  * by name, so the CLI keeps installing them.
  */
 export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> = {
-  'make-custom-video': 'Studies the reference and checks custom support when no available style fits; fetching this entry alone does not enable custom production.',
+  'make-custom-video': 'Keeps an explicit custom choice without a picker, studies its reference and checks custom support; fetching this entry alone does not enable production.',
   'goose-video-local': 'One line: run the kit when a next_step says so.',
 };
 
