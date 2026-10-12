@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app codex/custom-video-adapter @ 2245c00ee42ff2ce2224e2fe9fe2a1fa15fa9be6
+// Source: gooseworks-app codex/custom-video-adapter @ 5ac1be4234cbc9deeb81d79845392a67e6f53c27
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //

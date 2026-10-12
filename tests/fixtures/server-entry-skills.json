@@ -1,7 +1,7 @@
 {
   "$comment": "SNAPSHOT of the server's entry skill text. The CLI cannot import gooseworks-app, so src/skills/server-entry-skills.ts carries a copy and tests/skills/server-entry-skills.test.ts checks it against this file, and this file against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. To refresh: run buildVideoEntrySkill(slug) and renderEntrySkillRules(product) from the files below, paste the output here and into src/skills/server-entry-skills.ts, then run npm run generate:skills.",
   "source_repo": "gooseworks-app",
-  "source_ref": "codex/custom-video-adapter @ 2245c00ee42ff2ce2224e2fe9fe2a1fa15fa9be6",
+  "source_ref": "codex/custom-video-adapter @ 5ac1be4234cbc9deeb81d79845392a67e6f53c27",
   "source_files": [
     "apps/api/src/services/playbooks/entry-skill.ts (buildVideoEntrySkill)",
     "apps/api/src/app-mcp-server/lib/video-policy.ts (renderEntrySkillRules, RULEBOOK_VERSION)"
