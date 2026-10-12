@@ -1,7 +1,7 @@
 ---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.4.3
+version: 3.5.0
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -28,13 +28,13 @@ Read brand_read (kit, products, rules), then knowledge_search. Use supported cla
 ## Create or resume
 
 New: video_create with brand_id, style custom, request and a required agent-generated UUID idempotency_key; retain products, name, reference_url and campaign. Reuse that key on retries. Resume with video_read the same project: retain plan_revision, custom_review, brand_context, production_manifest and execution; never create a replacement.
-Reference resolve accepts direct files; social links cause no automatic paid lookup. After watching stored media, video_change custom reference attach uses asset_id and original analysis_revision. Skip needs explicit brief-only user_quote. Pending/failed reference blocks approval; a URL is not viewing.
-A resolved reference also needs draft.reference_observation: exact source_url, real duration_s, evidence_mode playback or frames_and_audio, observed_through_s covering 95%, and a timed picture/audio summary with gaps. Its data binds the script token. Resolve/attach is not watching.
+Reference resolve accepts direct files; social links cause no automatic paid lookup. If GooseWorks can't download it, upload the file you watched into this project (media_upload scope video_project, media_confirm), wait for media_analyze read to show its duration, then video_change custom reference attach with asset_id and its current_revision as analysis_revision; each refusal names the condition to fix. Skip needs explicit brief-only user_quote. Pending/failed reference blocks approval; a URL is not viewing.
+A resolved reference also needs draft.reference_observation: the project's reference source_url, real duration_s, evidence_mode playback or frames_and_audio, observed_through_s covering 95%, and summary: what happens with times and gaps, as text or a list of {t, what}. Its data binds the script token. Resolve/attach is not watching.
 
 ## Save script and ingredients
 
 Follow the harness phases. Discover specialists for the actual scenes; check inputs, outputs, dependencies and managed execution. Reuse suitable product photos and deterministic text animation. Never substitute a template driver. Bind operations to this project and approved scene/script revisions.
-video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Quote paid operations through the live managed estimate path with real inputs/project. Save cumulative preview_estimate/render_estimate including committed spend. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
+video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Quote paid operations through the live managed estimate path with real inputs/project. Save preview_estimate/render_estimate for the work still to buy; the server adds committed_credits. Never edit a field the owner approved: the save sets their approval aside until the approved text is back. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
 
 ## Two authenticated owner reviews
 
@@ -44,6 +44,8 @@ Reread video_read after owner actions. Script approval permits quoted previews o
 ## Execute, check and deliver
 
 Require execution.local from a verified customer shell. No cloud, style-only kit, API host, worker or coworker sandbox. Otherwise report the gap.
-video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Completion needs a confirmed upload in this project; pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
+video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Completion needs a confirmed upload and rebuild recipe here; pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
+
+Rebuild recipe: every input the build reads, uploaded here or a linked Library original, plus recipe/source.json; prove a clean-folder rebuild, then save it as custom production source. The next step gives the format.
 
 Use plain words and returned credits. No invented claims, approvals, assets or passing checks.

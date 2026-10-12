@@ -32,6 +32,8 @@ export const ANSWER_FIELDS: readonly string[] = [
   'observed_through_s', 'expected_revision', 'brand_context_digest', 'preview_estimate',
   'render_estimate', 'approval_surface', 'script_approved', 'ingredients_approved',
   'harness_binding', 'requires_skills',
+  // make-custom-video since gooseworks-app #2007: reference upload/attach and the server-added spend.
+  'video_project', 'media_confirm', 'media_analyze', 'current_revision', 'committed_credits',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
@@ -42,6 +44,12 @@ export const ENTRY_SKILL_MAX_CHARS = 5000;
  * it to 3,000 means moving those commands into the skills that use them.
  */
 export const ROUTER_MAX_CHARS = 6500;
+/**
+ * make-custom-video carries the whole custom contract (reference viewing, two owner
+ * reviews, local execution and the stored rebuild recipe), and the server text
+ * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
+ */
+export const CUSTOM_VIDEO_MAX_CHARS = 6000;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;

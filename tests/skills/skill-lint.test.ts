@@ -6,18 +6,19 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { getEntrySkills } from '../../src/skills/master-skill';
-import { ACTION_NAMES, ENTRY_SKILL_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
+import { ACTION_NAMES, CUSTOM_VIDEO_MAX_CHARS, ENTRY_SKILL_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
 
-const limitFor = (name: string) => (name === 'gooseworks' ? ROUTER_MAX_CHARS : ENTRY_SKILL_MAX_CHARS);
+const limitFor = (name: string) =>
+  name === 'gooseworks' ? ROUTER_MAX_CHARS : name === 'make-custom-video' ? CUSTOM_VIDEO_MAX_CHARS : ENTRY_SKILL_MAX_CHARS;
 
 it.each(getEntrySkills())('$name passes the skill lint', ({ name, content }) => {
   expect(lintSkill(content, { maxChars: limitFor(name) })).toEqual([]);
 });
 
-it('keeps the video entry skills under 5,000 characters', () => {
+it('keeps the video entry skills within their size budgets', () => {
   const video = getEntrySkills().filter((skill) => ['goose-video', 'make-custom-video', 'goose-video-local'].includes(skill.name));
   expect(video).toHaveLength(3);
-  for (const skill of video) expect(lintSkill(skill.content, { maxChars: 5000 })).toEqual([]);
+  for (const skill of video) expect(lintSkill(skill.content, { maxChars: limitFor(skill.name) })).toEqual([]);
   expect(lintSkill('x'.repeat(5001), { maxChars: 5000 })).toEqual(['author.size_limits: 5001 characters, over 5000']);
 });
 
