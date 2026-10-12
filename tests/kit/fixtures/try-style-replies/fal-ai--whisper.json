@@ -1,0 +1,86 @@
+{
+  "model": "fal-ai/whisper",
+  "provider": "fal",
+  "path": "fal-ai/whisper",
+  "request": {
+    "audio_url": "https://example.invalid/voice.mp3",
+    "task": "transcribe",
+    "language": "en",
+    "chunk_level": "word"
+  },
+  "answer": {
+    "json": {
+      "text": " Meet the jacket that packs into its own pocket.",
+      "chunks": [
+        {
+          "timestamp": [
+            0.0,
+            0.32
+          ],
+          "text": " Meet"
+        },
+        {
+          "timestamp": [
+            0.32,
+            0.46
+          ],
+          "text": " the"
+        },
+        {
+          "timestamp": [
+            0.46,
+            0.88
+          ],
+          "text": " jacket"
+        },
+        {
+          "timestamp": [
+            0.88,
+            1.02
+          ],
+          "text": " that"
+        },
+        {
+          "timestamp": [
+            1.02,
+            1.4
+          ],
+          "text": " packs"
+        },
+        {
+          "timestamp": [
+            1.4,
+            1.58
+          ],
+          "text": " into"
+        },
+        {
+          "timestamp": [
+            1.58,
+            1.72
+          ],
+          "text": " its"
+        },
+        {
+          "timestamp": [
+            1.72,
+            1.98
+          ],
+          "text": " own"
+        },
+        {
+          "timestamp": [
+            1.98,
+            2.5
+          ],
+          "text": " pocket."
+        }
+      ],
+      "inferred_languages": [
+        "en"
+      ],
+      "diarization_segments": []
+    }
+  },
+  "pointer": null
+}

@@ -23,17 +23,33 @@ const fixture = <T>(name: string): T => JSON.parse(readFileSync(join(__dirname, 
 export const ACTION_NAMES: readonly string[] = fixture<{ actions: string[] }>('action-names.json').actions;
 export const RECIPE_SLUGS: readonly string[] = fixture<{ recipes: string[] }>('video-recipe-slugs.json').recipes;
 
-/** Answer fields a skill may name besides actions (the action contract's answer shape). */
-export const ANSWER_FIELDS: readonly string[] = ['next_step', 'display_hint'];
+/** Documented request/answer fields, entry metadata and reference-viewing enum values. */
+export const ANSWER_FIELDS: readonly string[] = [
+  'next_step', 'display_hint', 'plan_note',
+  'brand_id', 'idempotency_key', 'reference_url', 'plan_revision', 'custom_review',
+  'brand_context', 'production_manifest', 'asset_id', 'analysis_revision', 'user_quote',
+  'reference_observation', 'source_url', 'duration_s', 'evidence_mode', 'frames_and_audio',
+  'observed_through_s', 'expected_revision', 'brand_context_digest', 'preview_estimate',
+  'render_estimate', 'approval_surface', 'script_approved', 'ingredients_approved',
+  'harness_binding', 'requires_skills',
+  // make-custom-video since gooseworks-app #2007: reference upload/attach and the server-added spend.
+  'video_project', 'media_confirm', 'media_analyze', 'current_revision', 'committed_credits',
+];
 
-/** author.size_limits: an entry skill is at most 3,000 characters. */
-export const ENTRY_SKILL_MAX_CHARS = 3000;
+/** author.size_limits: an entry skill is at most 5,000 characters. */
+export const ENTRY_SKILL_MAX_CHARS = 5000;
 /**
  * The `gooseworks` router also carries the terminal data commands the
  * research and lead skills rely on, so it has its own, larger budget. Taking
  * it to 3,000 means moving those commands into the skills that use them.
  */
 export const ROUTER_MAX_CHARS = 6500;
+/**
+ * make-custom-video carries the whole custom contract (reference viewing, two owner
+ * reviews, local execution and the stored rebuild recipe), and the server text
+ * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
+ */
+export const CUSTOM_VIDEO_MAX_CHARS = 6000;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;
@@ -126,8 +142,10 @@ function lintView(text: string, actions: Set<string>, recipes: Set<string>): str
 
   const sign = CURRENCY_SIGN.exec(text);
   if (sign) problems.push(`money.credits_only: a currency sign (${sign[0]})`);
+  // The server gives only these two pinned kit commands; other npx usage remains a setup request.
+  const setupText = text.replace(/\bnpx -y gooseworks@\d+\.\d+\.\d+(?: --env (?:staging|production))? video (?:make <id>|check)(?=\s|[.,;`]|$)/g, 'GooseWorks video command');
   for (const command of INSTALL_COMMANDS) {
-    const found = command.exec(text);
+    const found = command.exec(setupText);
     if (found) problems.push(`setup.no_install: an install command (${found[0]})`);
   }
   for (const sentence of text.split(/[.!?\n]/)) {

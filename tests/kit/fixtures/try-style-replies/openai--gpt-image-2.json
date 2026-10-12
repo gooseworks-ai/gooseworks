@@ -1,0 +1,30 @@
+{
+  "model": "openai/gpt-image-2",
+  "provider": "fal",
+  "path": "openai/gpt-image-2",
+  "request": {
+    "prompt": "Portrait of a creator in a sunny kitchen",
+    "image_size": {
+      "width": 1088,
+      "height": 1920
+    },
+    "quality": "high",
+    "num_images": 1,
+    "output_format": "png"
+  },
+  "answer": {
+    "json": {
+      "images": [
+        {
+          "url": "https://v3b.fal.media/files/b/fixture/still.png",
+          "content_type": "image/png",
+          "file_name": "still.png",
+          "file_size": 1834512,
+          "width": 1088,
+          "height": 1920
+        }
+      ]
+    }
+  },
+  "pointer": "/json/images/0/url"
+}

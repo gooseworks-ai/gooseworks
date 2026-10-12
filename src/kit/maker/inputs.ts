@@ -3,8 +3,24 @@
 // kit core's schema checker, so the part refuses exactly what part.json does,
 // however it is called.
 import { schemaErrors } from '../core/schema';
-import type { FileRef, PartContext } from '../part-interface';
-import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.1.0/part.json';
+import type { FileRef, PartContext, Timeline } from '../part-interface';
+import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.0/part.json';
+import {
+  clipZone,
+  countWords,
+  framesOfStarts,
+  isBlankScene,
+  paceHolds,
+  speechTimes,
+  startsOfHolds,
+  wordsByScene,
+  zoneOnVideo,
+  type PaceSpec,
+  type SpeechEntry,
+  type SpokenWord,
+  type Zone,
+} from './timing';
+import { underSceneFrames, type UnderInfo, type UnderSpec } from './under';
 
 export type Aspect = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -40,6 +56,10 @@ export interface SceneSpec {
   picture: FileRef | string | null;
   /** A picture the customer uploaded for this scene (a partner's icon, a screen), as a file. */
   image: FileRef | null;
+  /** The cast key of who says this scene (1.2.0). */
+  speaker: string | null;
+  /** The style's own scene fields (1.2.0), passed to the page as they are. */
+  extra: Record<string, unknown> | null;
 }
 
 export interface ProductSpec {
@@ -54,6 +74,26 @@ export interface BrandSpec {
   colors: Record<string, string | string[]>;
   fonts: { heading: FileRef | null; body: FileRef | null };
   cta: { text: string; url: string | null } | null;
+}
+
+/** An extra picture the page shows by id (1.2.0 `media`): a cast still, a screen. */
+export interface MediaSpec {
+  id: string;
+  image: FileRef;
+}
+
+/**
+ * One plan.footage entry, as the page sees it (1.2.0 `footage`): its window and
+ * framing only. The file is never put in the page; a frame page cannot play video.
+ */
+export interface FootageSpec {
+  index: number;
+  scene_id: string | null;
+  kind: string;
+  start_s: number | null;
+  end_s: number | null;
+  crop: unknown;
+  fit: string | null;
 }
 
 export interface MakerSpec {
@@ -76,7 +116,33 @@ export interface MakerSpec {
   /** Device scale factor: output / design. */
   scale: number;
   values: Record<string, unknown>;
+  /** The video the page is drawn over (1.2.0), or null for a video of the page alone. */
+  under: UnderSpec | null;
+  /** The voice track the scenes were timed by, or the speech of the video drawn over; else empty (1.2.0). */
+  speech: SpeechEntry[];
+  /** Each scene's spoken words, in video seconds (kit.scenes[i].words). */
+  words: SpokenWord[][];
+  /** Where captions may go, in the page's CSS pixels, kept to the page (1.2.0). */
+  captionZone: Zone | null;
+  /** How many of the last scenes are the end card; 0 for none (1.2.0). */
+  endCardScenes: number;
+  /** skip_blank asked for nothing and no scene has text: the step makes nothing (1.2.0). */
+  skip: boolean;
+  /** Extra pictures by id (1.2.0), staged as kit.media. */
+  media: MediaSpec[];
+  /** plan.footage windows (1.2.0), never the files. */
+  footage: FootageSpec[];
+  /** Measure every picture into kit.facts (1.2.0). */
+  facts: boolean;
 }
+
+/** What the maker measured before reading the inputs: the video to draw over, read with ffprobe. */
+export interface Measured {
+  under?: UnderInfo | null;
+}
+
+/** The inputs that set the video's length; exactly one is given. */
+const LENGTH_SOURCES = ['duration_s', 'scene_s', 'pace', 'speech', 'under'] as const;
 
 type Fail = (detail: string) => never;
 
@@ -110,11 +176,7 @@ function optionalText(value: unknown, at: string, fail: Fail): string | null {
   return value;
 }
 
-/** Words as a reader counts them: runs of letters or digits, joined by ' or -. */
-export function countWords(text: string | null): number {
-  if (!text) return 0;
-  return text.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
-}
+export { countWords };
 
 function scenesOf(value: unknown, maxWords: number, fail: Fail): SceneSpec[] {
   if (!Array.isArray(value) || value.length === 0) fail('scenes should list at least one scene');
@@ -139,7 +201,10 @@ function scenesOf(value: unknown, maxWords: number, fail: Fail): SceneSpec[] {
     if (isFileRef(raw.picture)) picture = fileOf(raw.picture, `${at}.picture`, ['image'], fail);
     else picture = optionalText(raw.picture, `${at}.picture`, fail);
     const image = raw.image === undefined || raw.image === null ? null : fileOf(raw.image, `${at}.image`, ['image'], fail);
-    return { id, index, line, on_screen: onScreen, picture, image };
+    const speaker = optionalText(raw.speaker, `${at}.speaker`, fail);
+    if (raw.extra !== undefined && raw.extra !== null && !isObject(raw.extra)) fail(`${at}.extra should be an object`);
+    const extra = isObject(raw.extra) ? raw.extra : null;
+    return { id, index, line, on_screen: onScreen, picture, image, speaker, extra };
   });
 }
 
@@ -190,8 +255,47 @@ function brandOf(value: unknown, fail: Fail): BrandSpec | null {
   return { name, logo, colors, fonts, cta };
 }
 
+function mediaOf(value: unknown, fail: Fail): MediaSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail('media should be a list');
+  const ids = new Set<string>();
+  return value.map((raw, i) => {
+    const at = `media[${i}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    if (typeof raw.id !== 'string' || !raw.id) fail(`${at}.id should be text`);
+    if (ids.has(raw.id)) fail(`${at}.id "${raw.id}" is used twice`);
+    ids.add(raw.id);
+    return { id: raw.id, image: fileOf(raw.image, `${at}.image`, ['image'], fail) };
+  });
+}
+
+function secondsOf(ms: unknown): number | null {
+  return typeof ms === 'number' && Number.isFinite(ms) ? Math.round(ms) / 1000 : null;
+}
+
+function footageOf(value: unknown, fail: Fail): FootageSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail('footage should be a list');
+  return value.map((raw, index) => {
+    const at = `footage[${index}]`;
+    if (!isObject(raw)) fail(`${at} should be an object`);
+    const start = secondsOf(raw.start_ms);
+    const end = secondsOf(raw.end_ms);
+    if (start !== null && end !== null && end < start) fail(`${at} ends before it starts`);
+    return {
+      index,
+      scene_id: typeof raw.scene_id === 'string' && raw.scene_id ? raw.scene_id : null,
+      kind: typeof raw.kind === 'string' && raw.kind ? raw.kind : 'video',
+      start_s: start,
+      end_s: end,
+      crop: raw.crop ?? null,
+      fit: typeof raw.fit === 'string' && raw.fit ? raw.fit : null,
+    };
+  });
+}
+
 /** Reads the part's inputs into a render plan, or throws bad_input naming the problem. */
-export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): MakerSpec {
+export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>, measured: Measured = {}): MakerSpec {
   const fail: Fail = (detail) => {
     throw ctx.error('bad_input', detail);
   };
@@ -216,7 +320,29 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
   if (typeof aspect !== 'string' || !(aspect in DESIGN_SIZE)) fail(`aspect should be one of ${Object.keys(DESIGN_SIZE).join(', ')}`);
   const design = DESIGN_SIZE[aspect as Aspect];
 
-  const fps = raw.fps ?? 30;
+  const given = LENGTH_SOURCES.filter((key) => raw[key] !== undefined && raw[key] !== null);
+  if (given.length !== 1) fail('give exactly one of duration_s (the whole video), scene_s (each scene), pace, speech or under (a video to draw over)');
+  const source = given[0];
+
+  let under: UnderSpec | null = null;
+  if (source === 'under') {
+    const file = fileOf(raw.under, 'under', ['video'], fail);
+    if (!isObject(raw.under_timeline)) fail('under_timeline should be the timeline of the video to draw over');
+    const timeline = raw.under_timeline as unknown as Timeline;
+    const info = measured.under === undefined ? null : measured.under;
+    if (measured.under === null) fail('the video to draw over could not be read');
+    // Before it is measured (a dry read), the timeline's own length stands in.
+    const seconds = info?.seconds ?? (typeof file.duration_s === 'number' ? file.duration_s : timeline.duration_s);
+    under = {
+      file,
+      timeline,
+      info: info ?? { seconds, width: timeline.width, height: timeline.height, fps: timeline.fps, hasAudio: false },
+    };
+  } else if (raw.under_timeline !== undefined && raw.under_timeline !== null) fail('under_timeline is given without under');
+
+  // Drawn over a video, the frame rate follows it unless the step sets one.
+  const underFps = under?.info.fps ? Math.min(LIMITS.maxFps, Math.max(1, Math.round(under.info.fps))) : null;
+  const fps = raw.fps ?? underFps ?? 30;
   if (typeof fps !== 'number' || !Number.isInteger(fps) || fps < 1 || fps > LIMITS.maxFps) fail(`fps should be a whole number from 1 to ${LIMITS.maxFps}`);
 
   const shortSide = raw.short_side ?? 1080;
@@ -224,22 +350,70 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
   const scale = (shortSide as number) / 1080;
   const output = { width: Math.round(design.width * scale), height: Math.round(design.height * scale) };
 
-  const hasTotal = raw.duration_s !== undefined && raw.duration_s !== null;
-  const hasPerScene = raw.scene_s !== undefined && raw.scene_s !== null;
-  if (hasTotal === hasPerScene) fail('give exactly one of duration_s (the whole video) or scene_s (each scene)');
-  const seconds = hasTotal ? raw.duration_s : (raw.scene_s as number) * scenes.length;
+  // Scenes timed by a voice track or held by their words start where these say.
+  const speechIn = source === 'speech' ? (raw.speech as SpeechEntry[]) : null;
+  let timed: { starts: number[]; seconds: number } | null = null;
+  if (speechIn) {
+    const times = speechTimes(scenes.map((scene) => scene.id), speechIn, typeof raw.tail_s === 'number' ? raw.tail_s : 0);
+    if (typeof times === 'string') fail(times);
+    timed = times;
+  } else if (source === 'pace') {
+    const holds = paceHolds(scenes, raw.pace as unknown as PaceSpec);
+    if (typeof holds === 'string') fail(holds);
+    timed = startsOfHolds(holds);
+  }
+
+  const seconds = under
+    ? under.info.seconds
+    : timed
+      ? timed.seconds
+      : source === 'duration_s'
+        ? raw.duration_s
+        : (raw.scene_s as number) * scenes.length;
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < LIMITS.minSeconds || seconds > LIMITS.maxSeconds) {
     fail(`the video would be ${String(seconds)} seconds; it must be ${LIMITS.minSeconds} to ${LIMITS.maxSeconds}`);
   }
   const frameCount = Math.round(seconds * fps);
   if (frameCount < scenes.length) fail(`${scenes.length} scenes need at least ${scenes.length} frames; the video has ${frameCount}`);
-  // Scenes share the video evenly, on whole frames, so every scene starts on a frame.
-  const sceneFrames = scenes.map((_, i) => Math.round((i * frameCount) / scenes.length));
-  sceneFrames.push(frameCount);
+  let sceneFrames: number[];
+  if (timed) {
+    const frames = framesOfStarts(timed.starts, fps, frameCount);
+    if (!Array.isArray(frames)) {
+      const scene = scenes[frames.empty];
+      fail(
+        `scene ${frames.empty + 1} (${scene.id}) gets no time at ${fps} fps: ${
+          source === 'speech' ? 'the speech gives it none (a scene with no speech needs a gap, or tail_s at the end)' : 'its pace hold is too short'
+        }`,
+      );
+    }
+    sceneFrames = frames;
+  } else if (under) {
+    // Scenes take the real times of the video drawn over.
+    const fromUnder = underSceneFrames(scenes.map((scene) => scene.id), under.timeline, fps, frameCount);
+    if (!fromUnder) {
+      fail(`the plan's ${scenes.length} scenes do not match the ${under.timeline.scenes.length} scenes of the video to draw over (by id or in order)`);
+    }
+    sceneFrames = fromUnder;
+  } else {
+    // Scenes share the video evenly, on whole frames, so every scene starts on a frame.
+    sceneFrames = scenes.map((_, i) => Math.round((i * frameCount) / scenes.length));
+    sceneFrames.push(frameCount);
+  }
 
   const values = raw.values ?? {};
   if (!isObject(values)) fail('values should be an object');
-  if (JSON.stringify(values).length > 64 * 1024) fail('values is larger than 64 KB');
+  if (Buffer.byteLength(JSON.stringify(values), 'utf8') > 64 * 1024) fail('values is larger than 64 KB');
+
+  let captionZone: Zone | null = null;
+  if (raw.caption_zone !== undefined && raw.caption_zone !== null) {
+    captionZone = clipZone(raw.caption_zone as unknown as Zone, design);
+    if (!captionZone) fail(`caption_zone lies outside the ${design.width}x${design.height} page`);
+    if (!zoneOnVideo(captionZone, scale, output)) fail(`caption_zone is less than a pixel of the ${output.width}x${output.height} video`);
+  }
+  const endCardScenes = typeof raw.end_card_scenes === 'number' ? raw.end_card_scenes : 0;
+  if (endCardScenes > scenes.length) fail(`end_card_scenes is ${endCardScenes}, but there are only ${scenes.length} scenes`);
+
+  const speech = speechIn ?? under?.timeline.speech ?? [];
 
   return {
     template,
@@ -256,5 +430,14 @@ export function readInputs(raw: unknown, ctx: Pick<PartContext, 'error'>): Maker
     output,
     scale,
     values,
+    under,
+    speech,
+    words: wordsByScene(speech, sceneFrames, fps),
+    captionZone,
+    endCardScenes,
+    skip: raw.skip_blank === true && scenes.every(isBlankScene),
+    media: mediaOf(raw.media, fail),
+    footage: footageOf(raw.footage, fail),
+    facts: raw.facts === true,
   };
 }

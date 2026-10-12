@@ -1,23 +1,26 @@
 /**
  * GV-43 and the rulebook's lint rules, on every generated skill: real action
  * names only, credits only, no install lines, no recipe slugs or render
- * atoms, and the size limit (3,000 characters for an entry skill).
+ * atoms, and the size limit (5,000 characters for an entry skill).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { getEntrySkills } from '../../src/skills/master-skill';
-import { ACTION_NAMES, ENTRY_SKILL_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
+import { ACTION_NAMES, CUSTOM_VIDEO_MAX_CHARS, ENTRY_SKILL_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
 
-const limitFor = (name: string) => (name === 'gooseworks' ? ROUTER_MAX_CHARS : ENTRY_SKILL_MAX_CHARS);
+const limitFor = (name: string) =>
+  name === 'gooseworks' ? ROUTER_MAX_CHARS : name === 'make-custom-video' ? CUSTOM_VIDEO_MAX_CHARS : ENTRY_SKILL_MAX_CHARS;
 
-// The restored production video workflow uses the main backend's older tools.
-// Its compatibility is covered by production-video-skills.test.ts; this lint
-// checks the newer tool contract used by the other entry skills.
-const productionVideoNames = ['goose-video', 'make-custom-video', 'goose-video-local'];
-it.each(getEntrySkills().filter(skill => !productionVideoNames.includes(skill.name)))('$name passes the skill lint', ({ name, content }) => {
+it.each(getEntrySkills())('$name passes the skill lint', ({ name, content }) => {
   expect(lintSkill(content, { maxChars: limitFor(name) })).toEqual([]);
 });
 
+it('keeps the video entry skills within their size budgets', () => {
+  const video = getEntrySkills().filter((skill) => ['goose-video', 'make-custom-video', 'goose-video-local'].includes(skill.name));
+  expect(video).toHaveLength(3);
+  for (const skill of video) expect(lintSkill(skill.content, { maxChars: limitFor(skill.name) })).toEqual([]);
+  expect(lintSkill('x'.repeat(5001), { maxChars: 5000 })).toEqual(['author.size_limits: 5001 characters, over 5000']);
+});
 
 it.each([
   ['a dollar sign', 'The full video is about $8.20.', 'money.credits_only'],
@@ -72,4 +75,11 @@ const studioDir = process.env.GOOSE_STUDIO_DIR;
   expect(existsSync(root)).toBe(true);
   const slugs = readdirSync(root).filter((name) => !name.startsWith('.') && statSync(join(root, name)).isDirectory());
   expect(slugs.sort()).toEqual([...RECIPE_SLUGS].sort());
+});
+
+it('allows the two pinned server video commands while refusing unrelated setup commands', () => {
+  expect(lintSkill('npx -y gooseworks@0.5.7 --env staging video check')).toEqual([]);
+  expect(lintSkill('npx -y gooseworks@0.5.7 --env staging video make <id>')).toEqual([]);
+  expect(lintSkill('npx -y gooseworks@0.5.7 install')).toContain('setup.no_install: an install command (npx)');
+  expect(lintSkill('npx -y arbitrary-package')).toContain('setup.no_install: an install command (npx)');
 });

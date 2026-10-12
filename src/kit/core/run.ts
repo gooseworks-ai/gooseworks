@@ -16,6 +16,7 @@ import { copyFile, mkdir, readFile, rm } from 'fs/promises';
 import * as path from 'path';
 import type {
   BrandKit,
+  CaptionLook,
   CheckVerdict,
   FileRef,
   FixHint,
@@ -43,7 +44,7 @@ import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook } from './progress';
+import { ProgressBook, rowOf } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -209,12 +210,14 @@ function checkLock(raw: unknown, videoId: string, plan: ApprovedPlan): PartsLock
   return lock;
 }
 
-function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputExpectation {
+/** What the finished video must be, handed to every layer as `expect`. Exported for tests. */
+export function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputExpectation {
   const aspect = String(plan.body.aspect ?? style.aspects?.[0] ?? '');
   const size = ASPECT_SIZE[aspect];
   if (!size) throw new KitStop('This video’s shape can’t be made by the kit.', 'change_request');
   const scenes = Array.isArray(plan.body.scenes) ? (plan.body.scenes as Array<{ line?: unknown }>) : [];
   const script = scenes.map((s) => s?.line).filter((l): l is string => typeof l === 'string' && l.length > 0);
+  const captionLook = captionLookOf(style.traits?.caption_look);
   return {
     aspect: aspect as OutputExpectation['aspect'],
     ...size,
@@ -224,7 +227,14 @@ function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): OutputE
     end_card: style.traits?.end_card === true,
     qc_flags: Array.isArray(style.traits?.qc_flags) ? style.traits.qc_flags : [],
     ...(script.length ? { script } : {}),
+    ...(captionLook ? { caption_look: captionLook } : {}),
   };
+}
+
+/** The style's caption look, copied as written when it is an object; the captions layer checks its fields. */
+function captionLookOf(look: unknown): CaptionLook | undefined {
+  if (!look || typeof look !== 'object' || Array.isArray(look)) return undefined;
+  return JSON.parse(JSON.stringify(look)) as CaptionLook;
 }
 
 function brandKit(materialized: unknown): BrandKit {
@@ -489,6 +499,12 @@ class Maker {
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal), note });
     await this.loadParts(!!dev.parts);
 
+    // The card's rows show from here, all still to do, while the plan's files come down.
+    const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
+    this.book.plan([...this.style.style.timeline.map((s) => planned(s.id)), ...this.layersOn().map((slot) => planned(`layer-${slot}`))]);
+    this.book.note = 'Getting your files ready';
+    void this.reporter.send(true);
+
     // The plan's files, checked against the hashes frozen at the yes.
     this.at = 'plan-files';
     const planFiles = {
@@ -506,10 +522,6 @@ class Maker {
     this.brand = brandKit(await materialize(plan.brand, planFiles));
 
     this.book.note = 'Making your video';
-    this.book.plan([
-      ...this.style.style.timeline.map((s) => ({ id: s.id, kind: this.parts.get(s.id)!.manifest.kind, typical_s: this.parts.get(s.id)!.manifest.timing.typical_s })),
-      ...this.layersOn().map((slot) => ({ id: `layer-${slot}`, kind: SLOT_KIND[slot], typical_s: this.parts.get(`layer-${slot}`)!.manifest.timing.typical_s })),
-    ]);
     void this.reporter.send(true);
 
     // The fixes already in force (after a restart) apply from the start.
@@ -1026,6 +1038,8 @@ class Maker {
       this.book.note = 'Checking your video';
       this.run.status = 'checking';
       await this.saveRun();
+      // The note goes out before the pause, so the card says the check has started.
+      void this.reporter.send(true);
       await this.reporter.flush();
       this.reporter.pause();
       const check = await line.finishUpload(this.videoId, stage.upload_id, this.stop.signal);

@@ -19,10 +19,12 @@ interface ServerFixture {
 const fixture = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'server-entry-skills.json'), 'utf8')) as ServerFixture;
 const skill = (name: string) => getEntrySkills().find((entry) => entry.name === name)!.content;
 
-it('preserves the newer server snapshot separately from production video instructions', () => {
+it('ships the server text unchanged', () => {
   expect(SERVER_VIDEO_ENTRY_SKILLS).toEqual(fixture.skills);
   expect(SERVER_ENTRY_SKILL_RULES).toEqual(fixture.rules);
   expect(SERVER_RULEBOOK_VERSION).toBe(fixture.rulebook_version);
+  expect(skill('goose-video')).toBe(fixture.skills['goose-video']);
+  expect(skill('make-custom-video')).toBe(fixture.skills['make-custom-video']);
 });
 
 it.each([
