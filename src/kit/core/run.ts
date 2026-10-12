@@ -1038,6 +1038,8 @@ class Maker {
       this.book.note = 'Checking your video';
       this.run.status = 'checking';
       await this.saveRun();
+      // The note goes out before the pause, so the card says the check has started.
+      void this.reporter.send(true);
       await this.reporter.flush();
       this.reporter.pause();
       const check = await line.finishUpload(this.videoId, stage.upload_id, this.stop.signal);
