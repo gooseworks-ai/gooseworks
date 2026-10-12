@@ -1,10 +1,12 @@
 {
-  "$comment": "SNAPSHOT of the 66 action names in the action contract. The CLI cannot import gooseworks-app, so the skill lint (tests/skills/skill-lint.test.ts) checks generated skills against this list, and checks this list against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. Refresh it from the file below whenever an action is added, renamed or removed there.",
+  "$comment": "SNAPSHOT of the 68 action names in the action contract. The CLI cannot import gooseworks-app, so the skill lint (tests/skills/skill-lint.test.ts) checks generated skills against this list, and checks this list against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. Refresh it from the file below whenever an action is added, renamed or removed there.",
   "source_repo": "gooseworks-app",
   "source_file": "apps/api/src/app-mcp-server/mcp-tools/v2/contract.ts (ACTION_NAMES)",
-  "source_ref": "video-merged",
-  "captured": "2026-10-08",
+  "source_ref": "dev @ 74f2e8bea",
+  "captured": "2026-10-12",
   "actions": [
+    "get_started",
+    "card_wait",
     "account_whoami",
     "brand_read",
     "catalog_search",

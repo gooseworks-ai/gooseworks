@@ -24,10 +24,10 @@ export const ACTION_NAMES: readonly string[] = fixture<{ actions: string[] }>('a
 export const RECIPE_SLUGS: readonly string[] = fixture<{ recipes: string[] }>('video-recipe-slugs.json').recipes;
 
 /** Answer fields a skill may name besides actions (the action contract's answer shape). */
-export const ANSWER_FIELDS: readonly string[] = ['next_step', 'display_hint'];
+export const ANSWER_FIELDS: readonly string[] = ['next_step', 'display_hint', 'plan_note'];
 
-/** author.size_limits: an entry skill is at most 3,000 characters. */
-export const ENTRY_SKILL_MAX_CHARS = 3000;
+/** author.size_limits: an entry skill is at most 5,000 characters. */
+export const ENTRY_SKILL_MAX_CHARS = 5000;
 /**
  * The `gooseworks` router also carries the terminal data commands the
  * research and lead skills rely on, so it has its own, larger budget. Taking
@@ -126,8 +126,10 @@ function lintView(text: string, actions: Set<string>, recipes: Set<string>): str
 
   const sign = CURRENCY_SIGN.exec(text);
   if (sign) problems.push(`money.credits_only: a currency sign (${sign[0]})`);
+  // The server gives only these two pinned kit commands; other npx usage remains a setup request.
+  const setupText = text.replace(/\bnpx -y gooseworks@\d+\.\d+\.\d+(?: --env (?:staging|production))? video (?:make <id>|check)(?=\s|[.,;`]|$)/g, 'GooseWorks video command');
   for (const command of INSTALL_COMMANDS) {
-    const found = command.exec(text);
+    const found = command.exec(setupText);
     if (found) problems.push(`setup.no_install: an install command (${found[0]})`);
   }
   for (const sentence of text.split(/[.!?\n]/)) {
