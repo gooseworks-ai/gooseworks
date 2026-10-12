@@ -1,11 +1,11 @@
 {
   "package": "gooseworks",
-  "version": "0.5.6",
+  "version": "0.5.8",
   "entries": {
     "gooseworks": "b648ab0e21d94405f2161db5d142770115a6b4551fef778a6aa51e2d30c005bb",
     "goose-ads": "0fd22d77148ce37500f9dfc3977abc1204baabe5faf8cf30d46c32bf60a410fa",
     "goose-video": "83f1fe3822c899848a808e99b81f718527e12ef7c4552542ebbf5f0b6862a13d",
-    "goose-video-local": "189cd2c24bbbb152d700847832b67ce651962959fd2381e878ed7ace6bc96a54",
+    "goose-video-local": "37871252ff2f754d018f22e4335957e6a9e9b829560f8fe19a75b9aa1e510c91",
     "make-custom-video": "f55b5f870c0cdcc0804304342f10c9ea29fa447471b78af8e17589ed380be19f",
     "goose-product-photos": "f2f9bcd9f5982b1e53d8aef384b8ee3f4e7dcba15985f40c6075ac3e29f413ce"
   }

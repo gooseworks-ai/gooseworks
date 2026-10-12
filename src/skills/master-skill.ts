@@ -218,7 +218,7 @@ export function getGooseVideoLocalSkillContent(): string {
   return `---
 name: goose-video-local
 description: Make an approved GooseWorks video on this computer when the server's next_step says to.
-version: 1.0.0
+version: 1.0.2
 ---
 
 Run \`${KIT_MAKE_COMMAND}\` when the server's next_step says so.
