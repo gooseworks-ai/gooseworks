@@ -44,7 +44,7 @@ import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook } from './progress';
+import { ProgressBook, rowOf } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -516,10 +516,8 @@ class Maker {
     this.brand = brandKit(await materialize(plan.brand, planFiles));
 
     this.book.note = 'Making your video';
-    this.book.plan([
-      ...this.style.style.timeline.map((s) => ({ id: s.id, kind: this.parts.get(s.id)!.manifest.kind, typical_s: this.parts.get(s.id)!.manifest.timing.typical_s })),
-      ...this.layersOn().map((slot) => ({ id: `layer-${slot}`, kind: SLOT_KIND[slot], typical_s: this.parts.get(`layer-${slot}`)!.manifest.timing.typical_s })),
-    ]);
+    const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
+    this.book.plan([...this.style.style.timeline.map((s) => planned(s.id)), ...this.layersOn().map((slot) => planned(`layer-${slot}`))]);
     void this.reporter.send(true);
 
     // The fixes already in force (after a restart) apply from the start.
