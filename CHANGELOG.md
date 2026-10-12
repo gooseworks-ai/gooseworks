@@ -1,5 +1,17 @@
 # gooseworks
 
+## 0.5.8
+
+### Patch Changes
+
+- 586af49: Restore the three video skills to the workflow supported by the production main app, with higher skill versions. This fixes custom-video catalog loading and keeps saved projects, approvals and budgets intact.
+
+## 0.5.7
+
+### Patch Changes
+
+- f300907: When a picture cannot be made smaller for the video, the person reads plain words with the picture's size and what to use instead; the file name and the tool's error stay in the run log.
+
 ## 0.5.6
 
 ### Patch Changes
