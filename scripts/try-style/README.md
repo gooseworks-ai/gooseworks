@@ -7,6 +7,7 @@
 **Key points**
 - **Free by default.** Paid calls get labelled stand-ins of the right size, length and timing. Nothing leaves the computer.
 - **Real calls only on request**, with `--providers real`, after a passing stand-in run of the same style file, under a per-run cap and a night cap. Every real call is priced first and reserved in a spend ledger before it is sent.
+- **Native take timing uses the actual part planner.** The fake runner reloads the active take inputs, requires the planner version and generated provider prompt/duration to match, and uses those beat windows for speech, quiet ambience and Whisper words. Silent beats stay silent except for a quiet bed. Video pieces have deterministic coarse grain that stays visually distinct after the checker resizes them.
 - **Proves wiring, not looks.** A stand-in run proves step order, bindings, lengths, captions, the end card, layers and the check. It says nothing about how a generated picture or voice looks or sounds.
 
 ---

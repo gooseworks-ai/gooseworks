@@ -258,6 +258,7 @@ async function main(): Promise<number> {
     tools: media,
     workDir: work,
     pieceLog,
+    ...(provider.mode === 'fake' ? { fakeRun: { runRoot: path.join(home, 'videos', videoId), partsDir } } : {}),
     onRefused: (url) => say(`refused a call to ${new URL(url).origin}`),
     ...(real ? { realFetch: fetch } : {}),
   });

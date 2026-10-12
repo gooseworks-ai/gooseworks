@@ -14,8 +14,9 @@
 // reply JSON without audio_base64. Parts read them through results[].pointer
 // against { json, file_url }. README.md in this folder has the table.
 import { createHash } from 'crypto';
-import { appendFileSync, closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import * as path from 'path';
+import type { FakeTake } from './fake-takes';
 import { brightFor, drawtext, even, ff, probe, type Ffmpeg } from './media';
 
 export interface PieceCall {
@@ -39,6 +40,8 @@ export interface ProviderContext {
   hosted: (ref: string) => HostedFile | null;
   /** Every non-empty spoken line in the plan, in order (the fake Whisper "hears" these). */
   planLines: string[];
+  /** Actual part-planned native dialogue windows; present only in the local fake runner. */
+  fakeTake?: (call: PieceCall) => Promise<FakeTake | null>;
   /** A folder this piece may write its stand-ins into. */
   workDir: string;
   /** Serves a local file through the fake line; returns its link. */
@@ -303,16 +306,22 @@ async function fakeImage(call: PieceCall, ctx: ProviderContext, n: number): Prom
   return { file, w, h, mime: ext === 'png' ? 'image/png' : ext === 'jpg' ? 'image/jpeg' : 'image/webp' };
 }
 
-async function fakeVideo(call: PieceCall, ctx: ProviderContext, seconds: number, audio: string | null | 'tone'): Promise<{ file: string; w: number; h: number }> {
+async function fakeVideo(call: PieceCall, ctx: ProviderContext, seconds: number, audio: string | null | 'tone', take?: FakeTake | null): Promise<{ file: string; w: number; h: number }> {
   const { w, h } = await videoSize(call.body, ctx);
   const file = path.join(ctx.workDir, nameFor(ctx, 'mp4'));
   const d = Math.max(0.5, seconds);
-  const vf = ['format=yuv420p', drawtext(ctx.tools, modelOf(call), 'h*0.40', Math.max(18, Math.round(w / 26))), drawtext(ctx.tools, ctx.piece_key, 'h*0.50', Math.max(16, Math.round(w / 30)))].filter(Boolean).join(',');
+  // Coarse keyed grain stays distinct after the checker's 64px measurement resize.
+  const vf = ['scale=64:64', `noise=alls=60:allf=u:all_seed=${seedFor(ctx)}`, `scale=${w}:${h}:flags=neighbor`, 'format=yuv420p', drawtext(ctx.tools, modelOf(call), 'h*0.40', Math.max(18, Math.round(w / 26))), drawtext(ctx.tools, ctx.piece_key, 'h*0.50', Math.max(16, Math.round(w / 30)))].filter(Boolean).join(',');
   const args = ['-f', 'lavfi', '-i', `testsrc2=s=${w}x${h}:r=24:d=${d.toFixed(3)}`];
-  if (audio === 'tone') args.push('-f', 'lavfi', '-i', `sine=f=330:sample_rate=48000:d=${d.toFixed(3)}`);
+  if (audio === 'tone') {
+    const chunks = take ? takeChunks(take) : null;
+    const gates = chunks?.map((c) => `between(t,${c.timestamp[0]},${c.timestamp[1]})`).join('+');
+    const src = gates ? `aevalsrc='0.006*sin(2*PI*97*t)+0.18*sin(2*PI*330*t)*min(1,${gates})':s=48000:d=${d.toFixed(3)}` : `sine=f=330:sample_rate=48000:d=${d.toFixed(3)}`;
+    args.push('-f', 'lavfi', '-i', src);
+  }
   else if (audio) args.push('-i', audio);
   args.push('-vf', vf, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-r', '24');
-  if (audio) args.push('-map', '0:v:0', '-map', '1:a:0', '-af', 'volume=0.3', '-c:a', 'aac', '-ar', '48000', '-ac', '2');
+  if (audio) args.push('-map', '0:v:0', '-map', '1:a:0', '-af', take ? 'anull' : 'volume=0.3', '-c:a', 'aac', '-ar', '48000', '-ac', '2');
   args.push('-t', d.toFixed(3), '-movflags', '+faststart', file);
   await ff(ctx.tools, args);
   return { file, w, h };
@@ -390,6 +399,14 @@ export function falImageReply(model: string, images: Array<Record<string, unknow
 /** Seconds of speech the fake voice takes for `text`. */
 export const TTS_SECONDS_PER_CHAR = 0.065;
 
+/** Words stay inside the actual beat; silent beats have no speech. */
+export function takeChunks(take: FakeTake) {
+  return take.beats.flatMap((b) => {
+    const margin = Math.min(0.25, (b.end - b.start) / 4);
+    return b.line ? spreadChunks([b.line], b.start + margin, b.end - margin) : [];
+  });
+}
+
 export class FakeProvider implements Provider {
   readonly mode = 'fake' as const;
 
@@ -449,7 +466,12 @@ export class FakeProvider implements Provider {
         if (!audio) return { kind: 'failed', code: 'provider_rejected', message: 'Whisper needs audio_url.', next: 'stop' };
         const seconds = (await probe(ctx.tools, audio.path)).duration_s;
         // fal Whisper's word chunks carry a leading space, and `text` is them joined.
-        const chunks = spreadChunks(ctx.planLines, Math.min(0.1, seconds / 10), Math.max(0, seconds - 0.1)).map((c) => ({ timestamp: c.timestamp, text: ` ${c.text}` }));
+        // Sidecars survive a resume that replays earlier video pieces without invoking this provider.
+        const takes = [...new Set(readdirSync(ctx.workDir).filter((f) => f.endsWith('.fake-take.json')).map((f) => readFileSync(path.join(ctx.workDir, f), 'utf8')))].map((s) => JSON.parse(s) as FakeTake).sort((a, b) => a.offset - b.offset);
+        const native = takes.flatMap((take) => takeChunks(take).map((c) => ({ ...c, timestamp: c.timestamp.map((t) => +(t + take.offset).toFixed(3)) as [number, number] })));
+        const sameLines = native.map((c) => c.text).join(' ') === ctx.planLines.join(' ');
+        const timed = sameLines && native.length ? native : spreadChunks(ctx.planLines, Math.min(0.1, seconds / 10), Math.max(0, seconds - 0.1));
+        const chunks = timed.map((c) => ({ timestamp: c.timestamp, text: ` ${c.text}` }));
         return { kind: 'done', json: { text: chunks.map((c) => c.text).join(''), chunks, inferred_languages: ['en'], diarization_segments: [] } };
       }
       case 'cutout': {
@@ -479,7 +501,9 @@ export class FakeProvider implements Provider {
       case 'video': {
         const model = modelOf(call).toLowerCase();
         const seconds = videoSeconds(b) ?? (model.includes('veo') ? 8 : 5);
-        const made = await fakeVideo(call, ctx, seconds, videoHasAudio(model, b) ? 'tone' : null);
+        const take = model.includes('seedance') && ctx.fakeTake ? await ctx.fakeTake(call) : null;
+        const made = await fakeVideo(call, ctx, seconds, videoHasAudio(model, b) ? 'tone' : null, take);
+        if (take && videoHasAudio(model, b)) writeFileSync(path.join(ctx.workDir, nameFor(ctx, 'fake-take.json')), JSON.stringify(take));
         return { kind: 'done', json: falVideoReply(modelOf(call), falFile(ctx, made.file, 'video/mp4'), num(b.seed) ?? seedFor(ctx)) };
       }
       default:
