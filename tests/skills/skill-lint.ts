@@ -23,8 +23,16 @@ const fixture = <T>(name: string): T => JSON.parse(readFileSync(join(__dirname, 
 export const ACTION_NAMES: readonly string[] = fixture<{ actions: string[] }>('action-names.json').actions;
 export const RECIPE_SLUGS: readonly string[] = fixture<{ recipes: string[] }>('video-recipe-slugs.json').recipes;
 
-/** Answer fields a skill may name besides actions (the action contract's answer shape). */
-export const ANSWER_FIELDS: readonly string[] = ['next_step', 'display_hint', 'plan_note'];
+/** Documented request/answer fields, entry metadata and reference-viewing enum values. */
+export const ANSWER_FIELDS: readonly string[] = [
+  'next_step', 'display_hint', 'plan_note',
+  'brand_id', 'idempotency_key', 'reference_url', 'plan_revision', 'custom_review',
+  'brand_context', 'production_manifest', 'asset_id', 'analysis_revision', 'user_quote',
+  'reference_observation', 'source_url', 'duration_s', 'evidence_mode', 'frames_and_audio',
+  'observed_through_s', 'expected_revision', 'brand_context_digest', 'preview_estimate',
+  'render_estimate', 'approval_surface', 'script_approved', 'ingredients_approved',
+  'harness_binding', 'requires_skills',
+];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
 export const ENTRY_SKILL_MAX_CHARS = 5000;
