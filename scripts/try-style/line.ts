@@ -1,3 +1,4 @@
+import { fakeTakeFor, fakeTakeKeysFor } from './fake-takes';
 // An in-process private line for try-style, modelled on tests/kit/harness.ts
 // fakeLine. It answers the routes the kit calls (device hand-over, pieces,
 // hosted files, progress, upload) on a reserved local origin that nothing
@@ -46,6 +47,8 @@ export interface TryLineOptions {
   workDir: string;
   /** pieces.jsonl */
   pieceLog: string;
+  /** Local kit records and part sources, used only to ground fake native take timing. */
+  fakeRun?: { runRoot: string; partsDir: string };
   /** Called for every refused address, so the run can say so. */
   onRefused?: (url: string) => void;
   /** Real fetch for mirrored provider results (real mode only). */
@@ -186,6 +189,7 @@ export function tryLine(opts: TryLineOptions) {
           return f && f.done ? f : null;
         },
         planLines: lines,
+        ...(opts.provider.mode === 'fake' && opts.fakeRun ? { fakeTake: (call: PieceCall) => fakeTakeFor(opts.fakeRun!.runRoot, opts.fakeRun!.partsDir, request.piece_key, call), fakeTakeKeys: () => fakeTakeKeysFor(opts.fakeRun!.runRoot) } : {}),
         workDir: outDir,
         publish,
         mirror,
