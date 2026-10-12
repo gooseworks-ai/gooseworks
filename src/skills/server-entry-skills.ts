@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app codex/custom-video-adapter @ 5ac1be4234cbc9deeb81d79845392a67e6f53c27
+// Source: gooseworks-app codex/custom-video-adapter @ 6cf00ec7ed17d50c0956bd7ea6869640e01ad117
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -88,7 +88,7 @@ Read brand_read (kit, products, rules), then knowledge_search. Use supported cla
 
 ## Create or resume
 
-New: video_create with brand_id, style custom, request and stable idempotency_key; retain products, name, reference_url and campaign. On timeout/resume, video_read the same project: retain plan_revision, custom_review, brand_context, production_manifest and execution; never create a replacement.
+New: video_create with brand_id, style custom, request and a required agent-generated UUID idempotency_key; retain products, name, reference_url and campaign. Reuse that key on retries. Resume with video_read the same project: retain plan_revision, custom_review, brand_context, production_manifest and execution; never create a replacement.
 Reference resolve accepts direct files; social links cause no automatic paid lookup. After watching stored media, video_change custom reference attach uses asset_id and original analysis_revision. Skip needs explicit brief-only user_quote. Pending/failed reference blocks approval; a URL is not viewing.
 A resolved reference also needs draft.reference_observation: exact source_url, real duration_s, evidence_mode playback or frames_and_audio, observed_through_s covering 95%, and a timed picture/audio summary with gaps. Its data binds the script token. Resolve/attach is not watching.
 
