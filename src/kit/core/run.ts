@@ -44,7 +44,7 @@ import type { KitLog } from './log';
 import { isInside, runLayout, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook } from './progress';
+import { ProgressBook, rowOf } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -499,6 +499,12 @@ class Maker {
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal), note });
     await this.loadParts(!!dev.parts);
 
+    // The card's rows show from here, all still to do, while the plan's files come down.
+    const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
+    this.book.plan([...this.style.style.timeline.map((s) => planned(s.id)), ...this.layersOn().map((slot) => planned(`layer-${slot}`))]);
+    this.book.note = 'Getting your files ready';
+    void this.reporter.send(true);
+
     // The plan's files, checked against the hashes frozen at the yes.
     this.at = 'plan-files';
     const planFiles = {
@@ -516,10 +522,6 @@ class Maker {
     this.brand = brandKit(await materialize(plan.brand, planFiles));
 
     this.book.note = 'Making your video';
-    this.book.plan([
-      ...this.style.style.timeline.map((s) => ({ id: s.id, kind: this.parts.get(s.id)!.manifest.kind, typical_s: this.parts.get(s.id)!.manifest.timing.typical_s })),
-      ...this.layersOn().map((slot) => ({ id: `layer-${slot}`, kind: SLOT_KIND[slot], typical_s: this.parts.get(`layer-${slot}`)!.manifest.timing.typical_s })),
-    ]);
     void this.reporter.send(true);
 
     // The fixes already in force (after a restart) apply from the start.
@@ -1036,6 +1038,8 @@ class Maker {
       this.book.note = 'Checking your video';
       this.run.status = 'checking';
       await this.saveRun();
+      // The note goes out before the pause, so the card says the check has started.
+      void this.reporter.send(true);
       await this.reporter.flush();
       this.reporter.pause();
       const check = await line.finishUpload(this.videoId, stage.upload_id, this.stop.signal);

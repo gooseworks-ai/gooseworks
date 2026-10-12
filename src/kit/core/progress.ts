@@ -1,26 +1,68 @@
-// Progress for the card (private-line.md (c)): one row per kind group, in a
-// fixed order, with live counts. The rows come from the part's kind, so the
-// style needs no labels; the words are the card's, not any part's.
-import type { PartKind } from '../part-interface';
+// Progress for the card (private-line.md (c)): a fixed set of rows in a fixed
+// order, with live counts. The labels and order copy the server's row table
+// (gooseworks-app video-line/progress-rows.ts), which plans the same rows from
+// the frozen style and matches these reports to them by label, so a label
+// changes here only together with that table.
+import type { PartKind, PartManifest } from '../part-interface';
 import type { ProgressRequest, ProgressStep } from '../line/types';
 
-/** The card's rows, in order. A row shows only when the video has a step of that kind. */
-const ROWS: Array<{ label: string; kinds: PartKind[] }> = [
-  { label: 'Voice', kinds: ['generate_voice'] },
-  { label: 'Pictures', kinds: ['generate_image'] },
-  { label: 'Clips', kinds: ['generate_video'] },
-  { label: 'Music', kinds: ['generate_music', 'generate_sfx'] },
-  { label: 'Putting it together', kinds: ['render_html', 'compose', 'caption', 'mix', 'end_card'] },
-  { label: 'Final check', kinds: ['check'] },
-];
+export const ROW_LABELS = {
+  voice: 'Creating the voice',
+  pictures: 'Creating the pictures',
+  clips: 'Creating the video clips',
+  lips: 'Syncing lips',
+  music: 'Creating the music',
+  screens: 'Creating the screens',
+  join: 'Joining the clips',
+  captions: 'Adding captions',
+  sound: 'Mixing the sound',
+  end_card: 'Creating the end card',
+  check: 'Checking it once before delivering',
+} as const;
 
-export function rowOf(kind: PartKind): string {
-  return ROWS.find((row) => row.kinds.includes(kind))?.label ?? 'Putting it together';
+/** The voice row's label when the video also syncs faces to that voice. */
+export const AVATAR_VOICE_LABEL = 'Creating the avatar and voice';
+
+export type RowKey = keyof typeof ROW_LABELS;
+
+const ROW_ORDER = Object.keys(ROW_LABELS) as RowKey[];
+
+const KIND_ROWS: Record<PartKind, RowKey> = {
+  generate_voice: 'voice',
+  generate_image: 'pictures',
+  generate_video: 'clips',
+  generate_music: 'music',
+  generate_sfx: 'music',
+  render_html: 'screens',
+  compose: 'join',
+  caption: 'captions',
+  mix: 'sound',
+  end_card: 'end_card',
+  check: 'check',
+};
+
+/** Rows whose count is of paid pieces the person will see (lines, pictures, clips); the rest count frames or beats. */
+const PIECE_ROWS = new Set<RowKey>(['voice', 'pictures', 'clips', 'lips', 'music']);
+
+/**
+ * A step's row, from its part's manifest. The server's table picks lip-sync by part id; the core
+ * names no part, so here lip-sync is a video part fed recorded sound (today the same one part).
+ */
+export function rowOf(manifest: Pick<PartManifest, 'kind' | 'inputs'>): RowKey | null {
+  if (manifest.kind === 'generate_video' && takesMedia(manifest.inputs, 'audio')) return 'lips';
+  return KIND_ROWS[manifest.kind] ?? null;
+}
+
+function takesMedia(schema: unknown, media: string, depth = 0): boolean {
+  if (depth > 64 || !schema || typeof schema !== 'object') return false;
+  const file = (schema as Record<string, unknown>)['x-kit-file'] as { media?: unknown } | undefined;
+  if (file && file.media === media) return true;
+  return Object.values(schema).some((value) => takesMedia(value, media, depth + 1));
 }
 
 interface Tracked {
   id: string;
-  kind: PartKind;
+  row: RowKey | null;
   typical_s: number;
   state: 'todo' | 'now' | 'done' | 'failed';
   done: number;
@@ -31,9 +73,9 @@ interface Tracked {
 /** What has been made so far, as the card shows it. */
 export class ProgressBook {
   private readonly steps = new Map<string, Tracked>();
-  note = 'Getting your video ready';
+  note = 'Getting the style ready';
 
-  plan(steps: Array<{ id: string; kind: PartKind; typical_s: number }>): void {
+  plan(steps: Array<{ id: string; row: RowKey | null; typical_s: number }>): void {
     for (const step of steps) {
       if (!this.steps.has(step.id)) this.steps.set(step.id, { ...step, state: 'todo', done: 0, total: 1 });
     }
@@ -66,18 +108,19 @@ export class ProgressBook {
   request(): ProgressRequest {
     const all = [...this.steps.values()];
     const total = all.reduce((n, s) => n + s.total, 0);
-    const done = all.reduce((n, s) => n + (s.state === 'done' ? s.total : Math.min(s.done, s.total)), 0);
+    const done = all.reduce((n, s) => n + madeOf(s), 0);
     const eta = all.reduce((n, s) => {
       if (s.state === 'done') return n;
       const left = s.fraction !== undefined ? 1 - s.fraction : s.total ? 1 - s.done / s.total : 1;
       return n + s.typical_s * (s.state === 'now' ? left : 1);
     }, 0);
+    const lips = all.some((s) => s.row === 'lips');
     const rows: ProgressStep[] = [];
-    for (const row of ROWS) {
-      const members = all.filter((s) => row.kinds.includes(s.kind));
+    for (const row of ROW_ORDER) {
+      const members = all.filter((s) => s.row === row);
       if (!members.length) continue;
       const rowTotal = members.reduce((n, s) => n + s.total, 0);
-      const rowDone = members.reduce((n, s) => n + (s.state === 'done' ? s.total : Math.min(s.done, s.total)), 0);
+      const rowDone = members.reduce((n, s) => n + madeOf(s), 0);
       const state: ProgressStep['state'] = members.some((s) => s.state === 'failed')
         ? 'failed'
         : members.every((s) => s.state === 'done')
@@ -85,7 +128,11 @@ export class ProgressBook {
           : members.some((s) => s.state === 'now' || s.state === 'done')
             ? 'now'
             : 'todo';
-      rows.push({ label: row.label, state, ...(rowTotal > 1 ? { detail: `${Math.min(rowDone, rowTotal)} of ${rowTotal}` } : {}) });
+      rows.push({
+        label: row === 'voice' && lips ? AVATAR_VOICE_LABEL : ROW_LABELS[row],
+        state,
+        ...(PIECE_ROWS.has(row) && rowTotal > 1 ? { detail: `${Math.min(rowDone, rowTotal)} of ${rowTotal}` } : {}),
+      });
     }
     return {
       pieces_done: Math.min(done, 500),
@@ -95,4 +142,8 @@ export class ProgressBook {
       ...(rows.length ? { steps: rows.slice(0, 12) } : {}),
     };
   }
+}
+
+function madeOf(step: Tracked): number {
+  return step.state === 'done' ? step.total : Math.min(step.done, step.total);
 }
