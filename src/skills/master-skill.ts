@@ -7,18 +7,20 @@
  *   - `goose-ads`            image ads: make, edit and study them.
  *   - `goose-product-photos` product photos.
  *   - `goose-video`, `make-custom-video`
- *                            our server's video entry skills, copied as built
- *                            (server-entry-skills.ts). Every answer's next_step
- *                            carries the step for the video's stage.
- *   - `goose-video-local`    one line: run the kit when a next_step says so.
+ *                            instructions compatible with the production main app.
+ *   - `goose-video-local`    the production local-render workflow.
  *
- * Each skill names only the actions in the action contract, states no price,
- * asks for no install and stays within the rulebook's size limit; the rules
- * block of every skill comes from the rulebook (tests/skills/skill-lint.test.ts).
+ * The production video copies are restored in production-video-skills.json.
+ * Update them with the matching backend release, then regenerate skills/.
+ *
+ * Non-video entries use the newer rulebook and action contract. Production
+ * video entries retain the tool names, approvals and execution instructions
+ * supported by the main backend (tests/skills/production-video-skills.test.ts).
  * Recipe skills live in goose-skills and are fetched when needed.
  */
 import { renderBrandGrowthTable, renderDomainRouteTable } from './routes';
-import { SERVER_ENTRY_SKILL_RULES, SERVER_VIDEO_ENTRY_SKILLS } from './server-entry-skills';
+import { SERVER_ENTRY_SKILL_RULES } from './server-entry-skills';
+import productionVideoSkills from './production-video-skills.json';
 
 export interface EntrySkill {
   /** Install dir name under ~/.agents/skills/ AND the skill `name`. */
@@ -203,24 +205,17 @@ ${SERVER_ENTRY_SKILL_RULES.photos}
 `;
 }
 
-/** Our server's goose-video entry skill, as built. */
+/** Video entry matched to the production backend. */
 export function getGooseVideoSkillContent(): string {
-  return SERVER_VIDEO_ENTRY_SKILLS['goose-video'];
+  return productionVideoSkills['goose-video'];
 }
 
-/** Our server's make-custom-video entry skill, as built. */
+/** Custom-video entry matched to the production backend. */
 export function getMakeCustomVideoSkillContent(): string {
-  return SERVER_VIDEO_ENTRY_SKILLS['make-custom-video'];
+  return productionVideoSkills['make-custom-video'];
 }
 
-/** One line: the kit makes the video when the server says so. */
+/** Local-render entry matched to the production backend. */
 export function getGooseVideoLocalSkillContent(): string {
-  return `---
-name: goose-video-local
-description: Make an approved GooseWorks video on this computer when the server's next_step says to.
-version: 1.0.0
----
-
-Run \`${KIT_MAKE_COMMAND}\` when the server's next_step says so.
-`;
+  return productionVideoSkills['goose-video-local'];
 }
