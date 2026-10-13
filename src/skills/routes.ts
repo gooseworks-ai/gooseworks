@@ -85,7 +85,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
  */
 export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> = {
   'make-custom-video': 'Keeps an explicit custom choice without a picker, studies its reference and checks custom support; fetching this entry alone does not enable production.',
-  'goose-video-local': 'One line: run the kit when a next_step says so.',
+  'goose-video-local': 'One line: a next_step that gives the kit command says who starts it.',
 };
 
 /**
