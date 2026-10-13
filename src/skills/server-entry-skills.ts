@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app akhil/ssb-hosts @ e8b41c3ba
+// Source: gooseworks-app akhil/staging-soft-blockers @ bd2f9f70e
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -53,8 +53,8 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
-- A yes counts only for the price the customer was shown: their press on the plan card, or their yes in chat sent with that price.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
+- A yes is to the credit total the customer was shown: their press on the plan card, or their yes in chat sent with that total.
 - Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
@@ -62,7 +62,7 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
   'make-custom-video': `---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.5.0
+version: 3.5.1
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -79,7 +79,7 @@ Installed entry: catalog_fetch type skill make-custom-video here once. Check liv
 
 ## Load the production harness
 
-Require complete video-production-harness content/scripts/files/version/contentHash. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
+Require complete video-production-harness content/scripts/files/version/contentHash. An inline read lists it by slug only: get it with catalog_fetch delivery archive (making needs that shell anyway), or catalog_fetch its slug. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
 
 ## Keep the brief and study the reference
 
@@ -123,7 +123,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   ads: `- Talk to marketers: what they get and decide, never how it's made.
@@ -132,7 +132,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
@@ -142,7 +142,7 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
