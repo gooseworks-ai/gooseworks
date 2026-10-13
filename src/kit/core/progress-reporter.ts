@@ -2,7 +2,7 @@
 // minute while anything runs (a slow piece must never look quiet). A progress
 // answer that says the video stopped stops the run. Once the run ends the
 // reporter is closed: one last word at most, on its own deadline.
-import { LineError, linkedSignal, type VideoLine } from '../line/client';
+import { LineError, lineWords, linkedSignal, type VideoLine } from '../line/client';
 import type { ProgressFailure } from '../line/types';
 import type { KitLog } from './log';
 import type { ProgressBook } from './progress';
@@ -180,7 +180,7 @@ export class ProgressReporter {
         // The line's refusal ends the run on its own words; the report it refused is not kept to send again.
         if (failure && this.failure === failure) this.failure = null;
         this.lineRefused = true;
-        this.onStop([error.message, error.fix].filter(Boolean).join(' '), error.next, error.code);
+        this.onStop(lineWords(error), error.next, error.code);
         return;
       }
       this.log.write('warn', 'progress could not be sent', { error: error instanceof Error ? error.message : String(error) });

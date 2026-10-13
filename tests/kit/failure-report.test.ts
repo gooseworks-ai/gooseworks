@@ -341,7 +341,7 @@ describe('a provider failure', () => {
     const line = fakeLine({ piece: providerFailed });
     const result = await runMake({ home, line, parts: testParts({ clip: { retry: { transient: 0 } } }) });
     expect(result.status).toBe('failed');
-    expect(result.message).toMatch(/Try once more/);
+    expect(result.message).toBe('The provider didn’t take the job (429). Run the same command again; what was made so far is kept.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
 
     const again = fakeLine();
@@ -427,5 +427,24 @@ describe('when the run ends', () => {
     const line = slowReports({ piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Press Continue on the card.', next: 'stop' } } }) }, 50);
     expect((await runMake({ home, line })).status).toBe('stopped');
     expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).not.toMatch(/progress could not be sent/);
+  });
+});
+
+describe('the line’s refusal of a piece', () => {
+  const stopped = (say?: string) =>
+    fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', ...(say ? { say } : {}), next: 'stop' } } }),
+    });
+
+  it('reaches the person as the line’s line for them, without the fix written for the AI', async () => {
+    const printed: string[] = [];
+    const result = await runMake({ home: tempHome(), line: stopped('You stopped this video. What was made so far is kept.'), printed });
+    expect(result).toEqual({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
+    expect(printed.join('\n')).not.toMatch(/Tell them/);
+  });
+
+  it('reaches the person as the error alone when the line wrote no line for them', async () => {
+    const result = await runMake({ home: tempHome(), line: stopped() });
+    expect(result).toEqual({ status: 'stopped', message: 'This video was stopped.' });
   });
 });

@@ -21,7 +21,10 @@ export type LineNext = 'retry' | 'stop' | 'update_kit' | 'change_request';
 export interface LineErrorBody {
   code: string;
   error: string;
+  /** Written for the AI or the kit: never printed for the person. */
   fix: string;
+  /** The one line for the person, when the line wrote one. */
+  say?: string;
   next: LineNext;
   retry_after_seconds?: number;
   details?: Record<string, unknown>;

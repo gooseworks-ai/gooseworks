@@ -1,7 +1,7 @@
 // Rules on the line client: its secrets never show in a dump of it, and a
 // download stops as soon as it goes past its limit.
 import { inspect } from 'util';
-import { VideoLine } from '../../src/kit/line/client';
+import { LineError, lineWords, VideoLine } from '../../src/kit/line/client';
 
 const LOGIN = 'cal_secretlogin0123456789abcdef';
 const TOKEN = 'vl1_q_1.4102444800.secretsignature0123456789';
@@ -32,5 +32,40 @@ describe('the line client', () => {
     const line = new VideoLine({ apiBase: 'https://api.test', deviceId: '11111111-2222-4333-8444-555555555555', fetch: fetchImpl, sleep: async () => undefined });
     await expect(line.download('https://files.test/big.mp4', 256 * 1024)).rejects.toThrow(/larger than/);
     expect(pulled).toBeLessThan(2 * 1024 * 1024);
+  });
+
+  describe('a refusal’s words for the person', () => {
+    const refusing = (error: Record<string, unknown> | string, status = 409) =>
+      new VideoLine({
+        apiBase: 'https://api.test',
+        deviceId: '11111111-2222-4333-8444-555555555555',
+        login: LOGIN,
+        fetch: (async () => new Response(typeof error === 'string' ? error : JSON.stringify({ error }), { status })) as unknown as typeof fetch,
+        sleep: async () => undefined,
+        maxRetries: 0,
+      });
+    const refusal = async (line: VideoLine) => {
+      try {
+        await line.reportDevice({} as never);
+      } catch (error) {
+        return error as LineError;
+      }
+      throw new Error('not refused');
+    };
+
+    it('are the line’s own line for them, never the fix written for the AI', async () => {
+      const error = await refusal(refusing({ code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', say: 'You stopped this video. What was made so far is kept.', next: 'stop' }));
+      expect(lineWords(error)).toBe('You stopped this video. What was made so far is kept.');
+    });
+
+    it('are the error alone when the line wrote no line for them', async () => {
+      const error = await refusal(refusing({ code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', next: 'stop' }));
+      expect(lineWords(error)).toBe('This video was stopped.');
+    });
+
+    it('keep the kit’s own advice when the kit wrote the refusal', async () => {
+      const error = await refusal(refusing('<html>bad gateway</html>', 502));
+      expect(lineWords(error)).toBe('The line refused the call (HTTP 502). Try again in a minute.');
+    });
   });
 });

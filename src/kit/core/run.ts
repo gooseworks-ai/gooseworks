@@ -32,7 +32,7 @@ import type {
   StepRecord,
   Timeline,
 } from '../part-interface';
-import { LineError, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
+import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
 import { bindInputs } from './bind';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
@@ -114,6 +114,8 @@ interface StepSpec {
 const CHECK_FAILED = 'The video didn’t pass the final check.';
 /** For a failure that repeats on every run of the same plan. */
 const PLAN_FIX = 'Change the plan, then make it again.';
+/** For a failure a new run of the same command may get past. */
+const RUN_AGAIN = 'Run the same command again; what was made so far is kept.';
 const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
@@ -149,10 +151,6 @@ function loadStop(error: unknown): KitStop {
   }
 }
 
-function lineWords(error: LineError): string {
-  return [error.message, error.fix].filter(Boolean).join(' ');
-}
-
 /**
  * The code the line hears for a step's last failure. A provider failure a later run can get past
  * (its piece has an attempt left, or no piece is named) is reported as `tool_failed`, which keeps
@@ -177,7 +175,7 @@ function reasonFor(verdict: CheckVerdict, check: string | null): string {
  */
 function failureWords(error: PartError, names: readonly string[] = []): string {
   if (error instanceof PieceFailure && error.spent) return FAILED_TWICE;
-  if (error instanceof PieceFailure) return [error.line.error, error.line.fix].filter(Boolean).join(' ');
+  if (error instanceof PieceFailure) return pieceWords(error);
   switch (error.code) {
     case 'provider_rejected':
       return 'One part of this video was refused by the maker. Change that scene in the plan, then make it again.';
@@ -193,6 +191,18 @@ function failureWords(error: PartError, names: readonly string[] = []): string {
     default:
       return 'Part of this video could not be made. Run the same command again; what was made so far is kept.';
   }
+}
+
+/**
+ * A failed piece in the line's line for the person. Without one: the error, then what to do. The fix
+ * of a failed piece is the kit's (order it again), so the person's next step is the kit's own; a
+ * refused piece's fix is written for the person.
+ */
+function pieceWords(error: PieceFailure): string {
+  const { line } = error;
+  if (line.say?.trim()) return line.say.trim();
+  if (error.code === 'provider_rejected') return [line.error, line.fix].filter(Boolean).join(' ');
+  return [line.error, line.details?.charged === false ? 'Nothing was charged for it.' : '', RUN_AGAIN].filter(Boolean).join(' ');
 }
 
 /** A part's refusal first, then what to do, within the card's length; the generic words when it has none. */

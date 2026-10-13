@@ -34,6 +34,8 @@ export class LineError extends Error {
   readonly code: string;
   readonly next: LineNext;
   readonly fix: string;
+  /** The line's line for the person; '' when it wrote none. */
+  readonly say: string;
   readonly retryAfterSeconds?: number;
   readonly details?: Record<string, unknown>;
   constructor(body: LineErrorBody, readonly status: number) {
@@ -42,9 +44,20 @@ export class LineError extends Error {
     this.code = body.code;
     this.next = body.next;
     this.fix = body.fix ?? '';
+    this.say = body.say?.trim() ?? '';
     this.retryAfterSeconds = body.retry_after_seconds;
     this.details = body.details;
   }
+}
+
+/** What the person reads for a refusal: the line's own line for them, else its error alone (its fix is for the AI). */
+export function lineWords(error: LineError): string {
+  return error.say || error.message;
+}
+
+/** A refusal the kit makes itself: its error and fix are both written for the person. */
+function kitRefusal(body: Omit<LineErrorBody, 'say'>, status: number): LineError {
+  return new LineError({ ...body, say: `${body.error} ${body.fix}`.trim() }, status);
 }
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -335,7 +348,7 @@ export class VideoLine {
           try {
             return JSON.parse(text) as T;
           } catch {
-            throw new LineError({ code: 'internal_error', error: 'The line sent an answer the kit could not read.', fix: 'Try again in a minute.', next: 'retry' }, res.status);
+            throw kitRefusal({ code: 'internal_error', error: 'The line sent an answer the kit could not read.', fix: 'Try again in a minute.', next: 'retry' }, res.status);
           }
         }
         refusal = new LineError(this.errorBody(text, res.status), res.status);
@@ -344,7 +357,7 @@ export class VideoLine {
         refusal =
           error instanceof LineError
             ? error
-            : new LineError(
+            : kitRefusal(
                 {
                   code: 'line_unavailable',
                   error: 'The line could not be reached.',
@@ -367,17 +380,15 @@ export class VideoLine {
       const parsed = JSON.parse(text) as { error?: LineErrorBody };
       const e = parsed.error;
       if (e && typeof e.code === 'string' && typeof e.next === 'string') {
-        return { ...e, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')) };
+        const { say, ...rest } = e;
+        return { ...rest, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')), ...(typeof say === 'string' && say.trim() ? { say: this.redact(say) } : {}) };
       }
     } catch {
       // Fall through to a plain refusal.
     }
     const retry = status === 429 || status >= 500 || status === 0;
-    return {
-      code: retry ? 'line_unavailable' : 'invalid_input',
-      error: `The line refused the call (HTTP ${status}).`,
-      fix: retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.',
-      next: retry ? 'retry' : 'change_request',
-    };
+    const error = `The line refused the call (HTTP ${status}).`;
+    const fix = retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.';
+    return { code: retry ? 'line_unavailable' : 'invalid_input', error, fix, say: `${error} ${fix}`, next: retry ? 'retry' : 'change_request' };
   }
 }

@@ -148,15 +148,16 @@ export interface PieceLine {
   onWait: () => void;
 }
 
-function stopFor(body: { code: string; error: string; fix: string; next: string }): KitStop {
-  const message = [body.error, body.fix].filter(Boolean).join(' ');
+/** The line's line for the person, else its error alone: its fix is written for the AI. */
+function stopFor(body: { code: string; error: string; say?: string; next: string }): KitStop {
+  const message = body.say?.trim() || body.error;
   if (body.next === 'update_kit') return new KitStop(message, 'update_kit', body.code);
   if (body.next === 'change_request') return new KitStop(message, 'change_request', body.code);
   return new KitStop(message, 'stop', body.code);
 }
 
 function lineStop(error: LineError): KitStop {
-  return stopFor({ code: error.code, error: error.message, fix: error.fix, next: error.next });
+  return stopFor({ code: error.code, error: error.message, say: error.say, next: error.next });
 }
 
 /** A failed piece, by the line's next step: only a provider failure the line says to retry is retried. */
@@ -164,6 +165,19 @@ function failureFor(failure: LineErrorBody, attempt: number): Error {
   if (failure.next === 'retry' && failure.code !== 'provider_rejected') return new PieceFailure('provider_failed', failure, attempt);
   if (failure.next === 'stop' && failure.code === 'provider_rejected') return new PieceFailure('provider_rejected', failure, attempt);
   return stopFor(failure);
+}
+
+/** A failure as the journal keeps it: the line's words, its next step, and whether it was charged. */
+function savedFailure(failure: LineErrorBody): LineErrorBody {
+  const charged = failure.details?.charged;
+  return {
+    code: failure.code,
+    error: failure.error,
+    fix: failure.fix,
+    next: failure.next,
+    ...(failure.say ? { say: failure.say } : {}),
+    ...(typeof charged === 'boolean' ? { details: { charged } } : {}),
+  };
 }
 
 const waitSeconds = (s: number | undefined, fallback: number) => Math.min(Math.max(s ?? fallback, 1), 60) * 1000;
@@ -316,7 +330,7 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       if (answer.status === 'failed') {
         const failure = answer.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
         current.outcome = 'failed';
-        current.failure = { code: failure.code, error: failure.error, fix: failure.fix, next: failure.next };
+        current.failure = savedFailure(failure);
         await ctx.cache.saveOrder(state);
         throw failureFor(failure, current.attempt);
       }
