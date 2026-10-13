@@ -18,6 +18,12 @@ export class KitLog {
     private readonly redactor: Redactor = (text) => redact(text),
   ) {}
 
+  /** Writes to this file, such as the video's log.ndjson for a refusal before any run starts. */
+  attach(file: string): void {
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    this.file = file;
+  }
+
   /**
    * Starts this run's own log, `<dir>/<name>.ndjson` (a new name if that one is taken), and
    * notes it with one line in `index`. Returns the run's name and its file.
