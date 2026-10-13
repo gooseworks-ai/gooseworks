@@ -158,6 +158,8 @@ export interface PieceLine {
   onWait: () => void;
   /** The pieces this step is waiting on at the line right now, by inputs hash: left in place when the step is cut short. */
   waiting?: Set<string>;
+  /** Pieces the customer had remade as they were (the plan's takes), by piece key: each is ordered under its take. */
+  takes?: Record<string, number>;
 }
 
 /** The server's sentence for the person, else its error and fix. */
@@ -283,7 +285,10 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       throw new PartError('bad_input', 'a piece names its result files badly');
     }
 
-    const inputs_hash = pieceHash({ part: ctx.part, provider: order.provider, path: order.path, body: order.body });
+    const plain = pieceHash({ part: ctx.part, provider: order.provider, path: order.path, body: order.body });
+    const take = ctx.takes?.[`${ctx.stepId}.${order.piece}`];
+    // A remade piece is a new piece: its own cache, journal and key, so neither this computer nor the line serves the earlier take.
+    const inputs_hash = take ? sha256Hex(`${plain}:take:${take}`) : plain;
     // Two calls for the same piece (even under two names) take turns, so the
     // second finds the first's result instead of ordering it again.
     return alone(ctx.locks, inputs_hash, async () => {

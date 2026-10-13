@@ -1044,6 +1044,17 @@ class Maker {
     return { duration_s, width, height, fps, scenes: [], speech: [] };
   }
 
+  /** This step's remade pieces from the plan's takes (a video_fix remake), by piece key; null when none. */
+  private takesOf(stepId: string): Record<string, number> | null {
+    const listed = (this.handed.plan.body as { takes?: unknown }).takes;
+    const takes: Record<string, number> = {};
+    for (const entry of Array.isArray(listed) ? listed : []) {
+      const { piece_key, take } = (entry ?? {}) as { piece_key?: unknown; take?: unknown };
+      if (typeof piece_key === 'string' && piece_key.startsWith(`${stepId}.`) && Number.isInteger(take) && (take as number) > 1) takes[piece_key] = take as number;
+    }
+    return Object.keys(takes).length ? takes : null;
+  }
+
   /** One step: reused when its saved record has the same hash and intact files, else run (and retried once). */
   private async runStep(spec: StepSpec, hashes: Record<string, string>): Promise<Record<string, unknown>> {
     const { manifest } = spec.loaded;
@@ -1054,7 +1065,8 @@ class Maker {
       throw new KitStop(`One step of this video was given something it can’t take, so the video stopped there. ${PLAN_CHANGE}`, 'change_request', 'bad_input');
     }
     const edit = this.patchOf(spec.id);
-    const hash = stepHash({ interface: manifest.interface, part: spec.ref, toolchain: this.toolchain, inputs: spec.inputs, fix: spec.fix, ...(edit ? { patch: stepPatchHash(edit) } : {}) });
+    const takes = this.takesOf(spec.id);
+    const hash = stepHash({ interface: manifest.interface, part: spec.ref, toolchain: this.toolchain, inputs: spec.inputs, fix: spec.fix, ...(edit ? { patch: stepPatchHash(edit) } : {}), ...(takes ? { takes } : {}) });
     hashes[spec.id] = hash;
     const saved = await this.store.readStep(spec.id);
     if (saved && saved.status === 'done' && saved.step_hash === hash && saved.outputs && this.run.steps[spec.id]?.status === 'done') {
@@ -1189,6 +1201,7 @@ class Maker {
           locks: this.pieceLocks,
           onWait: () => void this.reporter.send(),
           waiting,
+          takes: this.takesOf(spec.id) ?? undefined,
           onPiece: async (piece) => {
             record.pieces.push(piece);
             await this.store.writeStep(record);
