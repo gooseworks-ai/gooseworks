@@ -12,3 +12,10 @@ export async function exitIfRequested(): Promise<void> {
   await Promise.all([process.stdout, process.stderr].map((stream) => new Promise<void>((resolve) => stream.write('', () => resolve()))));
   process.exit(process.exitCode ?? 0);
 }
+
+/** Ends the process now with `code`, once what was printed has been written: for a run that won't end on its own. */
+export async function exitNow(code: number): Promise<void> {
+  process.exitCode = code;
+  requested = true;
+  await exitIfRequested();
+}

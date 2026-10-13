@@ -1,0 +1,250 @@
+// How a `video make` ended, for whoever runs it: one stable exit code per outcome, the JSON last
+// line `--json` prints, and the record `video status` reads back. An exit code never changes
+// meaning; a new outcome gets a new code.
+import { readdir, readFile, stat } from 'fs/promises';
+import { renameSync, writeFileSync, mkdirSync } from 'fs';
+import * as path from 'path';
+import type { ProgressStep } from '../line/types';
+import { LOOK_FOR, type Eyes, type SheetTile } from './eyes';
+import { runLayout, type RunLayout } from './paths';
+import type { MakeResult } from './run';
+import { isAlive, readJson, runLockHeld } from './save';
+
+/** The exit code of each outcome. 2 is left to the command line's own usage errors. */
+export const EXIT_CODES = {
+  /** The video is made and passed its checks. */
+  done: 0,
+  /** It can't go on as it is: the plan, a check or a part needs a change first. */
+  failed: 1,
+  /** The person or the card stopped it. */
+  stopped: 3,
+  /** Something on the way failed for now: the same command carries on and keeps what was made. */
+  run_again: 4,
+  /** This video needs a newer GooseWorks than this computer could get. */
+  update_kit: 5,
+  /** This computer needs to sign in to GooseWorks, with the account the video belongs to. */
+  sign_in: 6,
+} as const;
+
+export type Outcome = keyof typeof EXIT_CODES;
+
+/** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
+export const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
+
+/** Codes a run stops on that the same command gets past later, besides the line's own resumable ones. */
+const RUN_AGAIN_CODES: ReadonlySet<string> = new Set([
+  ...RESUMABLE_CODES,
+  'unreachable',
+  'bad_cache',
+  'parts_not_ready',
+  'plan_changed',
+  'line_unavailable',
+  'internal_error',
+]);
+
+/** What an end says, as far as the outcome goes. */
+export type Ended = Pick<MakeResult, 'status'> & { code?: string; next?: string };
+
+export function outcomeOf(result: Ended): Outcome {
+  if (result.status === 'done') return 'done';
+  if (result.status === 'update_kit') return 'update_kit';
+  if (result.next === 'sign_in') return 'sign_in';
+  if (result.next === 'retry' || (result.code && RUN_AGAIN_CODES.has(result.code))) return 'run_again';
+  return result.status === 'stopped' ? 'stopped' : 'failed';
+}
+
+/** last-result.json, and the JSON last line of `video make --json`. */
+export interface ResultRecord {
+  event: 'result';
+  video_id: string;
+  status: MakeResult['status'] | 'not_started';
+  outcome: Outcome;
+  exit_code: number;
+  /** The words for the person. */
+  message: string;
+  code?: string;
+  /** The finished video on this computer. */
+  final?: string;
+  /** Frames across the finished video, to look at before saying it is ready (`video verify` says what to look for). */
+  contact_sheet?: string;
+  /** What the final checks noted without failing the video. */
+  warnings?: string[];
+  /** This run's own log, for support. */
+  log?: string;
+  ended_at: string;
+}
+
+export function resultRecord(videoId: string, result: Ended & { message: string; final?: string; contact_sheet?: string; warnings?: string[]; log?: string }, at = new Date()): ResultRecord {
+  const outcome = outcomeOf(result);
+  return {
+    event: 'result',
+    video_id: videoId,
+    status: result.status,
+    outcome,
+    exit_code: EXIT_CODES[outcome],
+    message: result.message,
+    ...(result.code ? { code: result.code } : {}),
+    ...(result.status === 'done' && result.final ? { final: result.final } : {}),
+    ...(result.status === 'done' && result.contact_sheet ? { contact_sheet: result.contact_sheet } : {}),
+    ...(result.status === 'done' && result.warnings?.length ? { warnings: result.warnings } : {}),
+    ...(result.log ? { log: result.log } : {}),
+    ended_at: at.toISOString(),
+  };
+}
+
+/**
+ * Saves how the run ended. Written in one go, so a process that is ending right after (or being
+ * ended) still leaves the whole record; a failed write never hides the run's own words.
+ */
+export function saveResult(layout: RunLayout, record: ResultRecord): void {
+  try {
+    mkdirSync(layout.root, { recursive: true, mode: 0o700 });
+    const temp = `${layout.result}.${process.pid}.pending`;
+    writeFileSync(temp, JSON.stringify(record, null, 2) + '\n', { mode: 0o600 });
+    renameSync(temp, layout.result);
+  } catch {
+    // The run's words are printed either way.
+  }
+}
+
+/** detached.json: the process making this video in the background. */
+export interface DetachedRecord {
+  pid: number;
+  started_at: string;
+  output: string;
+}
+
+/** The card's rows as the run left them, saved for `video status`. */
+export interface ProgressRecord {
+  note: string;
+  steps: ProgressStep[];
+  at: string;
+}
+
+/** What `video status` says about one video on this computer. */
+export interface VideoStatus {
+  event: 'status';
+  video_id: string;
+  /** making: a run is going; waiting: a detached run waits for another to finish first; else how the last run ended. */
+  state: 'making' | 'waiting' | Outcome | 'not_started';
+  /** The detached process, while it lives. */
+  pid?: number;
+  note?: string;
+  steps?: ProgressStep[];
+  /** The last run's words and exit code, once it ended. */
+  message?: string;
+  exit_code?: number;
+  final?: string;
+  contact_sheet?: string;
+  warnings?: string[];
+  log?: string;
+  output?: string;
+  updated_at?: string;
+}
+
+/** The newest run's own log, or null when no run of this video has one here. */
+export async function latestRunLog(layout: RunLayout): Promise<string | null> {
+  const names = await readdir(layout.runs).catch(() => [] as string[]);
+  const logs = names.filter((name) => name.endsWith('.ndjson')).sort();
+  return logs.length ? path.join(layout.runs, logs[logs.length - 1]) : null;
+}
+
+/** The last `lines` lines of a file, or null when it can't be read. */
+export async function tailOf(file: string, lines: number): Promise<string[] | null> {
+  const text = await readFile(file, 'utf8').catch(() => null);
+  if (text === null) return null;
+  const all = text.split('\n').filter((line) => line.length > 0);
+  return all.slice(Math.max(all.length - lines, 0));
+}
+
+/** Reads the run folder: is a run going, how far it got, and how the last one ended. */
+export async function videoStatus(home: string, videoId: string): Promise<VideoStatus> {
+  const layout = runLayout(home, videoId);
+  const [detached, result, progress, held, log] = await Promise.all([
+    readJson<DetachedRecord>(layout.detached),
+    readJson<ResultRecord>(layout.result),
+    readJson<ProgressRecord>(layout.progress),
+    runLockHeld(layout),
+    latestRunLog(layout),
+  ]);
+  const background = detached && isAlive(detached.pid) ? detached : null;
+  const rows = progress && Array.isArray(progress.steps) ? { note: progress.note, steps: progress.steps, updated_at: progress.at } : {};
+  const where = { ...(log ? { log } : {}), ...(detached?.output ? { output: detached.output } : {}) };
+  if (held || background) {
+    return {
+      event: 'status',
+      video_id: videoId,
+      state: held ? 'making' : 'waiting',
+      ...(background ? { pid: background.pid } : {}),
+      ...rows,
+      ...where,
+    };
+  }
+  if (result && typeof result.exit_code === 'number' && result.outcome in EXIT_CODES) {
+    return {
+      event: 'status',
+      video_id: videoId,
+      state: result.outcome,
+      message: result.message,
+      exit_code: result.exit_code,
+      ...(result.final ? { final: result.final } : {}),
+      ...(result.contact_sheet ? { contact_sheet: result.contact_sheet } : {}),
+      ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+      ...rows,
+      ...where,
+      updated_at: result.ended_at,
+    };
+  }
+  return { event: 'status', video_id: videoId, state: 'not_started', ...rows, ...where };
+}
+
+/** What `video verify` says about one video: where its final and frame sheet are, and what to look for. */
+export interface VerifyRecord {
+  event: 'verify';
+  video_id: string;
+  final?: string;
+  contact_sheet?: string;
+  tiles?: SheetTile[];
+  /** What the final checks noted without failing the video. */
+  warnings: string[];
+  look_for: string[];
+}
+
+/** Reads the finished video's folder for `video verify`. */
+export async function verifyOf(home: string, videoId: string): Promise<VerifyRecord> {
+  const layout = runLayout(home, videoId);
+  const final = path.join(layout.final, 'final.mp4');
+  const [eyes, result, made] = await Promise.all([
+    readJson<Eyes>(path.join(layout.final, 'eyes.json')),
+    readJson<ResultRecord>(layout.result),
+    stat(final).then(
+      (info) => info.isFile(),
+      () => false,
+    ),
+  ]);
+  const record: VerifyRecord = { event: 'verify', video_id: videoId, warnings: [], look_for: LOOK_FOR };
+  if (!made) return record;
+  const sheet = typeof eyes?.contact_sheet === 'string' ? eyes.contact_sheet : null;
+  const warned = result?.status === 'done' && Array.isArray(result.warnings) ? result.warnings : (eyes?.warnings ?? []).map((w) => w.message);
+  return {
+    ...record,
+    final,
+    ...(sheet && (await stat(sheet).then(() => true, () => false)) ? { contact_sheet: sheet, tiles: eyes!.tiles } : {}),
+    warnings: warned.filter((w): w is string => typeof w === 'string'),
+  };
+}
+
+/** `video verify` for the person, or the AI, about to say the video is ready. */
+export function verifyLines(found: VerifyRecord): string[] {
+  if (!found.final) return ['This video hasn’t been finished on this computer, so there is nothing to look at yet.'];
+  return [
+    `The finished video: ${found.final}`,
+    found.contact_sheet
+      ? `Its frame sheet: ${found.contact_sheet} (frames across the video, labelled by scene: S2 4.1 is scene 2 at 4.1 seconds, END the end card)`
+      : 'No frame sheet was made for it, so watch the video itself.',
+    'Before you say it is ready, check:',
+    ...found.look_for.map((item) => `- ${item}`),
+    'If any of that is wrong, it isn’t ready: say what you saw and fix that scene first.',
+    ...found.warnings.map((warning) => `Our check noted: ${warning}`),
+  ];
+}

@@ -60,7 +60,7 @@ it('stops on the line’s words when the full report after the claim shows the c
   host.browser.check = async () => ({ ok: false, version: null, bundled: true, problem: 'the browser download failed' });
   const line = fakeLine({ device: (body) => (body.device.setup ? undefined : cannotMake(['browser'])) });
   const result = await runMake({ home: tempHome(), line, host });
-  expect(result).toEqual({ status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
+  expect(result).toMatchObject({ code: 'device_cannot_make', status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
   expect(lineRoute(line.seen, '/pieces')).toEqual([]);
 });
 
@@ -88,6 +88,6 @@ it('sets up the browser before handing over again when an older line won’t han
 it('stops on the line’s words when something else is missing', async () => {
   const line = fakeLine({ device: () => cannotMake(['ffmpeg']) });
   const result = await runMake({ home: tempHome(), line, host: settingUpHost([]) });
-  expect(result).toEqual({ status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
+  expect(result).toMatchObject({ code: 'device_cannot_make', status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
   expect(lineRoute(line.seen, '/device')).toHaveLength(1);
 });

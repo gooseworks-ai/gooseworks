@@ -336,6 +336,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   heartbeatMs?: number;
   lastWordMs?: number;
+  ceilingMs?: number;
+  forceEnd?: (result: MakeResult) => void;
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -358,6 +360,8 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     sleep: async () => undefined,
     heartbeatMs: opts.heartbeatMs ?? 3_600_000,
     ...(opts.lastWordMs ? { lastWordMs: opts.lastWordMs } : {}),
+    ...(opts.ceilingMs ? { ceilingMs: opts.ceilingMs } : {}),
+    ...(opts.forceEnd ? { forceEnd: opts.forceEnd } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });

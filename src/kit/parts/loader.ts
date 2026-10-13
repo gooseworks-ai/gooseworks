@@ -4,10 +4,11 @@
 // `<raw base>/parts/<id>/<version>/` holds part.json, part.mjs and assets. The
 // video's PartsLock, handed over by our server at the yes, is the trust
 // anchor: every file's sha256 must match it on every load, and the part's
-// models and kit range must match both the lock and the published index.
-// A version that is withdrawn, missing from the index or out of this kit's
-// range is refused. Nothing is imported until every check has passed, so a
-// refused part never runs and nothing is spent.
+// models and kit range must match the lock. A version that is withdrawn or out
+// of this kit's range is refused. Nothing is imported until every check has
+// passed, so a refused part never runs and nothing is spent. A file the
+// published folder doesn't serve yet is a miss to try again later, not a
+// refusal: the lock's hashes already say what the part is.
 //
 // Each verified copy is a folder of its own, keyed by the part and the exact
 // file hashes the lock gives it: <home>/kit/parts/<id>/<version>/<key>/. It is
@@ -30,20 +31,7 @@ import { pathToFileURL } from 'url';
 import type { LockedPart, ModelNeed, PartManifest, PartRef, PartRun, PartsLock } from '../part-interface';
 import { apiEnvironment, kitApiBase, KIT_DEV_ENV } from '../env';
 import { gooseSkillsSource } from '../../skills/installer';
-import {
-  CatalogError,
-  fetchBytes,
-  fetchCatalog,
-  fileHashes,
-  isPartId,
-  modelList,
-  partKey,
-  parseWithdrawn,
-  sameFiles,
-  sameModels,
-  type FetchLike,
-  type PartsCatalog,
-} from './catalog';
+import { CatalogError, fetchBytes, fetchWithdrawn, fileHashes, isPartId, modelList, partKey, parseWithdrawn, sameModels, type FetchLike } from './catalog';
 import { LockTimeout, NotAFolder, realFolder, removeTree, withFolderLock } from './fs-safe';
 import { isExactVersion, satisfiesKitRange } from './semver';
 
@@ -57,7 +45,6 @@ export type PartLoadCode =
   | 'withdrawn'
   | 'not_published'
   | 'hash_mismatch'
-  | 'index_mismatch'
   | 'manifest_mismatch'
   | 'kit_range'
   | 'too_large'
@@ -223,16 +210,16 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
   const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
   const importModule = options.importModule ?? nativeImport;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  // The lists are read once per run of the kit, from the origin the first load used.
-  const catalogs = new Map<string, Promise<PartsCatalog>>();
+  // The withdrawn list is read once per run of the kit, from the origin the first load used.
+  const lists = new Map<string, Promise<Set<string>>>();
 
-  function catalogFor(rawBase: string, signal: AbortSignal): Promise<PartsCatalog> {
-    let pending = catalogs.get(rawBase);
+  function withdrawnFor(rawBase: string, signal: AbortSignal): Promise<Set<string>> {
+    let pending = lists.get(rawBase);
     if (!pending) {
-      pending = fetchCatalog(fetchImpl, rawBase, { timeoutMs, signal });
+      pending = fetchWithdrawn(fetchImpl, rawBase, { timeoutMs, signal });
       // A failed read is not kept: the next load tries again.
-      pending.catch(() => catalogs.delete(rawBase));
-      catalogs.set(rawBase, pending);
+      pending.catch(() => lists.delete(rawBase));
+      lists.set(rawBase, pending);
     }
     return pending;
   }
@@ -248,21 +235,14 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     } catch (error) {
       throw new PartLoadError('unreachable', (error as Error).message);
     }
-    let catalog: PartsCatalog;
+    let withdrawn: Set<string>;
     try {
-      catalog = await catalogFor(source.rawBase, request.signal);
+      withdrawn = await withdrawnFor(source.rawBase, request.signal);
     } catch (error) {
-      throw new PartLoadError('unreachable', error instanceof CatalogError ? error.message : 'Could not read the published parts list.');
+      throw new PartLoadError('unreachable', error instanceof CatalogError ? error.message : 'Could not read the list of withdrawn parts.');
     }
-    if (catalog.withdrawn.has(partKey(ref.id, ref.version))) {
+    if (withdrawn.has(partKey(ref.id, ref.version))) {
       throw new PartLoadError('withdrawn', `${named(ref)} was withdrawn, so this video can’t use it. The video needs a new plan.`);
-    }
-    const published = catalog.index.get(partKey(ref.id, ref.version));
-    if (!published) {
-      throw new PartLoadError('not_published', `${named(ref)} is not in the published parts list.`);
-    }
-    if (!sameFiles(published.files, locked.files) || !sameModels(published.models, locked.models) || published.kit !== locked.kit) {
-      throw new PartLoadError('index_mismatch', `${named(ref)} in this video’s parts list does not match the published part.`);
     }
 
     await fs.mkdir(request.home, { recursive: true, mode: 0o700 });

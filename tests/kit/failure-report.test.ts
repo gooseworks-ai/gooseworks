@@ -50,7 +50,7 @@ describe('a part’s refusal of the plan', () => {
     const line = fakeLine();
     const parts = refusing('bad_input', '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow.');
     const result = await runMake({ home: tempHome(), line, parts });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'failed',
       message: '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow. Change the plan, then make it again.',
     });
@@ -294,7 +294,7 @@ describe('a failure report the line never took', () => {
 
     const line = fakeLine();
     const again = await runMake({ home, line });
-    expect(again).toEqual({ status: 'failed', message: first.message });
+    expect(again).toMatchObject({ status: 'failed', message: first.message });
     expect(lineRoute(line.seen, '/progress')[0].body.failure).toEqual(pending.failure);
     expect(line.pieces).toHaveLength(0);
     expect(existsSync(pendingFile)).toBe(false);
@@ -373,7 +373,7 @@ it('reports an error outside any step as one a new run may get past, in safe wor
   // The style manifest's download fails after the package view came back.
   const line = { ...base, fetch: (async (input: any, init: any) => (new URL(String(input)).pathname === '/pkg/manifest' ? new Response('gone', { status: 404 }) : base.fetch(input, init))) as typeof fetch };
   const result = await runMake({ home, line });
-  expect(result).toEqual({ status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
+  expect(result).toMatchObject({ code: 'tool_failed', status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
   expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
   expect(runLogs(home)).toMatch(/HTTP 404/);
 });
@@ -441,7 +441,7 @@ describe('the line’s refusal of a piece', () => {
   it('reaches the person as the server’s sentence for them, without the fix written for the AI', async () => {
     const printed: string[] = [];
     const result = await runMake({ home: tempHome(), line: stopped('You stopped this video. What was made so far is kept.'), printed });
-    expect(result).toEqual({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
+    expect(result).toMatchObject({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
     expect(printed.join('\n')).not.toMatch(/Tell them/);
   });
 
@@ -450,7 +450,7 @@ describe('the line’s refusal of a piece', () => {
       piece: () => ({ status: 409, json: { error: { code: 'making_elsewhere', error: 'This video is being made somewhere else.', fix: 'If that run has stopped, run the make command again on this computer.', next: 'stop' } } }),
     });
     const result = await runMake({ home: tempHome(), line });
-    expect(result).toEqual({ status: 'stopped', message: 'This video is being made somewhere else. If that run has stopped, run the make command again on this computer.' });
+    expect(result).toMatchObject({ status: 'stopped', message: 'This video is being made somewhere else. If that run has stopped, run the make command again on this computer.' });
   });
 });
 
@@ -469,7 +469,7 @@ describe('a step that runs out of time', () => {
       }) as typeof fetch,
     };
     const result = await runMake({ home: tempHome(), line, parts: testParts({ clip: quick }) });
-    expect(result).toEqual({ status: 'failed', message: 'One of the clips we ordered for this video didn’t come back in time. Run the same command again; what was made so far is kept.' });
+    expect(result).toMatchObject({ code: 'provider_slow', status: 'failed', message: 'One of the clips we ordered for this video didn’t come back in time. Run the same command again; what was made so far is kept.' });
     expect(failures(base)).toEqual([{ step: 'clips', code: 'provider_slow', detail: result.message }]);
   });
 
