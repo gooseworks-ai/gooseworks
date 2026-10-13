@@ -52,15 +52,8 @@ export const ROUTER_MAX_CHARS = 6500;
  * make-custom-video carries the whole custom contract (reference viewing, two owner
  * reviews, local execution and the stored rebuild recipe), and the server text
  * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
- * Raised to 8,000 for the custom one-run work (nearest template, final check, progress,
- * redo allowance and clip checks, the kit hand-off): 7,554 characters on 2026-10-13.
  */
-export const CUSTOM_VIDEO_MAX_CHARS = 8000;
-/**
- * goose-video's custom line now says not to run a template's renderer and call it
- * custom (gooseworks-app #2022): 5,019 characters on 2026-10-13. Its own small margin.
- */
-export const GOOSE_VIDEO_MAX_CHARS = 5100;
+export const CUSTOM_VIDEO_MAX_CHARS = 6000;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;
