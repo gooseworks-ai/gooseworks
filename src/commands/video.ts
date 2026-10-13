@@ -36,17 +36,22 @@ function savedLogin(apiBase: string, explicit: boolean): Credentials | null {
   return explicit || sameOrigin(creds.api_base, apiBase) ? creds : null;
 }
 
-/** Signs in on this computer, so the customer never has to run another command. */
-async function signInForKit(apiBase: string): Promise<string | null> {
+/**
+ * Signs in on this computer, so the customer never has to run another command,
+ * then reads the saved login back so its key stays paired with its own address.
+ */
+async function signInForKit(apiBase: string, explicit: boolean): Promise<Credentials | null> {
   console.log('Signing in to GooseWorks first, then carrying on…');
   try {
     const outcome = await signIn(apiBase, undefined);
-    if (outcome.status === 'done') return outcome.result.api_key;
+    if (outcome.status !== 'done') return null;
   } catch {
-    // The plain words below are enough; the flows print their own detail.
+    console.log('Sign-in did not finish. Run the same command again.');
+    return null;
   }
-  console.log('Sign-in did not finish. Run the same command again.');
-  return null;
+  const creds = savedLogin(apiBase, explicit);
+  if (!creds) console.log('Sign-in finished for a different GooseWorks server, so nothing was sent.');
+  return creds;
 }
 
 async function setUp() {
@@ -55,9 +60,9 @@ async function setUp() {
   const settings = readKitEnv(process.env);
   const kit = { ...settings, noSelfUpdate: settings.noSelfUpdate || settings.worker };
   if (kit.worker && !kit.lineToken) throw new Error('This worker has no video token, so it cannot make the video.');
-  const creds = kit.worker ? null : savedLogin(settings.apiBase, explicit);
+  const creds = kit.worker ? null : (savedLogin(settings.apiBase, explicit) ?? (await signInForKit(settings.apiBase, explicit)));
   const apiBase = kit.worker ? settings.apiBase : (creds?.api_base ?? settings.apiBase);
-  const login = kit.worker ? undefined : (creds?.api_key ?? (await signInForKit(apiBase)) ?? undefined);
+  const login = creds?.api_key;
   const home = kitHome();
   const line = new VideoLine({
     apiBase,
