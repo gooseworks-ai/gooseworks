@@ -22,16 +22,16 @@ export const logoutCommand = new Command('logout')
     }
     if (!existing && !broken) {
       logger.info('Not currently logged in.');
-      return;
+    } else {
+      const revoked = existing ? await revokeKey(existing) : null;
+      clearCredentials();
+      logger.success(existing ? `Signed out of GooseWorks (was ${existing.email}).` : 'Cleared a saved GooseWorks sign-in that did not match this environment.');
+      if (revoked === 'cancelled') logger.info('Its key was cancelled, so any copy of it stops working too.');
+      if (revoked === 'unreachable') logger.warn('Could not reach GooseWorks to cancel the old key; it was only removed from this computer.');
     }
 
-    const revoked = existing ? await revokeKey(existing) : null;
-    clearCredentials();
-    logger.success(existing ? `Signed out of GooseWorks (was ${existing.email}).` : 'Cleared a saved GooseWorks sign-in that did not match this environment.');
-    if (revoked === 'cancelled') logger.info('Its key was cancelled, so any copy of it stops working too.');
-    if (revoked === 'unreachable') logger.warn('Could not reach GooseWorks to cancel the old key; it was only removed from this computer.');
-
-    // Only the CLI's own Claude Code entries, and only where the CLI writes them.
+    // Only the CLI's own Claude Code entries, and only where the CLI writes them. Removed even with no
+    // saved sign-in: a key copied into Claude Code must not outlive logout.
     if (getEnvironment() !== 'production') return;
     if (removeClaudeMcp().length) logger.info('Removed the GooseWorks connection from Claude Code.');
     if (otherGooseworksMcpEntries().length) {

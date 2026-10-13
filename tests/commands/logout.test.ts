@@ -60,14 +60,16 @@ describe('logout command', () => {
   });
   afterEach(() => selectEnvironment('production'));
 
-  it('does nothing when not logged in', async () => {
+  it('still removes its own Claude Code connection when not logged in', async () => {
     mockGetCredentials.mockReturnValue(null);
+    mockRemoveClaudeMcp.mockReturnValue(['gooseworks']);
 
     await logout();
 
     expect(loggerModule.info).toHaveBeenCalledWith('Not currently logged in.');
     expect(mockClearCredentials).not.toHaveBeenCalled();
-    expect(mockRemoveClaudeMcp).not.toHaveBeenCalled();
+    expect(mockRemoveClaudeMcp).toHaveBeenCalled();
+    expect(said()).toContain('Removed the GooseWorks connection from Claude Code.');
     expect(mockRevokeKey).not.toHaveBeenCalled();
     // An unfinished `login --device --no-wait` is dropped even with no account.
     expect(clearPendingDeviceLogin).toHaveBeenCalled();
