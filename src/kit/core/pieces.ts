@@ -160,16 +160,16 @@ export interface PieceLine {
   waiting?: Set<string>;
 }
 
-/** The line's line for the person, else its error alone: its fix is written for the AI. */
-function stopFor(body: { code: string; error: string; say?: string; next: string }): KitStop {
-  const message = body.say?.trim() || body.error;
+/** The server's sentence for the person, else its error and fix. */
+function stopFor(body: { code: string; error: string; fix?: string; say?: string; next: string }): KitStop {
+  const message = body.say?.trim() || [body.error, body.fix].filter(Boolean).join(' ');
   if (body.next === 'update_kit') return new KitStop(message, 'update_kit', body.code);
   if (body.next === 'change_request') return new KitStop(message, 'change_request', body.code);
   return new KitStop(message, 'stop', body.code);
 }
 
 function lineStop(error: LineError): KitStop {
-  return stopFor({ code: error.code, error: error.message, say: error.say, next: error.next });
+  return stopFor({ code: error.code, error: error.message, fix: error.fix, say: error.say, next: error.next });
 }
 
 /** A failed piece, by the line's next step: only a provider failure the line says to retry is retried. */

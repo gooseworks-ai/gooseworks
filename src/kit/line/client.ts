@@ -34,7 +34,7 @@ export class LineError extends Error {
   readonly code: string;
   readonly next: LineNext;
   readonly fix: string;
-  /** The line's line for the person; '' when it wrote none. */
+  /** The server's sentence for the person when its fix is written for their AI; '' when it wrote none. */
   readonly say: string;
   readonly retryAfterSeconds?: number;
   readonly details?: Record<string, unknown>;
@@ -50,14 +50,9 @@ export class LineError extends Error {
   }
 }
 
-/** What the person reads for a refusal: the line's own line for them, else its error alone (its fix is for the AI). */
+/** What the person reads for a refusal: the server's sentence for them, else its error and fix. */
 export function lineWords(error: LineError): string {
-  return error.say || error.message;
-}
-
-/** A refusal the kit makes itself: its error and fix are both written for the person. */
-function kitRefusal(body: Omit<LineErrorBody, 'say'>, status: number): LineError {
-  return new LineError({ ...body, say: `${body.error} ${body.fix}`.trim() }, status);
+  return error.say || [error.message, error.fix].filter(Boolean).join(' ');
 }
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -348,7 +343,7 @@ export class VideoLine {
           try {
             return JSON.parse(text) as T;
           } catch {
-            throw kitRefusal({ code: 'internal_error', error: 'The line sent an answer the kit could not read.', fix: 'Try again in a minute.', next: 'retry' }, res.status);
+            throw new LineError({ code: 'internal_error', error: 'The line sent an answer the kit could not read.', fix: 'Try again in a minute.', next: 'retry' }, res.status);
           }
         }
         refusal = new LineError(this.errorBody(text, res.status), res.status);
@@ -357,7 +352,7 @@ export class VideoLine {
         refusal =
           error instanceof LineError
             ? error
-            : kitRefusal(
+            : new LineError(
                 {
                   code: 'line_unavailable',
                   error: 'The line could not be reached.',

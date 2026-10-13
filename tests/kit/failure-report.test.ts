@@ -436,16 +436,19 @@ describe('the line’s refusal of a piece', () => {
       piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', ...(say ? { say } : {}), next: 'stop' } } }),
     });
 
-  it('reaches the person as the line’s line for them, without the fix written for the AI', async () => {
+  it('reaches the person as the server’s sentence for them, without the fix written for the AI', async () => {
     const printed: string[] = [];
     const result = await runMake({ home: tempHome(), line: stopped('You stopped this video. What was made so far is kept.'), printed });
     expect(result).toEqual({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
     expect(printed.join('\n')).not.toMatch(/Tell them/);
   });
 
-  it('reaches the person as the error alone when the line wrote no line for them', async () => {
-    const result = await runMake({ home: tempHome(), line: stopped() });
-    expect(result).toEqual({ status: 'stopped', message: 'This video was stopped.' });
+  it('reaches the person as the error and its fix when the server wrote no sentence for them', async () => {
+    const line = fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'making_elsewhere', error: 'This video is being made somewhere else.', fix: 'If that run has stopped, run the make command again on this computer.', next: 'stop' } } }),
+    });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result).toEqual({ status: 'stopped', message: 'This video is being made somewhere else. If that run has stopped, run the make command again on this computer.' });
   });
 });
 
@@ -464,7 +467,7 @@ describe('a step that runs out of time', () => {
       }) as typeof fetch,
     };
     const result = await runMake({ home: tempHome(), line, parts: testParts({ clip: quick }) });
-    expect(result).toEqual({ status: 'failed', message: 'One of the video clips we ordered for this video didn’t come back in time. Nothing was charged for it. Run the same command again; what was made so far is kept.' });
+    expect(result).toEqual({ status: 'failed', message: 'One of the clips we ordered for this video didn’t come back in time. Run the same command again; what was made so far is kept.' });
     expect(failures(base)).toEqual([{ step: 'clips', code: 'provider_slow', detail: result.message }]);
   });
 

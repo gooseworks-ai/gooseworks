@@ -53,14 +53,14 @@ describe('the line client', () => {
       throw new Error('not refused');
     };
 
-    it('are the line’s own line for them, never the fix written for the AI', async () => {
+    it('are the server’s sentence for them, never the fix written for the AI', async () => {
       const error = await refusal(refusing({ code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', say: 'You stopped this video. What was made so far is kept.', next: 'stop' }));
       expect(lineWords(error)).toBe('You stopped this video. What was made so far is kept.');
     });
 
-    it('are the error alone when the line wrote no line for them', async () => {
-      const error = await refusal(refusing({ code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', next: 'stop' }));
-      expect(lineWords(error)).toBe('This video was stopped.');
+    it('are the error and its fix when the server wrote no sentence for them', async () => {
+      const error = await refusal(refusing({ code: 'not_signed_in', error: 'This computer isn’t signed in to GooseWorks.', fix: 'Sign in again, then run the check again.', next: 'stop' }));
+      expect(lineWords(error)).toBe('This computer isn’t signed in to GooseWorks. Sign in again, then run the check again.');
     });
 
     it('keep the kit’s own advice when the kit wrote the refusal', async () => {
