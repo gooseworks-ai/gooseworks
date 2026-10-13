@@ -343,7 +343,7 @@ describe('a provider failure', () => {
     const line = fakeLine({ piece: providerFailed });
     const result = await runMake({ home, line, parts: testParts({ clip: { retry: { transient: 0 } } }) });
     expect(result.status).toBe('failed');
-    expect(result.message).toBe('The provider didn’t take the job (429). Run the same command again; what was made so far is kept.');
+    expect(result.message).toBe('The provider didn’t take the job (429). Try once more with a new attempt. Nothing was charged.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
 
     const again = fakeLine();

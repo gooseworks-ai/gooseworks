@@ -66,7 +66,7 @@ export type PartLoadCode =
   | 'bad_cache'
   | 'bad_part';
 
-/** A part that must not run. The message is plain and names the part; nothing was spent. */
+/** A part that must not run. The message is plain and names the part. */
 export class PartLoadError extends Error {
   constructor(
     readonly code: PartLoadCode,

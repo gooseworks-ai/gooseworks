@@ -176,15 +176,15 @@ function loadStop(error: unknown): KitStop {
   const code = error instanceof PartLoadError ? error.code : undefined;
   switch (code) {
     case 'kit_range':
-      return new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', code);
+      return new KitStop('This video needs a newer video kit.', 'update_kit', code);
     case 'unreachable':
-      return new KitStop('This video’s parts could not be downloaded right now. Run the same command again in a minute. Nothing was spent.', 'stop', code);
+      return new KitStop('This video’s parts could not be downloaded right now. Run the same command again in a minute.', 'stop', code);
     case 'bad_cache':
-      return new KitStop('The video kit’s folder on this computer is busy or can’t be used. Run the same command again in a minute. Nothing was spent.', 'stop', code);
+      return new KitStop('The video kit’s folder on this computer is busy or can’t be used. Run the same command again in a minute.', 'stop', code);
     case 'withdrawn':
-      return new KitStop(`A part this video uses was withdrawn. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', code);
+      return new KitStop(`A part this video uses was withdrawn. ${PLAN_CHANGE}`, 'change_request', code);
     default:
-      return new KitStop(`A part this video uses can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', code);
+      return new KitStop(`A part this video uses can’t run. ${PLAN_CHANGE}`, 'change_request', code);
   }
 }
 
@@ -230,16 +230,10 @@ function failureWords(error: PartError, names: readonly string[] = []): string {
   }
 }
 
-/**
- * A failed piece in the server's sentence for the person. Without one: the error, then what to do. The fix
- * of a failed piece is the kit's (order it again), so the person's next step is the kit's own; a
- * refused piece's fix is written for the person.
- */
+/** A failed piece in the server's words: its sentence for the person, else its error and fix. The money and the next step are the server's to say. */
 function pieceWords(error: PieceFailure): string {
   const { line } = error;
-  if (line.say?.trim()) return line.say.trim();
-  if (error.code === 'provider_rejected') return [line.error, line.fix].filter(Boolean).join(' ');
-  return [line.error, line.details?.charged === false ? 'Nothing was charged for it.' : '', RUN_AGAIN].filter(Boolean).join(' ');
+  return line.say?.trim() || [line.error, line.fix].filter(Boolean).join(' ');
 }
 
 /** A part's refusal first, then what to do, within the card's length; the generic words when it has none. */
@@ -253,9 +247,9 @@ function refusalWords(error: PartError, names: readonly string[]): string {
 function checkLock(raw: unknown, videoId: string, plan: ApprovedPlan): PartsLock {
   const lock = raw as PartsLock;
   if (!lock || lock.lock !== 1 || lock.video_id !== videoId || !lock.parts || !lock.layers || !lock.style) {
-    throw new KitStop('This video’s parts list can’t be read. Nothing was spent.', 'change_request');
+    throw new KitStop('This video’s parts list can’t be read.', 'change_request');
   }
-  if (lock.style.id !== plan.style_id || lock.style.version !== plan.style_version) throw new KitStop('This video’s parts list is for another style. Nothing was spent.', 'change_request');
+  if (lock.style.id !== plan.style_id || lock.style.version !== plan.style_version) throw new KitStop('This video’s parts list is for another style.', 'change_request');
   return lock;
 }
 
@@ -620,10 +614,10 @@ class Maker {
     const plan = handed.plan;
     this.at = 'plan';
     if (!plan || plan.project_id !== this.videoId || plan.style_id !== handed.style_package?.style_id || plan.style_version !== handed.style_package?.version) {
-      throw new KitStop('The plan handed over is not this video’s. Nothing was spent.', 'change_request');
+      throw new KitStop('The plan handed over is not this video’s.', 'change_request');
     }
     if (handed.parts_lock) this.lock = checkLock(handed.parts_lock, this.videoId, plan);
-    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop', 'parts_not_ready');
+    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes.', 'stop', 'parts_not_ready');
 
     const planCopy = withoutSignedLinks(plan);
     await mkdir(this.layout.root, { recursive: true, mode: 0o700 });
@@ -655,7 +649,7 @@ class Maker {
     // The style, then every part: all checked before anything is spent.
     // The style must be exactly the one approved: the package's hash and the plan's must agree.
     if (!plan.style_hash || handed.style_package.style_hash !== plan.style_hash) {
-      throw new KitStop('The style handed over is not the one approved for this video. Nothing was spent.', 'change_request');
+      throw new KitStop('The style handed over is not the one approved for this video.', 'change_request');
     }
     const pin = { id: plan.style_id, version: plan.style_version, hash: plan.style_hash };
     this.at = 'style';
@@ -678,7 +672,7 @@ class Maker {
       download: (u: string, m: number) => deps.line.download(u, m, this.stop.signal),
       hostedLink: (fileId: string) =>
         deps.line.hostedFileLink(this.videoId, fileId, this.stop.signal).catch((error: unknown) => {
-          if (error instanceof LineError) throw new KitStop(`${lineWords(error)} Nothing was spent.`, error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
+          if (error instanceof LineError) throw new KitStop(lineWords(error), error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
           throw error;
         }),
       // A hosted plan file goes into a payload as the line already knows it.
@@ -720,17 +714,17 @@ class Maker {
     ];
     for (const { key, ref, slot } of wanted) {
       this.at = key;
-      if (!ref || typeof ref.id !== 'string' || typeof ref.version !== 'string') throw new KitStop('This video names a part it has no version for. Nothing was spent.', 'change_request');
+      if (!ref || typeof ref.id !== 'string' || typeof ref.version !== 'string') throw new KitStop('This video names a part it has no version for.', 'change_request');
       if (lock) {
         const entry = lock.parts[ref.id];
         if (!entry || entry.version !== ref.version) {
           this.deps.log.write('error', 'part not in the parts list', { step: key, part: `${ref.id}@${ref.version}`, locked: entry?.version ?? null });
-          throw new KitStop(`A part this video uses is not in this video’s parts list, so it can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'not_locked');
+          throw new KitStop(`A part this video uses is not in this video’s parts list, so it can’t run. ${PLAN_CHANGE}`, 'change_request', 'not_locked');
         }
         const tooOld = kitRangeRefusal({ id: ref.id, version: ref.version, kit: entry.kit });
         if (tooOld) {
           this.deps.log.write('error', 'part needs another kit', { step: key, refusal: tooOld });
-          throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'kit_range');
+          throw new KitStop('This video needs a newer video kit.', 'update_kit', 'kit_range');
         }
       }
     }
@@ -753,34 +747,34 @@ class Maker {
         this.deps.log.write('error', why, { step: key, part: `${ref.id}@${ref.version}`, ...fields });
       if (m.id !== ref.id || m.version !== ref.version) {
         refused('part loaded as another version', { loaded: `${m.id}@${m.version}` });
-        throw new KitStop(`A part this video uses loaded as another version, so it can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'manifest_mismatch');
+        throw new KitStop(`A part this video uses loaded as another version, so it can’t run. ${PLAN_CHANGE}`, 'change_request', 'manifest_mismatch');
       }
       const refusal = interfaceRefusal(m);
       if (refusal) {
         refused('part needs another interface', { refusal });
-        throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'interface');
+        throw new KitStop('This video needs a newer video kit.', 'update_kit', 'interface');
       }
       if (slot && (m.layer !== slot || m.kind !== SLOT_KIND[slot])) {
         refused('part can’t fill its layer', { slot, layer: m.layer ?? null, kind: m.kind });
-        throw new KitStop(`A part this video uses can’t do the job its plan gives it. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'wrong_layer');
+        throw new KitStop(`A part this video uses can’t do the job its plan gives it. ${PLAN_CHANGE}`, 'change_request', 'wrong_layer');
       }
       const lockModels = lock ? lock.parts[ref.id].models : m.needs.models;
       const paid = m.needs.network || m.needs.models.length > 0 || m.kind.startsWith('generate_');
       if (paid && (!Array.isArray(lockModels) || lockModels.length === 0)) {
         refused('paid part has no models in the parts list');
-        throw new KitStop(`A part this video uses would order paid pieces its approved price doesn’t allow. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', 'no_models');
+        throw new KitStop(`A part this video uses would order paid pieces its approved price doesn’t allow. ${PLAN_CHANGE}`, 'change_request', 'no_models');
       }
       const missing = this.missingNeeds(m.needs);
       if (missing) {
         refused('part needs what this computer lacks', { missing });
-        throw new KitStop(`This computer can’t make this video: ${missing}. Run the computer check, then make the video again. Nothing was spent.`, 'refused', 'needs_missing');
+        throw new KitStop(`This computer can’t make this video: ${missing}. Run the computer check, then make the video again.`, 'refused', 'needs_missing');
       }
       try {
         assertCheckable(m.inputs);
         assertCheckable(m.outputs);
       } catch (error) {
         refused('part schema can’t be checked', { error: (error as Error).message });
-        throw new KitStop('This video needs a newer video kit. Nothing was spent.', 'update_kit', 'schema');
+        throw new KitStop('This video needs a newer video kit.', 'update_kit', 'schema');
       }
       this.parts.set(key, loaded);
     }

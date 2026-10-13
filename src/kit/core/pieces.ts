@@ -34,7 +34,7 @@ export class PieceFailure extends PartError {
 }
 
 /** A piece the maker failed twice: the journal never lets a later run order it again. */
-export const FAILED_TWICE = 'One part of this video failed at its maker twice, so the video stopped there. Nothing was charged for that part. Ask for a fix to make it again.';
+export const FAILED_TWICE = 'One part of this video failed at its maker twice, so the video stopped there. Ask for a fix to make it again.';
 
 /**
  * Every key this video sent for one piece, and how it ended, saved before the

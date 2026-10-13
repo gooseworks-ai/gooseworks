@@ -143,7 +143,7 @@ export interface PlanFiles {
   probe?: Probe;
 }
 
-const mismatch = () => new KitStop('A file in the plan does not match the one approved, so nothing was made and nothing was spent.', 'refused');
+const mismatch = () => new KitStop('A file in the plan does not match the one approved, so the video stopped before using it.', 'refused');
 
 /** The bytes of one plan file, checked against its size and hash; fetched once per sha256. */
 async function checkedFile(files: PlanFiles, file: { sha256: string; bytes: number; mime: string }, fetch: () => Promise<Buffer>): Promise<FileRef> {
@@ -151,7 +151,7 @@ async function checkedFile(files: PlanFiles, file: { sha256: string; bytes: numb
   const target = path.join(files.dir, `${file.sha256}.${EXT_BY_MIME[file.mime] ?? 'bin'}`);
   const have = existsSync(target) ? await hashFile(target) : null;
   if (!have || have.sha256 !== file.sha256 || have.bytes !== file.bytes) {
-    if (file.bytes > MAX_INPUT_BYTES) throw new KitStop('A file in the plan is larger than the kit allows. Nothing was spent.', 'refused');
+    if (file.bytes > MAX_INPUT_BYTES) throw new KitStop('A file in the plan is larger than the kit allows.', 'refused');
     const data = await fetch();
     if (data.length !== file.bytes || createHash('sha256').update(data).digest('hex') !== file.sha256) throw mismatch();
     await atomicWrite(target, data);

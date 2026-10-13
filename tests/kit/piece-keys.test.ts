@@ -108,7 +108,7 @@ describe('a free provider failure', () => {
     const first = fakeLine({ piece: freeFailure });
     const result = await runMake({ home, line: first });
     expect(result.status).toBe('failed');
-    expect(result.message).toBe('The maker couldn’t finish one part. Nothing was charged for it. Run the same command again; what was made so far is kept.');
+    expect(result.message).toBe('The maker couldn’t finish one part. Try once more with a new attempt. Nothing was charged.');
     expect(keysOf(first, 'clips.scene-1').map((k) => k.slice(-2))).toEqual([':1', ':2']);
     const reported = first.seen.filter((s) => s.url.endsWith('/progress')).map((s) => s.body.failure).filter(Boolean);
     expect(reported).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
