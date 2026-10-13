@@ -36,15 +36,26 @@ function savedLogin(apiBase: string, explicit: boolean): Credentials | null {
   return explicit || sameOrigin(creds.api_base, apiBase) ? creds : null;
 }
 
+/** No one may be watching (CI, or no terminal), so a sign-in must not wait for approval. */
+function unattended(): boolean {
+  const ci = process.env.CI?.trim().toLowerCase();
+  return !process.stdin.isTTY || !process.stdout.isTTY || (!!ci && ci !== '0' && ci !== 'false');
+}
+
 /**
  * Signs in on this computer, so the customer never has to run another command,
  * then reads the saved login back so its key stays paired with its own address.
+ * Unattended, it prints the approval link and stops instead of waiting.
  */
 async function signInForKit(apiBase: string, explicit: boolean): Promise<Credentials | null> {
-  console.log('Signing in to GooseWorks first, then carrying on…');
+  const noWait = unattended();
+  console.log(noWait ? 'Signing in to GooseWorks first…' : 'Signing in to GooseWorks first, then carrying on…');
   try {
-    const outcome = await signIn(apiBase, undefined);
-    if (outcome.status !== 'done') return null;
+    const outcome = await signIn(apiBase, undefined, noWait ? { wait: false } : {});
+    if (outcome.status !== 'done') {
+      console.log('Approve the sign-in at the link above, then run the same command again.');
+      return null;
+    }
   } catch {
     console.log('Sign-in did not finish. Run the same command again.');
     return null;
