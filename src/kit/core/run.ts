@@ -1317,6 +1317,7 @@ class Maker {
     const final = path.join(this.layout.final, 'final.mp4');
     await rename(path.join(this.layout.final, CANDIDATE), final);
     if (hasCaptions) await rename(path.join(this.layout.final, CANDIDATE_CAPTIONS), path.join(this.layout.final, 'captions.vtt'));
+    else await rm(path.join(this.layout.final, 'captions.vtt'), { force: true });
     return final;
   }
 
