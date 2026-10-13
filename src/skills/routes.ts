@@ -50,7 +50,7 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-ads',
     when: 'Make, edit or study image ads: from a template, a source ad or the brand\'s products; why a campaign underperforms; competitor ads, angles and hooks',
-    how: 'Use goose-ads: open it with catalog_fetch in a chat app, or use the installed copy in a terminal.',
+    how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
     delivery: 'entry',
   },
   {
@@ -62,13 +62,13 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-video',
     when: 'Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started',
-    how: 'Use goose-video: explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints.',
+    how: 'Explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints.',
     delivery: 'entry',
   },
   {
     skill: 'goose-product-photos',
     when: 'Make **product photos**: studio, lifestyle, marketplace, social or on a model',
-    how: 'Use goose-product-photos: open it with catalog_fetch in a chat app, or use the installed copy in a terminal.',
+    how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
     delivery: 'entry',
   },
   {

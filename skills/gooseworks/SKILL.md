@@ -31,10 +31,10 @@ social data. Hand specialist work to its skill; do data work here.
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
-| Make, edit or study image ads: from a template, a source ad or the brand's products; why a campaign underperforms; competitor ads, angles and hooks | **`goose-ads`** | Use goose-ads: open it with catalog_fetch in a chat app, or use the installed copy in a terminal. |
+| Make, edit or study image ads: from a template, a source ad or the brand's products; why a campaign underperforms; competitor ads, angles and hooks | **`goose-ads`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style or format | **`goose-graphics`** | Fetch it with catalog_fetch, or `gooseworks fetch goose-graphics` in a terminal. |
-| Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Use goose-video: explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints. |
-| Make **product photos**: studio, lifestyle, marketplace, social or on a model | **`goose-product-photos`** | Use goose-product-photos: open it with catalog_fetch in a chat app, or use the installed copy in a terminal. |
+| Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints. |
+| Make **product photos**: studio, lifestyle, marketplace, social or on a model | **`goose-product-photos`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
 | Animate an approved static ad or product image | **`animate-image`** | Fetch it with catalog_fetch, or `gooseworks fetch animate-image` in a terminal. |
 | Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
 
