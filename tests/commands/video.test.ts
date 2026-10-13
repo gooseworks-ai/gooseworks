@@ -7,7 +7,7 @@ jest.mock('../../src/commands/login', () => ({
   syncMcpRegistration: jest.fn(),
 }));
 jest.mock('../../src/kit/core/run', () => ({ makeVideo: jest.fn() }));
-jest.mock('../../src/kit/core/check', () => ({ checkComputer: jest.fn() }));
+jest.mock('../../src/kit/core/check', () => ({ checkComputer: jest.fn().mockResolvedValue({ status: 'ready' }) }));
 jest.mock('../../src/kit/core/host', () => ({ defaultHost: () => ({}) }));
 
 import * as fs from 'fs';
@@ -56,6 +56,12 @@ function save(apiBase: string, key: string, email: string) {
 function attended(on: boolean) {
   Object.defineProperty(process.stdin, 'isTTY', { value: on, configurable: true });
   Object.defineProperty(process.stdout, 'isTTY', { value: on, configurable: true });
+}
+
+async function check() {
+  const program = new Command().exitOverride();
+  program.addCommand(videoCommand);
+  await program.parseAsync(['node', 'gooseworks', 'video', 'check']);
 }
 
 async function make() {
@@ -119,7 +125,8 @@ describe('video make, before setup', () => {
 
     await make();
 
-    expect(mockSignIn).toHaveBeenCalledWith(api.base, undefined, {});
+    // The first sign-in is already bound to the video, so the page only gives a key to an account that can make it.
+    expect(mockSignIn).toHaveBeenCalledWith(api.base, undefined, { videoId: VIDEO });
     expect(authOf(0)).toBe('Bearer cal_anna');
     expect(api.requests.every((r) => r.headers.authorization !== 'Bearer cal_local')).toBe(true);
     expect(mockMakeVideo).toHaveBeenCalledTimes(1);
@@ -186,7 +193,7 @@ describe('video make, before setup', () => {
       return { status: 'done', result: { api_key: 'cal_anna', email: 'anna@example.com', agent_id: 'agent-1' } };
     });
     api.replies[ACCESS] = [
-      { status: 401, body: { error: { code: 'not_signed_in', error: 'This computer isn’t signed in to GooseWorks.', fix: 'Run the same command again; it signs this computer in first.', next: 'sign_in' } } },
+      { status: 401, body: { error: { code: 'not_signed_in', error: 'This computer isn’t signed in to GooseWorks.', fix: 'Sign in to GooseWorks on this computer, then run the same command again.', next: 'sign_in' } } },
       allowed,
     ];
 
@@ -204,5 +211,19 @@ describe('video make, before setup', () => {
 
     expect(mockSignIn).not.toHaveBeenCalled();
     expect(mockMakeVideo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('video check', () => {
+  it('signs in with no video, since it checks the computer for every video', async () => {
+    mockSignIn.mockImplementation(async (apiBase) => {
+      save(apiBase, 'cal_anna', 'anna@example.com');
+      return { status: 'done', result: { api_key: 'cal_anna', email: 'anna@example.com', agent_id: 'agent-1' } };
+    });
+
+    await check();
+
+    expect(mockSignIn).toHaveBeenCalledWith(api.base, undefined, {});
+    expect(printed()).toContain('Signed in to GooseWorks as anna@example.com.');
   });
 });

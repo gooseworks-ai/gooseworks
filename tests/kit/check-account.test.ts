@@ -40,7 +40,7 @@ describe('video check', () => {
 
   it('signs in again once when the saved sign-in has expired, then reports with the new one', async () => {
     const expired = new LineError(
-      { code: 'not_signed_in', error: 'This computer isn’t signed in to GooseWorks.', fix: 'Run the same command again; it signs this computer in first.', next: 'sign_in' },
+      { code: 'not_signed_in', error: 'This computer isn’t signed in to GooseWorks.', fix: 'Sign in to GooseWorks on this computer, then run the same command again.', next: 'sign_in' },
       401,
     );
     const signInAgain = jest.fn(async () => fakeLine(async () => answer({ email: 'anna@example.com', workspace_name: 'Anna and Sarah' })));

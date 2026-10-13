@@ -48,6 +48,7 @@ import { ProgressBook, rowOf } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
+import { recordRefusal } from './refusal-log';
 import { withoutSignedLinks } from './secrets';
 import { fetchStyle, readLocalStyle, type LoadedStyle } from './style';
 import { inspectFfmpeg, kitTools, toolchainId, type Toolchain } from './toolchain';
@@ -311,13 +312,7 @@ class Maker {
       answer = await deps.line.handOver(this.videoId, report);
     } catch (error) {
       if (error instanceof LineError) {
-        // No run lock yet, but the refusal still lands in the video's log (an invalid id has no folder).
-        try {
-          deps.log.attach(runLayout(deps.home, this.videoId).log);
-          deps.log.write('warn', 'hand-over refused', { code: error.code, status: error.status, next: error.next });
-        } catch {
-          // The refusal is still printed.
-        }
+        recordRefusal(deps.home, this.videoId, 'hand-over refused', error);
         if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
         return { status: 'stopped', message: lineWords(error) };
       }

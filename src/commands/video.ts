@@ -6,7 +6,8 @@ import { checkComputer } from '../kit/core/check';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
 import { KitLog } from '../kit/core/log';
-import { kitHome, runLayout } from '../kit/core/paths';
+import { kitHome } from '../kit/core/paths';
+import { recordRefusal } from '../kit/core/refusal-log';
 import { makeVideo } from '../kit/core/run';
 import { LineError, VideoLine } from '../kit/line/client';
 import { signIn, syncMcpRegistration } from './login';
@@ -55,14 +56,17 @@ async function signInForKit(apiBase: string, choice: { chooseAccount?: boolean; 
   return creds;
 }
 
-/** The kit talks to GOOSEWORKS_API_BASE or the environment's address, never a saved login's other address. */
-async function setUp() {
+/**
+ * The kit talks to GOOSEWORKS_API_BASE or the environment's address, never a saved login's other address.
+ * `video make` passes its video, so a first sign-in already asks for an account that can make it.
+ */
+async function setUp(videoId?: string) {
   // The token leaves the environment as it is read, so no child process sees it.
   const settings = readKitEnv(process.env);
   const kit = { ...settings, noSelfUpdate: settings.noSelfUpdate || settings.worker };
   if (kit.worker && !kit.lineToken) throw new Error('This worker has no video token, so it cannot make the video.');
   const apiBase = settings.apiBase;
-  const creds = kit.worker ? null : (connectionFor(apiBase) ?? (await signInForKit(apiBase)));
+  const creds = kit.worker ? null : (connectionFor(apiBase) ?? (await signInForKit(apiBase, videoId ? { videoId } : {})));
   if (creds) console.log(`Signed in to GooseWorks as ${creds.email}.`);
   const home = kitHome();
   const device = await deviceId(home);
@@ -93,16 +97,6 @@ function lineWords(error: LineError): string {
   return [error.message, error.fix].filter(Boolean).join(' ');
 }
 
-/** A refusal before the hand-over still leaves a line in the video's log, so it can be looked into later. */
-function recordRefusal(session: Session, id: string, error: LineError): void {
-  try {
-    session.log.attach(runLayout(session.home, id).log);
-    session.log.write('warn', 'access refused', { code: error.code, status: error.status, next: error.next });
-  } catch {
-    // An invalid id has no run folder; the refusal is still printed.
-  }
-}
-
 /**
  * Before any slow setup: may this login make the video? A wrong account or an
  * expired sign-in signs in again by itself (choosing the account, bound to
@@ -120,7 +114,7 @@ export async function lineForVideo(id: string, session: Session): Promise<VideoL
   if (!(error instanceof LineError)) throw error;
   // A server without the access check: the hand-over checks the same things.
   if (error.status === 404 && error.code !== 'not_found') return session.line;
-  recordRefusal(session, id, error);
+  recordRefusal(session.home, id, 'access refused', error);
   if (error.next !== 'sign_in') {
     session.log.say(lineWords(error));
     return null;
@@ -139,7 +133,7 @@ export async function lineForVideo(id: string, session: Session): Promise<VideoL
     return line;
   } catch (again) {
     if (!(again instanceof LineError)) throw again;
-    recordRefusal(session, id, again);
+    recordRefusal(session.home, id, 'access refused', again);
     session.log.say(lineWords(again));
     return null;
   }
@@ -201,7 +195,7 @@ videoCommand
   .command('make <id>')
   .description('Make an approved video: the same command resumes it after a stop or a crash')
   .action(async (id: string) => {
-    const session = await setUp();
+    const session = await setUp(id);
     const { kit, home, log, apiBase, signedIn } = session;
     if (!signedIn) {
       process.exitCode = 1;
