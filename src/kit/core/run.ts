@@ -41,6 +41,7 @@ import { asPartError, KitStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
+import { lockedRef } from './lock';
 import { patchLockProblem, patchedFiles, readPatch, stepPatchHash, type KitPatch } from './patch';
 import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
@@ -721,7 +722,7 @@ class Maker {
     const lock = this.lock;
     const layerRefs = lock?.layers ?? (this.handed.plan.layers as Record<LayerSlot, PartRef>);
     const wanted: Array<{ key: string; ref: PartRef; slot?: LayerSlot }> = [
-      ...this.style.style.timeline.map((s) => ({ key: s.id, ref: s.part })),
+      ...this.style.style.timeline.map((s) => ({ key: s.id, ref: lockedRef(s.part, lock) })),
       ...this.layersOn().map((slot) => ({ key: `layer-${slot}`, ref: layerRefs?.[slot], slot })),
     ];
     for (const { key, ref, slot } of wanted) {
@@ -829,7 +830,8 @@ class Maker {
     for (const step of this.style.style.timeline) {
       const loaded = this.parts.get(step.id)!;
       const { inputs, round } = fixed(step.id, this.bind(step.id, step.inputs as Record<string, unknown> | undefined, scope));
-      const out = await this.runStep({ id: step.id, ref: step.part, loaded, inputs, models: this.modelsOf(step.part, loaded), fix: round }, hashes);
+      const ref = lockedRef(step.part, this.lock);
+      const out = await this.runStep({ id: step.id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
       outputs.set(step.id, out);
       if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
     }

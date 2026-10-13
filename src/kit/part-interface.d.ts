@@ -660,6 +660,14 @@ export interface LockedPart {
   models: ModelNeed[];
   /** The part's kit range, copied from part.json. */
   kit: string;
+  /**
+   * Set when our server moved the part to a newer published version after the style pinned it (a free
+   * part's patch, or a paid part that orders the same pieces): the version the style pins. The kit runs
+   * the locked version for a timeline step pinned at this one.
+   */
+  moved_from?: SemVer;
+  /** Set when a paid part moved: the older version whose pieces its requests reuse (the line's digest). */
+  pieces_as?: SemVer;
 }
 
 // ---------------------------------------------------------------------------

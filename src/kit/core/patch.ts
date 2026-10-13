@@ -15,6 +15,7 @@ import type { PartLoader } from '../parts/loader';
 import { canonicalHash } from './canonical';
 import { unifiedDiff } from './diff';
 import { KitStop } from './errors';
+import { lockedRef } from './lock';
 import { runLayout, type RunLayout } from './paths';
 import { readJson, writeJson } from './save';
 
@@ -89,7 +90,8 @@ async function stepPart(layout: RunLayout, lock: PartsLock, step: string): Promi
     const style = await readJson<{ timeline?: Array<{ id: string; part: PartRef }> }>(path.join(layout.style, 'style.json')).catch(() => null);
     const timeline = Array.isArray(style?.timeline) ? style!.timeline : [];
     names = [...timeline.map((s) => s.id), ...names];
-    ref = timeline.find((s) => s.id === step)?.part;
+    const pin = timeline.find((s) => s.id === step)?.part;
+    ref = pin && lockedRef(pin, lock);
   }
   if (!ref || typeof ref.id !== 'string' || typeof ref.version !== 'string') {
     throw new KitStop(`This video has no step "${step}". Its steps: ${names.join(', ')}.`, 'refused');
