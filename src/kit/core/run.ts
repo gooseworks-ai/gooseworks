@@ -125,6 +125,23 @@ const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
 /** Codes the line blames on the plan only when a part refused it (`from_part`), not when the kit's own check did. */
 const PLAN_CODES: ReadonlySet<string> = new Set(['bad_input', 'output_invalid']);
+/** Stops the person chose: Ctrl-C here, or Stop on the card (the line's refusal). They need no support. */
+const OWN_STOPS: ReadonlySet<string> = new Set(['stopped_here', 'video_stopped']);
+/**
+ * Stops on this computer's side or ours that the line must hear, or the video waits in Making until it
+ * goes quiet. This computer's own trouble goes as `tool_failed`, which never counts against us; the
+ * rest keep their code, so the line alerts us. Stale-plan and the line's own refusals are left out.
+ */
+const REPORTED_STOPS: ReadonlyMap<string, string> = new Map([
+  ['stopped_here', 'stopped_here'],
+  ['unreachable', 'tool_failed'],
+  ['bad_cache', 'tool_failed'],
+  ['style_unreachable', 'tool_failed'],
+  ['parts_not_ready', 'parts_not_ready'],
+  ['price_unavailable', 'price_unavailable'],
+  ['file_unavailable', 'file_unavailable'],
+  ['piece_lost', 'piece_lost'],
+]);
 /** A step ran out of time while a piece it ordered was still being made at the maker. */
 const PROVIDER_SLOW = 'provider_slow';
 
@@ -328,7 +345,7 @@ class Maker {
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
     this.now = deps.now ?? (() => new Date());
-    deps.signal?.addEventListener('abort', () => this.halt(new KitStop('Stopped on this computer. Run the same command to carry on.', 'stop')), { once: true });
+    deps.signal?.addEventListener('abort', () => this.halt(new KitStop('Stopped on this computer. Run the same command to carry on.', 'stop', 'stopped_here')), { once: true });
   }
 
   private halt(stop: KitStop): void {
@@ -574,15 +591,15 @@ class Maker {
     // Nothing but the failure report goes out from here.
     this.reporter?.close();
     const stop = this.fatal ?? (error instanceof KitStop ? error : null);
-    // Ctrl-C and the card's Stop carry no code, or the line's code for the person's own stop.
-    this.ownStop = stop?.reason === 'stop' && (!stop.code || stop.code === 'video_stopped');
+    this.ownStop = stop?.reason === 'stop' && OWN_STOPS.has(stop.code ?? '');
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
     if (this.run) {
       this.run.status = stop && stop.reason === 'stop' ? 'stopped' : 'failed';
       await this.saveRun().catch(() => undefined);
     }
-    if (stop && (stop.reason === 'failed' || stop.reason === 'change_request' || stop.reason === 'refused')) {
-      this.reportFailure(this.at, stop.code ?? 'change_request', stop.message);
+    const reported = !stop || stop.reason === 'update_kit' ? undefined : stop.reason === 'stop' ? REPORTED_STOPS.get(stop.code ?? '') : (stop.code ?? 'change_request');
+    if (stop && reported) {
+      this.reportFailure(this.at, reported, stop.message);
       await this.reporter?.flush().catch(() => undefined);
     }
     if (stop) {
@@ -1182,6 +1199,11 @@ class Maker {
       const fix = check.fixes_left > 0 && !serverFixUsed ? this.fixFrom(current.verdict, check.reasons.map((r) => r.check), 'server') : null;
       if (!fix) {
         this.reporter.close();
+        // The line went back to Making for a fix this run can't make, so it must hear the check failed.
+        if (check.fixes_left > 0) {
+          this.reportFailure('final-check', 'check_failed', plainWords(reasons, CHECK_FAILED, this.idNames()));
+          await this.reporter.flush();
+        }
         this.run.status = 'failed';
         await this.saveRun();
         return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim() };

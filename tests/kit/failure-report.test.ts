@@ -480,3 +480,60 @@ describe('a step that runs out of time', () => {
     expect(failures(line)).toEqual([{ step: 'clips', code: 'timeout', detail: result.message }]);
   });
 });
+
+describe('a stop the line must hear', () => {
+  it('on Ctrl-C is reported as stopped here, with no support file', async () => {
+    const stop = new AbortController();
+    const printed: string[] = [];
+    const parts = testParts({
+      clipRun: (() => {
+        setTimeout(() => stop.abort(), 5);
+        return new Promise(() => undefined);
+      }) as never,
+    });
+    const line = fakeLine();
+    const result = await runMake({ home: tempHome(), line, parts, printed, signal: stop.signal });
+    expect(result.status).toBe('stopped');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'stopped_here', detail: result.message }]);
+    expect(printed.join('\n')).not.toMatch(/contact support/);
+  }, 10_000);
+
+  it('when a part can’t be downloaded is reported as this computer’s trouble, with the support file', async () => {
+    const line = fakeLine();
+    const printed: string[] = [];
+    const host = testHost(testParts());
+    const load = host.loader.load;
+    host.loader.load = async (request) => {
+      if (request.ref.id === 'sound-layer') throw new PartLoadError('unreachable', 'could not reach the parts store');
+      return load(request);
+    };
+    const result = await runMake({ home: tempHome(), line, host, printed });
+    expect(result.status).toBe('stopped');
+    expect(result.message).not.toMatch(/spent|charged/);
+    expect(failures(line)).toEqual([{ step: 'layer-sound', code: 'tool_failed', detail: result.message }]);
+    expect(printed.join('\n')).toMatch(/contact support/);
+  });
+
+  it('when the line lost a piece is reported with its code, so the line hears it was ours', async () => {
+    const lost = { error: { code: 'piece_lost', error: 'We couldn’t get this piece back.', fix: 'Ask for a fix on the card to make it again.', next: 'stop' } };
+    const line = fakeLine({ piece: () => ({ status: 409, json: lost }) });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result.status).toBe('stopped');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'piece_lost', detail: result.message }]);
+  });
+
+  it('is not sent for a plan that changed under the run', async () => {
+    const stale = { error: { code: 'quote_not_current', error: 'This plan is no longer the approved one.', fix: 'Run the make command again.', next: 'stop' } };
+    const line = fakeLine({ piece: () => ({ status: 409, json: stale }) });
+    expect((await runMake({ home: tempHome(), line })).status).toBe('stopped');
+    expect(failures(line)).toEqual([]);
+  });
+
+  it('when our check fails with a fix left the kit can’t make is reported as a failed check', async () => {
+    const failed = { upload_id: 'up_1', attempt: 1, result: 'fail', reasons: [{ check: 'mystery', message: 'The video is too dark.' }], fixes_left: 1, stage: 'making', fee_credits: 0, credits: { used: 0, cap: 1000 } };
+    const line = fakeLine({ uploadDone: () => json(200, failed) });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result.status).toBe('failed');
+    expect(failures(line)).toEqual([{ step: 'final-check', code: 'check_failed', detail: 'The video is too dark.' }]);
+  });
+});

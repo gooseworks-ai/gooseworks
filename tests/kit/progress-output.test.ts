@@ -68,9 +68,17 @@ describe('the lines printed while a video is made', () => {
 
   it('leave out the log when the person stopped the video on the card', async () => {
     const printed: string[] = [];
-    const line = fakeLine({ progress: () => new Response(JSON.stringify({ stage: 'stopped', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 }), { status: 200 }) });
+    const stopped = { error: { code: 'video_stopped', error: 'The customer stopped this video.', fix: 'Wait for their Continue.', next: 'stop', say: 'You stopped this video.' } };
+    const line = fakeLine({ progress: () => new Response(JSON.stringify(stopped), { status: 409 }) });
     expect((await runMake({ home: tempHome(), line, printed })).status).toBe('stopped');
     expect(printed.join('\n')).not.toMatch(/contact support/);
+  });
+
+  it('name the log when the video was stopped without saying it was the person', async () => {
+    const printed: string[] = [];
+    const line = fakeLine({ progress: () => new Response(JSON.stringify({ stage: 'stopped', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 }), { status: 200 }) });
+    expect((await runMake({ home: tempHome(), line, printed })).status).toBe('stopped');
+    expect(printed.join('\n')).toMatch(/contact support/);
   });
 });
 
