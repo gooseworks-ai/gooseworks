@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import { Command } from 'commander';
-import { getCredentials } from '../auth/credentials';
-import { apiEnvironment, readKitEnv } from '../kit/env';
+import { getCredentials, type Credentials } from '../auth/credentials';
+import { apiEnvironment, KIT_ENV, readKitEnv } from '../kit/env';
 import { checkComputer } from '../kit/core/check';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
@@ -9,24 +9,81 @@ import { KitLog } from '../kit/core/log';
 import { kitHome } from '../kit/core/paths';
 import { makeVideo } from '../kit/core/run';
 import { VideoLine } from '../kit/line/client';
+import { signIn } from './login';
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The saved login, only when it belongs to the address the kit talks to. A
+ * developer's saved local or tunnel address must never break a customer's make,
+ * so any other saved address counts as not signed in. An explicit
+ * GOOSEWORKS_API_BASE keeps the saved login as it is.
+ */
+function savedLogin(apiBase: string, explicit: boolean): Credentials | null {
+  let creds: Credentials | null;
+  try {
+    creds = getCredentials();
+  } catch {
+    return null;
+  }
+  if (!creds) return null;
+  return explicit || sameOrigin(creds.api_base, apiBase) ? creds : null;
+}
+
+/** No one may be watching (CI, or no terminal), so a sign-in must not wait for approval. */
+function unattended(): boolean {
+  const ci = process.env.CI?.trim().toLowerCase();
+  return !process.stdin.isTTY || !process.stdout.isTTY || (!!ci && ci !== '0' && ci !== 'false');
+}
+
+/**
+ * Signs in on this computer, so the customer never has to run another command,
+ * then reads the saved login back so its key stays paired with its own address.
+ * Unattended, it prints the approval link and stops instead of waiting.
+ */
+async function signInForKit(apiBase: string, explicit: boolean): Promise<Credentials | null> {
+  const noWait = unattended();
+  console.log(noWait ? 'Signing in to GooseWorks first…' : 'Signing in to GooseWorks first, then carrying on…');
+  try {
+    const outcome = await signIn(apiBase, undefined, noWait ? { wait: false } : {});
+    if (outcome.status !== 'done') {
+      console.log('Approve the sign-in at the link above, then run the same command again.');
+      return null;
+    }
+  } catch {
+    console.log('Sign-in did not finish. Run the same command again.');
+    return null;
+  }
+  const creds = savedLogin(apiBase, explicit);
+  if (!creds) console.log('Sign-in finished for a different GooseWorks server, so nothing was sent.');
+  return creds;
+}
 
 async function setUp() {
+  const explicit = !!process.env[KIT_ENV.apiBase];
   // The token leaves the environment as it is read, so no child process sees it.
   const settings = readKitEnv(process.env);
   const kit = { ...settings, noSelfUpdate: settings.noSelfUpdate || settings.worker };
-  const creds = kit.worker ? null : getCredentials();
   if (kit.worker && !kit.lineToken) throw new Error('This worker has no video token, so it cannot make the video.');
+  const creds = kit.worker ? null : (savedLogin(settings.apiBase, explicit) ?? (await signInForKit(settings.apiBase, explicit)));
   const apiBase = kit.worker ? settings.apiBase : (creds?.api_base ?? settings.apiBase);
+  const login = creds?.api_key;
   const home = kitHome();
   const line = new VideoLine({
     apiBase,
     deviceId: await deviceId(home),
     workerId: kit.workerId,
-    login: creds?.api_key,
+    login,
     lineToken: kit.lineToken,
   });
   const log = new KitLog((text) => console.log(text), (text) => line.redact(text));
-  return { kit, home, line, log, apiBase };
+  return { kit, home, line, log, apiBase, signedIn: kit.worker || !!login };
 }
 
 /**
@@ -63,7 +120,11 @@ videoCommand
   .command('check')
   .description('Check this computer can make videos, set up what is missing, and report it')
   .action(async () => {
-    const { kit, home, line, log } = await setUp();
+    const { kit, home, line, log, signedIn } = await setUp();
+    if (!signedIn) {
+      process.exitCode = 1;
+      return;
+    }
     const result = await checkComputer({ home, env: process.env, line, host: defaultHost(), say: (text) => log.say(text) });
     if (result.status === 'update_kit') {
       process.exitCode = await selfUpdate((text) => log.say(text), kit.noSelfUpdate, result.message);
@@ -76,7 +137,11 @@ videoCommand
   .command('make <id>')
   .description('Make an approved video: the same command resumes it after a stop or a crash')
   .action(async (id: string) => {
-    const { kit, home, line, log, apiBase } = await setUp();
+    const { kit, home, line, log, apiBase, signedIn } = await setUp();
+    if (!signedIn) {
+      process.exitCode = 1;
+      return;
+    }
     const stop = new AbortController();
     const onSignal = () => stop.abort();
     process.once('SIGINT', onSignal);
