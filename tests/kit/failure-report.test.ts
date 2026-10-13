@@ -1,7 +1,10 @@
 // When the kit gives up, the line hears why once, in plain words: the step, a
 // code and words for the card, never a part id, a log or a path.
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import * as path from 'path';
+import { resultRecord } from '../../src/kit/core/outcome';
 import { runLayout } from '../../src/kit/core/paths';
+import { TAKE_FIT_WORDS } from '../../src/kit/core/run';
 import { PartLoadError } from '../../src/kit/parts/loader';
 import { VIDEO, fakeLine, lineRoute, runLogs, runMake, style, tempHome, testHost, testParts } from './harness';
 
@@ -278,6 +281,87 @@ it('sends the report without the reason to an old line after the run’s own sig
   const refusedAt = reports.findIndex((r) => r.body.failure);
   expect(refusedAt).toBeGreaterThanOrEqual(0);
   expect(reports.slice(refusedAt + 1).some((r) => !r.body.failure)).toBe(true);
+});
+
+describe('a refusal from a part that lines a made clip up with the plan', () => {
+  const unreachable = () => json(503, { error: { code: 'line_unavailable', error: 'The line could not be reached.', fix: 'Try again in a minute.', next: 'retry' } });
+  /** The test style with its clip step run by `id`, a part that only fits a made clip to the plan. */
+  const takeFit = (id: string, run: (ctx: any) => unknown) => {
+    const parts = testParts({ clipRun: (async (_inputs: unknown, ctx: any) => run(ctx)) as any });
+    const clip = parts['clip-maker'];
+    const { 'clip-maker': _old, ...rest } = parts;
+    return {
+      parts: { ...rest, [id]: { ...clip, dir: `/parts/${id}/1.0.0`, manifest: { ...clip.manifest, id } } },
+      script: {
+        style: { ...style, timeline: [{ ...style.timeline[0], part: { id, version: '1.0.0' } }] },
+        lock: (lock: any) => {
+          const { 'clip-maker': entry, ...others } = lock.parts;
+          return { ...lock, parts: { ...others, [id]: entry } };
+        },
+      },
+    };
+  };
+
+  it.each([
+    ['speech-recut', 'bad_input'],
+    ['transcribe-whisper', 'output_invalid'],
+  ])('from %s (%s) is ours: the same command carries on', async (id, code) => {
+    const made = takeFit(id, (ctx) => {
+      throw ctx.error(code, 'A repeated question kept the take from lining up with the plan.');
+    });
+    const line = fakeLine(made.script);
+    const result = await runMake({ home: tempHome(), line, parts: made.parts });
+    expect(result).toMatchObject({ status: 'failed', message: TAKE_FIT_WORDS, code, next: 'retry' });
+    expect(result.message).not.toMatch(/Change the plan/);
+    // The code goes up as it is, so the line's own take-fit rule blames its side.
+    expect(failures(line)).toEqual([{ step: 'clips', code, detail: TAKE_FIT_WORDS, from_part: true }]);
+    expect(resultRecord(VIDEO, result)).toMatchObject({ outcome: 'run_again', exit_code: 4 });
+  });
+
+  it('ends stopped, not run again, when the line answers the report by stopping the video', async () => {
+    const made = takeFit('speech-recut', (ctx) => {
+      throw ctx.error('bad_input', 'no line matched');
+    });
+    // The line's repeated-fault rule stops the video; its answer comes after the step has already given up.
+    const stopped = (body: any) => (body.failure ? (new Promise((done) => setTimeout(() => done(json(200, { stage: 'stopped', credits: { used: 0, cap: 1000 } })), 50)) as any) : undefined);
+    const result = await runMake({ home: tempHome(), line: fakeLine({ ...made.script, progress: stopped }), parts: made.parts });
+    expect(result.status).toBe('stopped');
+    expect(result.next).toBeUndefined();
+    expect(result.message).not.toBe(TAKE_FIT_WORDS);
+    const record = resultRecord(VIDEO, result);
+    expect(record.outcome).not.toBe('run_again');
+    expect(record.exit_code).not.toBe(4);
+  });
+
+  it('leaves the same refusal from any other part on the plan', async () => {
+    const made = takeFit('clip-cutter', (ctx) => {
+      throw ctx.error('bad_input', 'no scenes');
+    });
+    const result = await runMake({ home: tempHome(), line: fakeLine(made.script), parts: made.parts });
+    expect(result.message).toMatch(/Change the plan, then make it again\.$/);
+    expect(result.next).toBeUndefined();
+    expect(resultRecord(VIDEO, result)).toMatchObject({ outcome: 'failed', exit_code: 1 });
+  });
+
+  it('is not replayed by the next run when the line never took it', async () => {
+    const home = tempHome();
+    let refuse = true;
+    const made = takeFit('speech-recut', (ctx) => {
+      if (refuse) throw ctx.error('bad_input', 'no line matched');
+      writeFileSync(path.join(ctx.workDir, 'cut.mp4'), 'cut');
+      return ctx.file('cut.mp4', 'video').then((video: unknown) => ({ video, timeline: { duration_s: 5, width: 1080, height: 1920, fps: 30, scenes: [], speech: [] } }));
+    });
+    const first = await runMake({ home, line: fakeLine({ ...made.script, progress: (body) => (body.failure ? unreachable() : undefined) }), parts: made.parts });
+    expect(first.message).toBe(TAKE_FIT_WORDS);
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).resumable).toBe(true);
+
+    refuse = false;
+    const line = fakeLine(made.script);
+    const again = await runMake({ home, line, parts: made.parts });
+    expect(again.status).toBe('done');
+    expect(failures(line)).toEqual([]);
+    expect(existsSync(runLayout(home, VIDEO).pendingReport)).toBe(false);
+  });
 });
 
 describe('a failure report the line never took', () => {
