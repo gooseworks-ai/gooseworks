@@ -162,16 +162,26 @@ export class StepLines {
   constructor(private readonly everyMs = 5_000) {}
 
   next(steps: ProgressStep[] | undefined, now: number): string[] {
-    const lines: string[] = [];
+    return this.changed(steps, now).map(lineOf);
+  }
+
+  /** The rows to show now, by the same rule as `next`. */
+  changed(steps: ProgressStep[] | undefined, now: number): ProgressStep[] {
+    const rows: ProgressStep[] = [];
     for (const step of steps ?? []) {
       if (step.state === 'todo') continue;
       const last = this.shown.get(step.label);
       if (last && last.state === step.state && (last.detail === step.detail || now - last.at < this.everyMs)) continue;
       this.shown.set(step.label, { state: step.state, detail: step.detail, at: now });
-      lines.push(`${MARK[step.state]} ${step.label}${step.state === 'now' && step.detail ? ` (${step.detail})` : ''}`);
+      rows.push(step);
     }
-    return lines;
+    return rows;
   }
+}
+
+/** One row as the line the person reads. */
+export function lineOf(step: ProgressStep): string {
+  return `${MARK[step.state]} ${step.label}${step.state === 'now' && step.detail ? ` (${step.detail})` : ''}`;
 }
 
 function madeOf(step: Tracked): number {

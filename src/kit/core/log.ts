@@ -8,6 +8,9 @@ import { redact } from './secrets';
 
 export type Redactor = (text: string) => string;
 
+/** One event for a program reading the kit's output (`--json`): a line for the person, or a row of the card. */
+export type KitEvent = { event: 'say'; text: string } | { event: 'step'; label: string; state: string; detail?: string };
+
 export class KitLog {
   private file: string | null = null;
   /** On every entry: which run wrote it, and which GooseWorks package ran. */
@@ -16,6 +19,8 @@ export class KitLog {
   constructor(
     private readonly print: (line: string) => void,
     private readonly redactor: Redactor = (text) => redact(text),
+    /** With `--json`: every line goes out as an event here instead of being printed. */
+    private readonly emit?: (event: KitEvent) => void,
   ) {}
 
   /** Writes to this file, such as the video's log.ndjson for a refusal before any run starts. */
@@ -47,8 +52,16 @@ export class KitLog {
   /** A line for the person running the kit (and the worker's output tail). */
   say(line: string): void {
     const text = this.clean(line);
-    this.print(text);
+    if (this.emit) this.emit({ event: 'say', text });
+    else this.print(text);
     this.write('info', text);
+  }
+
+  /** A row of the card that changed: its line for the person, or a step event with `--json`. */
+  step(row: { label: string; state: string; detail?: string }, line: string): void {
+    if (!this.emit) return this.say(line);
+    this.emit({ event: 'step', label: row.label, state: row.state, ...(row.detail ? { detail: row.detail } : {}) });
+    this.write('info', this.clean(line));
   }
 
   write(level: 'debug' | 'info' | 'warn' | 'error', message: string, fields?: Record<string, unknown>): void {

@@ -33,8 +33,10 @@ import type {
   Timeline,
 } from '../part-interface';
 import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
-import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
+import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
+import { lookAtFinal, type Eyes } from './eyes';
+import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
 import { asPartError, KitStop, PartError } from './errors';
@@ -44,8 +46,8 @@ import type { KitLog } from './log';
 import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook, rowOf, StepLines, type RowKey } from './progress';
-import { ProgressReporter } from './progress-reporter';
+import { lineOf, ProgressBook, rowOf, StepLines, type RowKey } from './progress';
+import { LAST_WORD_MS, ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
 import { recordRefusal } from './refusal-log';
@@ -83,15 +85,41 @@ export interface MakeDeps {
   heartbeatMs?: number;
   /** How long the run's last report may take once it ends (default 30 s). */
   lastWordMs?: number;
+  /** The longest this run may take; by default worked out from its parts, at most RUN_CEILING_MAX_MS. */
+  ceilingMs?: number;
   now?: () => Date;
   /** Ctrl-C from the command. */
   signal?: AbortSignal;
+  /**
+   * Ends the process when the run has stopped but something it started won't let go: called with the run's
+   * result once the last word's deadline and a short grace have passed. The command's own exit, never the core's.
+   */
+  forceEnd?: (result: MakeResult) => void;
+}
+
+/** What every end carries: the code a failure was reported with, and this run's own log. */
+interface EndFacts {
+  code?: string;
+  /** The line's next step when the line itself ended the run. */
+  next?: string;
+  log?: string;
 }
 
 export type MakeResult =
-  | { status: 'done'; message: string }
-  | { status: 'stopped' | 'failed'; message: string }
-  | { status: 'update_kit'; message: string; min_version?: string };
+  | ({ status: 'done'; message: string; final?: string; contact_sheet?: string; warnings?: string[] } & EndFacts)
+  | ({ status: 'stopped' | 'failed'; message: string } & EndFacts)
+  | ({ status: 'update_kit'; message: string; min_version?: string } & EndFacts);
+
+/** The longest one run may take, whatever its parts: past it the run stops and the same command carries on. */
+export const RUN_CEILING_MAX_MS = 60 * 60_000;
+/** The shortest ceiling, so a style of quick parts still has room for a slow provider. */
+export const RUN_CEILING_MIN_MS = 20 * 60_000;
+/** A run may take this many times its parts' typical time before it is cut short. */
+const CEILING_FACTOR = 4;
+/** After the last word's deadline, how long the process may still take to end on its own. */
+const EXIT_GRACE_MS = 5_000;
+/** The person's words when the run reached its ceiling. */
+export const CEILING_WORDS = 'Making this video took much longer than it should, so this run stopped. Run the same command again; what was made so far is kept.';
 
 /** One fix: re-run this step or layer with these extra inputs (a new round makes a new step hash). */
 interface Fix {
@@ -121,8 +149,18 @@ const RUN_AGAIN = 'Run the same command again; what was made so far is kept.';
 const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
-/** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
-const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
+/** At most this many warnings go up with the video, for its delivery summary. */
+const MAX_SENT_WARNINGS = 6;
+
+/** What the final check noted without failing the video, in its own words. */
+function verdictWarnings(verdict: CheckVerdict): CheckReason[] {
+  const warned: CheckReason[] = [];
+  for (const check of verdict.checks as Array<{ code: string; status: string; message?: unknown }>) {
+    if (check.status === 'warn' && typeof check.message === 'string' && check.message.trim()) warned.push({ check: check.code, message: check.message.trim() });
+  }
+  return warned;
+}
+
 /** A step ran out of time while a piece it ordered was still being made at the maker. */
 const PROVIDER_SLOW = 'provider_slow';
 
@@ -328,6 +366,12 @@ class Maker {
   private failureSent = false;
   /** The run ended on a stop the person chose (Ctrl-C, or Stop on the card), which needs no support. */
   private ownStop = false;
+  private ceilingTimer: NodeJS.Timeout | null = null;
+  private ceilingFrom = 0;
+  private exitTimer: NodeJS.Timeout | null = null;
+  private progressSaved: Promise<void> = Promise.resolve();
+  /** How the run ended, once it has: what a forced end reports. */
+  private result: MakeResult | null = null;
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
@@ -338,6 +382,54 @@ class Maker {
   private halt(stop: KitStop): void {
     this.fatal ??= stop;
     if (!this.stop.signal.aborted) this.stop.abort(stop);
+    this.armExit();
+  }
+
+  /**
+   * The run is over, however it ended: whatever still listens to its stop signal (a piece being asked
+   * about, a download, a browser) stops too, and the process gets to end within the last word's deadline.
+   */
+  private endRun(): void {
+    if (this.ceilingTimer) clearTimeout(this.ceilingTimer);
+    this.ceilingTimer = null;
+    if (!this.stop.signal.aborted) this.stop.abort(new KitStop('This run is over.', 'stop'));
+    this.armExit();
+  }
+
+  /** Once the run has stopped, the command ends the process if the run hasn't returned by the last word's deadline. */
+  private armExit(): void {
+    if (this.exitTimer || !this.deps.forceEnd) return;
+    const end = this.deps.forceEnd;
+    this.exitTimer = setTimeout(() => {
+      this.deps.log.write('error', 'the run did not end on its own, so the process ends now', { step: this.at });
+      if (this.result) return end(this.result);
+      const stop = this.fatal;
+      const message = stop?.message ?? 'This video could not be made right now. Run the same command again; what was made so far is kept.';
+      end(stop?.reason === 'update_kit' ? { status: 'update_kit', message, code: stop.code } : { status: stop?.reason === 'stop' ? 'stopped' : 'failed', message, code: stop?.code ?? 'tool_failed' });
+    }, (this.deps.lastWordMs ?? LAST_WORD_MS) + EXIT_GRACE_MS);
+    this.exitTimer.unref?.();
+  }
+
+  /** From now on this run may take `ms` in all (counted from the first arming); past it, it stops and can carry on. */
+  private armCeiling(ms: number): void {
+    if (this.stop.signal.aborted) return;
+    if (this.ceilingTimer) clearTimeout(this.ceilingTimer);
+    this.ceilingFrom ||= Date.now();
+    const left = Math.max(this.ceilingFrom + ms - Date.now(), 0);
+    this.ceilingTimer = setTimeout(() => {
+      this.ceilingTimer = null;
+      this.deps.log.write('warn', 'the run reached its time limit', { step: this.at, minutes: Math.round(ms / 60_000) });
+      this.halt(new KitStop(CEILING_WORDS, 'failed', 'timeout'));
+    }, left);
+    this.ceilingTimer.unref?.();
+  }
+
+  /** The run's ceiling from its parts' typical times; a fixed one from the deps wins. */
+  private ceilingFor(): number {
+    if (this.deps.ceilingMs) return this.deps.ceilingMs;
+    let typical = 0;
+    for (const loaded of this.parts.values()) typical += Math.max(loaded.manifest.timing?.typical_s ?? 0, 0);
+    return Math.min(Math.max(typical * 1000 * CEILING_FACTOR, RUN_CEILING_MIN_MS), RUN_CEILING_MAX_MS);
   }
 
   private say(line: string): void {
@@ -345,6 +437,15 @@ class Maker {
   }
 
   async make(): Promise<MakeResult> {
+    try {
+      return await this.makeOnce();
+    } finally {
+      this.endRun();
+      if (this.exitTimer) clearTimeout(this.exitTimer);
+    }
+  }
+
+  private async makeOnce(): Promise<MakeResult> {
     const { deps } = this;
     let dev: { parts: string | null; styles: string | null };
     try {
@@ -363,8 +464,8 @@ class Maker {
     } catch (error) {
       if (error instanceof LineError) {
         recordRefusal(deps.home, this.videoId, 'hand-over refused', error);
-        if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
-        return { status: 'stopped', message: lineWords(error) };
+        if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error), code: error.code, next: error.next };
+        return { status: 'stopped', message: lineWords(error), code: error.code, next: error.next };
       }
       throw error;
     }
@@ -406,8 +507,12 @@ class Maker {
       return (result = await this.ended(error));
     } finally {
       this.reporter?.close();
+      if (result && runLog) result.log = runLog;
+      this.result = result ?? null;
+      this.endRun();
       await this.reporter?.flush().catch(() => undefined);
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
+      await this.progressSaved;
       await release();
       // Support reads what happened in this run's own log.
       if (runLog && (result?.status === 'failed' || (result?.status === 'stopped' && !this.ownStop))) this.say(`If you contact support, share this file: ${runLog}`);
@@ -416,7 +521,17 @@ class Maker {
 
   /** Each change of the card's rows, as a line for the person running the kit. */
   private printSteps(): void {
-    for (const line of this.stepLines.next(this.book.request().steps, this.now().getTime())) this.say(line);
+    const request = this.book.request();
+    const rows = this.stepLines.changed(request.steps, this.now().getTime());
+    for (const row of rows) this.deps.log.step(row, lineOf(row));
+    if (rows.length && this.layout) this.saveProgress(request.note, request.steps ?? []);
+  }
+
+  /** The rows as shown, for `video status`; saved one after another, and never at the run's cost. */
+  private saveProgress(note: string, steps: ProgressStep[]): void {
+    const record = { note, steps, at: this.now().toISOString() };
+    const target = this.layout.progress;
+    this.progressSaved = this.progressSaved.then(() => writeJson(target, record)).catch(() => undefined);
   }
 
   private checkBrowser(setup: boolean): ReturnType<KitHost['browser']['check']> {
@@ -538,7 +653,7 @@ class Maker {
     await rm(this.layout.pendingReport, { force: true });
     if (sent === 'refused') return null;
     this.failureSent = true;
-    return { status: 'failed', message: saved.failure.detail };
+    return { status: 'failed', message: saved.failure.detail, code: saved.failure.code };
   }
 
   /** Keeps a failure report the line never took for the next run; one taken, or a finished video, clears it. */
@@ -568,6 +683,7 @@ class Maker {
     // Nothing but the failure report goes out from here.
     this.reporter?.close();
     const stop = this.fatal ?? (error instanceof KitStop ? error : null);
+    this.endRun();
     // Ctrl-C and the card's Stop carry no code, or the line's code for the person's own stop.
     this.ownStop = stop?.reason === 'stop' && (!stop.code || stop.code === 'video_stopped');
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
@@ -580,15 +696,16 @@ class Maker {
       await this.reporter?.flush().catch(() => undefined);
     }
     if (stop) {
-      if (stop.reason === 'update_kit') return { status: 'update_kit', message: stop.message };
-      return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message };
+      const code = stop.code ?? (stop.reason === 'stop' ? undefined : 'change_request');
+      if (stop.reason === 'update_kit') return { status: 'update_kit', message: stop.message, ...(code ? { code } : {}) };
+      return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message, ...(code ? { code } : {}) };
     }
     this.deps.log.write('error', 'the run ended on an error', { step: this.at, error: error instanceof Error ? error.message : String(error) });
     const message = 'This video could not be made right now. Run the same command again; what was made so far is kept.';
     // Not a step's failure (a download or a disk write, say): a new run may get past it.
     this.reportFailure(this.at, 'tool_failed', message);
     await this.reporter?.flush().catch(() => undefined);
-    return { status: 'failed', message };
+    return { status: 'failed', message, code: 'tool_failed' };
   }
 
   /** Tells the line once why the run gave up; the line's own refusals already ended it on its words. */
@@ -606,6 +723,8 @@ class Maker {
   private async makeHandedOver(dev: { parts: string | null; styles: string | null }): Promise<MakeResult> {
     const { deps, handed } = this;
     const plan = handed.plan;
+    // Until the parts say how long they take, the run may take the longest any run may.
+    this.armCeiling(deps.ceilingMs ?? RUN_CEILING_MAX_MS);
     this.at = 'plan';
     if (!plan || plan.project_id !== this.videoId || plan.style_id !== handed.style_package?.style_id || plan.style_version !== handed.style_package?.version) {
       throw new KitStop('The plan handed over is not this video’s. Nothing was spent.', 'change_request');
@@ -652,6 +771,7 @@ class Maker {
       ? await readLocalStyle(dev.styles, pin, note)
       : await fetchStyle({ ref: handed.style_package, projectId: this.videoId, dir: this.layout.style, download: (u, m) => deps.line.download(u, m, this.stop.signal), note });
     await this.loadParts(!!dev.parts);
+    this.armCeiling(this.ceilingFor());
 
     // The card's rows show from here, all still to do, while the plan's files come down.
     const planned = (id: string) => ({ id, row: rowOf(this.parts.get(id)!.manifest), typical_s: this.parts.get(id)!.manifest.timing.typical_s });
@@ -790,7 +910,7 @@ class Maker {
   }
 
   /** The timeline, then the layers that are on. Saved steps with the same hash are reused. */
-  private async pipeline(): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }> {
+  private async pipeline(): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline }> {
     const outputs = new Map<string, Record<string, unknown>>();
     const scope = { plan: this.planScope, brand: this.brand, steps: outputs, assets: this.style.assets };
     const hashes: Record<string, string> = {};
@@ -842,7 +962,7 @@ class Maker {
       }
     }
     if (!verdict || typeof verdict.pass !== 'boolean' || !Array.isArray(verdict.checks)) throw new KitStop('The final check gave no verdict.', 'change_request');
-    return { cut, captions, verdict, steps: hashes };
+    return { cut, captions, verdict, steps: hashes, timeline };
   }
 
   /** A style step's inputs: a reference the kit can't resolve goes to the log, plain words to the person. */
@@ -920,7 +1040,9 @@ class Maker {
       void this.reporter.send();
 
       const timeoutMs = manifest.timing.timeout_s * 1000;
-      const link = linkedSignal([this.stop.signal], timeoutMs);
+      // Aborted as the step ends, however it ends, so nothing the part left running outlives it.
+      const over = new AbortController();
+      const link = linkedSignal([this.stop.signal, over.signal], timeoutMs);
       const waiting = new Set<string>();
       // Read as the time runs out, before the cut-short calls give up their pieces.
       let slowAtLine = false;
@@ -974,6 +1096,7 @@ class Maker {
         this.reportFailure(spec.id, code, words);
         throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
       } finally {
+        over.abort(new PartError('stopped'));
         link.done();
       }
     }
@@ -1093,7 +1216,7 @@ class Maker {
     this.run.status = 'failed';
     await this.saveRun();
     const notSent = 'The video didn’t pass the final check, so it wasn’t sent. Nothing more will be charged for it.';
-    return { status: 'failed', message: detail === CHECK_FAILED ? notSent : `${detail} ${notSent}` };
+    return { status: 'failed', message: detail === CHECK_FAILED ? notSent : `${detail} ${notSent}`, code: 'check_failed' };
   }
 
   /** Part, step and layer ids, which the person never sees. */
@@ -1131,7 +1254,7 @@ class Maker {
   }
 
   /** Upload, our server's check, and one fix after a first failed check. */
-  private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string> }): Promise<MakeResult> {
+  private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline }): Promise<MakeResult> {
     let current = result;
     this.at = 'upload';
     for (;;) {
@@ -1152,6 +1275,7 @@ class Maker {
         if (captions.length > MAX_CAPTIONS_BYTES) throw new KitStop('The captions file is larger than the line takes.', 'failed');
         captions_vtt = captions.toString('utf8');
       }
+      const eyes = await this.lookAt(final, current);
       this.book.note = 'Sending your video for its final check';
       this.run.status = 'uploading';
       await this.saveRun();
@@ -1159,7 +1283,8 @@ class Maker {
 
       let check: UploadCheck;
       try {
-        check = await this.sendUpload(sha256, data, captions_vtt, this.manifestFor(current.steps));
+        const noted = [...verdictWarnings(current.verdict), ...(eyes?.warnings ?? [])].slice(0, MAX_SENT_WARNINGS);
+        check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps), ...(noted.length ? { check_warnings: noted } : {}) });
       } catch (error) {
         if (error instanceof LineError) throw new KitStop(lineWords(error), error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
         throw error;
@@ -1169,7 +1294,13 @@ class Maker {
         this.run.status = 'done';
         await this.saveRun();
         await this.cleanTmp();
-        return { status: 'done', message: `Your video is ready. It passed the final check. Saved here: ${final}` };
+        return {
+          status: 'done',
+          message: `Your video is ready. It passed the final check. Saved here: ${final}`,
+          final,
+          ...(eyes?.contact_sheet ? { contact_sheet: eyes.contact_sheet } : {}),
+          ...(eyes?.warnings.length ? { warnings: eyes.warnings.map((w) => w.message) } : {}),
+        };
       }
       const reasons = check.reasons.map((r) => r.message).filter(Boolean).join(' ');
       const serverFixUsed = (this.run.fixes ?? []).some((f) => f.from === 'server');
@@ -1178,7 +1309,7 @@ class Maker {
         this.reporter.close();
         this.run.status = 'failed';
         await this.saveRun();
-        return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim() };
+        return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim(), code: 'check_failed' };
       }
       this.run.fixes = [...(this.run.fixes ?? []), fix];
       this.run.status = 'running';
@@ -1234,6 +1365,29 @@ class Maker {
     stage.stage = 'put';
     await this.store.writeUpload(saved);
     return finish(stage);
+  }
+
+  /** The contact sheet and the product-presence warning, next to the final; never at the video's cost. */
+  private async lookAt(final: string, made: { timeline: Timeline }): Promise<Eyes | null> {
+    const ffmpeg = this.tools.ffmpeg.path;
+    if (!ffmpeg) return null;
+    const listed = (this.planScope as { products?: unknown } | null)?.products;
+    const products = Array.isArray(listed) ? (listed as Array<{ name?: unknown; images?: unknown } | null>) : [];
+    try {
+      return await lookAtFinal({
+        ffmpeg,
+        final,
+        timeline: made.timeline,
+        products: products.map((p) => ({
+          ...(typeof p?.name === 'string' ? { name: p.name } : {}),
+          photos: (Array.isArray(p?.images) ? p.images : []).filter((ref): ref is FileRef => isFileRef(ref) && ref.media === 'image').map((ref) => ref.path),
+        })),
+        signal: this.stop.signal,
+      });
+    } catch (error) {
+      this.deps.log.write('warn', 'the contact sheet could not be made', { error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   }
 
   private async cleanTmp(): Promise<void> {
