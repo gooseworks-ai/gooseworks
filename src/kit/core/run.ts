@@ -12,7 +12,7 @@
 //
 // The core knows the style file's grammar, the part interface, the four layer
 // slots, the line and the save layout. It knows nothing about any one style.
-import { copyFile, mkdir, readFile, rm } from 'fs/promises';
+import { copyFile, mkdir, readFile, rename, rm } from 'fs/promises';
 import * as path from 'path';
 import type {
   BrandKit,
@@ -39,7 +39,7 @@ import { lookAtFinal, type Eyes } from './eyes';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
-import { asPartError, KitStop, PartError } from './errors';
+import { asPartError, KitStop, lineStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
@@ -122,6 +122,8 @@ export const RUN_CEILING_MIN_MS = 20 * 60_000;
 const CEILING_FACTOR = 4;
 /** After the last word's deadline, how long the process may still take to end on its own. */
 const EXIT_GRACE_MS = 5_000;
+/** Whatever the last word's deadline, the process ends this soon after the run does. */
+const EXIT_WITHIN_MS = 30_000;
 /** The person's words when the run reached its ceiling. */
 export const CEILING_WORDS = 'Making this video took much longer than it should, so this run stopped. Run the same command again; what was made so far is kept.';
 
@@ -185,6 +187,10 @@ function verdictWarnings(verdict: CheckVerdict): CheckReason[] {
   return warned;
 }
 
+/** The finished video and its captions while our server checks them; final.mp4 only once it passes. */
+const CANDIDATE = 'final.candidate.mp4';
+const CANDIDATE_CAPTIONS = 'captions.candidate.vtt';
+
 /** A step ran out of time while a piece it ordered was still being made at the maker. */
 const PROVIDER_SLOW = 'provider_slow';
 
@@ -222,11 +228,6 @@ function namesSetup(error: LineError): boolean {
   const fields = Array.isArray(error.details?.fields) ? (error.details.fields as unknown[]) : [];
   if (fields.some((f) => typeof f === 'string' && /(^|\.)setup$/.test(f))) return true;
   return /\bsetup\b/.test(`${error.fix} ${error.message}`);
-}
-
-/** How the run stops on a line's refusal, by its next step. */
-function stopReason(next: string): 'update_kit' | 'change_request' | 'stop' {
-  return next === 'update_kit' ? 'update_kit' : next === 'change_request' ? 'change_request' : 'stop';
 }
 
 type Browser = Awaited<ReturnType<KitHost['browser']['check']>>;
@@ -428,7 +429,7 @@ class Maker {
       const stop = this.fatal;
       const message = stop?.message ?? 'This video could not be made right now. Run the same command again; what was made so far is kept.';
       end(stop?.reason === 'update_kit' ? { status: 'update_kit', message, code: stop.code } : { status: stop?.reason === 'stop' ? 'stopped' : 'failed', message, code: stop?.code ?? 'tool_failed' });
-    }, (this.deps.lastWordMs ?? LAST_WORD_MS) + EXIT_GRACE_MS);
+    }, Math.min((this.deps.lastWordMs ?? LAST_WORD_MS) + EXIT_GRACE_MS, EXIT_WITHIN_MS));
     this.exitTimer.unref?.();
   }
 
@@ -478,6 +479,9 @@ class Maker {
     }
     // The lock comes before the hand-over: a second command for the same video must not take the
     // line's lease from the run already making it.
+    // The ceiling counts from here (after the account check), so a slow or stuck setup is bounded too;
+    // it is tightened, from the same start, once the parts' timing is known.
+    this.armCeiling(deps.ceilingMs ?? RUN_CEILING_MAX_MS);
     this.layout = runLayout(deps.home, this.videoId);
     const release = await takeRunLock(this.layout, this.now());
     try {
@@ -527,7 +531,7 @@ class Maker {
       this.say(startLine(video, deps.environment));
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
-      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
+      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code, next) => this.halt(new KitStop(message, reason, code, next)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
       this.useBrowser(browser);
       const replayed = await this.replayPending();
       if (replayed) return (result = replayed);
@@ -633,7 +637,7 @@ class Maker {
       this.handed = answer.line;
     } catch (error) {
       if (error instanceof KitStop) throw error;
-      if (error instanceof LineError && (claimed || error.code === 'device_cannot_make')) throw new KitStop(lineWords(error), stopReason(error.next), error.code);
+      if (error instanceof LineError && (claimed || error.code === 'device_cannot_make')) throw lineStop(lineWords(error), error.next, error.code);
       if (claimed) throw error;
       this.deps.log.write('warn', 'the report with the browser could not be sent', { error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -741,7 +745,7 @@ class Maker {
     if (stop) {
       const code = stop.code ?? (stop.reason === 'stop' ? undefined : 'change_request');
       if (stop.reason === 'update_kit') return { status: 'update_kit', message: stop.message, ...(code ? { code } : {}) };
-      return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message, ...(code ? { code } : {}) };
+      return { status: stop.reason === 'stop' ? 'stopped' : 'failed', message: stop.message, ...(code ? { code } : {}), ...(stop.next ? { next: stop.next } : {}) };
     }
     this.deps.log.write('error', 'the run ended on an error', { step: this.at, error: error instanceof Error ? error.message : String(error) });
     const message = 'This video could not be made right now. Run the same command again; what was made so far is kept.';
@@ -832,7 +836,7 @@ class Maker {
       download: (u: string, m: number) => deps.line.download(u, m, this.stop.signal),
       hostedLink: (fileId: string) =>
         deps.line.hostedFileLink(this.videoId, fileId, this.stop.signal).catch((error: unknown) => {
-          if (error instanceof LineError) throw new KitStop(lineWords(error), error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
+          if (error instanceof LineError) throw lineStop(lineWords(error), error.next, error.code);
           throw error;
         }),
       // A hosted plan file goes into a payload as the line already knows it.
@@ -1300,9 +1304,19 @@ class Maker {
     await mkdir(this.layout.final, { recursive: true, mode: 0o700 });
     await writeJson(path.join(this.layout.final, 'check.json'), verdict);
     if (!result) return null;
+    // A candidate until our server passes it: a failed one never replaces an earlier good final.
+    const candidate = path.join(this.layout.final, CANDIDATE);
+    await copyFile(result.cut.path, candidate);
+    if (result.captions) await copyFile(result.captions.path, path.join(this.layout.final, CANDIDATE_CAPTIONS));
+    else await rm(path.join(this.layout.final, CANDIDATE_CAPTIONS), { force: true });
+    return candidate;
+  }
+
+  /** The passed candidate becomes the final, in one rename each. */
+  private async promoteFinal(hasCaptions: boolean): Promise<string> {
     const final = path.join(this.layout.final, 'final.mp4');
-    await copyFile(result.cut.path, final);
-    if (result.captions) await copyFile(result.captions.path, path.join(this.layout.final, 'captions.vtt'));
+    await rename(path.join(this.layout.final, CANDIDATE), final);
+    if (hasCaptions) await rename(path.join(this.layout.final, CANDIDATE_CAPTIONS), path.join(this.layout.final, 'captions.vtt'));
     return final;
   }
 
@@ -1330,8 +1344,8 @@ class Maker {
     let current = result;
     this.at = 'upload';
     for (;;) {
-      const final = (await this.writeFinal(current, current.verdict))!;
-      const data = await readFile(final);
+      const candidate = (await this.writeFinal(current, current.verdict))!;
+      const data = await readFile(candidate);
       if (data.length > MAX_UPLOAD_BYTES) throw new KitStop('The finished video is larger than the line takes.', 'failed');
       const sha256 = sha256Hex(data);
       // Only the exact bytes the final check passed are sent.
@@ -1347,7 +1361,7 @@ class Maker {
         if (captions.length > MAX_CAPTIONS_BYTES) throw new KitStop('The captions file is larger than the line takes.', 'failed');
         captions_vtt = captions.toString('utf8');
       }
-      const eyes = await this.lookAt(final, current);
+      const eyes = await this.lookAt(candidate, current);
       this.book.note = 'Sending your video for its final check';
       this.run.status = 'uploading';
       await this.saveRun();
@@ -1358,11 +1372,12 @@ class Maker {
         const noted = [...verdictWarnings(current.verdict), ...(eyes?.warnings ?? [])].slice(0, MAX_SENT_WARNINGS);
         check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps), ...(noted.length ? { check_warnings: noted } : {}) });
       } catch (error) {
-        if (error instanceof LineError) throw new KitStop(lineWords(error), error.next === 'update_kit' ? 'update_kit' : error.next === 'change_request' ? 'change_request' : 'stop', error.code);
+        if (error instanceof LineError) throw lineStop(lineWords(error), error.next, error.code);
         throw error;
       }
       this.run.upload_attempt = check.attempt;
       if (check.result === 'pass') {
+        const final = await this.promoteFinal(!!current.captions);
         this.run.status = 'done';
         await this.saveRun();
         await this.cleanTmp();

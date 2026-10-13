@@ -8,7 +8,7 @@ import type { FileRef, JsonValue, MediaKind, ModelNeed, PartRef, PayloadValue, P
 import { LineError, type Sleep, type VideoLine } from '../line/client';
 import { HOSTABLE_TYPES, type HostableType, type LineErrorBody, type PieceAnswer, type PieceRequest } from '../line/types';
 import { isFileRef, pieceHash, sha256Hex } from './canonical';
-import { KitStop, PartError } from './errors';
+import { KitStop, lineStop as stopOnLine, PartError } from './errors';
 import { fileRef, intact, mimeOf, type Probe } from './files';
 import { isInside } from './paths';
 import { atomicWrite, readJson, writeJson } from './save';
@@ -165,9 +165,7 @@ export interface PieceLine {
 /** The server's sentence for the person, else its error and fix. */
 function stopFor(body: { code: string; error: string; fix?: string; say?: string; next: string }): KitStop {
   const message = body.say?.trim() || [body.error, body.fix].filter(Boolean).join(' ');
-  if (body.next === 'update_kit') return new KitStop(message, 'update_kit', body.code);
-  if (body.next === 'change_request') return new KitStop(message, 'change_request', body.code);
-  return new KitStop(message, 'stop', body.code);
+  return stopOnLine(message, body.next, body.code);
 }
 
 function lineStop(error: LineError): KitStop {
@@ -200,15 +198,21 @@ const waitSeconds = (s: number | undefined, fallback: number) => Math.min(Math.m
  * A line call that waits out every "retry" refusal (the line busy or briefly away) until the step's
  * own deadline ends the wait; only a refusal that says otherwise ends the run.
  */
-async function untilDeadline<T>(ctx: PieceLine, call: () => Promise<T>): Promise<T> {
-  for (;;) {
-    try {
-      return await call();
-    } catch (error) {
-      if (ctx.signal.aborted) throw new PartError('stopped');
-      if (!(error instanceof LineError) || error.next !== 'retry') throw error;
-      await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
+async function untilDeadline<T>(ctx: PieceLine, key: string, call: () => Promise<T>): Promise<T> {
+  try {
+    for (;;) {
+      try {
+        return await call();
+      } catch (error) {
+        if (ctx.signal.aborted) throw new PartError('stopped');
+        if (!(error instanceof LineError) || error.next !== 'retry') throw error;
+        // Waiting on the line: a deadline that ends here is ours, not this computer's.
+        ctx.waiting?.add(key);
+        await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
+      }
     }
+  } finally {
+    ctx.waiting?.delete(key);
   }
 }
 
@@ -222,7 +226,7 @@ async function hostPayload(value: PayloadValue, ctx: PieceLine): Promise<unknown
     if (sha256Hex(data) !== value.sha256 || data.length !== value.bytes) throw new PartError('bad_input', 'a file changed after it was made');
     const base = path.basename(value.path).replace(/[^A-Za-z0-9._-]/g, '_').slice(-120) || `${value.sha256.slice(0, 16)}.bin`;
     try {
-      const ref = await untilDeadline(ctx, () => ctx.line.hostFile(ctx.videoId, { sha256: value.sha256, bytes: value.bytes, content_type: value.mime as HostableType, filename: base }, data, ctx.signal));
+      const ref = await untilDeadline(ctx, `file:${value.sha256}`, () => ctx.line.hostFile(ctx.videoId, { sha256: value.sha256, bytes: value.bytes, content_type: value.mime as HostableType, filename: base }, data, ctx.signal));
       ctx.hosted.set(value.sha256, ref);
       return ref;
     } catch (error) {
@@ -347,6 +351,7 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
             }
             // The line said retry: the step's deadline, not a count, ends the wait.
             if (error.code !== 'piece_busy') {
+              ctx.waiting?.add(inputs_hash);
               await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
               continue;
             }

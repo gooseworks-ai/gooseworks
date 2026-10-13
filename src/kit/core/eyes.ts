@@ -329,12 +329,14 @@ export async function lookAtFinal(opts: {
     await writeFile(sheet, encodePng(composeSheet(frames, size)), { mode: 0o600 });
   }
   const warnings: CheckReason[] = [];
-  let photosLeft = MAX_PHOTOS;
+  // Every product gets its fair share of the photo budget, at least one readable photo each when it has one.
+  const share = Math.max(1, Math.floor(MAX_PHOTOS / Math.max(opts.products.length, 1)));
   for (const product of opts.products) {
     const colours: Float64Array[] = [];
+    let tries = 0;
     for (const photo of product.photos) {
-      if (photosLeft <= 0) break;
-      photosLeft--;
+      if (colours.length >= share || tries >= share + 2) break;
+      tries++;
       const data = await grab(photo, ['-i', '-vf', 'scale=64:64:flags=area,format=rgba'], 64 * 64 * 4, opts.signal).catch(() => null);
       const hist = data ? productColours({ width: 64, height: 64, data }) : null;
       if (hist) colours.push(hist);

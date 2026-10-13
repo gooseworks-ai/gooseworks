@@ -7,8 +7,8 @@ import type { ProgressFailure } from '../line/types';
 import type { KitLog } from './log';
 import type { ProgressBook } from './progress';
 
-/** How long the last word may take before the kit exits and keeps it for the next run. */
-export const LAST_WORD_MS = 30_000;
+/** How long the last word may take before the kit exits and keeps it for the next run; with the exit grace, a run ends within 30 s. */
+export const LAST_WORD_MS = 25_000;
 
 export class ProgressReporter {
   private timer: NodeJS.Timeout | null = null;
@@ -34,7 +34,7 @@ export class ProgressReporter {
     private readonly videoId: string,
     private readonly book: ProgressBook,
     private readonly log: KitLog,
-    private readonly onStop: (message: string, reason: 'stop' | 'update_kit' | 'change_request', code?: string) => void,
+    private readonly onStop: (message: string, reason: 'stop' | 'update_kit' | 'change_request', code?: string, next?: 'sign_in') => void,
     private readonly heartbeatMs = 45_000,
     private readonly signal?: AbortSignal,
     /** How long the last word and a flush may take; a failure not taken by then waits for the next run. */
@@ -180,7 +180,8 @@ export class ProgressReporter {
         // The line's refusal ends the run on its own words; the report it refused is not kept to send again.
         if (failure && this.failure === failure) this.failure = null;
         this.lineRefused = true;
-        this.onStop(lineWords(error), error.next === 'sign_in' ? 'stop' : error.next, error.code);
+        const reason = error.next === 'update_kit' || error.next === 'change_request' ? error.next : 'stop';
+        this.onStop(lineWords(error), reason, error.code, error.next === 'sign_in' ? 'sign_in' : undefined);
         return;
       }
       this.log.write('warn', 'progress could not be sent', { error: error instanceof Error ? error.message : String(error) });

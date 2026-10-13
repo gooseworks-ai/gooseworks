@@ -1,7 +1,7 @@
 // How a `video make` ended, for whoever runs it: one stable exit code per outcome, the JSON last
 // line `--json` prints, and the record `video status` reads back. An exit code never changes
 // meaning; a new outcome gets a new code.
-import { readdir, readFile, stat } from 'fs/promises';
+import { open, readdir, stat } from 'fs/promises';
 import { renameSync, writeFileSync, mkdirSync } from 'fs';
 import * as path from 'path';
 import type { ProgressStep } from '../line/types';
@@ -151,11 +151,36 @@ export async function latestRunLog(layout: RunLayout): Promise<string | null> {
 
 /** The last `lines` lines of a file, or null when it can't be read. */
 export async function tailOf(file: string, lines: number): Promise<string[] | null> {
-  const text = await readFile(file, 'utf8').catch(() => null);
-  if (text === null) return null;
-  const all = text.split('\n').filter((line) => line.length > 0);
-  return all.slice(Math.max(all.length - lines, 0));
+  const handle = await open(file, 'r').catch(() => null);
+  if (!handle) return null;
+  try {
+    // Read back from the end in chunks until enough lines are in hand, never more than TAIL_MAX_BYTES.
+    const size = (await handle.stat()).size;
+    const chunks: Buffer[] = [];
+    let start = size;
+    let newlines = 0;
+    while (start > 0 && newlines <= lines && size - start < TAIL_MAX_BYTES) {
+      const length = Math.min(TAIL_CHUNK, start);
+      start -= length;
+      const chunk = Buffer.alloc(length);
+      await handle.read(chunk, 0, length, start);
+      chunks.unshift(chunk);
+      for (const byte of chunk) if (byte === 10) newlines++;
+    }
+    const all = Buffer.concat(chunks).toString('utf8').split('\n');
+    // The first piece may be the end of a line cut by the chunk edge.
+    if (start > 0) all.shift();
+    const kept = all.filter((line) => line.length > 0);
+    return kept.slice(Math.max(kept.length - lines, 0));
+  } catch {
+    return null;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
+
+const TAIL_CHUNK = 64 * 1024;
+const TAIL_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Reads the run folder: is a run going, how far it got, and how the last one ended. */
 export async function videoStatus(home: string, videoId: string): Promise<VideoStatus> {
@@ -167,7 +192,9 @@ export async function videoStatus(home: string, videoId: string): Promise<VideoS
     runLockHeld(layout),
     latestRunLog(layout),
   ]);
-  const background = detached && isAlive(detached.pid) ? detached : null;
+  // A detached run that already left its result is over, even if its pid now belongs to another process.
+  const endedSince = detached && result && typeof result.ended_at === 'string' && result.ended_at >= detached.started_at;
+  const background = detached && !endedSince && isAlive(detached.pid) ? detached : null;
   const rows = progress && Array.isArray(progress.steps) ? { note: progress.note, steps: progress.steps, updated_at: progress.at } : {};
   const where = { ...(log ? { log } : {}), ...(detached?.output ? { output: detached.output } : {}) };
   if (held || background) {
@@ -223,9 +250,10 @@ export async function verifyOf(home: string, videoId: string): Promise<VerifyRec
     ),
   ]);
   const record: VerifyRecord = { event: 'verify', video_id: videoId, warnings: [], look_for: LOOK_FOR };
-  if (!made) return record;
+  // Only the final the last run finished and our server passed: never a leftover from a run that ended otherwise.
+  if (!made || result?.status !== 'done' || result.final !== final) return record;
   const sheet = typeof eyes?.contact_sheet === 'string' ? eyes.contact_sheet : null;
-  const warned = result?.status === 'done' && Array.isArray(result.warnings) ? result.warnings : (eyes?.warnings ?? []).map((w) => w.message);
+  const warned = Array.isArray(result.warnings) ? result.warnings : (eyes?.warnings ?? []).map((w) => w.message);
   return {
     ...record,
     final,

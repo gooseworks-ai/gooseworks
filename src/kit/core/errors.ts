@@ -40,8 +40,16 @@ export class KitStop extends Error {
     message: string,
     readonly reason: 'stop' | 'update_kit' | 'change_request' | 'refused' | 'failed' = 'stop',
     readonly code?: string,
+    /** The line's next step when it is one the result must keep (`sign_in`, exit code 6). */
+    readonly next?: 'sign_in',
   ) {
     super(message);
     this.name = 'KitStop';
   }
+}
+
+/** The run's stop on the line's refusal, by its next step; a sign-in is kept for the result. */
+export function lineStop(message: string, next: string | undefined, code?: string): KitStop {
+  const reason = next === 'update_kit' ? 'update_kit' : next === 'change_request' ? 'change_request' : 'stop';
+  return new KitStop(message, reason, code, next === 'sign_in' ? 'sign_in' : undefined);
 }

@@ -529,11 +529,24 @@ describe('a stop the line must hear', () => {
     expect(failures(line)).toEqual([]);
   });
 
+  it('keeps the line’s sign-in step through a piece refusal and an upload refusal, for exit code 6', async () => {
+    const signIn = { error: { code: 'wrong_account', error: 'This computer is signed in to another account.', fix: 'Sign in again.', next: 'sign_in' } };
+    const byPiece = await runMake({ home: tempHome(), line: fakeLine({ piece: () => ({ status: 403, json: signIn }) }) });
+    expect(byPiece).toMatchObject({ status: 'stopped', code: 'wrong_account', next: 'sign_in' });
+    const byUpload = await runMake({ home: tempHome(), line: fakeLine({ uploadDone: () => json(403, signIn) }) });
+    expect(byUpload).toMatchObject({ status: 'stopped', code: 'wrong_account', next: 'sign_in' });
+  });
+
   it('when our check fails with a fix left the kit can’t make is reported as a failed check', async () => {
     const failed = { upload_id: 'up_1', attempt: 1, result: 'fail', reasons: [{ check: 'mystery', message: 'The video is too dark.' }], fixes_left: 1, stage: 'making', fee_credits: 0, credits: { used: 0, cap: 1000 } };
     const line = fakeLine({ uploadDone: () => json(200, failed) });
-    const result = await runMake({ home: tempHome(), line });
+    const home = tempHome();
+    const result = await runMake({ home, line });
     expect(result.status).toBe('failed');
     expect(failures(line)).toEqual([{ step: 'final-check', code: 'check_failed', detail: 'The video is too dark.' }]);
+    // The failed candidate never takes the final's place.
+    const finalDir = runLayout(home, VIDEO).final;
+    expect(existsSync(`${finalDir}/final.mp4`)).toBe(false);
+    expect(existsSync(`${finalDir}/final.candidate.mp4`)).toBe(true);
   });
 });

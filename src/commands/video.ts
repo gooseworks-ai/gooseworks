@@ -1,4 +1,6 @@
 import { spawn } from 'child_process';
+import { rm } from 'fs/promises';
+import * as path from 'path';
 import { format } from 'util';
 import { Command } from 'commander';
 import { connectionFor, getCredentials, type Credentials } from '../auth/credentials';
@@ -15,7 +17,7 @@ import { lineOf } from '../kit/core/progress';
 import { takeOutStep } from '../kit/core/patch';
 import { recordRefusal } from '../kit/core/refusal-log';
 import { makeVideo, type MakeResult } from '../kit/core/run';
-import { waitForLock, writeJson } from '../kit/core/save';
+import { readJson, waitForLock, writeJson } from '../kit/core/save';
 import { LineError, lineWords, VideoLine } from '../kit/line/client';
 import { signIn, syncMcpRegistration } from './login';
 import { exitNow, exitWhenDone } from '../utils/exit';
@@ -232,6 +234,23 @@ function output(json: boolean): Output {
   return { json, say: (text) => write({ event: 'say', text }), event: write, restore: () => void (console.log = original) };
 }
 
+/**
+ * `video make --detach` prints exactly one JSON line on stdout, whatever happens; its other words
+ * (a sign-in, say) go to stderr, where the person still sees them.
+ */
+function detachOutput(): Output {
+  const original = console.log;
+  const toErr = (text: string) => void process.stderr.write(`${text}\n`);
+  console.log = (...args: unknown[]) => toErr(format(...args));
+  let sent = false;
+  const once = (value: object) => {
+    if (sent) return;
+    sent = true;
+    process.stdout.write(`${JSON.stringify(value)}\n`);
+  };
+  return { json: true, say: toErr, event: once, restore: () => void (console.log = original) };
+}
+
 type Finished = Ended & { message: string; final?: string; contact_sheet?: string; warnings?: string[]; log?: string };
 
 /** Saves how the make ended, prints its words when they weren't yet, and sets the exit code; `--json` ends on the result. */
@@ -314,7 +333,15 @@ async function makeHere(id: string, out: Output, patched?: string[]): Promise<vo
     }
   } finally {
     await turn?.();
+    if (process.env[DETACHED_ENV] === '1') await forgetDetached(kitHome(), id);
   }
+}
+
+/** The detached run is over: its record goes, so a later process with the same pid is never taken for it. */
+async function forgetDetached(home: string, id: string): Promise<void> {
+  const layout = runLayout(home, id);
+  const record = await readJson<DetachedRecord>(layout.detached);
+  if (record?.pid === process.pid) await rm(layout.detached, { force: true }).catch(() => undefined);
 }
 
 /**
@@ -337,15 +364,21 @@ async function makeDetached(id: string, out: Output): Promise<void> {
     return;
   }
   const layout = runLayout(home, id);
-  const now = await videoStatus(home, id);
-  if (now.state === 'making' || now.state === 'waiting') {
-    out.event({ event: 'running', video_id: id, state: now.state, ...(now.pid ? { pid: now.pid } : {}), output: layout.output });
-    return;
+  // One claim per video across the check and the start, so two detaches never start two runs.
+  const claim = await waitForLock(path.join(layout.root, 'detach.lock'));
+  try {
+    const now = await videoStatus(home, id);
+    if (now.state === 'making' || now.state === 'waiting') {
+      out.event({ event: 'running', video_id: id, state: now.state, ...(now.pid ? { pid: now.pid } : {}), output: layout.output });
+      return;
+    }
+    const pid = startDetached({ args: detachedArgs(process.argv.slice(2)), output: layout.output, env: process.env });
+    const record: DetachedRecord = { pid, started_at: new Date().toISOString(), output: layout.output };
+    await writeJson(layout.detached, record);
+    out.event({ event: 'started', video_id: id, pid, output: layout.output });
+  } finally {
+    await claim();
   }
-  const pid = startDetached({ args: detachedArgs(process.argv.slice(2)), output: layout.output, env: process.env });
-  const record: DetachedRecord = { pid, started_at: new Date().toISOString(), output: layout.output };
-  await writeJson(layout.detached, record);
-  out.event({ event: 'started', video_id: id, pid, output: layout.output });
 }
 
 videoCommand
@@ -356,10 +389,17 @@ videoCommand
   .option('--patched <steps>', 'Make it with these steps’ edited code (comma-separated), taken out with video step --edit')
   .addHelpText('after', EXIT_HELP)
   .action(async (id: string, opts: { detach?: boolean; json?: boolean; patched?: string }) => {
-    const out = output(!!opts.json);
+    const detach = !!opts.detach && process.env[DETACHED_ENV] !== '1';
+    const out = detach ? detachOutput() : output(!!opts.json);
     try {
-      if (opts.detach && process.env[DETACHED_ENV] !== '1') await makeDetached(id, out);
+      if (detach) await makeDetached(id, out);
       else await makeHere(id, out, opts.patched ? patchedSteps(opts.patched) : undefined);
+    } catch (error) {
+      // Whatever went wrong still ends on the result and its stable exit code.
+      const message = error instanceof KitStop ? error.message : 'This video could not be made right now. Run the same command again; what was made so far is kept.';
+      if (!(error instanceof KitStop)) console.error(error instanceof Error ? error.message : String(error));
+      const code = error instanceof KitStop ? error.code : 'tool_failed';
+      finish(id, kitHome(), { status: error instanceof KitStop && error.reason === 'stop' ? 'stopped' : 'failed', message, ...(code ? { code } : {}) }, out, true);
     } finally {
       out.restore();
       // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.

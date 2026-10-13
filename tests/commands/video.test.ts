@@ -302,6 +302,14 @@ describe('what video make leaves for whoever runs it', () => {
     fs.mkdirSync(final, { recursive: true });
     fs.writeFileSync(path.join(final, 'final.mp4'), 'video');
     fs.writeFileSync(path.join(final, 'contact-sheet.png'), 'png');
+    // A final left by an earlier run is not shown while the last run ended otherwise.
+    const result = path.join(runFolder(), 'last-result.json');
+    fs.writeFileSync(result, JSON.stringify({ event: 'result', video_id: VIDEO, status: 'failed', outcome: 'failed', exit_code: 1, message: 'no', ended_at: new Date().toISOString() }));
+    await video('verify', VIDEO);
+    expect(printed()).toEqual(['This video hasn’t been finished on this computer, so there is nothing to look at yet.']);
+    process.exitCode = undefined;
+    logSpy.mockClear();
+    fs.writeFileSync(result, JSON.stringify({ event: 'result', video_id: VIDEO, status: 'done', outcome: 'done', exit_code: 0, message: 'ok', final: path.join(final, 'final.mp4'), ended_at: new Date().toISOString() }));
     fs.writeFileSync(
       path.join(final, 'eyes.json'),
       JSON.stringify({ contact_sheet: path.join(final, 'contact-sheet.png'), tiles: [], warnings: [{ check: 'product_visible', message: '“Tin” may not show clearly in the video.' }], look_for: [] }),
