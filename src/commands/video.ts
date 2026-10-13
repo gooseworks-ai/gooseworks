@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { connectionFor, getCredentials, type Credentials } from '../auth/credentials';
 import { apiEnvironment, readKitEnv } from '../kit/env';
 import { checkComputer } from '../kit/core/check';
+import { KitStop } from '../kit/core/errors';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
 import { DETACHED_ENV, detachedArgs, startDetached } from '../kit/core/detach';
@@ -11,6 +12,7 @@ import { KitLog, type KitEvent } from '../kit/core/log';
 import { EXIT_CODES, latestRunLog, resultRecord, saveResult, tailOf, verifyLines, verifyOf, videoStatus, type DetachedRecord, type Ended, type VideoStatus } from '../kit/core/outcome';
 import { detachedTurnLock, kitHome, runLayout } from '../kit/core/paths';
 import { lineOf } from '../kit/core/progress';
+import { takeOutStep } from '../kit/core/patch';
 import { recordRefusal } from '../kit/core/refusal-log';
 import { makeVideo, type MakeResult } from '../kit/core/run';
 import { waitForLock, writeJson } from '../kit/core/save';
@@ -258,7 +260,7 @@ function notStarted(refused: LineError | null): Ended & { message: string } {
 }
 
 /** Makes the video in this process. A detached process first waits for its turn on this computer. */
-async function makeHere(id: string, out: Output): Promise<void> {
+async function makeHere(id: string, out: Output, patched?: string[]): Promise<void> {
   const turn = process.env[DETACHED_ENV] === '1' ? await waitForLock(detachedTurnLock(kitHome())) : null;
   try {
     const session = await setUp(id, out.json ? (event) => out.event(event) : undefined);
@@ -293,6 +295,7 @@ async function makeHere(id: string, out: Output): Promise<void> {
         environment: apiEnvironment(apiBase),
         signal: stop.signal,
         forceEnd,
+        ...(patched?.length ? { patched } : {}),
       });
       if (ended) return;
       ended = true;
@@ -350,12 +353,13 @@ videoCommand
   .description('Make an approved video: the same command resumes it after a stop or a crash')
   .option('--detach', 'start it in a process of its own on this computer, print one JSON line and return; `video status <id>` follows it')
   .option('--json', 'print one JSON event per line, ending with a JSON result line')
+  .option('--patched <steps>', 'Make it with these steps’ edited code (comma-separated), taken out with video step --edit')
   .addHelpText('after', EXIT_HELP)
-  .action(async (id: string, opts: { detach?: boolean; json?: boolean }) => {
+  .action(async (id: string, opts: { detach?: boolean; json?: boolean; patched?: string }) => {
     const out = output(!!opts.json);
     try {
       if (opts.detach && process.env[DETACHED_ENV] !== '1') await makeDetached(id, out);
-      else await makeHere(id, out);
+      else await makeHere(id, out, opts.patched ? patchedSteps(opts.patched) : undefined);
     } finally {
       out.restore();
       // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.
@@ -421,6 +425,41 @@ videoCommand
     }
     const count = Math.min(Math.max(Number.parseInt(opts.lines, 10) || 50, 1), 5000);
     for (const line of (await tailOf(file, count)) ?? []) console.log(line);
+  });
+
+function patchedSteps(list: string): string[] {
+  return list
+    .split(',')
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
+videoCommand
+  .command('step <id> <step>')
+  .description('Take out the exact code one step of a video ran, to fix it; then make the video again with --patched <step>')
+  .option('--edit', 'Copy the step’s locked part into the video’s folder and print where it is')
+  .action(async (id: string, step: string, options: { edit?: boolean }) => {
+    if (!options.edit) {
+      console.log(`Add --edit to take the step out: gooseworks video step ${id} ${step} --edit`);
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const taken = await takeOutStep({ home: kitHome(), videoId: id, step, env: process.env, loader: defaultHost().loader });
+      if (taken.movedAside) console.log(`An earlier edit of this step, for another version, was moved to ${taken.movedAside}.`);
+      console.log(
+        taken.kept
+          ? `Step ${step} (${taken.part.id} ${taken.part.version}) is already taken out, with your edits, at:`
+          : `Step ${step} runs ${taken.part.id} ${taken.part.version}. Its code is now at:`,
+      );
+      console.log(taken.dir);
+      console.log(`Change only what is wrong there (never part.json). Then run this video’s make command again with --patched ${step} added.`);
+      console.log('The edited step may only reuse what this video already bought: a new paid request stops the run before anything is charged.');
+    } catch (error) {
+      if (!(error instanceof KitStop) && !(error instanceof Error && error.name === 'PartLoadError')) throw error;
+      console.log((error as Error).message);
+      process.exitCode = 1;
+    }
   });
 
 /** The old save step: `video make` now uploads the finished video and gets it checked. */

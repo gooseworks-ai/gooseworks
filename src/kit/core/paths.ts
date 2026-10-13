@@ -6,6 +6,7 @@
 //   ~/.gooseworks/videos/<video_id>/       one run folder per video
 //   ~/.gooseworks/videos/<video_id>/runs/  one log per run of `video make`
 //   ~/.gooseworks/kit/detached.lock        one detached make at a time on this computer
+//   ~/.gooseworks/videos/<video_id>/patches/<step>/  a step's part taken out to edit (`video step --edit`)
 //
 // GOOSE_KIT_HOME replaces ~/.gooseworks.
 import * as os from 'os';
@@ -69,6 +70,8 @@ export interface RunLayout {
   output: string;
   /** The card's rows as the run last showed them, for `video status`. */
   progress: string;
+  /** Steps' parts taken out to edit, one folder per step. */
+  patches: string;
 }
 
 export function runLayout(home: string, videoId: string): RunLayout {
@@ -94,6 +97,7 @@ export function runLayout(home: string, videoId: string): RunLayout {
     detached: path.join(root, 'detached.json'),
     output: path.join(root, 'output.ndjson'),
     progress: path.join(root, 'progress.json'),
+    patches: path.join(root, 'patches'),
   };
 }
 

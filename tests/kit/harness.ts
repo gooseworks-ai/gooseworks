@@ -338,6 +338,7 @@ export interface RunOptions {
   lastWordMs?: number;
   ceilingMs?: number;
   forceEnd?: (result: MakeResult) => void;
+  patched?: string[];
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -364,6 +365,7 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     ...(opts.forceEnd ? { forceEnd: opts.forceEnd } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.patched ? { patched: opts.patched } : {}),
   });
 }
 

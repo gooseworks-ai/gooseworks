@@ -8,6 +8,7 @@
 //   the token. Downloads carry no sign-in, except our own API's links.
 // - An answer whose `next` is retry is asked again after retry_after_seconds;
 //   every other refusal is thrown as a LineError for the core to act on.
+import type { KitPatch } from '../core/patch';
 import { redact } from '../core/secrets';
 import {
   DEVICE_HEADER,
@@ -196,10 +197,11 @@ export class VideoLine {
    * signs with the login of the person who said yes; a worker with the line
    * token. The answer's token and lease stay in this object.
    */
-  async handOver(projectId: string, report: DeviceReport): Promise<DeviceAnswer> {
+  async handOver(projectId: string, report: DeviceReport, patch?: KitPatch | null): Promise<DeviceAnswer> {
     const answer = await this.call<DeviceAnswer & { line?: { token?: string; lease?: string } }>(
       `${LINE_PREFIX}/${encodeURIComponent(projectId)}/device`,
-      { device: report },
+      // An edited step goes with every hand-over: one without it runs only the published parts.
+      patch ? { device: report, patch } : { device: report },
       'hand-over',
       MINUTE,
     );
