@@ -1,6 +1,6 @@
 /**
  * The entry skills the CLI installs into ~/.agents/skills/ and commits under
- * skills/ (the backend serves the committed copies to chat apps):
+ * skills/ (the backend serves the published package's copies to chat apps):
  *
  *   - `gooseworks`           the router: hands specialist work to its skill and
  *                            does data work with the gooseworks commands.
@@ -10,7 +10,10 @@
  *                            our server's video entry skills, copied as built
  *                            (server-entry-skills.ts). Every answer's next_step
  *                            carries the step for the video's stage.
- *   - `goose-video-local`    one line: run the kit when a next_step says so.
+ *   - `goose-video-local`    one line: a next_step that gives the kit's command
+ *                            says who starts it. No skill spells out the
+ *                            command or its version: each answer hands over
+ *                            its own.
  *
  * Each skill names only the actions in the action contract, states no price,
  * asks for no install and stays within the rulebook's size limit; the rules
@@ -26,15 +29,12 @@ export interface EntrySkill {
   content: string;
 }
 
-/** The kit command, as the server's next_step gives it. */
-export const KIT_MAKE_COMMAND = 'gooseworks video make <id>';
-
 /**
  * THE registry of entry skills (GOOSE-3190) — one list, four consumers:
  *   - `gooseworks install` / `update` / login-refresh write exactly these dirs,
  *   - `npm run generate:skills` regenerates exactly these `skills/<name>/SKILL.md`,
  *   - `skills/names.ts` derives which dirs the CLI is allowed to delete,
- *   - the backend raw-fetches these paths for chat apps.
+ *   - the backend fetches these paths from the published package for chat apps.
  */
 export function getEntrySkills(): EntrySkill[] {
   return [
@@ -63,7 +63,7 @@ description: >
   scrape public web and social data; find and enrich leads. The one GooseWorks entry point
   for brand growth, B2B, sales, research and GTM work.
 category: general
-version: 2.0.0
+version: 2.0.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -89,8 +89,6 @@ social data. Hand specialist work to its skill; do data work here.
 | --- | --- | --- |
 ${renderDomainRouteTable()}
 | Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
-
-When the server's next_step says to make a video on this computer, run \`${KIT_MAKE_COMMAND}\`.
 
 ## Brand growth skills
 
@@ -141,7 +139,7 @@ name: goose-ads
 slug: goose-ads
 description: Make, edit and study image ads with GooseWorks in this chat, from the brand's own products and approved sources. Start with brand_read and follow the next_step in every answer.
 category: ads
-version: 3.0.0
+version: 3.0.1
 author: GooseWorks
 ---
 
@@ -177,7 +175,7 @@ name: goose-product-photos
 slug: goose-product-photos
 description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start with brand_read and follow the next_step in every answer.
 category: ads
-version: 1.0.0
+version: 1.0.1
 author: GooseWorks
 ---
 
@@ -217,10 +215,10 @@ export function getMakeCustomVideoSkillContent(): string {
 export function getGooseVideoLocalSkillContent(): string {
   return `---
 name: goose-video-local
-description: Make an approved GooseWorks video on this computer when the server's next_step says to.
-version: 1.0.2
+description: Make an approved GooseWorks video when an answer's next_step gives its command.
+version: 1.0.3
 ---
 
-Run \`${KIT_MAKE_COMMAND}\` when the server's next_step says so.
+When an answer's next_step gives a command to make a video, its last line says who starts it and how: follow that line exactly, with the command exactly as given.
 `;
 }

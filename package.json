@@ -6,6 +6,9 @@
     "gooseworks": "./dist/index.js"
   },
   "main": "./dist/index.js",
+  "gooseworksKit": {
+    "features": ["detach", "status", "verify", "log", "json", "step_edit", "patched"]
+  },
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",

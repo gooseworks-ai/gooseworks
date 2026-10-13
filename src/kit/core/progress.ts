@@ -75,6 +75,9 @@ export class ProgressBook {
   private readonly steps = new Map<string, Tracked>();
   note = 'Getting the style ready';
 
+  /** `onChange` hears every start, count and finish. */
+  constructor(private readonly onChange: () => void = () => undefined) {}
+
   plan(steps: Array<{ id: string; row: RowKey | null; typical_s: number }>): void {
     for (const step of steps) {
       if (!this.steps.has(step.id)) this.steps.set(step.id, { ...step, state: 'todo', done: 0, total: 1 });
@@ -87,6 +90,7 @@ export class ProgressBook {
       step.state = 'now';
       step.done = 0;
       step.fraction = undefined;
+      this.onChange();
     }
   }
 
@@ -96,6 +100,7 @@ export class ProgressBook {
     if (typeof update.total === 'number' && update.total >= 1) step.total = Math.min(Math.floor(update.total), 200);
     if (typeof update.done === 'number' && update.done >= 0) step.done = Math.min(Math.floor(update.done), step.total);
     if (typeof update.fraction === 'number' && update.fraction >= 0 && update.fraction <= 1) step.fraction = update.fraction;
+    this.onChange();
   }
 
   finish(id: string, state: 'done' | 'failed' = 'done'): void {
@@ -103,6 +108,7 @@ export class ProgressBook {
     if (!step) return;
     step.state = state;
     if (state === 'done') step.done = step.total;
+    this.onChange();
   }
 
   request(): ProgressRequest {
@@ -142,6 +148,40 @@ export class ProgressBook {
       ...(rows.length ? { steps: rows.slice(0, 12) } : {}),
     };
   }
+}
+
+const MARK: Record<ProgressStep['state'], string> = { now: '▸', done: '✓', failed: '✗', todo: '' };
+
+/**
+ * The rows as lines for the person running the kit: a row's start, end or failure always, and a
+ * new count on a row at most once every `everyMs`. The card's own labels, never a part or a code.
+ */
+export class StepLines {
+  private readonly shown = new Map<string, { state: ProgressStep['state']; detail?: string; at: number }>();
+
+  constructor(private readonly everyMs = 5_000) {}
+
+  next(steps: ProgressStep[] | undefined, now: number): string[] {
+    return this.changed(steps, now).map(lineOf);
+  }
+
+  /** The rows to show now, by the same rule as `next`. */
+  changed(steps: ProgressStep[] | undefined, now: number): ProgressStep[] {
+    const rows: ProgressStep[] = [];
+    for (const step of steps ?? []) {
+      if (step.state === 'todo') continue;
+      const last = this.shown.get(step.label);
+      if (last && last.state === step.state && (last.detail === step.detail || now - last.at < this.everyMs)) continue;
+      this.shown.set(step.label, { state: step.state, detail: step.detail, at: now });
+      rows.push(step);
+    }
+    return rows;
+  }
+}
+
+/** One row as the line the person reads. */
+export function lineOf(step: ProgressStep): string {
+  return `${MARK[step.state]} ${step.label}${step.state === 'now' && step.detail ? ` (${step.detail})` : ''}`;
 }
 
 function madeOf(step: Tracked): number {

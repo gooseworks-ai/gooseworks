@@ -4,7 +4,7 @@
 // however it is called.
 import { schemaErrors } from '../core/schema';
 import type { FileRef, PartContext, Timeline } from '../part-interface';
-import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.0/part.json';
+import { inputs as INPUT_SCHEMA } from './parts/html-frames/1.2.1/part.json';
 import {
   clipZone,
   countWords,

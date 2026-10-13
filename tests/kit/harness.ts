@@ -1,7 +1,7 @@
 // Test fixtures for the kit core: an in-memory private line, a style package
 // served from it, and small parts. Nothing here ships.
 import { createHash } from 'crypto';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { canonicalHash, canonicalJson } from '../../src/kit/core/canonical';
@@ -49,6 +49,10 @@ export interface LineScript {
   download?: (url: URL, n: number) => Response | undefined;
   /** Answer for one progress report; default: making. */
   progress?: (body: any, n: number) => Response | undefined;
+  /** The hand-over answer's `video` (left out by default, as older lines do). */
+  video?: unknown;
+  /** Answer for one hand-over; default: handed over. */
+  device?: (body: any, n: number) => Response | undefined;
 }
 
 export const style = {
@@ -146,6 +150,7 @@ export function fakeLine(script: LineScript = {}) {
   let putCount = 0;
   let doneCount = 0;
   let progressCount = 0;
+  let deviceCount = 0;
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = String(input);
     const headers: Record<string, string> = {};
@@ -160,6 +165,8 @@ export function fakeLine(script: LineScript = {}) {
     if (u.pathname === '/pkg/style.json') return new Response(pkg.styleBytes, { status: 200 });
     const p = u.pathname.replace(`/v1/video-line/${VIDEO}`, '');
     if (p === '/device') {
+      const refused = script.device?.(body, deviceCount++);
+      if (refused) return refused;
       const lock = script.lock ? script.lock(partsLock()) : partsLock();
       const handed = {
         token,
@@ -179,6 +186,7 @@ export function fakeLine(script: LineScript = {}) {
         kit: { ok: true, min_version: '1.0.0', latest_version: '1.0.0' },
         styles: { ready: 1, total: 1 },
         line: script.handOver ? script.handOver(handed) : handed,
+        ...(script.video ? { video: script.video } : {}),
       });
     }
     if (p === '/pieces') {
@@ -326,6 +334,11 @@ export interface RunOptions {
   host?: KitHost;
   now?: () => Date;
   signal?: AbortSignal;
+  heartbeatMs?: number;
+  lastWordMs?: number;
+  ceilingMs?: number;
+  forceEnd?: (result: MakeResult) => void;
+  patched?: string[];
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -346,9 +359,13 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     environment: 'staging',
     tools,
     sleep: async () => undefined,
-    heartbeatMs: 3_600_000,
+    heartbeatMs: opts.heartbeatMs ?? 3_600_000,
+    ...(opts.lastWordMs ? { lastWordMs: opts.lastWordMs } : {}),
+    ...(opts.ceilingMs ? { ceilingMs: opts.ceilingMs } : {}),
+    ...(opts.forceEnd ? { forceEnd: opts.forceEnd } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.patched ? { patched: opts.patched } : {}),
   });
 }
 
@@ -356,3 +373,13 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
 export const lineRoute = (seen: Seen[], route: string) => seen.filter((s) => new URL(s.url).pathname === `/v1/video-line/${VIDEO}${route}`);
 
 export const lineCalls = (seen: Seen[], route: string) => seen.filter((s) => s.url.startsWith(`${API}/v1/video-line/`) && s.url.includes(route));
+
+/** Every run's own log for a video, oldest first, as one text. */
+export function runLogs(home: string, videoId = VIDEO): string {
+  const dir = path.join(home, 'videos', videoId, 'runs');
+  if (!existsSync(dir)) return '';
+  return readdirSync(dir)
+    .sort()
+    .map((name) => readFileSync(path.join(dir, name), 'utf8'))
+    .join('');
+}

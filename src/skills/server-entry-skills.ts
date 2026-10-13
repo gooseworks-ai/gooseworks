@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app akhil/goose-4027-custom-video-source-recipe (on dev @ 538cb6243)
+// Source: gooseworks-app akhil/staging-soft-blockers @ bd2f9f70e
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -13,13 +13,13 @@
 // gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one.
 
 /** The rulebook version this text was built from. */
-export const SERVER_RULEBOOK_VERSION = '1.3.1';
+export const SERVER_RULEBOOK_VERSION = '1.3.2';
 
 export const SERVER_VIDEO_ENTRY_SKILLS = {
   'goose-video': `---
 name: goose-video
 description: "Make a video ad in this chat. Study a supplied video reference before comparing styles; follow the next_step in every answer."
-version: 4.4.3
+version: 4.4.4
 ---
 
 # GooseWorks video
@@ -28,7 +28,7 @@ From an installed entry, first catalog_fetch type skill goose-video on this same
 
 For a video already started, call video_read and follow its next_step.
 
-Explicit custom: skip video_formats and steps 5–6. Keep their mechanics and assets; research the brand/product and study the reference for its custom plan. Check current custom support before any write.
+Explicit custom: skip steps 5–6. Keep their mechanics and assets; research the brand/product and study the reference for its custom plan. Check current custom support before any write.
 
 For other new videos start with get_started (wants video, request). A card is not a style choice or proof of viewing. Follow the reference rule before style selection or a plan.
 
@@ -49,12 +49,12 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
 
 - Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
-- A yes counts only for the price the customer was shown: their press on the plan card, or their yes in chat sent with that price.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
+- A yes is to the credit total the customer was shown: their press on the plan card, or their yes in chat sent with that total.
 - Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
@@ -62,7 +62,7 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
   'make-custom-video': `---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.5.0
+version: 3.5.1
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -79,7 +79,7 @@ Installed entry: catalog_fetch type skill make-custom-video here once. Check liv
 
 ## Load the production harness
 
-Require complete video-production-harness content/scripts/files/version/contentHash. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
+Require complete video-production-harness content/scripts/files/version/contentHash. An inline read lists it by slug only: get it with catalog_fetch delivery archive (making needs that shell anyway), or catalog_fetch its slug. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
 
 ## Keep the brief and study the reference
 
@@ -119,30 +119,30 @@ export type ServerVideoEntrySlug = keyof typeof SERVER_VIDEO_ENTRY_SKILLS;
 export const SERVER_ENTRY_SKILL_RULES = {
   all: `- Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   ads: `- Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   photos: `- Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,

@@ -8,6 +8,7 @@
 //   the token. Downloads carry no sign-in, except our own API's links.
 // - An answer whose `next` is retry is asked again after retry_after_seconds;
 //   every other refusal is thrown as a LineError for the core to act on.
+import type { KitPatch } from '../core/patch';
 import { redact } from '../core/secrets';
 import {
   DEVICE_HEADER,
@@ -15,6 +16,7 @@ import {
   LEASE_HEADER,
   LINE_PREFIX,
   WORKER_HEADER,
+  type AccessAnswer,
   type DeviceAnswer,
   type DeviceReport,
   type HostableType,
@@ -34,6 +36,8 @@ export class LineError extends Error {
   readonly code: string;
   readonly next: LineNext;
   readonly fix: string;
+  /** The server's sentence for the person when its fix is written for their AI; '' when it wrote none. */
+  readonly say: string;
   readonly retryAfterSeconds?: number;
   readonly details?: Record<string, unknown>;
   constructor(body: LineErrorBody, readonly status: number) {
@@ -42,9 +46,15 @@ export class LineError extends Error {
     this.code = body.code;
     this.next = body.next;
     this.fix = body.fix ?? '';
+    this.say = body.say?.trim() ?? '';
     this.retryAfterSeconds = body.retry_after_seconds;
     this.details = body.details;
   }
+}
+
+/** What the person reads for a refusal: the server's sentence for them, else its error and fix. */
+export function lineWords(error: LineError): string {
+  return error.say || [error.message, error.fix].filter(Boolean).join(' ');
 }
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -174,14 +184,24 @@ export class VideoLine {
   }
 
   /**
+   * Before `video make <id>` sets anything up: may this computer's login make
+   * the video? A wrong account or expired sign-in comes back as a LineError
+   * whose `next` is sign_in.
+   */
+  access(projectId: string): Promise<AccessAnswer> {
+    return this.call<AccessAnswer>(`${LINE_PREFIX}/${encodeURIComponent(projectId)}/access`, undefined, 'login', MINUTE, undefined, 'GET');
+  }
+
+  /**
    * (a) The hand-over at the start of `video make <id>`. A customer's computer
    * signs with the login of the person who said yes; a worker with the line
    * token. The answer's token and lease stay in this object.
    */
-  async handOver(projectId: string, report: DeviceReport): Promise<DeviceAnswer> {
+  async handOver(projectId: string, report: DeviceReport, patch?: KitPatch | null): Promise<DeviceAnswer> {
     const answer = await this.call<DeviceAnswer & { line?: { token?: string; lease?: string } }>(
       `${LINE_PREFIX}/${encodeURIComponent(projectId)}/device`,
-      { device: report },
+      // An edited step goes with every hand-over: one without it runs only the published parts.
+      patch ? { device: report, patch } : { device: report },
       'hand-over',
       MINUTE,
     );
@@ -367,17 +387,15 @@ export class VideoLine {
       const parsed = JSON.parse(text) as { error?: LineErrorBody };
       const e = parsed.error;
       if (e && typeof e.code === 'string' && typeof e.next === 'string') {
-        return { ...e, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')) };
+        const { say, ...rest } = e;
+        return { ...rest, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')), ...(typeof say === 'string' && say.trim() ? { say: this.redact(say) } : {}) };
       }
     } catch {
       // Fall through to a plain refusal.
     }
     const retry = status === 429 || status >= 500 || status === 0;
-    return {
-      code: retry ? 'line_unavailable' : 'invalid_input',
-      error: `The line refused the call (HTTP ${status}).`,
-      fix: retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.',
-      next: retry ? 'retry' : 'change_request',
-    };
+    const error = `The line refused the call (HTTP ${status}).`;
+    const fix = retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.';
+    return { code: retry ? 'line_unavailable' : 'invalid_input', error, fix, say: `${error} ${fix}`, next: retry ? 'retry' : 'change_request' };
   }
 }

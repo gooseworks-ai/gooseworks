@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { runLayout } from '../../src/kit/core/paths';
 import { PartLoadError } from '../../src/kit/parts/loader';
-import { VIDEO, fakeLine, lineRoute, runMake, style, tempHome, testHost, testParts } from './harness';
+import { VIDEO, fakeLine, lineRoute, runLogs, runMake, style, tempHome, testHost, testParts } from './harness';
 
 const failures = (line: ReturnType<typeof fakeLine>) => lineRoute(line.seen, '/progress').map((s) => s.body.failure).filter(Boolean);
 
@@ -34,7 +34,7 @@ it('reports a failed step with its code and plain words, not its detail', async 
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
   expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
-  expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
+  expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: true }]);
 });
 
 describe('a part’s refusal of the plan', () => {
@@ -50,18 +50,18 @@ describe('a part’s refusal of the plan', () => {
     const line = fakeLine();
     const parts = refusing('bad_input', '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow.');
     const result = await runMake({ home: tempHome(), line, parts });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'failed',
       message: '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow. Change the plan, then make it again.',
     });
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
   });
 
   it('keeps a part’s numbers and finishes its sentence', async () => {
     const line = fakeLine();
     const result = await runMake({ home: tempHome(), line, parts: refusing('output_invalid', 'Would run 58.2 s, style allows 15–45 s, 9 photos', true) });
     expect(result.message).toBe('Would run 58.2 s, style allows 15–45 s, 9 photos. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: true }]);
   });
 
   it('keeps a refusal’s path, file name and ids off the card and in the log', async () => {
@@ -70,8 +70,8 @@ describe('a part’s refusal of the plan', () => {
     const detail = 'The logo can’t be read. Tried /Users/someone/.gooseworks/videos/vid_1/plan/logo.png for clips.';
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('The logo can’t be read. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('logo.png');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
+    expect(runLogs(home)).toContain('logo.png');
 
     const pathOnly = fakeLine();
     const generic = await runMake({ home: tempHome(), line: pathOnly, parts: refusing('bad_input', 'missing /Users/someone/.gooseworks/videos/vid_1/plan/logo.png') });
@@ -92,8 +92,8 @@ describe('a part’s refusal of the plan', () => {
     const line = fakeLine();
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
+    expect(runLogs(home)).toContain(logged);
   });
 
   describe('at the card’s 200-character cap', () => {
@@ -104,7 +104,7 @@ describe('a part’s refusal of the plan', () => {
     const make = async (detail: string) => {
       const line = fakeLine();
       const result = await runMake({ home: tempHome(), line, parts: refusing('bad_input', detail) });
-      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
       return result.message!;
     };
 
@@ -136,6 +136,8 @@ describe('a part’s refusal of the plan', () => {
     const parts = testParts({ clipRun: (async () => ({ clips: 'not files' })) as any });
     const result = await runMake({ home: tempHome(), line, parts });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+    // The kit's own check refused the outputs, so the line must not blame the plan.
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: false }]);
 
     const failing = fakeLine();
     const tool = await runMake({ home: tempHome(), line: failing, parts: testParts({ clip: { retry: { transient: 0 } }, clipRun: (async (_i: unknown, ctx: any) => { throw ctx.error('tool_failed', 'The encoder ran out of room.'); }) as any }) });
@@ -205,7 +207,7 @@ it('keeps a final check’s tool output, paths and ids off the card and in the l
   const result = await runMake({ home, line, parts });
   expect(result.status).toBe('failed');
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video didn’t pass the final check.' }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('0x7f8a1c004a00');
+  expect(runLogs(home)).toContain('0x7f8a1c004a00');
 });
 
 it('sends the report again without the reason to a line that refuses the field', async () => {
@@ -235,7 +237,7 @@ it('reports a broken style package in plain words and keeps the file name in the
   expect(result.status).toBe('failed');
   expect(result.message).toBe('The style package is missing a file it needs.');
   expect(failures(line)).toEqual([{ step: 'style', code: 'change_request', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/fonts\/brand-bold\.ttf/);
+  expect(runLogs(home)).toMatch(/fonts\/brand-bold\.ttf/);
 });
 
 it('waits for the report that says why before it ends, even behind a slow report', async () => {
@@ -253,7 +255,7 @@ it('waits for the report that says why before it ends, even behind a slow report
   const parts = testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
-  expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+  expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
 });
 
 it('sends the report without the reason to an old line after the run’s own signal was aborted', async () => {
@@ -288,11 +290,11 @@ describe('a failure report the line never took', () => {
     expect(first.status).toBe('failed');
     const pendingFile = runLayout(home, VIDEO).pendingReport;
     const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
-    expect(pending.failure).toEqual({ step: 'clips', code: 'bad_input', detail: first.message });
+    expect(pending.failure).toEqual({ step: 'clips', code: 'bad_input', detail: first.message, from_part: true });
 
     const line = fakeLine();
     const again = await runMake({ home, line });
-    expect(again).toEqual({ status: 'failed', message: first.message });
+    expect(again).toMatchObject({ status: 'failed', message: first.message });
     expect(lineRoute(line.seen, '/progress')[0].body.failure).toEqual(pending.failure);
     expect(line.pieces).toHaveLength(0);
     expect(existsSync(pendingFile)).toBe(false);
@@ -341,7 +343,7 @@ describe('a provider failure', () => {
     const line = fakeLine({ piece: providerFailed });
     const result = await runMake({ home, line, parts: testParts({ clip: { retry: { transient: 0 } } }) });
     expect(result.status).toBe('failed');
-    expect(result.message).toMatch(/Try once more/);
+    expect(result.message).toBe('The provider didn’t take the job (429). Try once more with a new attempt. Nothing was charged.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
 
     const again = fakeLine();
@@ -371,7 +373,180 @@ it('reports an error outside any step as one a new run may get past, in safe wor
   // The style manifest's download fails after the package view came back.
   const line = { ...base, fetch: (async (input: any, init: any) => (new URL(String(input)).pathname === '/pkg/manifest' ? new Response('gone', { status: 404 }) : base.fetch(input, init))) as typeof fetch };
   const result = await runMake({ home, line });
-  expect(result).toEqual({ status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
+  expect(result).toMatchObject({ code: 'tool_failed', status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
   expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/HTTP 404/);
+  expect(runLogs(home)).toMatch(/HTTP 404/);
+});
+
+describe('when the run ends', () => {
+  const badInput = () => testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
+  /** A line whose reports answer after `ms` (never, when left out), unless the call is given up first. */
+  const slowReports = (script: Parameters<typeof fakeLine>[0] = {}, ms?: number) => {
+    const base = fakeLine(script);
+    const fetch = (async (input: any, init: any = {}) => {
+      if (!String(input).endsWith('/progress')) return base.fetch(input, init);
+      return new Promise((resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+        if (ms !== undefined) setTimeout(() => resolve(base.fetch(input, init)), ms);
+        else base.seen.push({ url: String(input), method: 'POST', headers: {}, body: JSON.parse(init.body) });
+      });
+    }) as typeof globalThis.fetch;
+    return { ...base, fetch };
+  };
+
+  it('ends within the last word’s deadline when the line can’t be reached, and keeps the failure for the next run', async () => {
+    const home = tempHome();
+    const line = slowReports();
+    const started = Date.now();
+    const result = await runMake({ home, line, parts: badInput(), heartbeatMs: 20, lastWordMs: 300 });
+    expect(result.status).toBe('failed');
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure).toEqual({ step: 'clips', code: 'bad_input', detail: result.message, from_part: true });
+  });
+
+  it('sends no report after the one that says why', async () => {
+    const line = fakeLine({
+      progress: (() => new Promise((resolve) => setTimeout(() => resolve(json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 })), 15))) as any,
+    });
+    const result = await runMake({ home: tempHome(), line, parts: badInput(), heartbeatMs: 5 });
+    expect(result.status).toBe('failed');
+    const reports = lineRoute(line.seen, '/progress');
+    const at = reports.findIndex((r) => r.body.failure);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(reports.slice(at + 1)).toEqual([]);
+  });
+
+  it('sends no heartbeat after the result', async () => {
+    const line = fakeLine();
+    expect((await runMake({ home: tempHome(), line, heartbeatMs: 5 })).status).toBe('done');
+    const sent = lineRoute(line.seen, '/progress').length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(lineRoute(line.seen, '/progress')).toHaveLength(sent);
+  });
+
+  it('does not log a report the stop cut short as one that failed', async () => {
+    const home = tempHome();
+    const line = slowReports({ piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Press Continue on the card.', next: 'stop' } } }) }, 50);
+    expect((await runMake({ home, line })).status).toBe('stopped');
+    expect(runLogs(home)).not.toMatch(/progress could not be sent/);
+  });
+});
+
+describe('the line’s refusal of a piece', () => {
+  const stopped = (say?: string) =>
+    fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', ...(say ? { say } : {}), next: 'stop' } } }),
+    });
+
+  it('reaches the person as the server’s sentence for them, without the fix written for the AI', async () => {
+    const printed: string[] = [];
+    const result = await runMake({ home: tempHome(), line: stopped('You stopped this video. What was made so far is kept.'), printed });
+    expect(result).toMatchObject({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
+    expect(printed.join('\n')).not.toMatch(/Tell them/);
+  });
+
+  it('reaches the person as the error and its fix when the server wrote no sentence for them', async () => {
+    const line = fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'making_elsewhere', error: 'This video is being made somewhere else.', fix: 'If that run has stopped, run the make command again on this computer.', next: 'stop' } } }),
+    });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result).toMatchObject({ status: 'stopped', message: 'This video is being made somewhere else. If that run has stopped, run the make command again on this computer.' });
+  });
+});
+
+describe('a step that runs out of time', () => {
+  const quick = { timing: { typical_s: 1, timeout_s: 0.2 } };
+
+  it('while a piece is still being made at the maker is reported as the maker’s delay, which a new run can get past', async () => {
+    const base = fakeLine({
+      piece: (req) => ({ status: 200, json: { piece_key: req.piece_key, idempotency_key: req.idempotency_key, status: 'running', replayed: false, piece_credits: 0, credits: { used: 0, cap: 1000 }, retry_after_seconds: 1 } }),
+    });
+    const line = {
+      ...base,
+      fetch: (async (input: any, init: any) => {
+        if (String(input).endsWith('/pieces')) await new Promise((resolve) => setTimeout(resolve, 10));
+        return base.fetch(input, init);
+      }) as typeof fetch,
+    };
+    const result = await runMake({ home: tempHome(), line, parts: testParts({ clip: quick }) });
+    expect(result).toMatchObject({ code: 'provider_slow', status: 'failed', message: 'One of the clips we ordered for this video didn’t come back in time. Run the same command again; what was made so far is kept.' });
+    expect(failures(base)).toEqual([{ step: 'clips', code: 'provider_slow', detail: result.message }]);
+  });
+
+  it('on its own work is reported as a plain timeout', async () => {
+    const line = fakeLine();
+    const parts = testParts({ clip: quick, clipRun: (async (_inputs: unknown, ctx: any) => new Promise((_resolve, reject) => ctx.signal.addEventListener('abort', () => reject(new Error('cut short'))))) as any });
+    const result = await runMake({ home: tempHome(), line, parts });
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'timeout', detail: result.message }]);
+  });
+});
+
+describe('a stop the line must hear', () => {
+  it('on Ctrl-C is reported as stopped here, with no support file', async () => {
+    const stop = new AbortController();
+    const printed: string[] = [];
+    const parts = testParts({
+      clipRun: (() => {
+        setTimeout(() => stop.abort(), 5);
+        return new Promise(() => undefined);
+      }) as never,
+    });
+    const line = fakeLine();
+    const result = await runMake({ home: tempHome(), line, parts, printed, signal: stop.signal });
+    expect(result.status).toBe('stopped');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'stopped_here', detail: result.message }]);
+    expect(printed.join('\n')).not.toMatch(/contact support/);
+  }, 10_000);
+
+  it('when a part can’t be downloaded is reported as this computer’s trouble, with the support file', async () => {
+    const line = fakeLine();
+    const printed: string[] = [];
+    const host = testHost(testParts());
+    const load = host.loader.load;
+    host.loader.load = async (request) => {
+      if (request.ref.id === 'sound-layer') throw new PartLoadError('unreachable', 'could not reach the parts store');
+      return load(request);
+    };
+    const result = await runMake({ home: tempHome(), line, host, printed });
+    expect(result.status).toBe('stopped');
+    expect(result.message).not.toMatch(/spent|charged/);
+    expect(failures(line)).toEqual([{ step: 'layer-sound', code: 'tool_failed', detail: result.message }]);
+    expect(printed.join('\n')).toMatch(/contact support/);
+  });
+
+  it('when the line lost a piece is reported with its code, so the line hears it was ours', async () => {
+    const lost = { error: { code: 'piece_lost', error: 'We couldn’t get this piece back.', fix: 'Ask for a fix on the card to make it again.', next: 'stop' } };
+    const line = fakeLine({ piece: () => ({ status: 409, json: lost }) });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result.status).toBe('stopped');
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'piece_lost', detail: result.message }]);
+  });
+
+  it('is not sent for a plan that changed under the run', async () => {
+    const stale = { error: { code: 'quote_not_current', error: 'This plan is no longer the approved one.', fix: 'Run the make command again.', next: 'stop' } };
+    const line = fakeLine({ piece: () => ({ status: 409, json: stale }) });
+    expect((await runMake({ home: tempHome(), line })).status).toBe('stopped');
+    expect(failures(line)).toEqual([]);
+  });
+
+  it('keeps the line’s sign-in step through a piece refusal and an upload refusal, for exit code 6', async () => {
+    const signIn = { error: { code: 'wrong_account', error: 'This computer is signed in to another account.', fix: 'Sign in again.', next: 'sign_in' } };
+    const byPiece = await runMake({ home: tempHome(), line: fakeLine({ piece: () => ({ status: 403, json: signIn }) }) });
+    expect(byPiece).toMatchObject({ status: 'stopped', code: 'wrong_account', next: 'sign_in' });
+    const byUpload = await runMake({ home: tempHome(), line: fakeLine({ uploadDone: () => json(403, signIn) }) });
+    expect(byUpload).toMatchObject({ status: 'stopped', code: 'wrong_account', next: 'sign_in' });
+  });
+
+  it('when our check fails with a fix left the kit can’t make is reported as a failed check', async () => {
+    const failed = { upload_id: 'up_1', attempt: 1, result: 'fail', reasons: [{ check: 'mystery', message: 'The video is too dark.' }], fixes_left: 1, stage: 'making', fee_credits: 0, credits: { used: 0, cap: 1000 } };
+    const line = fakeLine({ uploadDone: () => json(200, failed) });
+    const home = tempHome();
+    const result = await runMake({ home, line });
+    expect(result.status).toBe('failed');
+    expect(failures(line)).toEqual([{ step: 'final-check', code: 'check_failed', detail: 'The video is too dark.' }]);
+    // The failed candidate never takes the final's place.
+    const finalDir = runLayout(home, VIDEO).final;
+    expect(existsSync(`${finalDir}/final.mp4`)).toBe(false);
+    expect(existsSync(`${finalDir}/final.candidate.mp4`)).toBe(true);
+  });
 });

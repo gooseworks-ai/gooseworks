@@ -18,6 +18,7 @@ import {
   clearCredentials,
   getApiKey,
   getApiBase,
+  connectionFor,
   type Credentials,
 } from '../../src/auth/credentials';
 
@@ -138,6 +139,32 @@ describe('credentials', () => {
     it('returns default when no credentials', () => {
       mockFs.existsSync.mockReturnValue(false);
       expect(getApiBase()).toBe('https://api.gooseworks.ai');
+    });
+
+    it('lets GOOSEWORKS_API_BASE win over the saved login\'s address', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(validCreds));
+      process.env.GOOSEWORKS_API_BASE = 'https://api.gooseworks.ai';
+      try {
+        expect(getApiBase()).toBe('https://api.gooseworks.ai');
+      } finally {
+        delete process.env.GOOSEWORKS_API_BASE;
+      }
+    });
+  });
+
+  describe('connectionFor', () => {
+    it('returns the saved login only for its own address', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(validCreds));
+      expect(connectionFor('https://app.gooseworks.ai')).toEqual(validCreds);
+      expect(connectionFor('https://api.gooseworks.ai')).toBeNull();
+    });
+
+    it('counts a saved login for another environment as not signed in, instead of throwing', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({ ...validCreds, api_base: 'https://api.staging.gooseworks.ai' }));
+      expect(connectionFor('https://api.staging.gooseworks.ai')).toBeNull();
     });
   });
 });

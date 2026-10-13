@@ -1,7 +1,7 @@
 ---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.5.0
+version: 3.5.1
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -18,7 +18,7 @@ Installed entry: catalog_fetch type skill make-custom-video here once. Check liv
 
 ## Load the production harness
 
-Require complete video-production-harness content/scripts/files/version/contentHash. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
+Require complete video-production-harness content/scripts/files/version/contentHash. An inline read lists it by slug only: get it with catalog_fetch delivery archive (making needs that shell anyway), or catalog_fetch its slug. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
 
 ## Keep the brief and study the reference
 

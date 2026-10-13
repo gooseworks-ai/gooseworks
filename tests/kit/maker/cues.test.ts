@@ -11,7 +11,7 @@ import { makeVideo } from '../../../src/kit/maker/make';
 import { runtimeScript } from '../../../src/kit/maker/runtime';
 import { describeMedia, fileRef, partContext, runFfmpeg } from './helpers';
 
-const PART_DIR = path.join(__dirname, '..', '..', '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.2.0');
+const PART_DIR = path.join(__dirname, '..', '..', '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.2.1');
 const temp = () => mkdtempSync(path.join(os.tmpdir(), 'hf12-cues-'));
 
 const cue = (sound: CueSound, at_s: number, extra: Partial<Cue> = {}): Cue => ({ sound, at_s, gain: 1, max_s: null, ...extra });

@@ -14,8 +14,13 @@ are generated from the single source of truth in `src/skills/master-skill.ts` by
 `npm run generate:skills`. They are committed on purpose:
 
 - the npm package ships them (`package.json` `files: ["skills"]`), and
-- the backend app-MCP server fetches them from this repo's **raw GitHub URLs** to
-  serve Cowork clients that have no filesystem to install into.
+- the backend app-MCP server serves the copies the **published npm package**
+  ships, at the version it hands out as the video kit (dist-tag `latest` on
+  production, `next` on staging), to Cowork clients that have no filesystem to
+  install into. A skill change reaches staging with the next dev publish and
+  production with the next release.
+- No skill spells out the video kit's command or version: each server answer
+  hands over its own exact command, and its last line says who starts it.
 
 They are NOT stale installed copies. Do not `rm -rf` them when cleaning up
 `~/.agents/skills/` or `~/.claude/skills/` installs — those live in the home

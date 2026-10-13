@@ -64,6 +64,8 @@ const INSTALL_COMMANDS = [
   /\b(?:curl|wget)\b[^\n]*\|\s*(?:ba|z)?sh\b/i,
   /\bgooseworks\s+(?:install|update)\b/i,
 ];
+// Each answer hands over its own exact kit command and version; a skill copy would go stale under a video.
+const KIT_COMMAND = /\bgooseworks@[0-9A-Za-z.<>-]+|\bvideo\s+make\b/i;
 const KEBAB = /(?<![a-z0-9-])[a-z0-9]+(?:-[a-z0-9]+)+(?![a-z0-9-])/g;
 const RENDER_ATOM = /(?<![a-z0-9-])render-[a-z0-9]+(?:-[a-z0-9]+)*/g;
 
@@ -142,10 +144,10 @@ function lintView(text: string, actions: Set<string>, recipes: Set<string>): str
 
   const sign = CURRENCY_SIGN.exec(text);
   if (sign) problems.push(`money.credits_only: a currency sign (${sign[0]})`);
-  // The server gives only these two pinned kit commands; other npx usage remains a setup request.
-  const setupText = text.replace(/\bnpx -y gooseworks@\d+\.\d+\.\d+(?: --env (?:staging|production))? video (?:make <id>|check)(?=\s|[.,;`]|$)/g, 'GooseWorks video command');
+  const kit = KIT_COMMAND.exec(text);
+  if (kit) problems.push(`setup.no_install: spells out the kit command (${kit[0]})`);
   for (const command of INSTALL_COMMANDS) {
-    const found = command.exec(setupText);
+    const found = command.exec(text);
     if (found) problems.push(`setup.no_install: an install command (${found[0]})`);
   }
   for (const sentence of text.split(/[.!?\n]/)) {

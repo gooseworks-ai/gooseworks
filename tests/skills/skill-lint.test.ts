@@ -77,9 +77,15 @@ const studioDir = process.env.GOOSE_STUDIO_DIR;
   expect(slugs.sort()).toEqual([...RECIPE_SLUGS].sort());
 });
 
-it('allows the two pinned server video commands while refusing unrelated setup commands', () => {
-  expect(lintSkill('npx -y gooseworks@0.5.7 --env staging video check')).toEqual([]);
-  expect(lintSkill('npx -y gooseworks@0.5.7 --env staging video make <id>')).toEqual([]);
-  expect(lintSkill('npx -y gooseworks@0.5.7 install')).toContain('setup.no_install: an install command (npx)');
+it('refuses a spelled-out kit command or version: each answer hands over its own', () => {
+  expect(lintSkill('Run npx -y gooseworks@0.5.8 --env staging video make <id>.')).toEqual([
+    'setup.no_install: spells out the kit command (gooseworks@0.5.8)',
+    'setup.no_install: an install command (npx)',
+  ]);
+  expect(lintSkill('Run `gooseworks video make <id>` when told.')).toEqual(['setup.no_install: spells out the kit command (video make)']);
   expect(lintSkill('npx -y arbitrary-package')).toContain('setup.no_install: an install command (npx)');
+});
+
+it.each(getEntrySkills())('$name never spells out the kit command or a kit version', ({ content }) => {
+  expect(content).not.toMatch(/gooseworks@|video\s+make/i);
 });
