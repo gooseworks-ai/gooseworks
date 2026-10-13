@@ -157,6 +157,15 @@ const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the line blames on the plan only when a part refused it (`from_part`), not when the kit's own check did. */
 const PLAN_CODES: ReadonlySet<string> = new Set(['bad_input', 'output_invalid']);
+/**
+ * Parts that only line a clip already made (and paid for) up with the plan's lines and cut it. Their
+ * refusal is ours, not the plan's: the same command carries on. Kept the same as gooseworks-app
+ * video-line/run-failure.ts TAKE_FIT_PARTS, which blames the line's side for them.
+ */
+export const TAKE_FIT_PARTS: ReadonlySet<string> = new Set(['transcribe-whisper', 'speech-recut']);
+/** The person's words for a take-fit part's refusal, the same as gooseworks-app's TAKE_FIT_MESSAGE. */
+export const TAKE_FIT_WORDS =
+  'The clip was made, but we couldn’t line it up with the plan’s lines to cut it. That’s on our side, not the plan. Run it again; what was made so far is kept.';
 /** Stops the person chose: Ctrl-C here, or Stop on the card (the line's refusal). They need no support. */
 const OWN_STOPS: ReadonlySet<string> = new Set(['stopped_here', 'video_stopped']);
 /**
@@ -214,7 +223,7 @@ interface ReportKey {
 }
 
 /** pending-report.json: a failure report the line never took. */
-type PendingReport = ReportKey & { report: 1; failure: ProgressFailure; saved_at: string };
+type PendingReport = ReportKey & { report: 1; failure: ProgressFailure; saved_at: string; resumable?: true };
 
 /** The line refused the hand-over because this computer has no video browser yet. */
 function missingBrowser(error: LineError): boolean {
@@ -387,6 +396,8 @@ class Maker {
   /** This run's name: its log file and its keys in the order journal. */
   private runId = '';
   private failureSent = false;
+  /** The failure reported reads as the plan's by its code, but a new run carries on past it (a take-fit part's). */
+  private failureResumable = false;
   /** The run ended on a stop the person chose (Ctrl-C, or Stop on the card), which needs no support. */
   private ownStop = false;
   private ceilingTimer: NodeJS.Timeout | null = null;
@@ -678,6 +689,7 @@ class Maker {
       typeof saved.failure.code === 'string' &&
       typeof saved.failure.detail === 'string' &&
       !RESUMABLE_CODES.has(saved.failure.code) &&
+      !saved.resumable &&
       !!key &&
       (Object.keys(key) as Array<keyof ReportKey>).every((field) => saved[field] === key[field]);
     if (!stands) {
@@ -700,7 +712,7 @@ class Maker {
     const unsent = this.reporter.undelivered;
     const key = unsent ? this.reportKey() : null;
     if (unsent && key) {
-      const pending: PendingReport = { report: 1, ...key, failure: unsent, saved_at: this.now().toISOString() };
+      const pending: PendingReport = { report: 1, ...key, failure: unsent, saved_at: this.now().toISOString(), ...(this.failureResumable ? { resumable: true as const } : {}) };
       await writeJson(this.layout.pendingReport, pending);
       this.deps.log.write('warn', 'the failure report was not taken; the next run sends it', { step: unsent.step, code: unsent.code });
     } else if (this.failureSent || this.run?.status === 'done') {
@@ -756,9 +768,10 @@ class Maker {
   }
 
   /** Tells the line once why the run gave up; the line's own refusals already ended it on its words. */
-  private reportFailure(step: string, code: string, detail: string, fromPart?: boolean): void {
+  private reportFailure(step: string, code: string, detail: string, fromPart?: boolean, resumable = false): void {
     if (!this.reporter || this.failureSent || this.reporter.refused) return;
     this.failureSent = true;
+    this.failureResumable = resumable;
     void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000), ...(fromPart === undefined ? {} : { from_part: fromPart }) });
   }
 
@@ -1158,12 +1171,14 @@ class Maker {
         this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
         const slow = failure!.code === 'timeout' && slowAtLine;
-        const words = slow ? slowWords(rowOf(manifest)) : failureWords(failure!, this.idNames());
         const code = slow ? PROVIDER_SLOW : reportedCode(failure!);
+        // A take-fit part's refusal keeps its code, so the line blames it on its own side too.
+        const takeFit = PLAN_CODES.has(code) && TAKE_FIT_PARTS.has(spec.ref.id);
+        const words = slow ? slowWords(rowOf(manifest)) : takeFit ? TAKE_FIT_WORDS : failureWords(failure!, this.idNames());
         this.book.finish(spec.id, 'failed');
         this.reporter.close();
-        this.reportFailure(spec.id, code, words, PLAN_CODES.has(code) ? failure!.fromPart : undefined);
-        throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
+        this.reportFailure(spec.id, code, words, PLAN_CODES.has(code) ? failure!.fromPart : undefined, takeFit);
+        throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code, takeFit ? 'retry' : undefined);
       } finally {
         over.abort(new PartError('stopped'));
         link.done();
