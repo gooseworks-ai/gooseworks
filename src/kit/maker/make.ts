@@ -237,7 +237,8 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
       const started = await withTimeout(
         page.evaluate<unknown>('window.__kitDriver ? window.__kitDriver.start() : null'),
         FRAME_TIMEOUT_MS,
-        () => ctx.error('bad_input', 'the frame page did not get ready within a minute'),
+        // A page that runs out of time is slow on this computer, not a bad plan: the kit tries the step again.
+        () => ctx.error('timeout', 'the frame page did not get ready within a minute'),
       );
       if (started === null) throw ctx.error('tool_failed', 'the frame page lost the kit runtime');
       checked(started);
@@ -251,7 +252,7 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
           await withTimeout(
             page.evaluate<unknown>(`window.__kitDriver.frame(${index})`),
             FRAME_TIMEOUT_MS,
-            () => ctx.error('bad_input', `the frame page took more than a minute to draw frame ${index}`),
+            () => ctx.error('timeout', `the frame page took more than a minute to draw frame ${index}`),
           ),
         );
         // The last frame that shows the logo gives its box: by then any entrance has settled.

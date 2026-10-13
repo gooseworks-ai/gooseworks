@@ -1,4 +1,4 @@
-// Makes html-frames 1.2.0's bundled UI sounds (assets/sfx/<name>.wav) with
+// Makes html-frames 1.2.1's bundled UI sounds (assets/sfx/<name>.wav) with
 // ffmpeg's aevalsrc: decaying sine partials and filtered noise, our own
 // synthesis, so no licence applies. tick, chime, pop and whoosh follow the
 // airdrop-notification-carousel recipe's synth_audio tones; click follows the
@@ -16,7 +16,7 @@ import { mkdirSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { CUE_SOUNDS, readWav, type CueSound } from '../src/kit/maker/cues';
 
-const OUT = path.join(__dirname, '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.2.0', 'assets', 'sfx');
+const OUT = path.join(__dirname, '..', 'src', 'kit', 'maker', 'parts', 'html-frames', '1.2.1', 'assets', 'sfx');
 
 /** The recipe's levels, scaled so the chime peaks near 0.85 as the recipe's normalised mix did. */
 const K = 1.5;
