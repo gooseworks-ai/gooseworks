@@ -144,6 +144,12 @@ interface ReportKey {
 /** pending-report.json: a failure report the line never took. */
 type PendingReport = ReportKey & { report: 1; failure: ProgressFailure; saved_at: string };
 
+/** The line refused the hand-over because this computer has no video browser yet. */
+function missingBrowser(error: LineError): boolean {
+  const missing = error.details?.missing;
+  return Array.isArray(missing) && missing.includes('browser');
+}
+
 /** A part that would not load, in plain words: which part and why go to the log. */
 function loadStop(error: unknown): KitStop {
   const code = error instanceof PartLoadError ? error.code : undefined;
@@ -325,15 +331,20 @@ class Maker {
     } catch (error) {
       return this.ended(error);
     }
+    // Every hand-over needs the video tools, so they are set up first. The browser is set up only
+    // after the hand-over, so the card shows the video started while a first run downloads it,
+    // unless the line refuses to hand over without it.
     this.tools = deps.tools ?? (await inspectFfmpeg({ home: deps.home, env: deps.env, setup: true, download: (u, m) => deps.line.download(u, m), say: (l) => this.say(l) }));
-    const browser = await deps.host.browser.check({ home: deps.home, setup: true, env: deps.env, say: (l) => this.say(l) });
-    this.browserReady = browser.ok;
-    this.toolchain = toolchainId(this.tools, browser.ok ? browser.version : null);
-    const report = await deviceReport({ home: deps.home, worker: deps.line.isWorker, tools: this.tools, browser });
-
+    let browser = await this.checkBrowser(false);
     let answer: DeviceAnswer;
     try {
-      answer = await deps.line.handOver(this.videoId, report);
+      try {
+        answer = await deps.line.handOver(this.videoId, await this.report(browser));
+      } catch (error) {
+        if (!(error instanceof LineError && error.code === 'device_cannot_make' && !browser.ok && missingBrowser(error))) throw error;
+        browser = await this.checkBrowser(true);
+        answer = await deps.line.handOver(this.videoId, await this.report(browser));
+      }
     } catch (error) {
       if (error instanceof LineError) {
         if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
@@ -365,12 +376,14 @@ class Maker {
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
       this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
+      this.useBrowser(browser);
       const replayed = await this.replayPending();
       if (replayed) return (result = replayed);
       if (this.fatal) throw this.fatal;
       // Reports start now, so checking the style and parts never looks quiet.
       this.reporter.start();
-      void this.reporter.send(true);
+      if (browser.ok) void this.reporter.send(true);
+      else await this.setUpBrowser();
       return (result = await this.makeHandedOver(dev));
     } catch (error) {
       return (result = await this.ended(error));
@@ -387,6 +400,29 @@ class Maker {
   /** Each change of the card's rows, as a line for the person running the kit. */
   private printSteps(): void {
     for (const line of this.stepLines.next(this.book.request().steps, this.now().getTime())) this.say(line);
+  }
+
+  private checkBrowser(setup: boolean): ReturnType<KitHost['browser']['check']> {
+    return this.deps.host.browser.check({ home: this.deps.home, setup, env: this.deps.env, say: (l) => this.say(l) });
+  }
+
+  private useBrowser(browser: Awaited<ReturnType<KitHost['browser']['check']>>): void {
+    this.browserReady = browser.ok;
+    this.toolchain = toolchainId(this.tools, browser.ok ? browser.version : null);
+  }
+
+  /** A first run's browser download, after the hand-over: the card hears from the kit all the while. */
+  private async setUpBrowser(): Promise<void> {
+    const note = this.book.note;
+    this.book.note = 'Setting up your computer for the video';
+    void this.reporter.send(true);
+    this.useBrowser(await this.checkBrowser(true));
+    this.book.note = note;
+    if (this.fatal) throw this.fatal;
+  }
+
+  private report(browser: Awaited<ReturnType<KitHost['browser']['check']>>): ReturnType<typeof deviceReport> {
+    return deviceReport({ home: this.deps.home, worker: this.deps.line.isWorker, tools: this.tools, browser });
   }
 
   private reportKey(): ReportKey | null {

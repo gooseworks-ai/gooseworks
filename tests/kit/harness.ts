@@ -51,6 +51,8 @@ export interface LineScript {
   progress?: (body: any, n: number) => Response | undefined;
   /** The hand-over answer's `video` (left out by default, as older lines do). */
   video?: unknown;
+  /** Answer for one hand-over; default: handed over. */
+  device?: (body: any, n: number) => Response | undefined;
 }
 
 export const style = {
@@ -148,6 +150,7 @@ export function fakeLine(script: LineScript = {}) {
   let putCount = 0;
   let doneCount = 0;
   let progressCount = 0;
+  let deviceCount = 0;
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = String(input);
     const headers: Record<string, string> = {};
@@ -162,6 +165,8 @@ export function fakeLine(script: LineScript = {}) {
     if (u.pathname === '/pkg/style.json') return new Response(pkg.styleBytes, { status: 200 });
     const p = u.pathname.replace(`/v1/video-line/${VIDEO}`, '');
     if (p === '/device') {
+      const refused = script.device?.(body, deviceCount++);
+      if (refused) return refused;
       const lock = script.lock ? script.lock(partsLock()) : partsLock();
       const handed = {
         token,
