@@ -7,7 +7,7 @@ description: >
   scrape public web and social data; find and enrich leads. The one GooseWorks entry point
   for brand growth, B2B, sales, research and GTM work.
 category: general
-version: 2.0.0
+version: 2.0.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -37,8 +37,6 @@ social data. Hand specialist work to its skill; do data work here.
 | Make **product photos**: studio, lifestyle, marketplace, social or on a model | **`goose-product-photos`** | Use goose-product-photos: open it with catalog_fetch in a chat app, or use the installed copy in a terminal. |
 | Animate an approved static ad or product image | **`animate-image`** | Fetch it with catalog_fetch, or `gooseworks fetch animate-image` in a terminal. |
 | Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
-
-When the server's next_step says to make a video on this computer, run `gooseworks video make <id>`.
 
 ## Brand growth skills
 
@@ -93,7 +91,7 @@ for their yes. Each paid answer says what it charged.
 
 - Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
