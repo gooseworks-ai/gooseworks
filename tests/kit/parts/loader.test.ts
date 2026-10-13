@@ -1,7 +1,8 @@
 /**
  * The parts loader's rules: a part runs only when every file matches the
- * video's lock, its models and kit range match the lock and the published
- * index, and its version is not withdrawn. A refused part is never imported.
+ * video's lock, its models and kit range match the lock, and its version is
+ * not withdrawn. A refused part is never imported. The published index is
+ * never read: a cache that lags behind the lock must not stop a video.
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -50,7 +51,6 @@ function lockWith(entry: Partial<{ files: Record<string, string>; models: unknow
 }
 
 let home: string;
-let index: unknown;
 let withdrawn: unknown;
 let requested: string[];
 let importModule: jest.Mock;
@@ -60,7 +60,6 @@ let tampered: Record<string, string>;
 const fetchImpl = async (url: string) => {
   requested.push(url);
   const respond = (body: string) => new Response(body, { status: 200 });
-  if (url === `${RAW}/parts/index.json`) return respond(JSON.stringify(index));
   if (url === `${RAW}/parts/withdrawn.json`) return respond(JSON.stringify(withdrawn));
   const prefix = `${RAW}/parts/music-elevenlabs/1.2.0/`;
   const file = decodeURIComponent(url.slice(prefix.length));
@@ -90,7 +89,6 @@ const copies = () => (fs.existsSync(versionDir()) ? fs.readdirSync(versionDir())
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-parts-'));
-  index = { interface: 1, parts: [{ id: 'music-elevenlabs', version: '1.2.0', kind: 'generate_music', kit: manifest.kit, files: hashes(), models: manifest.needs.models }] };
   withdrawn = { withdrawn: [] };
   requested = [];
   tampered = {};
@@ -150,11 +148,9 @@ it('keeps runs with different locks apart, so one cannot swap the code another i
   const filesB = { ...files, 'part.mjs': 'export async function run() { return { other: true }; }\n' };
   const hashesB = Object.fromEntries(Object.entries(filesB).map(([f, body]) => [f, sha(body)]));
   const lockB = lockWith({ files: hashesB });
-  const indexB = { interface: 1, parts: [{ id: 'music-elevenlabs', version: '1.2.0', kind: 'generate_music', kit: manifest.kit, files: hashesB, models: manifest.needs.models }] };
   const both = async (url: string) => {
     if (!url.startsWith(RAW_B)) return fetchImpl(url);
     const rest = url.slice(RAW_B.length);
-    if (rest === '/parts/index.json') return new Response(JSON.stringify(indexB));
     if (rest === '/parts/withdrawn.json') return new Response(JSON.stringify(withdrawn));
     return new Response(filesB[decodeURIComponent(rest.slice('/parts/music-elevenlabs/1.2.0/'.length)) as keyof typeof filesB]);
   };
@@ -246,19 +242,28 @@ it('refuses when the withdrawn list cannot be read', async () => {
 });
 
 it.each([
-  ['the lock allows other models than part.json', () => lockWith({ models: [{ provider: 'fal', model: 'fal-ai/kling-video/v2.1/pro/image-to-video' }] }), () => undefined, 'index_mismatch'],
-  ['the lock and part.json disagree on models while the index agrees with the lock', () => lockWith({ models: [{ provider: 'elevenlabs', model: 'music_v2' }] }), () => {
-    index = { interface: 1, parts: [{ id: 'music-elevenlabs', version: '1.2.0', kind: 'generate_music', kit: manifest.kit, files: hashes(), models: [{ provider: 'elevenlabs', model: 'music_v2' }] }] };
-  }, 'manifest_mismatch'],
-  ['the published index lists other files', () => lockWith(), () => {
-    index = { interface: 1, parts: [{ id: 'music-elevenlabs', version: '1.2.0', kind: 'generate_music', kit: manifest.kit, files: { ...hashes(), 'part.mjs': sha('other') }, models: manifest.needs.models }] };
-  }, 'index_mismatch'],
-  ['the version is not in the published index', () => lockWith(), () => { index = { interface: 1, parts: [] }; }, 'not_published'],
-  ['the kit range leaves this kit out', () => lockWith({ kit: '>=2.0.0' }), () => undefined, 'kit_range'],
-  ['the lock does not list the part', () => ({ ...lockWith(), parts: {} }), () => undefined, 'not_locked'],
-])('refuses before import when %s', async (_case, lock, arrange, code) => {
-  arrange();
+  ['the lock allows other models than part.json', () => lockWith({ models: [{ provider: 'fal', model: 'fal-ai/kling-video/v2.1/pro/image-to-video' }] }), 'manifest_mismatch'],
+  ['the lock and part.json disagree on the kit range', () => lockWith({ kit: '>=1.0.0 <1.5.0' }), 'manifest_mismatch'],
+  ['the kit range leaves this kit out', () => lockWith({ kit: '>=2.0.0' }), 'kit_range'],
+  ['the lock does not list the part', () => ({ ...lockWith(), parts: {} }), 'not_locked'],
+])('refuses before import when %s', async (_case, lock, code) => {
   expect(await refusal(load(lock()))).toBe(code);
+  expect(importModule).not.toHaveBeenCalled();
+});
+
+it('never reads the published index, so a stale one cannot stop a video the lock vouches for', async () => {
+  await load(lockWith());
+  expect(requested.some((url) => url.endsWith('/parts/index.json'))).toBe(false);
+  expect(importModule).toHaveBeenCalledTimes(1);
+});
+
+it('treats a file the published folder does not serve yet as a miss to try again later', async () => {
+  delete (files as Record<string, string | undefined>)['assets/fade.json'];
+  try {
+    expect(await refusal(load(lockWith({ files: { ...hashes(), 'assets/fade.json': sha('{"seconds":1.5}') } })))).toBe('unreachable');
+  } finally {
+    files['assets/fade.json'] = '{"seconds":1.5}';
+  }
   expect(importModule).not.toHaveBeenCalled();
 });
 
