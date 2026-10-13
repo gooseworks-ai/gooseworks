@@ -326,6 +326,8 @@ export interface RunOptions {
   host?: KitHost;
   now?: () => Date;
   signal?: AbortSignal;
+  heartbeatMs?: number;
+  lastWordMs?: number;
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -346,7 +348,8 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     environment: 'staging',
     tools,
     sleep: async () => undefined,
-    heartbeatMs: 3_600_000,
+    heartbeatMs: opts.heartbeatMs ?? 3_600_000,
+    ...(opts.lastWordMs ? { lastWordMs: opts.lastWordMs } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });

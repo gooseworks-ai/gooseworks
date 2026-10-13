@@ -79,6 +79,8 @@ export interface MakeDeps {
   tools?: Toolchain;
   sleep?: Sleep;
   heartbeatMs?: number;
+  /** How long the run's last report may take once it ends (default 30 s). */
+  lastWordMs?: number;
   now?: () => Date;
   /** Ctrl-C from the command. */
   signal?: AbortSignal;
@@ -328,7 +330,7 @@ class Maker {
       deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION });
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
-      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
+      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
       const replayed = await this.replayPending();
       if (replayed) return replayed;
       if (this.fatal) throw this.fatal;
@@ -339,7 +341,7 @@ class Maker {
     } catch (error) {
       return await this.ended(error);
     } finally {
-      this.reporter?.stopTimer();
+      this.reporter?.close();
       await this.reporter?.flush().catch(() => undefined);
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
       await release();
@@ -415,6 +417,8 @@ class Maker {
   }
 
   private async ended(error: unknown): Promise<MakeResult> {
+    // Nothing but the failure report goes out from here.
+    this.reporter?.close();
     const stop = this.fatal ?? (error instanceof KitStop ? error : null);
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
     if (this.run) {
@@ -809,6 +813,7 @@ class Maker {
         const words = failureWords(failure!, this.idNames());
         const code = reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
+        this.reporter.close();
         this.reportFailure(spec.id, code, words);
         throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
       } finally {
@@ -923,6 +928,7 @@ class Maker {
     const message = (typeof said?.message === 'string' && said.message.trim()) || reasonFor(verdict, code);
     const detail = plainWords(message, CHECK_FAILED, this.idNames());
     this.deps.log.write('warn', 'the final check failed', { check: code, message, detail });
+    this.reporter.close();
     this.reportFailure('layer-check', 'check_failed', detail);
     await this.reporter.flush();
     this.run.status = 'failed';
@@ -1010,6 +1016,7 @@ class Maker {
       const serverFixUsed = (this.run.fixes ?? []).some((f) => f.from === 'server');
       const fix = check.fixes_left > 0 && !serverFixUsed ? this.fixFrom(current.verdict, check.reasons.map((r) => r.check), 'server') : null;
       if (!fix) {
+        this.reporter.close();
         this.run.status = 'failed';
         await this.saveRun();
         return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim() };

@@ -375,3 +375,57 @@ it('reports an error outside any step as one a new run may get past, in safe wor
   expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
   expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/HTTP 404/);
 });
+
+describe('when the run ends', () => {
+  const badInput = () => testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
+  /** A line whose reports answer after `ms` (never, when left out), unless the call is given up first. */
+  const slowReports = (script: Parameters<typeof fakeLine>[0] = {}, ms?: number) => {
+    const base = fakeLine(script);
+    const fetch = (async (input: any, init: any = {}) => {
+      if (!String(input).endsWith('/progress')) return base.fetch(input, init);
+      return new Promise((resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+        if (ms !== undefined) setTimeout(() => resolve(base.fetch(input, init)), ms);
+        else base.seen.push({ url: String(input), method: 'POST', headers: {}, body: JSON.parse(init.body) });
+      });
+    }) as typeof globalThis.fetch;
+    return { ...base, fetch };
+  };
+
+  it('ends within the last word’s deadline when the line can’t be reached, and keeps the failure for the next run', async () => {
+    const home = tempHome();
+    const line = slowReports();
+    const started = Date.now();
+    const result = await runMake({ home, line, parts: badInput(), heartbeatMs: 20, lastWordMs: 300 });
+    expect(result.status).toBe('failed');
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure).toEqual({ step: 'clips', code: 'bad_input', detail: result.message });
+  });
+
+  it('sends no report after the one that says why', async () => {
+    const line = fakeLine({
+      progress: (() => new Promise((resolve) => setTimeout(() => resolve(json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 })), 15))) as any,
+    });
+    const result = await runMake({ home: tempHome(), line, parts: badInput(), heartbeatMs: 5 });
+    expect(result.status).toBe('failed');
+    const reports = lineRoute(line.seen, '/progress');
+    const at = reports.findIndex((r) => r.body.failure);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(reports.slice(at + 1)).toEqual([]);
+  });
+
+  it('sends no heartbeat after the result', async () => {
+    const line = fakeLine();
+    expect((await runMake({ home: tempHome(), line, heartbeatMs: 5 })).status).toBe('done');
+    const sent = lineRoute(line.seen, '/progress').length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(lineRoute(line.seen, '/progress')).toHaveLength(sent);
+  });
+
+  it('does not log a report the stop cut short as one that failed', async () => {
+    const home = tempHome();
+    const line = slowReports({ piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Press Continue on the card.', next: 'stop' } } }) }, 50);
+    expect((await runMake({ home, line })).status).toBe('stopped');
+    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).not.toMatch(/progress could not be sent/);
+  });
+});
