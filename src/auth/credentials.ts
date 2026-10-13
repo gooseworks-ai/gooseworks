@@ -72,12 +72,42 @@ export function clearCredentials(): void {
   }
 }
 
+export function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The saved login, only when it was made for this address. A login saved for
+ * another address (or one that no longer matches this environment) counts as
+ * not signed in here, so its key is never sent anywhere else.
+ */
+export function connectionFor(apiBase: string): Credentials | null {
+  let creds: Credentials | null;
+  try {
+    creds = getCredentials();
+  } catch {
+    return null;
+  }
+  return creds && sameOrigin(creds.api_base, apiBase) ? creds : null;
+}
+
 export function getApiKey(): string | null {
   const creds = getCredentials();
   return creds?.api_key ?? null;
 }
 
+/** GOOSEWORKS_API_BASE wins over the saved login's address; without it, the saved login's. */
 export function getApiBase(): string {
-  const creds = getCredentials();
+  if (process.env.GOOSEWORKS_API_BASE) return API_BASE;
+  let creds: Credentials | null;
+  try {
+    creds = getCredentials();
+  } catch {
+    creds = null;
+  }
   return creds?.api_base ?? API_BASE;
 }

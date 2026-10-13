@@ -1,5 +1,6 @@
 jest.mock('../../src/auth/credentials', () => ({
   getCredentials: jest.fn(),
+  sameOrigin: jest.requireActual('../../src/auth/credentials').sameOrigin,
 }));
 jest.mock('../../src/auth/oauth-server', () => ({
   runOAuthFlow: jest.fn(),
@@ -149,8 +150,67 @@ describe('login command', () => {
 
     await login('--device', '--no-wait');
 
-    expect(logger.success).toHaveBeenCalledWith('Already logged in as user@example.com');
+    expect(logger.success).toHaveBeenCalledWith('Already signed in as user@example.com. To use another account: gooseworks login --switch');
     expect(mockRunDeviceFlow).not.toHaveBeenCalled();
+  });
+
+  it('signs in again for an --api-base other than the saved login\'s, and says it switched', async () => {
+    mockGetCredentials.mockReturnValue({ ...creds, api_base: 'http://localhost:5999' });
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue(result);
+
+    await login('--api-base', API);
+
+    expect(mockRunOAuthFlow).toHaveBeenCalledWith(API, undefined);
+    expect(logger.success).not.toHaveBeenCalledWith(expect.stringContaining('Already'));
+    expect(logger.info).toHaveBeenCalledWith(`Switched from http://localhost:5999 to ${API}.`);
+    expect(logger.success).toHaveBeenCalledWith('Logged in as user@example.com');
+  });
+
+  it('keeps a saved login for another address when no address was named', async () => {
+    mockGetCredentials.mockReturnValue({ ...creds, api_base: 'http://localhost:5999' });
+
+    await login();
+
+    expect(mockRunOAuthFlow).not.toHaveBeenCalled();
+    expect(logger.success).toHaveBeenCalledWith(expect.stringContaining('Already signed in as user@example.com'));
+  });
+
+  it('--switch signs in with the account chooser even when signed in', async () => {
+    mockGetCredentials.mockReturnValue(creds);
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue({ ...result, email: 'other@example.com' });
+
+    await login('--switch');
+
+    expect(mockRunOAuthFlow).toHaveBeenCalledWith(API, undefined, { chooseAccount: true });
+    expect(logger.success).toHaveBeenCalledWith('Logged in as other@example.com');
+  });
+
+  it('treats a saved login for another environment as signed out, so it can sign in again', async () => {
+    mockGetCredentials.mockImplementation(() => {
+      throw new Error('api connection does not match --env production. Sign in to that environment again.');
+    });
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue(result);
+
+    await login();
+
+    expect(mockRunOAuthFlow).toHaveBeenCalled();
+    expect(logger.success).toHaveBeenCalledWith('Logged in as user@example.com');
+  });
+
+  it('says which account Claude Code\'s connection now uses', async () => {
+    (isAgentInstalled as jest.Mock).mockReturnValue(true);
+    (configureClaudeMcp as jest.Mock).mockReturnValueOnce(true);
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue(result);
+    mockGetCredentials.mockReturnValueOnce(null).mockReturnValue(creds);
+
+    await login();
+
+    expect(logger.info).toHaveBeenCalledWith("Pointed Claude Code's GooseWorks connection at user@example.com.");
+    (isAgentInstalled as jest.Mock).mockReturnValue(false);
   });
 
   it('--paste hands the value (or none) to pasteLogin and finishes the login', async () => {

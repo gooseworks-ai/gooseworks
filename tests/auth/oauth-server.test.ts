@@ -178,10 +178,32 @@ describe('auth/oauth-server', () => {
     await flow;
   });
 
+  it('asks for the account chooser and names the video when the video kit signs in', async () => {
+    const flow = runOAuthFlow('https://api.gooseworks.ai', undefined, {
+      chooseAccount: true,
+      videoId: '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+    });
+    const url = await waitForOpen();
+    const u = new URL(url);
+    expect(u.searchParams.get('choose_account')).toBe('1');
+    expect(u.searchParams.get('video')).toBe('6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f');
+
+    const { port, state } = extractCallbackParams(url);
+    await hitCallback(port, {
+      token: 'cal_token',
+      email: 'user@example.com',
+      agent_id: 'agent-123',
+      state,
+    });
+    await flow;
+  });
+
   it('omits creator_ref when no referral code is passed', async () => {
     const flow = runOAuthFlow('https://api.gooseworks.ai');
     const url = await waitForOpen();
     expect(new URL(url).searchParams.has('creator_ref')).toBe(false);
+    expect(new URL(url).searchParams.has('choose_account')).toBe(false);
+    expect(new URL(url).searchParams.has('video')).toBe(false);
 
     const { port, state } = extractCallbackParams(url);
     await hitCallback(port, {
