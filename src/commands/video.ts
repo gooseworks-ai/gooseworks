@@ -10,6 +10,7 @@ import { kitHome } from '../kit/core/paths';
 import { makeVideo } from '../kit/core/run';
 import { VideoLine } from '../kit/line/client';
 import { signIn } from './login';
+import { exitWhenDone } from '../utils/exit';
 
 function sameOrigin(a: string, b: string): boolean {
   try {
@@ -166,6 +167,8 @@ videoCommand
     } finally {
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
+      // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.
+      exitWhenDone();
     }
   });
 

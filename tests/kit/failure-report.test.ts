@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { runLayout } from '../../src/kit/core/paths';
 import { PartLoadError } from '../../src/kit/parts/loader';
-import { VIDEO, fakeLine, lineRoute, runMake, style, tempHome, testHost, testParts } from './harness';
+import { VIDEO, fakeLine, lineRoute, runLogs, runMake, style, tempHome, testHost, testParts } from './harness';
 
 const failures = (line: ReturnType<typeof fakeLine>) => lineRoute(line.seen, '/progress').map((s) => s.body.failure).filter(Boolean);
 
@@ -71,7 +71,7 @@ describe('a part’s refusal of the plan', () => {
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('The logo can’t be read. Change the plan, then make it again.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('logo.png');
+    expect(runLogs(home)).toContain('logo.png');
 
     const pathOnly = fakeLine();
     const generic = await runMake({ home: tempHome(), line: pathOnly, parts: refusing('bad_input', 'missing /Users/someone/.gooseworks/videos/vid_1/plan/logo.png') });
@@ -93,7 +93,7 @@ describe('a part’s refusal of the plan', () => {
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
+    expect(runLogs(home)).toContain(logged);
   });
 
   describe('at the card’s 200-character cap', () => {
@@ -205,7 +205,7 @@ it('keeps a final check’s tool output, paths and ids off the card and in the l
   const result = await runMake({ home, line, parts });
   expect(result.status).toBe('failed');
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video didn’t pass the final check.' }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('0x7f8a1c004a00');
+  expect(runLogs(home)).toContain('0x7f8a1c004a00');
 });
 
 it('sends the report again without the reason to a line that refuses the field', async () => {
@@ -235,7 +235,7 @@ it('reports a broken style package in plain words and keeps the file name in the
   expect(result.status).toBe('failed');
   expect(result.message).toBe('The style package is missing a file it needs.');
   expect(failures(line)).toEqual([{ step: 'style', code: 'change_request', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/fonts\/brand-bold\.ttf/);
+  expect(runLogs(home)).toMatch(/fonts\/brand-bold\.ttf/);
 });
 
 it('waits for the report that says why before it ends, even behind a slow report', async () => {
@@ -341,7 +341,7 @@ describe('a provider failure', () => {
     const line = fakeLine({ piece: providerFailed });
     const result = await runMake({ home, line, parts: testParts({ clip: { retry: { transient: 0 } } }) });
     expect(result.status).toBe('failed');
-    expect(result.message).toMatch(/Try once more/);
+    expect(result.message).toBe('The provider didn’t take the job (429). Run the same command again; what was made so far is kept.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'tool_failed', detail: result.message }]);
 
     const again = fakeLine();
@@ -373,5 +373,108 @@ it('reports an error outside any step as one a new run may get past, in safe wor
   const result = await runMake({ home, line });
   expect(result).toEqual({ status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
   expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/HTTP 404/);
+  expect(runLogs(home)).toMatch(/HTTP 404/);
+});
+
+describe('when the run ends', () => {
+  const badInput = () => testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
+  /** A line whose reports answer after `ms` (never, when left out), unless the call is given up first. */
+  const slowReports = (script: Parameters<typeof fakeLine>[0] = {}, ms?: number) => {
+    const base = fakeLine(script);
+    const fetch = (async (input: any, init: any = {}) => {
+      if (!String(input).endsWith('/progress')) return base.fetch(input, init);
+      return new Promise((resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+        if (ms !== undefined) setTimeout(() => resolve(base.fetch(input, init)), ms);
+        else base.seen.push({ url: String(input), method: 'POST', headers: {}, body: JSON.parse(init.body) });
+      });
+    }) as typeof globalThis.fetch;
+    return { ...base, fetch };
+  };
+
+  it('ends within the last word’s deadline when the line can’t be reached, and keeps the failure for the next run', async () => {
+    const home = tempHome();
+    const line = slowReports();
+    const started = Date.now();
+    const result = await runMake({ home, line, parts: badInput(), heartbeatMs: 20, lastWordMs: 300 });
+    expect(result.status).toBe('failed');
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure).toEqual({ step: 'clips', code: 'bad_input', detail: result.message });
+  });
+
+  it('sends no report after the one that says why', async () => {
+    const line = fakeLine({
+      progress: (() => new Promise((resolve) => setTimeout(() => resolve(json(200, { stage: 'making', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 })), 15))) as any,
+    });
+    const result = await runMake({ home: tempHome(), line, parts: badInput(), heartbeatMs: 5 });
+    expect(result.status).toBe('failed');
+    const reports = lineRoute(line.seen, '/progress');
+    const at = reports.findIndex((r) => r.body.failure);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(reports.slice(at + 1)).toEqual([]);
+  });
+
+  it('sends no heartbeat after the result', async () => {
+    const line = fakeLine();
+    expect((await runMake({ home: tempHome(), line, heartbeatMs: 5 })).status).toBe('done');
+    const sent = lineRoute(line.seen, '/progress').length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(lineRoute(line.seen, '/progress')).toHaveLength(sent);
+  });
+
+  it('does not log a report the stop cut short as one that failed', async () => {
+    const home = tempHome();
+    const line = slowReports({ piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Press Continue on the card.', next: 'stop' } } }) }, 50);
+    expect((await runMake({ home, line })).status).toBe('stopped');
+    expect(runLogs(home)).not.toMatch(/progress could not be sent/);
+  });
+});
+
+describe('the line’s refusal of a piece', () => {
+  const stopped = (say?: string) =>
+    fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Tell them what is kept and how they can carry on.', ...(say ? { say } : {}), next: 'stop' } } }),
+    });
+
+  it('reaches the person as the server’s sentence for them, without the fix written for the AI', async () => {
+    const printed: string[] = [];
+    const result = await runMake({ home: tempHome(), line: stopped('You stopped this video. What was made so far is kept.'), printed });
+    expect(result).toEqual({ status: 'stopped', message: 'You stopped this video. What was made so far is kept.' });
+    expect(printed.join('\n')).not.toMatch(/Tell them/);
+  });
+
+  it('reaches the person as the error and its fix when the server wrote no sentence for them', async () => {
+    const line = fakeLine({
+      piece: () => ({ status: 409, json: { error: { code: 'making_elsewhere', error: 'This video is being made somewhere else.', fix: 'If that run has stopped, run the make command again on this computer.', next: 'stop' } } }),
+    });
+    const result = await runMake({ home: tempHome(), line });
+    expect(result).toEqual({ status: 'stopped', message: 'This video is being made somewhere else. If that run has stopped, run the make command again on this computer.' });
+  });
+});
+
+describe('a step that runs out of time', () => {
+  const quick = { timing: { typical_s: 1, timeout_s: 0.2 } };
+
+  it('while a piece is still being made at the maker is reported as the maker’s delay, which a new run can get past', async () => {
+    const base = fakeLine({
+      piece: (req) => ({ status: 200, json: { piece_key: req.piece_key, idempotency_key: req.idempotency_key, status: 'running', replayed: false, piece_credits: 0, credits: { used: 0, cap: 1000 }, retry_after_seconds: 1 } }),
+    });
+    const line = {
+      ...base,
+      fetch: (async (input: any, init: any) => {
+        if (String(input).endsWith('/pieces')) await new Promise((resolve) => setTimeout(resolve, 10));
+        return base.fetch(input, init);
+      }) as typeof fetch,
+    };
+    const result = await runMake({ home: tempHome(), line, parts: testParts({ clip: quick }) });
+    expect(result).toEqual({ status: 'failed', message: 'One of the clips we ordered for this video didn’t come back in time. Run the same command again; what was made so far is kept.' });
+    expect(failures(base)).toEqual([{ step: 'clips', code: 'provider_slow', detail: result.message }]);
+  });
+
+  it('on its own work is reported as a plain timeout', async () => {
+    const line = fakeLine();
+    const parts = testParts({ clip: quick, clipRun: (async (_inputs: unknown, ctx: any) => new Promise((_resolve, reject) => ctx.signal.addEventListener('abort', () => reject(new Error('cut short'))))) as any });
+    const result = await runMake({ home: tempHome(), line, parts });
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'timeout', detail: result.message }]);
+  });
 });

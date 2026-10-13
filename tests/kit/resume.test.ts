@@ -1,6 +1,8 @@
 // Rule: a resume never orders a finished piece again; only the pieces that
 // were not made are ordered, so the customer never pays twice.
-import { fakeLine, lineCalls, lineRoute, runMake, tempHome } from './harness';
+import { readdirSync, readFileSync } from 'fs';
+import { runLayout } from '../../src/kit/core/paths';
+import { VIDEO, fakeLine, lineCalls, lineRoute, runMake, tempHome } from './harness';
 
 describe('video make resumes without re-ordering finished pieces', () => {
   it('orders only the unfinished piece after a stop', async () => {
@@ -24,6 +26,11 @@ describe('video make resumes without re-ordering finished pieces', () => {
     expect(done.status).toBe('done');
     expect(second.pieces.map((p) => p.piece_key)).toEqual(['clips.scene-2']);
     expect(lineCalls(second.seen, '/upload/up_1/done')).toHaveLength(1);
+
+    // Each run kept its own log, and the video's index names both.
+    const layout = runLayout(home, VIDEO);
+    expect(readdirSync(layout.runs)).toHaveLength(2);
+    expect(readFileSync(layout.log, 'utf8').trim().split('\n')).toHaveLength(2);
   });
 
   it('orders nothing again when every piece is already made', async () => {

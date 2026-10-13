@@ -32,8 +32,8 @@ import type {
   StepRecord,
   Timeline,
 } from '../part-interface';
-import { LineError, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
-import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
+import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
+import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
 import { bindInputs } from './bind';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -41,10 +41,10 @@ import { asPartError, KitStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
-import { isInside, runLayout, type RunLayout } from './paths';
+import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook, rowOf } from './progress';
+import { ProgressBook, rowOf, StepLines, type RowKey } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -54,6 +54,7 @@ import { inspectFfmpeg, kitTools, toolchainId, type Toolchain } from './toolchai
 import { PartLoadError } from '../parts/loader';
 import { KIT_DEV_ENV } from '../env';
 import { interfaceRefusal, KIT_VERSION, kitRangeRefusal } from './version';
+import { getVersion } from '../../version';
 
 export const LAYER_ORDER: readonly LayerSlot[] = ['brand', 'captions', 'sound', 'check'];
 const SLOT_KIND: Record<LayerSlot, PartKind> = { brand: 'compose', captions: 'caption', sound: 'mix', check: 'check' };
@@ -79,6 +80,8 @@ export interface MakeDeps {
   tools?: Toolchain;
   sleep?: Sleep;
   heartbeatMs?: number;
+  /** How long the run's last report may take once it ends (default 30 s). */
+  lastWordMs?: number;
   now?: () => Date;
   /** Ctrl-C from the command. */
   signal?: AbortSignal;
@@ -112,11 +115,25 @@ interface StepSpec {
 const CHECK_FAILED = 'The video didn’t pass the final check.';
 /** For a failure that repeats on every run of the same plan. */
 const PLAN_FIX = 'Change the plan, then make it again.';
+/** For a failure a new run of the same command may get past. */
+const RUN_AGAIN = 'Run the same command again; what was made so far is kept.';
 const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
-const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing']);
+const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
+/** A step ran out of time while a piece it ordered was still being made at the maker. */
+const PROVIDER_SLOW = 'provider_slow';
+
+/**
+ * The person's words for a piece the maker didn't send back in time, by the step's row (the server's
+ * nouns). Whether it was charged is the server's to say: the piece may still finish after the step gave up.
+ */
+function slowWords(row: RowKey | null): string {
+  const what =
+    row === 'voice' ? 'One of the voice lines' : row === 'pictures' ? 'One of the pictures' : row === 'clips' || row === 'lips' ? 'One of the clips' : row === 'music' ? 'The music' : 'One of the parts';
+  return `${what} we ordered for this video didn’t come back in time. ${RUN_AGAIN}`;
+}
 
 /** What a run was made from: a failure report only stands for a run made from the same. */
 interface ReportKey {
@@ -129,6 +146,27 @@ interface ReportKey {
 
 /** pending-report.json: a failure report the line never took. */
 type PendingReport = ReportKey & { report: 1; failure: ProgressFailure; saved_at: string };
+
+/** The line refused the hand-over because this computer has no video browser yet. */
+function missingBrowser(error: LineError): boolean {
+  const missing = error.details?.missing;
+  return Array.isArray(missing) && missing.includes('browser');
+}
+
+/** An older line refused the hand-over's `setup` claim as a field it doesn't know. */
+function namesSetup(error: LineError): boolean {
+  if (error.status !== 400) return false;
+  const fields = Array.isArray(error.details?.fields) ? (error.details.fields as unknown[]) : [];
+  if (fields.some((f) => typeof f === 'string' && /(^|\.)setup$/.test(f))) return true;
+  return /\bsetup\b/.test(`${error.fix} ${error.message}`);
+}
+
+/** How the run stops on a line's refusal, by its next step. */
+function stopReason(next: string): 'update_kit' | 'change_request' | 'stop' {
+  return next === 'update_kit' ? 'update_kit' : next === 'change_request' ? 'change_request' : 'stop';
+}
+
+type Browser = Awaited<ReturnType<KitHost['browser']['check']>>;
 
 /** A part that would not load, in plain words: which part and why go to the log. */
 function loadStop(error: unknown): KitStop {
@@ -145,10 +183,6 @@ function loadStop(error: unknown): KitStop {
     default:
       return new KitStop(`A part this video uses can’t run. ${PLAN_CHANGE} Nothing was spent.`, 'change_request', code);
   }
-}
-
-function lineWords(error: LineError): string {
-  return [error.message, error.fix].filter(Boolean).join(' ');
 }
 
 /**
@@ -175,7 +209,7 @@ function reasonFor(verdict: CheckVerdict, check: string | null): string {
  */
 function failureWords(error: PartError, names: readonly string[] = []): string {
   if (error instanceof PieceFailure && error.spent) return FAILED_TWICE;
-  if (error instanceof PieceFailure) return [error.line.error, error.line.fix].filter(Boolean).join(' ');
+  if (error instanceof PieceFailure) return pieceWords(error);
   switch (error.code) {
     case 'provider_rejected':
       return 'One part of this video was refused by the maker. Change that scene in the plan, then make it again.';
@@ -191,6 +225,18 @@ function failureWords(error: PartError, names: readonly string[] = []): string {
     default:
       return 'Part of this video could not be made. Run the same command again; what was made so far is kept.';
   }
+}
+
+/**
+ * A failed piece in the server's sentence for the person. Without one: the error, then what to do. The fix
+ * of a failed piece is the kit's (order it again), so the person's next step is the kit's own; a
+ * refused piece's fix is written for the person.
+ */
+function pieceWords(error: PieceFailure): string {
+  const { line } = error;
+  if (line.say?.trim()) return line.say.trim();
+  if (error.code === 'provider_rejected') return [line.error, line.fix].filter(Boolean).join(' ');
+  return [line.error, line.details?.charged === false ? 'Nothing was charged for it.' : '', RUN_AGAIN].filter(Boolean).join(' ');
 }
 
 /** A part's refusal first, then what to do, within the card's length; the generic words when it has none. */
@@ -256,7 +302,8 @@ class Maker {
   private readonly now: () => Date;
   private readonly stop = new AbortController();
   private fatal: KitStop | null = null;
-  private readonly book = new ProgressBook();
+  private readonly stepLines = new StepLines();
+  private readonly book = new ProgressBook(() => this.printSteps());
   private reporter!: ProgressReporter;
   private store!: RunStore;
   private layout!: RunLayout;
@@ -275,7 +322,11 @@ class Maker {
   private readonly pieceLocks = new Map<string, Promise<void>>();
   /** Where the run is, for the failure report: a step id or a stage before or after the steps. */
   private at = 'hand-over';
+  /** This run's name: its log file and its keys in the order journal. */
+  private runId = '';
   private failureSent = false;
+  /** The run ended on a stop the person chose (Ctrl-C, or Stop on the card), which needs no support. */
+  private ownStop = false;
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
@@ -300,15 +351,14 @@ class Maker {
     } catch (error) {
       return this.ended(error);
     }
+    // Every hand-over needs the video tools, so they are set up first. Without the browser yet, the
+    // hand-over is a claim, so the card shows the video started while a first run downloads it.
     this.tools = deps.tools ?? (await inspectFfmpeg({ home: deps.home, env: deps.env, setup: true, download: (u, m) => deps.line.download(u, m), say: (l) => this.say(l) }));
-    const browser = await deps.host.browser.check({ home: deps.home, setup: true, env: deps.env, say: (l) => this.say(l) });
-    this.browserReady = browser.ok;
-    this.toolchain = toolchainId(this.tools, browser.ok ? browser.version : null);
-    const report = await deviceReport({ home: deps.home, worker: deps.line.isWorker, tools: this.tools, browser });
-
+    let browser = await this.checkBrowser(false);
     let answer: DeviceAnswer;
+    let claimed: boolean;
     try {
-      answer = await deps.line.handOver(this.videoId, report);
+      ({ answer, browser, claimed } = await this.handOverFirst(browser));
     } catch (error) {
       if (error instanceof LineError) {
         if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
@@ -322,28 +372,126 @@ class Maker {
 
     this.layout = runLayout(deps.home, this.videoId);
     const release = await takeRunLock(this.layout, this.now());
+    let runLog: string | null = null;
+    let result: MakeResult | null = null;
     // From here on the lock is always given back, whatever fails.
     try {
-      deps.log.attach(this.layout.log);
-      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION });
+      const run = deps.log.attachRun({
+        index: this.layout.log,
+        dir: this.layout.runs,
+        name: runName(this.now(), this.handed.quote_id),
+        packageVersion: getVersion(),
+        fields: { quote_id: this.handed.quote_id },
+      });
+      this.runId = run.run;
+      runLog = run.file;
+      const video = answer.line.video ?? answer.video;
+      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION, video: video ?? null, setup_claimed: claimed });
+      this.say(startLine(video, deps.environment));
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
-      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal);
+      this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
+      this.useBrowser(browser);
       const replayed = await this.replayPending();
-      if (replayed) return replayed;
+      if (replayed) return (result = replayed);
       if (this.fatal) throw this.fatal;
       // Reports start now, so checking the style and parts never looks quiet.
       this.reporter.start();
-      void this.reporter.send(true);
-      return await this.makeHandedOver(dev);
+      if (browser.ok) void this.reporter.send(true);
+      else await this.setUpBrowser(claimed);
+      return (result = await this.makeHandedOver(dev));
     } catch (error) {
-      return await this.ended(error);
+      return (result = await this.ended(error));
     } finally {
-      this.reporter?.stopTimer();
+      this.reporter?.close();
       await this.reporter?.flush().catch(() => undefined);
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
       await release();
+      // Support reads what happened in this run's own log.
+      if (runLog && (result?.status === 'failed' || (result?.status === 'stopped' && !this.ownStop))) this.say(`If you contact support, share this file: ${runLog}`);
     }
+  }
+
+  /** Each change of the card's rows, as a line for the person running the kit. */
+  private printSteps(): void {
+    for (const line of this.stepLines.next(this.book.request().steps, this.now().getTime())) this.say(line);
+  }
+
+  private checkBrowser(setup: boolean): ReturnType<KitHost['browser']['check']> {
+    return this.deps.host.browser.check({ home: this.deps.home, setup, env: this.deps.env, say: (l) => this.say(l) });
+  }
+
+  private useBrowser(browser: Browser): void {
+    this.browserReady = browser.ok;
+    this.toolchain = toolchainId(this.tools, browser.ok ? browser.version : null);
+  }
+
+  /**
+   * The hand-over. Without the browser it is first a claim (`setup: in_progress`), which an older
+   * line refuses as an unknown field: it then hands over on the full report as before, setting up
+   * the browser first only when the line won't hand over without it. A worker never claims.
+   */
+  private async handOverFirst(browser: Browser): Promise<{ answer: DeviceAnswer; browser: Browser; claimed: boolean }> {
+    const { line } = this.deps;
+    if (!browser.ok && !line.isWorker) {
+      try {
+        return { answer: await line.handOver(this.videoId, { ...(await this.report(browser)), setup: 'in_progress' }), browser, claimed: true };
+      } catch (error) {
+        if (!(error instanceof LineError && namesSetup(error))) throw error;
+        this.deps.log.write('info', 'the line does not take a hand-over before setup', { code: error.code });
+      }
+    }
+    try {
+      return { answer: await line.handOver(this.videoId, await this.report(browser)), browser, claimed: false };
+    } catch (error) {
+      if (!(error instanceof LineError && error.code === 'device_cannot_make' && !browser.ok && missingBrowser(error))) throw error;
+      const ready = await this.checkBrowser(true);
+      return { answer: await line.handOver(this.videoId, await this.report(ready)), browser: ready, claimed: false };
+    }
+  }
+
+  /**
+   * A first run's browser download, after the hand-over: the card hears from the kit all the while.
+   * Then the full report goes to the line, which still holds a claim or a report without the browser.
+   */
+  private async setUpBrowser(claimed: boolean): Promise<void> {
+    const note = this.book.note;
+    this.book.note = 'Setting up your computer for the video';
+    void this.reporter.send(true);
+    const browser = await this.checkBrowser(true);
+    this.useBrowser(browser);
+    if (this.fatal) throw this.fatal;
+    if (claimed || (browser.ok && !this.deps.line.isWorker)) await this.confirmHandOver(browser, claimed);
+    this.book.note = note;
+    if (this.fatal) throw this.fatal;
+    void this.reporter.send(true);
+  }
+
+  /**
+   * The full report as a second hand-over, so the line checks what this computer can make and keeps
+   * it. A claim must be confirmed: the line checked nothing for it. A report that only adds the browser may fail.
+   */
+  private async confirmHandOver(browser: Browser, claimed: boolean): Promise<void> {
+    // The new hand-over gives the run a new lease, so no report may be on its way under the old one.
+    this.reporter.pause();
+    try {
+      await this.reporter.flush();
+      const answer = await this.deps.line.handOver(this.videoId, await this.report(browser));
+      if (!answer.kit.ok) throw new KitStop('This video kit is too old for this video.', 'update_kit');
+      if (answer.line?.quote_id !== this.handed.quote_id) throw new KitStop('The plan for this video changed after this run started. Run the make command again to make the current plan.', 'stop', 'plan_changed');
+      this.handed = answer.line;
+    } catch (error) {
+      if (error instanceof KitStop) throw error;
+      if (error instanceof LineError && (claimed || error.code === 'device_cannot_make')) throw new KitStop(lineWords(error), stopReason(error.next), error.code);
+      if (claimed) throw error;
+      this.deps.log.write('warn', 'the report with the browser could not be sent', { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      this.reporter.resume();
+    }
+  }
+
+  private report(browser: Browser): ReturnType<typeof deviceReport> {
+    return deviceReport({ home: this.deps.home, worker: this.deps.line.isWorker, tools: this.tools, browser });
   }
 
   private reportKey(): ReportKey | null {
@@ -415,7 +563,11 @@ class Maker {
   }
 
   private async ended(error: unknown): Promise<MakeResult> {
+    // Nothing but the failure report goes out from here.
+    this.reporter?.close();
     const stop = this.fatal ?? (error instanceof KitStop ? error : null);
+    // Ctrl-C and the card's Stop carry no code, or the line's code for the person's own stop.
+    this.ownStop = stop?.reason === 'stop' && (!stop.code || stop.code === 'video_stopped');
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
     if (this.run) {
       this.run.status = stop && stop.reason === 'stop' ? 'stopped' : 'failed';
@@ -457,7 +609,7 @@ class Maker {
       throw new KitStop('The plan handed over is not this video’s. Nothing was spent.', 'change_request');
     }
     if (handed.parts_lock) this.lock = checkLock(handed.parts_lock, this.videoId, plan);
-    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop');
+    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop', 'parts_not_ready');
 
     const planCopy = withoutSignedLinks(plan);
     await mkdir(this.layout.root, { recursive: true, mode: 0o700 });
@@ -767,10 +919,16 @@ class Maker {
 
       const timeoutMs = manifest.timing.timeout_s * 1000;
       const link = linkedSignal([this.stop.signal], timeoutMs);
+      const waiting = new Set<string>();
+      // Read as the time runs out, before the cut-short calls give up their pieces.
+      let slowAtLine = false;
       try {
-        const ctx = this.context(spec, attempt, workDir, tmpDir, link.signal, record);
+        const ctx = this.context(spec, attempt, workDir, tmpDir, link.signal, record, waiting);
         const outputs = await new Promise<Record<string, unknown>>((resolve, reject) => {
-          const ended = () => reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s`));
+          const ended = () => {
+            slowAtLine = !this.stop.signal.aborted && waiting.size > 0;
+            reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s${slowAtLine ? ' waiting on the line' : ''}`));
+          };
           // Stopped while the step was being saved: the part never starts.
           if (link.signal.aborted) return ended();
           link.signal.addEventListener('abort', ended, { once: true });
@@ -806,9 +964,11 @@ class Maker {
         if (stopped) throw stopped;
         this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
-        const words = failureWords(failure!, this.idNames());
-        const code = reportedCode(failure!);
+        const slow = failure!.code === 'timeout' && slowAtLine;
+        const words = slow ? slowWords(rowOf(manifest)) : failureWords(failure!, this.idNames());
+        const code = slow ? PROVIDER_SLOW : reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
+        this.reporter.close();
         this.reportFailure(spec.id, code, words);
         throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
       } finally {
@@ -829,7 +989,7 @@ class Maker {
     }
   }
 
-  private context(spec: StepSpec, attempt: 1 | 2, workDir: string, tmpDir: string, signal: AbortSignal, record: StepRecord): PartContext {
+  private context(spec: StepSpec, attempt: 1 | 2, workDir: string, tmpDir: string, signal: AbortSignal, record: StepRecord, waiting: Set<string>): PartContext {
     const { manifest } = spec.loaded;
     const tools = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, signal);
     const seedInput = spec.inputs.seed ?? null;
@@ -840,6 +1000,7 @@ class Maker {
           stepId: spec.id,
           part: spec.ref,
           models: spec.models,
+          runId: this.runId,
           workDir,
           runRoot: this.layout.root,
           cache: this.cache,
@@ -849,6 +1010,7 @@ class Maker {
           hosted: this.hosted,
           locks: this.pieceLocks,
           onWait: () => void this.reporter.send(),
+          waiting,
           onPiece: async (piece) => {
             record.pieces.push(piece);
             await this.store.writeStep(record);
@@ -923,6 +1085,7 @@ class Maker {
     const message = (typeof said?.message === 'string' && said.message.trim()) || reasonFor(verdict, code);
     const detail = plainWords(message, CHECK_FAILED, this.idNames());
     this.deps.log.write('warn', 'the final check failed', { check: code, message, detail });
+    this.reporter.close();
     this.reportFailure('layer-check', 'check_failed', detail);
     await this.reporter.flush();
     this.run.status = 'failed';
@@ -1010,6 +1173,7 @@ class Maker {
       const serverFixUsed = (this.run.fixes ?? []).some((f) => f.from === 'server');
       const fix = check.fixes_left > 0 && !serverFixUsed ? this.fixFrom(current.verdict, check.reasons.map((r) => r.check), 'server') : null;
       if (!fix) {
+        this.reporter.close();
         this.run.status = 'failed';
         await this.saveRun();
         return { status: 'failed', message: `The video didn’t pass our check. ${reasons}`.trim() };
@@ -1073,6 +1237,14 @@ class Maker {
   private async cleanTmp(): Promise<void> {
     for (const key of this.parts.keys()) await rm(path.join(this.store.stepDir(key), 'out', '.tmp'), { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** The first line after the hand-over: which video, for which brand, on which GooseWorks. */
+export function startLine(video: HandedVideo | undefined, environment: MakeDeps['environment']): string {
+  const name = video?.name?.trim();
+  const brand = video?.brand?.trim();
+  const where = video?.environment?.trim() || environment;
+  return `Making ${name ? `“${name}”` : 'your video'}${brand ? ` for ${brand}` : ''} on GooseWorks ${where}.`;
 }
 
 export async function makeVideo(videoId: string, deps: MakeDeps): Promise<MakeResult> {

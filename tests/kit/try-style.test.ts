@@ -1,6 +1,6 @@
 // scripts/try-style: the fake line stays local, the providers' answers keep the
 // line's shapes, and real mode never spends past its caps or writes a key.
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { styleHash } from '../../src/kit/core/style';
@@ -14,7 +14,7 @@ import { makeVideo } from '../../src/kit/core/run';
 import type { LoadedPart } from '../../src/kit/core/host';
 import { VideoLine } from '../../src/kit/line/client';
 import type { PartContext } from '../../src/kit/part-interface';
-import { fileSchema, MODEL, partsLock, style as harnessStyle, testHost, testParts, tools as harnessTools } from './harness';
+import { fileSchema, MODEL, partsLock, runLogs, style as harnessStyle, testHost, testParts, tools as harnessTools } from './harness';
 
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'try-style-'));
 const style = { id: 'demo', version: '1.0.0', timeline: [], layers: { brand: false, captions: false, sound: true, check: true }, duration: { min_seconds: 1, max_seconds: 9 }, aspects: ['9:16'] };
@@ -427,8 +427,7 @@ describe('try-style style folder', () => {
       heartbeatMs: 3_600_000,
     });
     await l.settle();
-    const log = path.join(home, 'videos', 'try_ref-style', 'log.ndjson');
-    return { result, sent, log: existsSync(log) ? readFileSync(log, 'utf8') : '' };
+    return { result, sent, log: runLogs(home, 'try_ref-style') };
   }
 
   it('orders a piece that sends a style file, from the copy in the run folder', async () => {

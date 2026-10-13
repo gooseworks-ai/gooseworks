@@ -48,7 +48,7 @@ npx tsx scripts/try-style.ts \
 | `run.json` | `run_id`, `providers`, `style_id`, `style_sha` (sha256 of the style file), `status` (`done` only when the video was made, no check failed and the contact sheet exists), part and layer versions, `seconds`, `seconds_per_output_second`. Real mode's stand-in gate reads it |
 | `spend.json` | Real mode only: this run's estimate, cap and ledger path |
 | `pieces.jsonl` | One line per paid piece: key, provider, model, mode, status, and the estimate in real mode |
-| `home/videos/<id>/` | The kit's own run folder: `log.ndjson`, each step's `record.json` and outputs |
+| `home/videos/<id>/` | The kit's own run folder: `runs/<run>.ndjson` (one log per run, listed in `log.ndjson`), each step's `record.json` and outputs |
 
 The exit code is 0 only when the video was made, no check failed and the contact sheet was made.
 

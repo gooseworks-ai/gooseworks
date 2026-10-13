@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { consumeEnvironment } from './environment';
+import { exitIfRequested } from './utils/exit';
 
 async function main(): Promise<void> {
 try {
@@ -9,5 +10,6 @@ try {
   console.error(error instanceof Error ? error.message : 'GooseWorks failed');
   process.exitCode = 1;
 }
+await exitIfRequested();
 }
 void main();

@@ -34,6 +34,8 @@ export class LineError extends Error {
   readonly code: string;
   readonly next: LineNext;
   readonly fix: string;
+  /** The server's sentence for the person when its fix is written for their AI; '' when it wrote none. */
+  readonly say: string;
   readonly retryAfterSeconds?: number;
   readonly details?: Record<string, unknown>;
   constructor(body: LineErrorBody, readonly status: number) {
@@ -42,9 +44,15 @@ export class LineError extends Error {
     this.code = body.code;
     this.next = body.next;
     this.fix = body.fix ?? '';
+    this.say = body.say?.trim() ?? '';
     this.retryAfterSeconds = body.retry_after_seconds;
     this.details = body.details;
   }
+}
+
+/** What the person reads for a refusal: the server's sentence for them, else its error and fix. */
+export function lineWords(error: LineError): string {
+  return error.say || [error.message, error.fix].filter(Boolean).join(' ');
 }
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -367,17 +375,15 @@ export class VideoLine {
       const parsed = JSON.parse(text) as { error?: LineErrorBody };
       const e = parsed.error;
       if (e && typeof e.code === 'string' && typeof e.next === 'string') {
-        return { ...e, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')) };
+        const { say, ...rest } = e;
+        return { ...rest, error: this.redact(String(e.error ?? '')), fix: this.redact(String(e.fix ?? '')), ...(typeof say === 'string' && say.trim() ? { say: this.redact(say) } : {}) };
       }
     } catch {
       // Fall through to a plain refusal.
     }
     const retry = status === 429 || status >= 500 || status === 0;
-    return {
-      code: retry ? 'line_unavailable' : 'invalid_input',
-      error: `The line refused the call (HTTP ${status}).`,
-      fix: retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.',
-      next: retry ? 'retry' : 'change_request',
-    };
+    const error = `The line refused the call (HTTP ${status}).`;
+    const fix = retry ? 'Try again in a minute.' : 'Update GooseWorks, then run the same command again.';
+    return { code: retry ? 'line_unavailable' : 'invalid_input', error, fix, say: `${error} ${fix}`, next: retry ? 'retry' : 'change_request' };
   }
 }

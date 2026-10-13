@@ -1,10 +1,10 @@
 // Rule: one make of a video at a time on this computer. A lock is taken over
 // only from a process that is gone, never from one that is still starting.
-import { utimesSync, writeFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import { runLayout } from '../../src/kit/core/paths';
 import { takeoverPrefix, takeRunLock } from '../../src/kit/core/save';
-import { tempHome } from './harness';
+import { VIDEO, fakeLine, runMake, tempHome } from './harness';
 
 describe('the run lock', () => {
   it('lets only one of two makes started together through', async () => {
@@ -38,5 +38,20 @@ describe('the run lock', () => {
     await takeRunLock(layout, new Date()).then((release) => release());
     writeFileSync(layout.lock, JSON.stringify({ pid: 2 ** 22 + 12345, host: require('os').hostname(), started_at: '', holder: 'gone' }));
     await expect(takeRunLock(layout, new Date())).resolves.toBeInstanceOf(Function);
+  });
+});
+
+describe('a make the lock turns away', () => {
+  it('starts no log of its own, so the video’s index lists only runs that ran', async () => {
+    const home = tempHome();
+    const layout = runLayout(home, VIDEO);
+    const release = await takeRunLock(layout, new Date());
+    await expect(runMake({ home, line: fakeLine() })).rejects.toThrow(/already being made/);
+    expect(existsSync(layout.runs) ? readdirSync(layout.runs) : []).toEqual([]);
+    expect(existsSync(layout.log)).toBe(false);
+    await release();
+    expect((await runMake({ home, line: fakeLine() })).status).toBe('done');
+    expect(readdirSync(layout.runs)).toHaveLength(1);
+    expect(readFileSync(layout.log, 'utf8').trim().split('\n')).toHaveLength(1);
   });
 });

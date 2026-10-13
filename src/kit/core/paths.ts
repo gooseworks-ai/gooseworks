@@ -4,6 +4,7 @@
 //   ~/.gooseworks/kit/parts/<id>/<ver>/    part cache, hash-checked on every load
 //   ~/.gooseworks/kit/bin/                 the kit's own ffmpeg and ffprobe
 //   ~/.gooseworks/videos/<video_id>/       one run folder per video
+//   ~/.gooseworks/videos/<video_id>/runs/  one log per run of `video make`
 //
 // GOOSE_KIT_HOME replaces ~/.gooseworks.
 import * as os from 'os';
@@ -50,7 +51,10 @@ export interface RunLayout {
   upload: string;
   /** A failure report the line never took, sent again by the next run. */
   pendingReport: string;
+  /** One line per run: when it started and which file under runs/ holds its log. */
   log: string;
+  /** Each run's own log, named by runName. */
+  runs: string;
 }
 
 export function runLayout(home: string, videoId: string): RunLayout {
@@ -71,7 +75,15 @@ export function runLayout(home: string, videoId: string): RunLayout {
     upload: path.join(root, 'upload.json'),
     pendingReport: path.join(root, 'pending-report.json'),
     log: path.join(root, 'log.ndjson'),
+    runs: path.join(root, 'runs'),
   };
+}
+
+/** A run's name: when it started (UTC, safe in a file name) and its quote, e.g. "20261013T192657.123Z-q_1". */
+export function runName(started: Date, quoteId: string): string {
+  const at = started.toISOString().replace(/[-:]/g, '');
+  const quote = quoteId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) || 'quote';
+  return `${at}-${quote}`;
 }
 
 /** A timeline step's folder, or a layer's ("layer-<slot>" lives under layers/<slot>). */

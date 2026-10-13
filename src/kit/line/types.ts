@@ -21,7 +21,10 @@ export type LineNext = 'retry' | 'stop' | 'update_kit' | 'change_request';
 export interface LineErrorBody {
   code: string;
   error: string;
+  /** Written for the AI or the kit: never printed for the person. */
   fix: string;
+  /** The one line for the person, when the line wrote one. */
+  say?: string;
   next: LineNext;
   retry_after_seconds?: number;
   details?: Record<string, unknown>;
@@ -47,6 +50,8 @@ export interface DeviceReport {
   browser: ToolReport;
   disk_free_mb: number;
   parts: Array<{ id: string; versions: string[] }>;
+  /** Sent on a hand-over made before a first run's setup: a claim the full report confirms once it is done. */
+  setup?: 'in_progress';
 }
 
 export interface Credits {
@@ -86,6 +91,17 @@ export interface HandOver {
   plan: ApprovedPlan;
   parts_lock: unknown;
   style_package: StylePackageRef;
+  /** Which video it is. Lines send it here or beside the hand-over; older ones not at all. */
+  video?: HandedVideo;
+}
+
+/** Which video a hand-over is for, in the words the person knows it by. Lines that don't send it yet leave it out. */
+export interface HandedVideo {
+  name?: string | null;
+  brand?: string | null;
+  organization?: string | null;
+  /** "production", "staging" or "local". */
+  environment?: string | null;
 }
 
 export interface DeviceAnswer {
@@ -94,6 +110,8 @@ export interface DeviceAnswer {
   kit: { ok: boolean; min_version: string; latest_version: string };
   styles: { ready: number; total: number };
   line?: HandOver;
+  /** Which video it is, for lines that send it beside the hand-over. */
+  video?: HandedVideo;
 }
 
 export interface PieceRequest {
