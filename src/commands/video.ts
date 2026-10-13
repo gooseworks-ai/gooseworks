@@ -10,6 +10,7 @@ import { kitHome } from '../kit/core/paths';
 import { makeVideo } from '../kit/core/run';
 import { VideoLine } from '../kit/line/client';
 import { signIn } from './login';
+import { exitWhenDone } from '../utils/exit';
 
 function sameOrigin(a: string, b: string): boolean {
   try {
@@ -158,24 +159,18 @@ videoCommand
       });
       if (result.status === 'update_kit') {
         process.exitCode = await selfUpdate((text) => log.say(text), kit.noSelfUpdate, result.message);
-      } else {
-        // The line's own words are the last thing printed.
-        log.say(result.message);
-        if (result.status !== 'done') process.exitCode = 1;
+        return;
       }
+      // The line's own words are the last thing printed.
+      log.say(result.message);
+      if (result.status !== 'done') process.exitCode = 1;
     } finally {
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
+      // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.
+      exitWhenDone();
     }
-    // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.
-    await endProcess();
   });
-
-/** Exits once what was printed has reached the terminal or the file it goes to. */
-async function endProcess(): Promise<never> {
-  await Promise.all([process.stdout, process.stderr].map((stream) => new Promise<void>((resolve) => stream.write('', () => resolve()))));
-  process.exit(process.exitCode ?? 0);
-}
 
 /** The old save step: `video make` now uploads the finished video and gets it checked. */
 export const videoSaveMovedCommand = new Command('video-save')
