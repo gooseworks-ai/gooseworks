@@ -448,3 +448,30 @@ describe('the line’s refusal of a piece', () => {
     expect(result).toEqual({ status: 'stopped', message: 'This video was stopped.' });
   });
 });
+
+describe('a step that runs out of time', () => {
+  const quick = { timing: { typical_s: 1, timeout_s: 0.2 } };
+
+  it('while a piece is still being made at the maker is reported as the maker’s delay, which a new run can get past', async () => {
+    const base = fakeLine({
+      piece: (req) => ({ status: 200, json: { piece_key: req.piece_key, idempotency_key: req.idempotency_key, status: 'running', replayed: false, piece_credits: 0, credits: { used: 0, cap: 1000 }, retry_after_seconds: 1 } }),
+    });
+    const line = {
+      ...base,
+      fetch: (async (input: any, init: any) => {
+        if (String(input).endsWith('/pieces')) await new Promise((resolve) => setTimeout(resolve, 10));
+        return base.fetch(input, init);
+      }) as typeof fetch,
+    };
+    const result = await runMake({ home: tempHome(), line, parts: testParts({ clip: quick }) });
+    expect(result).toEqual({ status: 'failed', message: 'One of the video clips we ordered for this video didn’t come back in time. Nothing was charged for it. Run the same command again; what was made so far is kept.' });
+    expect(failures(base)).toEqual([{ step: 'clips', code: 'provider_slow', detail: result.message }]);
+  });
+
+  it('on its own work is reported as a plain timeout', async () => {
+    const line = fakeLine();
+    const parts = testParts({ clip: quick, clipRun: (async (_inputs: unknown, ctx: any) => new Promise((_resolve, reject) => ctx.signal.addEventListener('abort', () => reject(new Error('cut short'))))) as any });
+    const result = await runMake({ home: tempHome(), line, parts });
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'timeout', detail: result.message }]);
+  });
+});

@@ -44,7 +44,7 @@ import type { KitLog } from './log';
 import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook, rowOf } from './progress';
+import { ProgressBook, rowOf, type RowKey } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -120,7 +120,16 @@ const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
-const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing']);
+const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow']);
+/** A step ran out of time while a piece it ordered was still being made at the maker. */
+const PROVIDER_SLOW = 'provider_slow';
+
+/** The person's words for a piece the maker didn't send back in time, by the step's row. */
+function slowWords(row: RowKey | null): string {
+  const what =
+    row === 'voice' ? 'One of the voice lines' : row === 'pictures' ? 'One of the pictures' : row === 'clips' || row === 'lips' ? 'One of the video clips' : row === 'music' ? 'The music' : 'One part';
+  return `${what} we ordered for this video didn’t come back in time. Nothing was charged for it. ${RUN_AGAIN}`;
+}
 
 /** What a run was made from: a failure report only stands for a run made from the same. */
 interface ReportKey {
@@ -784,10 +793,16 @@ class Maker {
 
       const timeoutMs = manifest.timing.timeout_s * 1000;
       const link = linkedSignal([this.stop.signal], timeoutMs);
+      const waiting = new Set<string>();
+      // Read as the time runs out, before the cut-short calls give up their pieces.
+      let slowAtLine = false;
       try {
-        const ctx = this.context(spec, attempt, workDir, tmpDir, link.signal, record);
+        const ctx = this.context(spec, attempt, workDir, tmpDir, link.signal, record, waiting);
         const outputs = await new Promise<Record<string, unknown>>((resolve, reject) => {
-          const ended = () => reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s`));
+          const ended = () => {
+            slowAtLine = !this.stop.signal.aborted && waiting.size > 0;
+            reject(this.stop.signal.aborted ? new PartError('stopped') : new PartError('timeout', `${spec.id} ran past ${manifest.timing.timeout_s} s${slowAtLine ? ' waiting on the line' : ''}`));
+          };
           // Stopped while the step was being saved: the part never starts.
           if (link.signal.aborted) return ended();
           link.signal.addEventListener('abort', ended, { once: true });
@@ -823,8 +838,9 @@ class Maker {
         if (stopped) throw stopped;
         this.deps.log.write('warn', 'step failed', { step: spec.id, attempt, code: failure!.code, detail: record.error?.detail ?? null });
         if (failure!.retryable && attempt === 1 && manifest.retry?.transient !== 0) continue;
-        const words = failureWords(failure!, this.idNames());
-        const code = reportedCode(failure!);
+        const slow = failure!.code === 'timeout' && slowAtLine;
+        const words = slow ? slowWords(rowOf(manifest)) : failureWords(failure!, this.idNames());
+        const code = slow ? PROVIDER_SLOW : reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
         this.reporter.close();
         this.reportFailure(spec.id, code, words);
@@ -847,7 +863,7 @@ class Maker {
     }
   }
 
-  private context(spec: StepSpec, attempt: 1 | 2, workDir: string, tmpDir: string, signal: AbortSignal, record: StepRecord): PartContext {
+  private context(spec: StepSpec, attempt: 1 | 2, workDir: string, tmpDir: string, signal: AbortSignal, record: StepRecord, waiting: Set<string>): PartContext {
     const { manifest } = spec.loaded;
     const tools = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, signal);
     const seedInput = spec.inputs.seed ?? null;
@@ -868,6 +884,7 @@ class Maker {
           hosted: this.hosted,
           locks: this.pieceLocks,
           onWait: () => void this.reporter.send(),
+          waiting,
           onPiece: async (piece) => {
             record.pieces.push(piece);
             await this.store.writeStep(record);

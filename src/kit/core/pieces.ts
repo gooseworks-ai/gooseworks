@@ -156,6 +156,8 @@ export interface PieceLine {
   onPiece: (record: { piece: string; piece_key: string; inputs_hash: string; idempotency_key: string; attempt: number; reused: boolean; credits?: number }) => Promise<void>;
   /** Called while a piece is still running at the provider. */
   onWait: () => void;
+  /** The pieces this step is waiting on at the line right now, by inputs hash: left in place when the step is cut short. */
+  waiting?: Set<string>;
 }
 
 /** The line's line for the person, else its error alone: its fix is written for the AI. */
@@ -315,10 +317,15 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
           const request: PieceRequest = { idempotency_key: current.key, piece_key, part: { id: ctx.part.id, version: ctx.part.version }, inputs_hash, call: { provider: order.provider, path: order.path, body } };
           try {
             answer = await ctx.line.orderPiece(ctx.videoId, request, ctx.signal);
+            // An answer that lands as the step is cut short ends the wait here, so the step's retry can ask.
+            if (ctx.signal.aborted) throw new PartError('stopped');
           } catch (error) {
             if (ctx.signal.aborted) throw new PartError('stopped');
-            if (!(error instanceof LineError)) throw error;
-            if (error.code !== 'piece_busy' || error.next !== 'retry' || ++busy > 30) throw lineStop(error);
+            if (!(error instanceof LineError) || error.code !== 'piece_busy' || error.next !== 'retry' || ++busy > 30) {
+              ctx.waiting?.delete(inputs_hash);
+              throw error instanceof LineError ? lineStop(error) : error;
+            }
+            ctx.waiting?.add(inputs_hash);
             // Join the running attempt only when it is this same piece with these same inputs.
             const running = error.details?.idempotency_key;
             const prefix = `${piece_key}:${inputs_hash}:`;
@@ -332,7 +339,11 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
             await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
             continue;
           }
-          if (answer.status !== 'running') return answer;
+          if (answer.status !== 'running') {
+            ctx.waiting?.delete(inputs_hash);
+            return answer;
+          }
+          ctx.waiting?.add(inputs_hash);
           ctx.onWait();
           await ctx.sleep(waitSeconds(answer.retry_after_seconds, 10), ctx.signal);
         }
