@@ -14,27 +14,27 @@ The owner approves the script, then actual storyboard/ingredients and budget. Bo
 
 # Agent version
 
-Installed entry: catalog_fetch type skill make-custom-video here once. Check live custom schemas before writes. Keep this environment; no retired actions, template fallback or reference-as-final import.
+Installed entry: catalog_fetch type skill make-custom-video here once. Check live custom schemas before writes. Keep this environment; no retired actions or reference-as-final import.
 
 ## Load the production harness
 
-Require complete video-production-harness content/scripts/files/version/contentHash. An inline read lists it by slug only: get it with catalog_fetch delivery archive (making needs that shell anyway), or catalog_fetch its slug. Read its orchestrator, phases and editorial/specialist guides. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
+Require the complete video-production-harness (content, scripts, files, version, contentHash). An inline read lists it by slug only, so get it with catalog_fetch delivery archive (making needs that shell anyway), unpack it, then read its SKILL.md and follow the reading order it gives (each step file when you reach that step). Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
 
 ## Keep the brief and study the reference
 
 Explicit custom skips video_formats and the picker. Keep requested mechanics/assets; animated text and product photos must not become a creator montage. Implicit references use goose-video to watch and compare template constraints; custom follows no match or their choice.
-Read brand_read (kit, products, rules), then knowledge_search. Use supported claims, real photos/logo. Watch playback, or timed frames spanning the video plus audio/transcript. Record hook, scene order, pace, framing, dialogue, text, product interactions and ending with times/gaps. URLs/thumbnails are not viewing. Missing access needs an accessible source or explicit brief-only choice.
+Read brand_read (kit, products, rules), then knowledge_search. Use supported claims, real photos/logo. Watch the reference by playback, or timed frames spanning it plus audio/transcript, and log its beats as the harness says; URLs/thumbnails are not viewing. Missing access needs an accessible source or explicit brief-only choice.
+Before video_create, catalog_fetch type template for the style nearest the brief and use its plan as your skeleton (harness design brief); with no customer reference, create with its demo video (media_url) as reference_url. Never run a template's renderer or unchanged style and call it custom.
 
 ## Create or resume
 
 New: video_create with brand_id, style custom, request and a required agent-generated UUID idempotency_key; retain products, name, reference_url and campaign. Reuse that key on retries. Resume with video_read the same project: retain plan_revision, custom_review, brand_context, production_manifest and execution; never create a replacement.
-Reference resolve accepts direct files; social links cause no automatic paid lookup. If GooseWorks can't download it, upload the file you watched into this project (media_upload scope video_project, media_confirm), wait for media_analyze read to show its duration, then video_change custom reference attach with asset_id and its current_revision as analysis_revision; each refusal names the condition to fix. Skip needs explicit brief-only user_quote. Pending/failed reference blocks approval; a URL is not viewing.
-A resolved reference also needs draft.reference_observation: the project's reference source_url, real duration_s, evidence_mode playback or frames_and_audio, observed_through_s covering 95%, and summary: what happens with times and gaps, as text or a list of {t, what}. Its data binds the script token. Resolve/attach is not watching.
+Reference resolve takes direct files and starts no paid social lookup. If it fails, attach the file you watched as next_step says; skip needs the customer's brief-only user_quote. A pending/failed reference blocks approval. A resolved one also needs draft.reference_observation (what you saw and heard); it binds the script token.
 
 ## Save script and ingredients
 
-Follow the harness phases. Discover specialists for the actual scenes; check inputs, outputs, dependencies and managed execution. Reuse suitable product photos and deterministic text animation. Never substitute a template driver. Bind operations to this project and approved scene/script revisions.
-video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Quote paid operations through the live managed estimate path with real inputs/project. Save preview_estimate/render_estimate for the work still to buy; the server adds committed_credits. Never edit a field the owner approved: the save sets their approval aside until the approved text is back. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
+Follow the harness phases for the actual scenes; reuse suitable product photos and deterministic text animation. Bind operations to this project and approved scene/script revisions.
+video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Price each paid request free with estimate_only=1 and save preview_estimate/render_estimate, with its redo allowance, for the work still to buy (harness design brief); the server adds committed_credits. Never edit a field the owner approved: the save sets their approval aside until the approved text is back. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
 
 ## Two authenticated owner reviews
 
@@ -43,9 +43,9 @@ Reread video_read after owner actions. Script approval permits quoted previews o
 
 ## Execute, check and deliver
 
-Require execution.local from a verified customer shell. No cloud, style-only kit, API host, worker or coworker sandbox. Otherwise report the gap.
-video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Completion needs a confirmed upload and rebuild recipe here; pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
+When the nearest template's parts fit every scene, save the harness's kit block in the ingredients draft; after ingredient approval, follow video_make's next_step (the kit makes, checks and finishes the video; send no render state), then read the final back with video_read. Otherwise require execution.local from a verified customer shell (no cloud, API host, worker or coworker sandbox), or report the gap.
+When you build it yourself, video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Report running with a progress_note after each paid piece and at least every 15 minutes. Send each generated clip to custom clip_check and redo a failed one once inside the allowance (harness clip step). Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Export an MP4 (H.264 + AAC) and complete with output_url set to the output_url media_confirm returned for it; GooseWorks checks the file, so report complete again while it says still checking. Pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
 
-Rebuild recipe: every input the build reads, uploaded here or a linked Library original, plus recipe/source.json; prove a clean-folder rebuild, then save it as custom production source. The next step gives the format.
+When you build it yourself, completion also needs the rebuild recipe saved as custom production source: the harness's references/recipe-format.md and the next_step give the steps.
 
 Use plain words and returned credits. No invented claims, approvals, assets or passing checks.

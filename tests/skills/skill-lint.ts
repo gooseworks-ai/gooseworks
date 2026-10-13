@@ -34,6 +34,10 @@ export const ANSWER_FIELDS: readonly string[] = [
   'harness_binding', 'requires_skills',
   // make-custom-video since gooseworks-app #2007: reference upload/attach and the server-added spend.
   'video_project', 'media_confirm', 'media_analyze', 'current_revision', 'committed_credits',
+  // make-custom-video in the custom one-run work (gooseworks-app #2019, #2022-#2027): template demo
+  // reference, free price check, redo allowance, clip checks, progress notes and the rebuild recipe.
+  'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
+  'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
