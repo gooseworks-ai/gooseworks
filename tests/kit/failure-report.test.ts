@@ -318,6 +318,21 @@ describe('a refusal from a part that lines a made clip up with the plan', () => 
     expect(resultRecord(VIDEO, result)).toMatchObject({ outcome: 'run_again', exit_code: 4 });
   });
 
+  it('ends stopped, not run again, when the line answers the report by stopping the video', async () => {
+    const made = takeFit('speech-recut', (ctx) => {
+      throw ctx.error('bad_input', 'no line matched');
+    });
+    // The line's repeated-fault rule stops the video; its answer comes after the step has already given up.
+    const stopped = (body: any) => (body.failure ? (new Promise((done) => setTimeout(() => done(json(200, { stage: 'stopped', credits: { used: 0, cap: 1000 } })), 50)) as any) : undefined);
+    const result = await runMake({ home: tempHome(), line: fakeLine({ ...made.script, progress: stopped }), parts: made.parts });
+    expect(result.status).toBe('stopped');
+    expect(result.next).toBeUndefined();
+    expect(result.message).not.toBe(TAKE_FIT_WORDS);
+    const record = resultRecord(VIDEO, result);
+    expect(record.outcome).not.toBe('run_again');
+    expect(record.exit_code).not.toBe(4);
+  });
+
   it('leaves the same refusal from any other part on the plan', async () => {
     const made = takeFit('clip-cutter', (ctx) => {
       throw ctx.error('bad_input', 'no scenes');

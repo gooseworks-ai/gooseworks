@@ -741,18 +741,21 @@ class Maker {
   private async ended(error: unknown): Promise<MakeResult> {
     // Nothing but the failure report goes out from here.
     this.reporter?.close();
-    const stop = this.fatal ?? (error instanceof KitStop ? error : null);
+    let stop = this.fatal ?? (error instanceof KitStop ? error : null);
     this.endRun();
+    const reported = !stop || stop.reason === 'update_kit' ? undefined : stop.reason === 'stop' ? REPORTED_STOPS.get(stop.code ?? '') : (stop.code ?? 'change_request');
+    if (stop && reported) {
+      this.reportFailure(this.at, reported, stop.message);
+      await this.reporter?.flush().catch(() => undefined);
+      // A take-fit refusal promises the same command carries on, but the line's answer to the report can
+      // stop the video (the same step failing again): then the run ends on that, not on a retry it refuses.
+      if (stop.next === 'retry' && this.fatal && this.fatal !== stop) stop = this.fatal;
+    }
     this.ownStop = stop?.reason === 'stop' && OWN_STOPS.has(stop.code ?? '');
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
     if (this.run) {
       this.run.status = stop && stop.reason === 'stop' ? 'stopped' : 'failed';
       await this.saveRun().catch(() => undefined);
-    }
-    const reported = !stop || stop.reason === 'update_kit' ? undefined : stop.reason === 'stop' ? REPORTED_STOPS.get(stop.code ?? '') : (stop.code ?? 'change_request');
-    if (stop && reported) {
-      this.reportFailure(this.at, reported, stop.message);
-      await this.reporter?.flush().catch(() => undefined);
     }
     if (stop) {
       const code = stop.code ?? (stop.reason === 'stop' ? undefined : 'change_request');
