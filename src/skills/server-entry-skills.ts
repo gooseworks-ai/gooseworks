@@ -1,7 +1,7 @@
 // The entry skill text our server builds, copied here because the CLI
 // cannot import gooseworks-app. Do not edit by hand.
 //
-// Source: gooseworks-app akhil/vq-wp7a2-custom-kit-handoff @ ec884a6b6
+// Source: gooseworks-app akhil/vq-wp7a2-custom-kit-handoff @ 036fa8393
 //   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
 //   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
 //
@@ -79,7 +79,7 @@ Installed entry: catalog_fetch type skill make-custom-video here once. Check liv
 
 ## Load the production harness
 
-Require the complete video-production-harness (content, scripts, files, version, contentHash). An inline read lists it by slug only, so get it with catalog_fetch delivery archive (making needs that shell anyway), unpack it and read every file. Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
+Require the complete video-production-harness (content, scripts, files, version, contentHash). An inline read lists it by slug only, so get it with catalog_fetch delivery archive (making needs that shell anyway), unpack it, then read its SKILL.md and follow the reading order it gives (each step file when you reach that step). Save safe paths separately with hashes/dependencies. Incomplete/mixed packages block work. Resume recorded packages, inputs and jobs.
 
 ## Keep the brief and study the reference
 
@@ -104,10 +104,10 @@ Reread video_read after owner actions. Script approval permits quoted previews o
 
 ## Execute, check and deliver
 
-When the nearest template's parts fit every scene, save the harness's kit block in the ingredients draft; after ingredient approval, follow video_make's next_step. Otherwise require execution.local from a verified customer shell (no cloud, API host, worker or coworker sandbox), or report the gap.
-video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Report running with a progress_note after each paid piece and at least every 15 minutes. Send each generated clip to custom clip_check and redo a failed one once inside the allowance (harness clip step). Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Export an MP4 (H.264 + AAC) and complete with output_url set to the output_url media_confirm returned for it; GooseWorks checks the file, so report complete again while it says still checking. Pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
+When the nearest template's parts fit every scene, save the harness's kit block in the ingredients draft; after ingredient approval, follow video_make's next_step (the kit makes, checks and finishes the video; send no render state), then read the final back with video_read. Otherwise require execution.local from a verified customer shell (no cloud, API host, worker or coworker sandbox), or report the gap.
+When you build it yourself, video_make needs expected_revision and custom render state. Resume the same render with approved tokens; report running/failed/complete honestly and honor Stop. Report running with a progress_note after each paid piece and at least every 15 minutes. Send each generated clip to custom clip_check and redo a failed one once inside the allowance (harness clip step). Save actual prompts, settings, every scene and clip checks through video_change custom production. Watch the full output against the approved script, product and brand; save its full quality report. Export an MP4 (H.264 + AAC) and complete with output_url set to the output_url media_confirm returned for it; GooseWorks checks the file, so report complete again while it says still checking. Pin only the checked complete render. Read back manifest/final before delivery. Repairs need affected assets only and renewed approvals/budget.
 
-Completion also needs the rebuild recipe saved as custom production source: the harness's references/recipe-format.md and the next_step give the steps.
+When you build it yourself, completion also needs the rebuild recipe saved as custom production source: the harness's references/recipe-format.md and the next_step give the steps.
 
 Use plain words and returned credits. No invented claims, approvals, assets or passing checks.
 `,
