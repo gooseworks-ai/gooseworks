@@ -65,6 +65,25 @@ it('launches and closes the script-relative package without executing the render
   expect(fs.readdirSync(project)).toEqual([]);
 });
 
+it('does not count a slow probe start against the browser launch bound', () => {
+  const script = renderer(path.join(root, 'fetched/scripts'));
+  const modulePath = playwright(path.dirname(script));
+  // A busy machine: loading Playwright takes far longer than the 100 ms launch bound.
+  fs.appendFileSync(modulePath, 'const until = Date.now() + 1000; while (Date.now() < until) {}\n');
+  expect(probe(script)).toMatchObject({ ok: true, code: 'ready', version: '1.50.0' });
+});
+
+it('bounds a probe that never starts launching', () => {
+  const script = renderer(path.join(root, 'fetched/scripts'));
+  const modulePath = playwright(path.dirname(script));
+  fs.appendFileSync(modulePath, 'const until = Date.now() + 5000; while (Date.now() < until) {}\n');
+  const started = Date.now();
+  const result = checkBrowserPreflight({ rendererScript: script, cwd: root, launchTimeoutMs: 100, closeTimeoutMs: 50, startupTimeoutMs: 500 });
+  expect(result).toMatchObject({ ok: false, code: 'timeout' });
+  expect(result.detail).toContain('did not start in time');
+  expect(Date.now() - started).toBeLessThan(4000);
+});
+
 it('cannot pass with project browser A when fetched package B lacks its headless browser', () => {
   const project = path.join(root, 'project');
   fs.mkdirSync(project);
