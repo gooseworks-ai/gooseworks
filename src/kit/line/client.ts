@@ -120,6 +120,13 @@ type Auth = 'login' | 'token' | 'hand-over';
 
 const MINUTE = 60_000;
 
+/** A local or private-network host: when it can't be reached, the internet is not to blame. */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '::1') return true;
+  return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+}
+
 export class VideoLine {
   // Secrets live only in private fields: never enumerable, never in JSON or a dump.
   readonly #login: string | null;
@@ -128,6 +135,7 @@ export class VideoLine {
   readonly deviceId: string;
   readonly workerId: string | undefined;
   private readonly origin: string;
+  private readonly privateOrigin: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly wait: Sleep;
   private readonly maxRetries: number;
@@ -136,6 +144,7 @@ export class VideoLine {
     const base = new URL(opts.apiBase);
     if (base.pathname !== '/' || base.search || base.hash || base.username || base.password) throw new Error('The API address must be an origin.');
     this.origin = base.origin;
+    this.privateOrigin = isPrivateHost(base.hostname);
     this.#login = opts.login || null;
     this.#token = opts.lineToken || null;
     this.deviceId = opts.deviceId;
@@ -335,7 +344,15 @@ export class VideoLine {
         refusal =
           error instanceof LineError
             ? error
-            : new LineError({ code: 'line_unavailable', error: 'The line could not be reached.', fix: 'Check the internet connection, then run the same command again.', next: 'retry' }, 0);
+            : new LineError(
+                {
+                  code: 'line_unavailable',
+                  error: 'The line could not be reached.',
+                  fix: this.privateOrigin ? 'Run the same command again in a minute.' : 'Check the internet connection, then run the same command again.',
+                  next: 'retry',
+                },
+                0,
+              );
       } finally {
         link.done();
       }
