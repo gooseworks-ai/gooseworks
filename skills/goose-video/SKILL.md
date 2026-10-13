@@ -10,7 +10,7 @@ From an installed entry, first catalog_fetch type skill goose-video on this same
 
 For a video already started, call video_read and follow its next_step.
 
-Explicit custom: skip video_formats and steps 5–6. Keep their mechanics and assets; research the brand/product and study the reference for its custom plan. Check current custom support before any write.
+Explicit custom: skip steps 5–6. Keep their mechanics and assets; research the brand/product and study the reference for its custom plan. Check current custom support before any write.
 
 For other new videos start with get_started (wants video, request). A card is not a style choice or proof of viewing. Follow the reference rule before style selection or a plan.
 
