@@ -50,6 +50,8 @@ export interface DeviceReport {
   browser: ToolReport;
   disk_free_mb: number;
   parts: Array<{ id: string; versions: string[] }>;
+  /** Sent on a hand-over made before a first run's setup: a claim the full report confirms once it is done. */
+  setup?: 'in_progress';
 }
 
 export interface Credits {
@@ -89,6 +91,8 @@ export interface HandOver {
   plan: ApprovedPlan;
   parts_lock: unknown;
   style_package: StylePackageRef;
+  /** Which video it is. Lines send it here or beside the hand-over; older ones not at all. */
+  video?: HandedVideo;
 }
 
 /** Which video a hand-over is for, in the words the person knows it by. Lines that don't send it yet leave it out. */
@@ -106,6 +110,7 @@ export interface DeviceAnswer {
   kit: { ok: boolean; min_version: string; latest_version: string };
   styles: { ready: number; total: number };
   line?: HandOver;
+  /** Which video it is, for lines that send it beside the hand-over. */
   video?: HandedVideo;
 }
 

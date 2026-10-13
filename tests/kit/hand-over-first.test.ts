@@ -1,7 +1,7 @@
-// Rule: the kit hands the video over before a first run's slow setup it
-// doesn't need for that, so the card shows the video started within seconds.
-// The browser is set up after the hand-over, while the kit keeps reporting,
-// unless the line won't hand over without it.
+// Rule: the kit hands the video over before a first run's slow setup, so the
+// card shows the video started within seconds. Without the browser the
+// hand-over is a claim; the full report follows once the browser is set up.
+// An older line gets the full report first, as before.
 import { readFileSync } from 'fs';
 import type { KitHost } from '../../src/kit/core/host';
 import { runLayout } from '../../src/kit/core/paths';
@@ -21,47 +21,73 @@ function settingUpHost(events: string[]): KitHost {
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-it('hands the video over first, then sets up the browser while the card hears from the kit', async () => {
+/** An older line: it doesn't take the `setup` claim. */
+const noClaims = (body: any) =>
+  body.device.setup !== undefined
+    ? json(400, { error: { code: 'unknown_fields', error: 'The request has fields this line doesn’t take.', fix: 'Remove device.setup.', next: 'change_request', details: { fields: ['device.setup'] } } })
+    : undefined;
+
+const cannotMake = (missing: string[]) =>
+  json(409, { error: { code: 'device_cannot_make', error: 'This computer can’t make this video’s style yet.', fix: 'Run the check again so it sets up what is missing.', next: 'stop', details: { missing } } });
+
+it('claims the video first, sets up the browser while the card hears from the kit, then sends the full report', async () => {
   const events: string[] = [];
   const base = fakeLine();
   const line = {
     ...base,
     fetch: (async (input: any, init: any) => {
       const route = new URL(String(input)).pathname.split('/').pop();
-      if (route === 'device' || route === 'progress') events.push(route === 'device' ? 'hand-over' : `progress: ${JSON.parse(init.body).note}`);
+      if (route === 'device') {
+        const { device } = JSON.parse(init.body);
+        events.push(device.setup ? `claim, browser ${device.browser.ok}` : `hand-over, browser ${device.browser.ok}`);
+      }
+      if (route === 'progress') events.push(`progress: ${JSON.parse(init.body).note}`);
       return base.fetch(input, init);
     }) as typeof fetch,
   };
   const home = tempHome();
   const result = await runMake({ home, line, host: settingUpHost(events) });
   expect(result.status).toBe('done');
-  expect(events.slice(0, 4)).toEqual(['browser check, setup false', 'hand-over', 'progress: Setting up your computer for the video', 'browser check, setup true']);
+  expect(events.slice(0, 5)).toEqual(['browser check, setup false', 'claim, browser false', 'progress: Setting up your computer for the video', 'browser check, setup true', 'hand-over, browser true']);
   // Later reports go back to the run's own notes.
   expect(lineRoute(base.seen, '/progress').slice(-1)[0].body.note).not.toBe('Setting up your computer for the video');
-  // The hand-over went before the browser was there; the steps were made with it.
-  expect(lineRoute(base.seen, '/device')[0].body.device.browser.ok).toBe(false);
   expect(JSON.parse(readFileSync(runLayout(home, VIDEO).run, 'utf8')).kit.toolchain).toMatch(/chromium-chromium-test$/);
 });
 
-it('sets up the browser before handing over again when the line won’t hand over without it', async () => {
+it('stops on the line’s words when the full report after the claim shows the computer can’t make the video', async () => {
   const events: string[] = [];
-  const line = fakeLine({
-    device: (body, n) =>
-      n === 0 && !body.device.browser.ok
-        ? json(409, { error: { code: 'device_cannot_make', error: 'This computer can’t make this video’s style yet.', fix: 'Run the check again so it sets up what is missing.', next: 'stop', details: { missing: ['browser'] } } })
-        : undefined,
-  });
+  const host = settingUpHost(events);
+  host.browser.check = async () => ({ ok: false, version: null, bundled: true, problem: 'the browser download failed' });
+  const line = fakeLine({ device: (body) => (body.device.setup ? undefined : cannotMake(['browser'])) });
+  const result = await runMake({ home: tempHome(), line, host });
+  expect(result).toEqual({ status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
+  expect(lineRoute(line.seen, '/pieces')).toEqual([]);
+});
+
+it('hands over on the full report to an older line, then tells it once the browser is set up', async () => {
+  const events: string[] = [];
+  const line = fakeLine({ device: noClaims });
+  const result = await runMake({ home: tempHome(), line, host: settingUpHost(events) });
+  expect(result.status).toBe('done');
+  expect(lineRoute(line.seen, '/device').map((s) => [s.body.device.setup ?? null, s.body.device.browser.ok])).toEqual([
+    ['in_progress', false],
+    [null, false],
+    [null, true],
+  ]);
+});
+
+it('sets up the browser before handing over again when an older line won’t hand over without it', async () => {
+  const events: string[] = [];
+  const line = fakeLine({ device: (body, n) => noClaims(body) ?? (n === 1 && !body.device.browser.ok ? cannotMake(['browser']) : undefined) });
   const result = await runMake({ home: tempHome(), line, host: settingUpHost(events) });
   expect(result.status).toBe('done');
   expect(events).toEqual(['browser check, setup false', 'browser check, setup true']);
-  expect(lineRoute(line.seen, '/device').map((s) => s.body.device.browser.ok)).toEqual([false, true]);
+  expect(lineRoute(line.seen, '/device').map((s) => s.body.device.browser.ok)).toEqual([false, false, true]);
 });
 
 it('stops on the line’s words when something else is missing', async () => {
-  const line = fakeLine({
-    device: () => json(409, { error: { code: 'device_cannot_make', error: 'This computer can’t make this video’s style yet.', fix: 'Run the check again so it sets up what is missing.', next: 'stop', details: { missing: ['ffmpeg'] } } }),
-  });
+  const line = fakeLine({ device: () => cannotMake(['ffmpeg']) });
   const result = await runMake({ home: tempHome(), line, host: settingUpHost([]) });
-  expect(result).toEqual({ status: 'stopped', message: 'This computer can’t make this video’s style yet.' });
+  expect(result).toEqual({ status: 'stopped', message: 'This computer can’t make this video’s style yet. Run the check again so it sets up what is missing.' });
   expect(lineRoute(line.seen, '/device')).toHaveLength(1);
 });

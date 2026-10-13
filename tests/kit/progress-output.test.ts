@@ -26,6 +26,12 @@ describe('the lines printed while a video is made', () => {
     ]);
   });
 
+  it('name the video the line sent inside its hand-over', async () => {
+    const printed: string[] = [];
+    await runMake({ home: tempHome(), line: fakeLine({ handOver: (handed: any) => ({ ...handed, video }) }), printed });
+    expect(printed[0]).toBe('Making “Spring launch” for Brand on GooseWorks staging.');
+  });
+
   it('show a new count on a row at most once every 5 seconds', async () => {
     let clock = Date.UTC(2026, 9, 13, 12);
     const printed: string[] = [];
@@ -58,6 +64,13 @@ describe('the lines printed while a video is made', () => {
     const runs = path.join(runLayout(home, VIDEO).runs);
     const [file] = readdirSync(runs);
     expect(printed[printed.length - 1]).toBe(`If you contact support, share this file: ${path.join(runs, file)}`);
+  });
+
+  it('leave out the log when the person stopped the video on the card', async () => {
+    const printed: string[] = [];
+    const line = fakeLine({ progress: () => new Response(JSON.stringify({ stage: 'stopped', credits: { used: 0, cap: 1000 }, report_within_seconds: 60 }), { status: 200 }) });
+    expect((await runMake({ home: tempHome(), line, printed })).status).toBe('stopped');
+    expect(printed.join('\n')).not.toMatch(/contact support/);
   });
 });
 

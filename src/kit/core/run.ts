@@ -121,15 +121,18 @@ const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 /** The server's `failure.code` shape. */
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
-const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow']);
+const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
 /** A step ran out of time while a piece it ordered was still being made at the maker. */
 const PROVIDER_SLOW = 'provider_slow';
 
-/** The person's words for a piece the maker didn't send back in time, by the step's row. */
+/**
+ * The person's words for a piece the maker didn't send back in time, by the step's row (the server's
+ * nouns). Whether it was charged is the server's to say: the piece may still finish after the step gave up.
+ */
 function slowWords(row: RowKey | null): string {
   const what =
-    row === 'voice' ? 'One of the voice lines' : row === 'pictures' ? 'One of the pictures' : row === 'clips' || row === 'lips' ? 'One of the video clips' : row === 'music' ? 'The music' : 'One part';
-  return `${what} we ordered for this video didn’t come back in time. Nothing was charged for it. ${RUN_AGAIN}`;
+    row === 'voice' ? 'One of the voice lines' : row === 'pictures' ? 'One of the pictures' : row === 'clips' || row === 'lips' ? 'One of the clips' : row === 'music' ? 'The music' : 'One of the parts';
+  return `${what} we ordered for this video didn’t come back in time. ${RUN_AGAIN}`;
 }
 
 /** What a run was made from: a failure report only stands for a run made from the same. */
@@ -149,6 +152,21 @@ function missingBrowser(error: LineError): boolean {
   const missing = error.details?.missing;
   return Array.isArray(missing) && missing.includes('browser');
 }
+
+/** An older line refused the hand-over's `setup` claim as a field it doesn't know. */
+function namesSetup(error: LineError): boolean {
+  if (error.status !== 400) return false;
+  const fields = Array.isArray(error.details?.fields) ? (error.details.fields as unknown[]) : [];
+  if (fields.some((f) => typeof f === 'string' && /(^|\.)setup$/.test(f))) return true;
+  return /\bsetup\b/.test(`${error.fix} ${error.message}`);
+}
+
+/** How the run stops on a line's refusal, by its next step. */
+function stopReason(next: string): 'update_kit' | 'change_request' | 'stop' {
+  return next === 'update_kit' ? 'update_kit' : next === 'change_request' ? 'change_request' : 'stop';
+}
+
+type Browser = Awaited<ReturnType<KitHost['browser']['check']>>;
 
 /** A part that would not load, in plain words: which part and why go to the log. */
 function loadStop(error: unknown): KitStop {
@@ -210,7 +228,7 @@ function failureWords(error: PartError, names: readonly string[] = []): string {
 }
 
 /**
- * A failed piece in the line's line for the person. Without one: the error, then what to do. The fix
+ * A failed piece in the server's sentence for the person. Without one: the error, then what to do. The fix
  * of a failed piece is the kit's (order it again), so the person's next step is the kit's own; a
  * refused piece's fix is written for the person.
  */
@@ -307,6 +325,8 @@ class Maker {
   /** This run's name: its log file and its keys in the order journal. */
   private runId = '';
   private failureSent = false;
+  /** The run ended on a stop the person chose (Ctrl-C, or Stop on the card), which needs no support. */
+  private ownStop = false;
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
     this.sleep = deps.sleep ?? realSleep;
@@ -331,20 +351,14 @@ class Maker {
     } catch (error) {
       return this.ended(error);
     }
-    // Every hand-over needs the video tools, so they are set up first. The browser is set up only
-    // after the hand-over, so the card shows the video started while a first run downloads it,
-    // unless the line refuses to hand over without it.
+    // Every hand-over needs the video tools, so they are set up first. Without the browser yet, the
+    // hand-over is a claim, so the card shows the video started while a first run downloads it.
     this.tools = deps.tools ?? (await inspectFfmpeg({ home: deps.home, env: deps.env, setup: true, download: (u, m) => deps.line.download(u, m), say: (l) => this.say(l) }));
     let browser = await this.checkBrowser(false);
     let answer: DeviceAnswer;
+    let claimed: boolean;
     try {
-      try {
-        answer = await deps.line.handOver(this.videoId, await this.report(browser));
-      } catch (error) {
-        if (!(error instanceof LineError && error.code === 'device_cannot_make' && !browser.ok && missingBrowser(error))) throw error;
-        browser = await this.checkBrowser(true);
-        answer = await deps.line.handOver(this.videoId, await this.report(browser));
-      }
+      ({ answer, browser, claimed } = await this.handOverFirst(browser));
     } catch (error) {
       if (error instanceof LineError) {
         if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
@@ -371,8 +385,9 @@ class Maker {
       });
       this.runId = run.run;
       runLog = run.file;
-      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION, video: answer.video ?? null });
-      this.say(startLine(answer.video, deps.environment));
+      const video = answer.line.video ?? answer.video;
+      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION, video: video ?? null, setup_claimed: claimed });
+      this.say(startLine(video, deps.environment));
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
       this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
@@ -383,7 +398,7 @@ class Maker {
       // Reports start now, so checking the style and parts never looks quiet.
       this.reporter.start();
       if (browser.ok) void this.reporter.send(true);
-      else await this.setUpBrowser();
+      else await this.setUpBrowser(claimed);
       return (result = await this.makeHandedOver(dev));
     } catch (error) {
       return (result = await this.ended(error));
@@ -393,7 +408,7 @@ class Maker {
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
       await release();
       // Support reads what happened in this run's own log.
-      if (runLog && result?.status !== 'done' && result?.status !== 'update_kit') this.say(`If you contact support, share this file: ${runLog}`);
+      if (runLog && (result?.status === 'failed' || (result?.status === 'stopped' && !this.ownStop))) this.say(`If you contact support, share this file: ${runLog}`);
     }
   }
 
@@ -406,22 +421,76 @@ class Maker {
     return this.deps.host.browser.check({ home: this.deps.home, setup, env: this.deps.env, say: (l) => this.say(l) });
   }
 
-  private useBrowser(browser: Awaited<ReturnType<KitHost['browser']['check']>>): void {
+  private useBrowser(browser: Browser): void {
     this.browserReady = browser.ok;
     this.toolchain = toolchainId(this.tools, browser.ok ? browser.version : null);
   }
 
-  /** A first run's browser download, after the hand-over: the card hears from the kit all the while. */
-  private async setUpBrowser(): Promise<void> {
+  /**
+   * The hand-over. Without the browser it is first a claim (`setup: in_progress`), which an older
+   * line refuses as an unknown field: it then hands over on the full report as before, setting up
+   * the browser first only when the line won't hand over without it. A worker never claims.
+   */
+  private async handOverFirst(browser: Browser): Promise<{ answer: DeviceAnswer; browser: Browser; claimed: boolean }> {
+    const { line } = this.deps;
+    if (!browser.ok && !line.isWorker) {
+      try {
+        return { answer: await line.handOver(this.videoId, { ...(await this.report(browser)), setup: 'in_progress' }), browser, claimed: true };
+      } catch (error) {
+        if (!(error instanceof LineError && namesSetup(error))) throw error;
+        this.deps.log.write('info', 'the line does not take a hand-over before setup', { code: error.code });
+      }
+    }
+    try {
+      return { answer: await line.handOver(this.videoId, await this.report(browser)), browser, claimed: false };
+    } catch (error) {
+      if (!(error instanceof LineError && error.code === 'device_cannot_make' && !browser.ok && missingBrowser(error))) throw error;
+      const ready = await this.checkBrowser(true);
+      return { answer: await line.handOver(this.videoId, await this.report(ready)), browser: ready, claimed: false };
+    }
+  }
+
+  /**
+   * A first run's browser download, after the hand-over: the card hears from the kit all the while.
+   * Then the full report goes to the line, which still holds a claim or a report without the browser.
+   */
+  private async setUpBrowser(claimed: boolean): Promise<void> {
     const note = this.book.note;
     this.book.note = 'Setting up your computer for the video';
     void this.reporter.send(true);
-    this.useBrowser(await this.checkBrowser(true));
+    const browser = await this.checkBrowser(true);
+    this.useBrowser(browser);
+    if (this.fatal) throw this.fatal;
+    if (claimed || (browser.ok && !this.deps.line.isWorker)) await this.confirmHandOver(browser, claimed);
     this.book.note = note;
     if (this.fatal) throw this.fatal;
+    void this.reporter.send(true);
   }
 
-  private report(browser: Awaited<ReturnType<KitHost['browser']['check']>>): ReturnType<typeof deviceReport> {
+  /**
+   * The full report as a second hand-over, so the line checks what this computer can make and keeps
+   * it. A claim must be confirmed: the line checked nothing for it. A report that only adds the browser may fail.
+   */
+  private async confirmHandOver(browser: Browser, claimed: boolean): Promise<void> {
+    // The new hand-over gives the run a new lease, so no report may be on its way under the old one.
+    this.reporter.pause();
+    try {
+      await this.reporter.flush();
+      const answer = await this.deps.line.handOver(this.videoId, await this.report(browser));
+      if (!answer.kit.ok) throw new KitStop('This video kit is too old for this video.', 'update_kit');
+      if (answer.line?.quote_id !== this.handed.quote_id) throw new KitStop('The plan for this video changed after this run started. Run the make command again to make the current plan.', 'stop', 'plan_changed');
+      this.handed = answer.line;
+    } catch (error) {
+      if (error instanceof KitStop) throw error;
+      if (error instanceof LineError && (claimed || error.code === 'device_cannot_make')) throw new KitStop(lineWords(error), stopReason(error.next), error.code);
+      if (claimed) throw error;
+      this.deps.log.write('warn', 'the report with the browser could not be sent', { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      this.reporter.resume();
+    }
+  }
+
+  private report(browser: Browser): ReturnType<typeof deviceReport> {
     return deviceReport({ home: this.deps.home, worker: this.deps.line.isWorker, tools: this.tools, browser });
   }
 
@@ -497,6 +566,8 @@ class Maker {
     // Nothing but the failure report goes out from here.
     this.reporter?.close();
     const stop = this.fatal ?? (error instanceof KitStop ? error : null);
+    // Ctrl-C and the card's Stop carry no code, or the line's code for the person's own stop.
+    this.ownStop = stop?.reason === 'stop' && (!stop.code || stop.code === 'video_stopped');
     if (stop) this.deps.log.write('warn', 'the run stopped', { reason: stop.reason, code: stop.code ?? null, message: stop.message });
     if (this.run) {
       this.run.status = stop && stop.reason === 'stop' ? 'stopped' : 'failed';
@@ -538,7 +609,7 @@ class Maker {
       throw new KitStop('The plan handed over is not this video’s. Nothing was spent.', 'change_request');
     }
     if (handed.parts_lock) this.lock = checkLock(handed.parts_lock, this.videoId, plan);
-    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop');
+    else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop', 'parts_not_ready');
 
     const planCopy = withoutSignedLinks(plan);
     await mkdir(this.layout.root, { recursive: true, mode: 0o700 });
