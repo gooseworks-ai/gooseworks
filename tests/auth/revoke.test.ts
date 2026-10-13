@@ -22,4 +22,9 @@ describe('revokeKey', () => {
     await expect(revokeKey({ api_base: api.base, api_key: 'cal_old' })).resolves.toBe('already_invalid');
     await expect(revokeKey({ api_base: 'http://127.0.0.1:9', api_key: 'cal_old' })).resolves.toBe('unreachable');
   });
+
+  it('tells a server that cannot cancel keys yet from one it could not reach', async () => {
+    api.replies[REVOKE] = [{ status: 404, body: { status: 'error' } }];
+    await expect(revokeKey({ api_base: api.base, api_key: 'cal_old' })).resolves.toBe('unsupported');
+  });
 });

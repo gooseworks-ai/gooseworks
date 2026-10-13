@@ -3,8 +3,8 @@ import type { Credentials } from './credentials';
 
 const REVOKE_TIMEOUT_MS = 5_000;
 
-/** `cancelled`, `already_invalid` (the server no longer takes it) or `unreachable`. */
-export type RevokeOutcome = 'cancelled' | 'already_invalid' | 'unreachable';
+/** `already_invalid`: the server no longer takes it. `unsupported`: a server with no way to cancel keys yet. */
+export type RevokeOutcome = 'cancelled' | 'already_invalid' | 'unsupported' | 'unreachable';
 
 /**
  * Cancels the saved key on the server, so a copy of it (an MCP entry, another
@@ -23,6 +23,8 @@ export async function revokeKey(creds: Pick<Credentials, 'api_base' | 'api_key'>
     });
     return 'cancelled';
   } catch (error) {
-    return error instanceof HttpError && error.status === 401 ? 'already_invalid' : 'unreachable';
+    if (error instanceof HttpError && error.status === 401) return 'already_invalid';
+    if (error instanceof HttpError && error.status === 404) return 'unsupported';
+    return 'unreachable';
   }
 }

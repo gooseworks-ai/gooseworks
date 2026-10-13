@@ -128,6 +128,17 @@ describe('logout command', () => {
     expect(loggerModule.warn).toHaveBeenCalledWith('Could not reach GooseWorks to cancel the old key; it was only removed from this computer.');
   });
 
+  it('says nothing about cancelling on a server that cannot cancel keys yet', async () => {
+    mockGetCredentials.mockReturnValue(creds);
+    mockRevokeKey.mockResolvedValue('unsupported');
+
+    await logout();
+
+    expect(mockClearCredentials).toHaveBeenCalled();
+    expect(loggerModule.warn).not.toHaveBeenCalled();
+    expect(said().some((line) => /cancel/i.test(line))).toBe(false);
+  });
+
   it('clears a saved sign-in that no longer matches this environment', async () => {
     mockGetCredentials.mockImplementation(() => {
       throw new Error('api connection does not match --env production. Sign in to that environment again.');
