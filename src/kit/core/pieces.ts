@@ -194,6 +194,22 @@ function savedFailure(failure: LineErrorBody): LineErrorBody {
 
 const waitSeconds = (s: number | undefined, fallback: number) => Math.min(Math.max(s ?? fallback, 1), 60) * 1000;
 
+/**
+ * A line call that waits out every "retry" refusal (the line busy or briefly away) until the step's
+ * own deadline ends the wait; only a refusal that says otherwise ends the run.
+ */
+async function untilDeadline<T>(ctx: PieceLine, call: () => Promise<T>): Promise<T> {
+  for (;;) {
+    try {
+      return await call();
+    } catch (error) {
+      if (ctx.signal.aborted) throw new PartError('stopped');
+      if (!(error instanceof LineError) || error.next !== 'retry') throw error;
+      await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
+    }
+  }
+}
+
 async function hostPayload(value: PayloadValue, ctx: PieceLine): Promise<unknown> {
   if (isFileRef(value)) {
     const known = ctx.hosted.get(value.sha256);
@@ -204,7 +220,7 @@ async function hostPayload(value: PayloadValue, ctx: PieceLine): Promise<unknown
     if (sha256Hex(data) !== value.sha256 || data.length !== value.bytes) throw new PartError('bad_input', 'a file changed after it was made');
     const base = path.basename(value.path).replace(/[^A-Za-z0-9._-]/g, '_').slice(-120) || `${value.sha256.slice(0, 16)}.bin`;
     try {
-      const ref = await ctx.line.hostFile(ctx.videoId, { sha256: value.sha256, bytes: value.bytes, content_type: value.mime as HostableType, filename: base }, data, ctx.signal);
+      const ref = await untilDeadline(ctx, () => ctx.line.hostFile(ctx.videoId, { sha256: value.sha256, bytes: value.bytes, content_type: value.mime as HostableType, filename: base }, data, ctx.signal));
       ctx.hosted.set(value.sha256, ref);
       return ref;
     } catch (error) {
@@ -311,7 +327,6 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       const body = (await hostPayload(order.body, ctx)) as Record<string, unknown>;
       const ask = async (): Promise<PieceAnswer> => {
         await ctx.cache.saveOrder(state);
-        let busy = 0;
         for (;;) {
           let answer: PieceAnswer;
           const request: PieceRequest = { idempotency_key: current.key, piece_key, part: { id: ctx.part.id, version: ctx.part.version }, inputs_hash, call: { provider: order.provider, path: order.path, body } };
@@ -321,9 +336,14 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
             if (ctx.signal.aborted) throw new PartError('stopped');
           } catch (error) {
             if (ctx.signal.aborted) throw new PartError('stopped');
-            if (!(error instanceof LineError) || error.code !== 'piece_busy' || error.next !== 'retry' || ++busy > 30) {
+            if (!(error instanceof LineError) || error.next !== 'retry') {
               ctx.waiting?.delete(inputs_hash);
               throw error instanceof LineError ? lineStop(error) : error;
+            }
+            // The line said retry: the step's deadline, not a count, ends the wait.
+            if (error.code !== 'piece_busy') {
+              await ctx.sleep(waitSeconds(error.retryAfterSeconds, 10), ctx.signal);
+              continue;
             }
             ctx.waiting?.add(inputs_hash);
             // Join the running attempt only when it is this same piece with these same inputs.
