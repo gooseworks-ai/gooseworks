@@ -41,6 +41,7 @@ import { asPartError, KitStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
+import { patchLockProblem, patchedFiles, readPatch, stepPatchHash, type KitPatch } from './patch';
 import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
@@ -86,6 +87,8 @@ export interface MakeDeps {
   now?: () => Date;
   /** Ctrl-C from the command. */
   signal?: AbortSignal;
+  /** Steps to run from their edited copies (`video make <id> --patched <step>`). */
+  patched?: string[];
 }
 
 export type MakeResult =
@@ -102,7 +105,7 @@ interface Fix {
 }
 
 /** run.json as the kit writes it: the contract's record plus the fixes in force, so a restart keeps them. */
-type KitRunRecord = RunRecord & { fixes?: Fix[] };
+type KitRunRecord = RunRecord & { fixes?: Fix[]; patch_sha256?: string | null };
 
 interface StepSpec {
   id: string;
@@ -315,6 +318,8 @@ class Maker {
   private browserReady = false;
   private handed!: HandOver;
   private lock: PartsLock | null = null;
+  /** The edited steps this run makes the video with, sent with every hand-over. */
+  private patch: KitPatch | null = null;
   private style!: LoadedStyle;
   private planScope: unknown;
   private brand!: BrandKit;
@@ -349,6 +354,7 @@ class Maker {
     let dev: { parts: string | null; styles: string | null };
     try {
       dev = this.devFolders();
+      if (deps.patched?.length) this.patch = await this.readPatch(dev);
     } catch (error) {
       return this.ended(error);
     }
@@ -437,18 +443,18 @@ class Maker {
     const { line } = this.deps;
     if (!browser.ok && !line.isWorker) {
       try {
-        return { answer: await line.handOver(this.videoId, { ...(await this.report(browser)), setup: 'in_progress' }), browser, claimed: true };
+        return { answer: await line.handOver(this.videoId, { ...(await this.report(browser)), setup: 'in_progress' }, this.patch), browser, claimed: true };
       } catch (error) {
         if (!(error instanceof LineError && namesSetup(error))) throw error;
         this.deps.log.write('info', 'the line does not take a hand-over before setup', { code: error.code });
       }
     }
     try {
-      return { answer: await line.handOver(this.videoId, await this.report(browser)), browser, claimed: false };
+      return { answer: await line.handOver(this.videoId, await this.report(browser), this.patch), browser, claimed: false };
     } catch (error) {
       if (!(error instanceof LineError && error.code === 'device_cannot_make' && !browser.ok && missingBrowser(error))) throw error;
       const ready = await this.checkBrowser(true);
-      return { answer: await line.handOver(this.videoId, await this.report(ready)), browser: ready, claimed: false };
+      return { answer: await line.handOver(this.videoId, await this.report(ready), this.patch), browser: ready, claimed: false };
     }
   }
 
@@ -478,7 +484,7 @@ class Maker {
     this.reporter.pause();
     try {
       await this.reporter.flush();
-      const answer = await this.deps.line.handOver(this.videoId, await this.report(browser));
+      const answer = await this.deps.line.handOver(this.videoId, await this.report(browser), this.patch);
       if (!answer.kit.ok) throw new KitStop('This video kit is too old for this video.', 'update_kit');
       if (answer.line?.quote_id !== this.handed.quote_id) throw new KitStop('The plan for this video changed after this run started. Run the make command again to make the current plan.', 'stop', 'plan_changed');
       this.handed = answer.line;
@@ -555,6 +561,15 @@ class Maker {
     }
   }
 
+  /** The edits named on the command, read before the hand-over that carries them. */
+  private async readPatch(dev: { parts: string | null }): Promise<KitPatch> {
+    if (dev.parts) throw new KitStop(`An edited step runs from the published parts; unset ${KIT_DEV_ENV.partsDir} to make the video with it.`, 'refused');
+    if (this.deps.line.isWorker) throw new KitStop('An edited step is made on the computer it was edited on.', 'refused');
+    const patch = await readPatch(runLayout(this.deps.home, this.videoId), this.deps.patched ?? []);
+    this.deps.log.write('info', 'making with edited steps', { patch_sha256: patch.sha256, steps: patch.steps.map((s) => ({ step: s.step, part: `${s.part.id}@${s.part.version}`, files: s.files.map((f) => f.path) })) });
+    return patch;
+  }
+
   private devFolders(): { parts: string | null; styles: string | null } {
     const parts = this.deps.env[KIT_DEV_ENV.partsDir] || null;
     const styles = this.deps.env[KIT_DEV_ENV.stylesDir] || null;
@@ -612,6 +627,8 @@ class Maker {
     }
     if (handed.parts_lock) this.lock = checkLock(handed.parts_lock, this.videoId, plan);
     else if (!dev.parts) throw new KitStop('This video’s parts are not ready yet. Run the same command again in a few minutes. Nothing was spent.', 'stop', 'parts_not_ready');
+    const patchProblem = this.patch && this.lock ? patchLockProblem(this.patch, this.lock) : null;
+    if (patchProblem) throw new KitStop(`${patchProblem} Nothing was spent.`, 'stop', 'patch_refused');
 
     const planCopy = withoutSignedLinks(plan);
     await mkdir(this.layout.root, { recursive: true, mode: 0o700 });
@@ -635,6 +652,7 @@ class Maker {
       local_fix_used: previous?.quote_id === handed.quote_id ? previous.local_fix_used : false,
       fixes: previous?.quote_id === handed.quote_id ? ((previous as KitRunRecord).fixes ?? []) : [],
       upload_attempt: previous?.quote_id === handed.quote_id ? previous.upload_attempt : 0,
+      patch_sha256: this.patch?.sha256 ?? null,
       started_at: previous?.started_at ?? started,
       updated_at: started,
     };
@@ -725,15 +743,20 @@ class Maker {
     for (const { key, ref, slot } of wanted) {
       this.at = key;
       let loaded: LoadedPart;
+      const edit = this.patchOf(key);
+      const patched = edit && lock ? { dir: path.join(this.layout.patches, key), files: patchedFiles(edit, lock) } : undefined;
       try {
-        loaded = await this.deps.host.loader.load({ ref, lock, dev, home: this.deps.home, env: this.deps.env, signal: this.stop.signal });
+        loaded = await this.deps.host.loader.load({ ref, lock, dev, home: this.deps.home, env: this.deps.env, signal: this.stop.signal, ...(patched ? { patched } : {}) });
       } catch (error) {
         this.deps.log.write('error', 'part could not be loaded', {
           step: key,
           part: `${ref.id}@${ref.version}`,
+          edited: !!patched,
           code: error instanceof PartLoadError ? error.code : null,
           error: error instanceof Error ? error.message : String(error),
         });
+        // The edit is this computer's own: the video is fine, so it only stops.
+        if (patched && error instanceof PartLoadError && error.code === 'hash_mismatch') throw new KitStop(`${error.message} Nothing was spent.`, 'stop', 'patch_refused');
         throw loadStop(error);
       }
       const m = loaded.manifest;
@@ -881,7 +904,8 @@ class Maker {
       this.deps.log.write('error', 'step inputs refused', { step: spec.id, errors: inputErrors });
       throw new KitStop(`One step of this video was given something it can’t take, so the video stopped there. ${PLAN_CHANGE}`, 'change_request', 'bad_input');
     }
-    const hash = stepHash({ interface: manifest.interface, part: spec.ref, toolchain: this.toolchain, inputs: spec.inputs, fix: spec.fix });
+    const edit = this.patchOf(spec.id);
+    const hash = stepHash({ interface: manifest.interface, part: spec.ref, toolchain: this.toolchain, inputs: spec.inputs, fix: spec.fix, ...(edit ? { patch: stepPatchHash(edit) } : {}) });
     hashes[spec.id] = hash;
     const saved = await this.store.readStep(spec.id);
     if (saved && saved.status === 'done' && saved.step_hash === hash && saved.outputs && this.run.steps[spec.id]?.status === 'done') {
@@ -1127,7 +1151,13 @@ class Maker {
       steps,
       kit: { version: KIT_VERSION, toolchain: this.toolchain },
       parts_source: this.run.kit.parts_source,
+      // The server matches it with the edit the hand-over registered.
+      ...(this.patch ? { patch: { sha256: this.patch.sha256, steps: this.patch.steps.map((s) => ({ step: s.step, part: `${s.part.id}@${s.part.version}` })) } } : {}),
     };
+  }
+
+  private patchOf(step: string) {
+    return this.patch?.steps.find((s) => s.step === step) ?? null;
   }
 
   /** Upload, our server's check, and one fix after a first failed check. */

@@ -3,9 +3,11 @@ import { Command } from 'commander';
 import { connectionFor, getCredentials, type Credentials } from '../auth/credentials';
 import { apiEnvironment, readKitEnv } from '../kit/env';
 import { checkComputer } from '../kit/core/check';
+import { KitStop } from '../kit/core/errors';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
 import { KitLog } from '../kit/core/log';
+import { takeOutStep } from '../kit/core/patch';
 import { kitHome } from '../kit/core/paths';
 import { recordRefusal } from '../kit/core/refusal-log';
 import { makeVideo } from '../kit/core/run';
@@ -191,7 +193,8 @@ videoCommand
 videoCommand
   .command('make <id>')
   .description('Make an approved video: the same command resumes it after a stop or a crash')
-  .action(async (id: string) => {
+  .option('--patched <steps>', 'Make it with these steps’ edited code (comma-separated), taken out with video step --edit')
+  .action(async (id: string, options: { patched?: string }) => {
     const session = await setUp(id);
     const { kit, home, log, apiBase, signedIn } = session;
     if (!signedIn) {
@@ -216,6 +219,7 @@ videoCommand
         log,
         environment: apiEnvironment(apiBase),
         signal: stop.signal,
+        ...(options.patched ? { patched: patchedSteps(options.patched) } : {}),
       });
       if (result.status === 'update_kit') {
         process.exitCode = await selfUpdate((text) => log.say(text), kit.noSelfUpdate, result.message);
@@ -229,6 +233,41 @@ videoCommand
       process.off('SIGTERM', onSignal);
       // The run is over and its lock given back: a handle a part left open (a browser, say) must not keep the command running.
       exitWhenDone();
+    }
+  });
+
+function patchedSteps(list: string): string[] {
+  return list
+    .split(',')
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
+videoCommand
+  .command('step <id> <step>')
+  .description('Take out the exact code one step of a video ran, to fix it; then make the video again with --patched <step>')
+  .option('--edit', 'Copy the step’s locked part into the video’s folder and print where it is')
+  .action(async (id: string, step: string, options: { edit?: boolean }) => {
+    if (!options.edit) {
+      console.log(`Add --edit to take the step out: gooseworks video step ${id} ${step} --edit`);
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const taken = await takeOutStep({ home: kitHome(), videoId: id, step, env: process.env, loader: defaultHost().loader });
+      if (taken.movedAside) console.log(`An earlier edit of this step, for another version, was moved to ${taken.movedAside}.`);
+      console.log(
+        taken.kept
+          ? `Step ${step} (${taken.part.id} ${taken.part.version}) is already taken out, with your edits, at:`
+          : `Step ${step} runs ${taken.part.id} ${taken.part.version}. Its code is now at:`,
+      );
+      console.log(taken.dir);
+      console.log(`Change only what is wrong there (never part.json). Then run this video’s make command again with --patched ${step} added.`);
+      console.log('The edited step may only reuse what this video already bought: a new paid request stops the run before anything is charged.');
+    } catch (error) {
+      if (!(error instanceof KitStop) && !(error instanceof Error && error.name === 'PartLoadError')) throw error;
+      console.log((error as Error).message);
+      process.exitCode = 1;
     }
   });
 

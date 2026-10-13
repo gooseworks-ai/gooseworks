@@ -336,6 +336,7 @@ export interface RunOptions {
   signal?: AbortSignal;
   heartbeatMs?: number;
   lastWordMs?: number;
+  patched?: string[];
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -360,6 +361,7 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     ...(opts.lastWordMs ? { lastWordMs: opts.lastWordMs } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.patched ? { patched: opts.patched } : {}),
   });
 }
 

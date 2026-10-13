@@ -20,6 +20,11 @@
 // with different locks never share a folder, and a part only ever sees the
 // files its lock vouches for. No link is followed below the kit home.
 //
+// An edited step (`video make <id> --patched <step>`) runs a copy of its locked part in which only
+// the edited files differ: the published part is checked as above, the edited copy must hold the
+// lock's files with exactly the hashes the edit names, and those verified bytes are what is
+// imported. part.json never changes, so the models and kit range stay the lock's.
+//
 // GOOSE_KIT_PARTS_DIR (a local goose-skills checkout) loads parts from disk
 // without the lock's hashes, for building parts during the sprint. It works
 // only against staging or a local server and marks the part `source: "dev"`.
@@ -96,6 +101,8 @@ export interface PartLoadRequest {
   home: string;
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
+  /** An edited copy of this part to run instead: its folder and every file's expected hash. */
+  patched?: { dir: string; files: Record<string, string> };
 }
 
 export interface PartLoaderOptions {
@@ -338,11 +345,61 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     }
 
     const manifest = checkManifest(ref, verified.get('part.json')!, locked);
+    if (request.patched) return loadPatched(request, request.patched, locked, home);
     const entry = path.join(dir, 'part.mjs');
     // The folder is keyed by the lock's hashes and the address by the entry's,
     // so Node's module cache can only hand back these exact bytes.
     const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${locked.files['part.mjs']}`);
     return { manifest, dir, run: exportedRun(ref, mod), source: 'published' };
+  }
+
+  /** The edited copy, after the published part passed: its verified bytes, copied where nothing else writes. */
+  async function loadPatched(
+    request: PartLoadRequest,
+    patched: { dir: string; files: Record<string, string> },
+    locked: { files: Record<string, string>; models: ModelNeed[]; kit: string },
+    home: string,
+  ): Promise<LoadedPart> {
+    const { ref } = request;
+    const lockedFiles = Object.keys(locked.files);
+    const edited = (what: string) => new PartLoadError('hash_mismatch', `The edited copy of ${ref.id} ${ref.version} ${what}.`);
+    if (Object.keys(patched.files).length !== lockedFiles.length || lockedFiles.some((file) => !patched.files[file])) throw edited('does not hold the same files as the part');
+    if (patched.files['part.json'] !== locked.files['part.json']) throw edited('changed part.json');
+    const read = await readCopy(path.resolve(patched.dir), patched.files);
+    if (!read) throw edited('changed after the edit was read, or holds other files; make the video again with it');
+    const manifest = checkManifest(ref, read.get('part.json')!, locked);
+    const key = copyKey(ref, patched.files);
+    let target: string;
+    try {
+      target = path.join(await realFolder(home, ['kit', 'patched', ref.id, ref.version]), key);
+    } catch (error) {
+      if (error instanceof NotAFolder) throw new PartLoadError('bad_cache', `${error.at} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
+      throw error;
+    }
+    if (!(await readCopy(target, patched.files))) {
+      const parent = path.dirname(target);
+      const staging = await fs.mkdtemp(path.join(parent, '.staging-'));
+      try {
+        for (const [file, bytes] of read) {
+          const out = path.join(staging, ...file.split('/'));
+          await fs.mkdir(path.dirname(out), { recursive: true, mode: 0o700 });
+          await fs.writeFile(out, bytes, { mode: 0o600, flag: 'wx' });
+        }
+        // A damaged copy is moved aside whole, then deleted without following links.
+        if (await fs.lstat(target).catch(() => null)) {
+          const aside = path.join(parent, `.aside-${key}-${randomBytes(6).toString('hex')}`);
+          await fs.rename(target, aside);
+          await removeTree(aside);
+        }
+        await fs.rename(staging, target);
+      } finally {
+        await removeTree(staging);
+      }
+      if (!(await readCopy(target, patched.files))) throw edited('changed on this computer while it was stored; run the same command again');
+    }
+    const entry = path.join(target, 'part.mjs');
+    const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${patched.files['part.mjs']}`);
+    return { manifest, dir: target, run: exportedRun(ref, mod), source: 'published' };
   }
 
   async function loadDev(request: PartLoadRequest): Promise<LoadedPart> {
@@ -389,6 +446,7 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     async load(request) {
       checkRef(request.ref);
       if (request.signal.aborted) throw new PartLoadError('unreachable', 'The video was stopped before its parts loaded.');
+      if (request.dev && request.patched) throw new PartLoadError('dev_refused', 'An edited step runs from the published parts, not a local parts folder.');
       return request.dev ? loadDev(request) : loadPublished(request);
     },
   };

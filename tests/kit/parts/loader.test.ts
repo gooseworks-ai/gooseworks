@@ -278,3 +278,40 @@ it('loads from a local parts folder only against staging or a local server', asy
     fs.rmSync(checkout, { recursive: true, force: true });
   }
 });
+
+describe('an edited step', () => {
+  const edited = 'export async function run() { return { fixed: true }; }\n';
+  function editedCopy(changes: Record<string, string> = {}): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c3-edited-'));
+    for (const [file, body] of Object.entries({ ...files, 'part.mjs': edited, ...changes })) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), body);
+    }
+    return dir;
+  }
+  const editedHashes = () => ({ ...hashes(), 'part.mjs': sha(edited) });
+  const loadEdited = (patched: { dir: string; files: Record<string, string> }) => {
+    const loader = createPartLoader({ kitVersion: '1.0.0', fetch: fetchImpl, importModule });
+    return loader.load({ ref: { id: 'music-elevenlabs', version: '1.2.0' }, lock: lockWith(), dev: false, home, env: { GOOSE_SKILLS_RAW_BASE: RAW }, signal: new AbortController().signal, patched });
+  };
+
+  it('checks the published part, then imports a verified copy of the edit from the kit folder, never the edited folder', async () => {
+    const dir = editedCopy();
+    const loaded = await loadEdited({ dir, files: editedHashes() });
+    const url = importModule.mock.calls[0][0] as string;
+    expect(url).toContain(`?sha256=${sha(edited)}`);
+    const imported = fileURLToPath(url.split('?')[0]);
+    expect(imported.startsWith(fs.realpathSync(path.join(home, 'kit', 'patched')))).toBe(true);
+    expect(fs.readFileSync(imported, 'utf8')).toBe(edited);
+    expect(loaded.dir).toBe(path.dirname(imported));
+    // The published files were downloaded and checked first.
+    expect(requested.some((u) => u.endsWith('/part.mjs'))).toBe(true);
+  });
+
+  it('refuses an edit that changed part.json, holds other bytes than it named, or adds a file', async () => {
+    expect(await refusal(loadEdited({ dir: editedCopy(), files: { ...editedHashes(), 'part.json': sha('{}') } }))).toBe('hash_mismatch');
+    expect(await refusal(loadEdited({ dir: editedCopy({ 'part.mjs': 'changed again' }), files: editedHashes() }))).toBe('hash_mismatch');
+    expect(await refusal(loadEdited({ dir: editedCopy({ 'extra.mjs': 'x' }), files: editedHashes() }))).toBe('hash_mismatch');
+    expect(importModule).not.toHaveBeenCalled();
+  });
+});

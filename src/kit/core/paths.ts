@@ -5,6 +5,7 @@
 //   ~/.gooseworks/kit/bin/                 the kit's own ffmpeg and ffprobe
 //   ~/.gooseworks/videos/<video_id>/       one run folder per video
 //   ~/.gooseworks/videos/<video_id>/runs/  one log per run of `video make`
+//   ~/.gooseworks/videos/<video_id>/patches/<step>/  a step's part taken out to edit (`video step --edit`)
 //
 // GOOSE_KIT_HOME replaces ~/.gooseworks.
 import * as os from 'os';
@@ -55,6 +56,8 @@ export interface RunLayout {
   log: string;
   /** Each run's own log, named by runName. */
   runs: string;
+  /** Steps' parts taken out to edit, one folder per step. */
+  patches: string;
 }
 
 export function runLayout(home: string, videoId: string): RunLayout {
@@ -76,6 +79,7 @@ export function runLayout(home: string, videoId: string): RunLayout {
     pendingReport: path.join(root, 'pending-report.json'),
     log: path.join(root, 'log.ndjson'),
     runs: path.join(root, 'runs'),
+    patches: path.join(root, 'patches'),
   };
 }
 
