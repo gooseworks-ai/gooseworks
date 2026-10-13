@@ -91,12 +91,22 @@ export interface HandOver {
   style_package: StylePackageRef;
 }
 
+/** Which video a hand-over is for, in the words the person knows it by. Lines that don't send it yet leave it out. */
+export interface HandedVideo {
+  name?: string | null;
+  brand?: string | null;
+  organization?: string | null;
+  /** "production", "staging" or "local". */
+  environment?: string | null;
+}
+
 export interface DeviceAnswer {
   device_id: string;
   saved_at: string;
   kit: { ok: boolean; min_version: string; latest_version: string };
   styles: { ready: number; total: number };
   line?: HandOver;
+  video?: HandedVideo;
 }
 
 export interface PieceRequest {

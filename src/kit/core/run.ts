@@ -33,7 +33,7 @@ import type {
   Timeline,
 } from '../part-interface';
 import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, type VideoLine } from '../line/client';
-import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
+import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type UploadCheck } from '../line/types';
 import { bindInputs } from './bind';
 import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -44,7 +44,7 @@ import type { KitLog } from './log';
 import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
-import { ProgressBook, rowOf, type RowKey } from './progress';
+import { ProgressBook, rowOf, StepLines, type RowKey } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
@@ -54,6 +54,7 @@ import { inspectFfmpeg, kitTools, toolchainId, type Toolchain } from './toolchai
 import { PartLoadError } from '../parts/loader';
 import { KIT_DEV_ENV } from '../env';
 import { interfaceRefusal, KIT_VERSION, kitRangeRefusal } from './version';
+import { getVersion } from '../../version';
 
 export const LAYER_ORDER: readonly LayerSlot[] = ['brand', 'captions', 'sound', 'check'];
 const SLOT_KIND: Record<LayerSlot, PartKind> = { brand: 'compose', captions: 'caption', sound: 'mix', check: 'check' };
@@ -277,7 +278,8 @@ class Maker {
   private readonly now: () => Date;
   private readonly stop = new AbortController();
   private fatal: KitStop | null = null;
-  private readonly book = new ProgressBook();
+  private readonly stepLines = new StepLines();
+  private readonly book = new ProgressBook(() => this.printSteps());
   private reporter!: ProgressReporter;
   private store!: RunStore;
   private layout!: RunLayout;
@@ -342,32 +344,49 @@ class Maker {
     if (!answer.kit.ok) return { status: 'update_kit', message: 'This video kit is too old for this video.', min_version: answer.kit.min_version };
     if (!answer.line) return { status: 'stopped', message: 'This video can’t be made on this computer right now.' };
     this.handed = answer.line;
-    this.runId = runName(this.now(), this.handed.quote_id);
 
     this.layout = runLayout(deps.home, this.videoId);
     const release = await takeRunLock(this.layout, this.now());
+    let runLog: string | null = null;
+    let result: MakeResult | null = null;
     // From here on the lock is always given back, whatever fails.
     try {
-      deps.log.attach(this.layout.log);
-      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION });
+      const run = deps.log.attachRun({
+        index: this.layout.log,
+        dir: this.layout.runs,
+        name: runName(this.now(), this.handed.quote_id),
+        packageVersion: getVersion(),
+        fields: { quote_id: this.handed.quote_id },
+      });
+      this.runId = run.run;
+      runLog = run.file;
+      deps.log.write('info', 'video handed over', { quote_id: this.handed.quote_id, stage: this.handed.stage, kit: KIT_VERSION, video: answer.video ?? null });
+      this.say(startLine(answer.video, deps.environment));
       this.store = new RunStore(this.layout);
       this.cache = new PieceCache(this.layout.pieces);
       this.reporter = new ProgressReporter(deps.line, this.videoId, this.book, deps.log, (message, reason, code) => this.halt(new KitStop(message, reason, code)), deps.heartbeatMs, this.stop.signal, deps.lastWordMs);
       const replayed = await this.replayPending();
-      if (replayed) return replayed;
+      if (replayed) return (result = replayed);
       if (this.fatal) throw this.fatal;
       // Reports start now, so checking the style and parts never looks quiet.
       this.reporter.start();
       void this.reporter.send(true);
-      return await this.makeHandedOver(dev);
+      return (result = await this.makeHandedOver(dev));
     } catch (error) {
-      return await this.ended(error);
+      return (result = await this.ended(error));
     } finally {
       this.reporter?.close();
       await this.reporter?.flush().catch(() => undefined);
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
       await release();
+      // Support reads what happened in this run's own log.
+      if (runLog && result?.status !== 'done' && result?.status !== 'update_kit') this.say(`If you contact support, share this file: ${runLog}`);
     }
+  }
+
+  /** Each change of the card's rows, as a line for the person running the kit. */
+  private printSteps(): void {
+    for (const line of this.stepLines.next(this.book.request().steps, this.now().getTime())) this.say(line);
   }
 
   private reportKey(): ReportKey | null {
@@ -1111,6 +1130,14 @@ class Maker {
   private async cleanTmp(): Promise<void> {
     for (const key of this.parts.keys()) await rm(path.join(this.store.stepDir(key), 'out', '.tmp'), { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** The first line after the hand-over: which video, for which brand, on which GooseWorks. */
+export function startLine(video: HandedVideo | undefined, environment: MakeDeps['environment']): string {
+  const name = video?.name?.trim();
+  const brand = video?.brand?.trim();
+  const where = video?.environment?.trim() || environment;
+  return `Making ${name ? `“${name}”` : 'your video'}${brand ? ` for ${brand}` : ''} on GooseWorks ${where}.`;
 }
 
 export async function makeVideo(videoId: string, deps: MakeDeps): Promise<MakeResult> {

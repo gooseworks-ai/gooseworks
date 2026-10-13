@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { runLayout } from '../../src/kit/core/paths';
 import { PartLoadError } from '../../src/kit/parts/loader';
-import { VIDEO, fakeLine, lineRoute, runMake, style, tempHome, testHost, testParts } from './harness';
+import { VIDEO, fakeLine, lineRoute, runLogs, runMake, style, tempHome, testHost, testParts } from './harness';
 
 const failures = (line: ReturnType<typeof fakeLine>) => lineRoute(line.seen, '/progress').map((s) => s.body.failure).filter(Boolean);
 
@@ -71,7 +71,7 @@ describe('a part’s refusal of the plan', () => {
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('The logo can’t be read. Change the plan, then make it again.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('logo.png');
+    expect(runLogs(home)).toContain('logo.png');
 
     const pathOnly = fakeLine();
     const generic = await runMake({ home: tempHome(), line: pathOnly, parts: refusing('bad_input', 'missing /Users/someone/.gooseworks/videos/vid_1/plan/logo.png') });
@@ -93,7 +93,7 @@ describe('a part’s refusal of the plan', () => {
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
     expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain(logged);
+    expect(runLogs(home)).toContain(logged);
   });
 
   describe('at the card’s 200-character cap', () => {
@@ -205,7 +205,7 @@ it('keeps a final check’s tool output, paths and ids off the card and in the l
   const result = await runMake({ home, line, parts });
   expect(result.status).toBe('failed');
   expect(failures(line)).toEqual([{ step: 'layer-check', code: 'check_failed', detail: 'The video didn’t pass the final check.' }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toContain('0x7f8a1c004a00');
+  expect(runLogs(home)).toContain('0x7f8a1c004a00');
 });
 
 it('sends the report again without the reason to a line that refuses the field', async () => {
@@ -235,7 +235,7 @@ it('reports a broken style package in plain words and keeps the file name in the
   expect(result.status).toBe('failed');
   expect(result.message).toBe('The style package is missing a file it needs.');
   expect(failures(line)).toEqual([{ step: 'style', code: 'change_request', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/fonts\/brand-bold\.ttf/);
+  expect(runLogs(home)).toMatch(/fonts\/brand-bold\.ttf/);
 });
 
 it('waits for the report that says why before it ends, even behind a slow report', async () => {
@@ -373,7 +373,7 @@ it('reports an error outside any step as one a new run may get past, in safe wor
   const result = await runMake({ home, line });
   expect(result).toEqual({ status: 'failed', message: 'This video could not be made right now. Run the same command again; what was made so far is kept.' });
   expect(failures(base)).toEqual([{ step: 'style', code: 'tool_failed', detail: result.message }]);
-  expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).toMatch(/HTTP 404/);
+  expect(runLogs(home)).toMatch(/HTTP 404/);
 });
 
 describe('when the run ends', () => {
@@ -426,7 +426,7 @@ describe('when the run ends', () => {
     const home = tempHome();
     const line = slowReports({ piece: () => ({ status: 409, json: { error: { code: 'video_stopped', error: 'This video was stopped.', fix: 'Press Continue on the card.', next: 'stop' } } }) }, 50);
     expect((await runMake({ home, line })).status).toBe('stopped');
-    expect(readFileSync(runLayout(home, VIDEO).log, 'utf8')).not.toMatch(/progress could not be sent/);
+    expect(runLogs(home)).not.toMatch(/progress could not be sent/);
   });
 });
 
