@@ -85,11 +85,21 @@ beforeEach(() => {
   process.exitCode = undefined;
   attended(true);
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+  // `video make` may end the process once the run is over (after flushing output); here the runner must keep going.
+  jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+  for (const stream of [process.stdout, process.stderr]) {
+    jest.spyOn(stream, 'write').mockImplementation(((...args: unknown[]) => {
+      const done = args.find((arg) => typeof arg === 'function') as (() => void) | undefined;
+      done?.();
+      return true;
+    }) as never);
+  }
   mockMakeVideo.mockResolvedValue({ status: 'done', message: 'Your video is ready.' } as Awaited<ReturnType<typeof makeVideo>>);
 });
 
 afterEach(() => {
   logSpy.mockRestore();
+  jest.restoreAllMocks();
   attended(false);
   Object.defineProperty(process.stdin, 'isTTY', { value: tty.stdin, configurable: true });
   Object.defineProperty(process.stdout, 'isTTY', { value: tty.stdout, configurable: true });
