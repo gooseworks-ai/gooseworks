@@ -15,6 +15,7 @@ import {
   LEASE_HEADER,
   LINE_PREFIX,
   WORKER_HEADER,
+  type AccessAnswer,
   type DeviceAnswer,
   type DeviceReport,
   type HostableType,
@@ -171,6 +172,15 @@ export class VideoLine {
   reportDevice(report: DeviceReport): Promise<DeviceAnswer> {
     if (!this.#login) throw new Error('Sign in first: the device report needs the GooseWorks login.');
     return this.call<DeviceAnswer>(`${LINE_PREFIX}/device`, { device: report }, 'login', MINUTE);
+  }
+
+  /**
+   * Before `video make <id>` sets anything up: may this computer's login make
+   * the video? A wrong account or expired sign-in comes back as a LineError
+   * whose `next` is sign_in.
+   */
+  access(projectId: string): Promise<AccessAnswer> {
+    return this.call<AccessAnswer>(`${LINE_PREFIX}/${encodeURIComponent(projectId)}/access`, undefined, 'login', MINUTE, undefined, 'GET');
   }
 
   /**

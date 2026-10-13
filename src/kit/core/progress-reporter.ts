@@ -142,7 +142,7 @@ export class ProgressReporter {
         // The line's refusal ends the run on its own words; the report it refused is not kept to send again.
         if (failure && this.failure === failure) this.failure = null;
         this.lineRefused = true;
-        this.onStop([error.message, error.fix].filter(Boolean).join(' '), error.next, error.code);
+        this.onStop([error.message, error.fix].filter(Boolean).join(' '), error.next === 'sign_in' ? 'stop' : error.next, error.code);
         return;
       }
       this.log.write('warn', 'progress could not be sent', { error: error instanceof Error ? error.message : String(error) });
