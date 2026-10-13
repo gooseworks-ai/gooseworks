@@ -160,6 +160,8 @@ export interface ProgressFailure {
   step: string;
   code: string;
   detail: string;
+  /** True when a part refused its plan, false when the kit's own check did: the line blames the plan only for a part's refusal. */
+  from_part?: boolean;
 }
 
 export interface ProgressRequest {

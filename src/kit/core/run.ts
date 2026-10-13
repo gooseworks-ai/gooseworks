@@ -123,6 +123,8 @@ const PLAN_CHANGE = `This video can’t be made from this plan. ${PLAN_FIX}`;
 const FAILURE_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 /** Codes the server keeps the video in Making for (gooseworks-app video-line/run-failure.ts RESUMABLE_CODES). */
 const RESUMABLE_CODES: ReadonlySet<string> = new Set(['timeout', 'tool_failed', 'needs_missing', 'provider_slow', 'price_unavailable', 'stopped_here']);
+/** Codes the line blames on the plan only when a part refused it (`from_part`), not when the kit's own check did. */
+const PLAN_CODES: ReadonlySet<string> = new Set(['bad_input', 'output_invalid']);
 /** A step ran out of time while a piece it ordered was still being made at the maker. */
 const PROVIDER_SLOW = 'provider_slow';
 
@@ -602,10 +604,10 @@ class Maker {
   }
 
   /** Tells the line once why the run gave up; the line's own refusals already ended it on its words. */
-  private reportFailure(step: string, code: string, detail: string): void {
+  private reportFailure(step: string, code: string, detail: string, fromPart?: boolean): void {
     if (!this.reporter || this.failureSent || this.reporter.refused) return;
     this.failureSent = true;
-    void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000) });
+    void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000), ...(fromPart === undefined ? {} : { from_part: fromPart }) });
   }
 
   private async saveRun(): Promise<void> {
@@ -981,7 +983,7 @@ class Maker {
         const code = slow ? PROVIDER_SLOW : reportedCode(failure!);
         this.book.finish(spec.id, 'failed');
         this.reporter.close();
-        this.reportFailure(spec.id, code, words);
+        this.reportFailure(spec.id, code, words, PLAN_CODES.has(code) ? failure!.fromPart : undefined);
         throw new KitStop(words, failure!.code === 'over_quote' ? 'stop' : 'failed', code);
       } finally {
         link.done();

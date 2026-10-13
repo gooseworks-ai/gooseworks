@@ -34,7 +34,7 @@ it('reports a failed step with its code and plain words, not its detail', async 
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
   expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
-  expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
+  expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: true }]);
 });
 
 describe('a part’s refusal of the plan', () => {
@@ -54,14 +54,14 @@ describe('a part’s refusal of the plan', () => {
       status: 'failed',
       message: '"LAZY SUNDAY AT HOME" is too long for a row label; shorten the moment before the arrow. Change the plan, then make it again.',
     });
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
   });
 
   it('keeps a part’s numbers and finishes its sentence', async () => {
     const line = fakeLine();
     const result = await runMake({ home: tempHome(), line, parts: refusing('output_invalid', 'Would run 58.2 s, style allows 15–45 s, 9 photos', true) });
     expect(result.message).toBe('Would run 58.2 s, style allows 15–45 s, 9 photos. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: true }]);
   });
 
   it('keeps a refusal’s path, file name and ids off the card and in the log', async () => {
@@ -70,7 +70,7 @@ describe('a part’s refusal of the plan', () => {
     const detail = 'The logo can’t be read. Tried /Users/someone/.gooseworks/videos/vid_1/plan/logo.png for clips.';
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('The logo can’t be read. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
     expect(runLogs(home)).toContain('logo.png');
 
     const pathOnly = fakeLine();
@@ -92,7 +92,7 @@ describe('a part’s refusal of the plan', () => {
     const line = fakeLine();
     const result = await runMake({ home, line, parts: refusing('bad_input', detail) });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
-    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
     expect(runLogs(home)).toContain(logged);
   });
 
@@ -104,7 +104,7 @@ describe('a part’s refusal of the plan', () => {
     const make = async (detail: string) => {
       const line = fakeLine();
       const result = await runMake({ home: tempHome(), line, parts: refusing('bad_input', detail) });
-      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+      expect(failures(line)).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
       return result.message!;
     };
 
@@ -136,6 +136,8 @@ describe('a part’s refusal of the plan', () => {
     const parts = testParts({ clipRun: (async () => ({ clips: 'not files' })) as any });
     const result = await runMake({ home: tempHome(), line, parts });
     expect(result.message).toBe('This video can’t be made from this plan. Change the plan, then make it again.');
+    // The kit's own check refused the outputs, so the line must not blame the plan.
+    expect(failures(line)).toEqual([{ step: 'clips', code: 'output_invalid', detail: result.message, from_part: false }]);
 
     const failing = fakeLine();
     const tool = await runMake({ home: tempHome(), line: failing, parts: testParts({ clip: { retry: { transient: 0 } }, clipRun: (async (_i: unknown, ctx: any) => { throw ctx.error('tool_failed', 'The encoder ran out of room.'); }) as any }) });
@@ -253,7 +255,7 @@ it('waits for the report that says why before it ends, even behind a slow report
   const parts = testParts({ clipRun: (async (_inputs: unknown, ctx: any) => { throw ctx.error('bad_input', 'no scenes'); }) as any });
   const result = await runMake({ home: tempHome(), line, parts });
   expect(result.status).toBe('failed');
-  expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message }]);
+  expect(delivered).toEqual([{ step: 'clips', code: 'bad_input', detail: result.message, from_part: true }]);
 });
 
 it('sends the report without the reason to an old line after the run’s own signal was aborted', async () => {
@@ -288,7 +290,7 @@ describe('a failure report the line never took', () => {
     expect(first.status).toBe('failed');
     const pendingFile = runLayout(home, VIDEO).pendingReport;
     const pending = JSON.parse(readFileSync(pendingFile, 'utf8'));
-    expect(pending.failure).toEqual({ step: 'clips', code: 'bad_input', detail: first.message });
+    expect(pending.failure).toEqual({ step: 'clips', code: 'bad_input', detail: first.message, from_part: true });
 
     const line = fakeLine();
     const again = await runMake({ home, line });
@@ -399,7 +401,7 @@ describe('when the run ends', () => {
     const result = await runMake({ home, line, parts: badInput(), heartbeatMs: 20, lastWordMs: 300 });
     expect(result.status).toBe('failed');
     expect(Date.now() - started).toBeLessThan(3_000);
-    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure).toEqual({ step: 'clips', code: 'bad_input', detail: result.message });
+    expect(JSON.parse(readFileSync(runLayout(home, VIDEO).pendingReport, 'utf8')).failure).toEqual({ step: 'clips', code: 'bad_input', detail: result.message, from_part: true });
   });
 
   it('sends no report after the one that says why', async () => {
