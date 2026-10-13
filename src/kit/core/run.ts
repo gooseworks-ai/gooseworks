@@ -48,6 +48,7 @@ import { ProgressBook, rowOf, StepLines, type RowKey } from './progress';
 import { ProgressReporter } from './progress-reporter';
 import { readJson, RunStore, takeRunLock, writeJson } from './save';
 import { assertCheckable, schemaErrors } from './schema';
+import { recordRefusal } from './refusal-log';
 import { withoutSignedLinks } from './secrets';
 import { fetchStyle, readLocalStyle, type LoadedStyle } from './style';
 import { inspectFfmpeg, kitTools, toolchainId, type Toolchain } from './toolchain';
@@ -361,6 +362,7 @@ class Maker {
       ({ answer, browser, claimed } = await this.handOverFirst(browser));
     } catch (error) {
       if (error instanceof LineError) {
+        recordRefusal(deps.home, this.videoId, 'hand-over refused', error);
         if (error.next === 'update_kit') return { status: 'update_kit', message: lineWords(error) };
         return { status: 'stopped', message: lineWords(error) };
       }

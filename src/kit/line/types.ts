@@ -16,7 +16,8 @@ export const MAX_CAPTIONS_BYTES = 64 * 1024;
 export const HOSTABLE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'audio/mpeg', 'audio/wav', 'video/mp4'] as const;
 export type HostableType = (typeof HOSTABLE_TYPES)[number];
 
-export type LineNext = 'retry' | 'stop' | 'update_kit' | 'change_request';
+/** sign_in: this computer's login can't make the video (or has expired); sign in with the video's account, then ask once more. */
+export type LineNext = 'retry' | 'stop' | 'update_kit' | 'change_request' | 'sign_in';
 
 export interface LineErrorBody {
   code: string;
@@ -104,11 +105,25 @@ export interface HandedVideo {
   environment?: string | null;
 }
 
+/** Who the kit is signed in as. */
+export interface LineAccount {
+  email: string;
+  workspace_name: string;
+}
+
+/** GET /:project_id/access: this login may make the video. */
+export interface AccessAnswer {
+  ok: true;
+  account: LineAccount;
+}
+
 export interface DeviceAnswer {
   device_id: string;
   saved_at: string;
   kit: { ok: boolean; min_version: string; latest_version: string };
   styles: { ready: number; total: number };
+  /** On the device report, from servers that send it. */
+  account?: LineAccount;
   line?: HandOver;
   /** Which video it is, for lines that send it beside the hand-over. */
   video?: HandedVideo;

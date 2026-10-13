@@ -1,41 +1,17 @@
 import { spawn } from 'child_process';
 import { Command } from 'commander';
-import { getCredentials, type Credentials } from '../auth/credentials';
-import { apiEnvironment, KIT_ENV, readKitEnv } from '../kit/env';
+import { connectionFor, getCredentials, type Credentials } from '../auth/credentials';
+import { apiEnvironment, readKitEnv } from '../kit/env';
 import { checkComputer } from '../kit/core/check';
 import { deviceId } from '../kit/core/device';
 import { defaultHost } from '../kit/core/host';
 import { KitLog } from '../kit/core/log';
 import { kitHome } from '../kit/core/paths';
+import { recordRefusal } from '../kit/core/refusal-log';
 import { makeVideo } from '../kit/core/run';
-import { VideoLine } from '../kit/line/client';
-import { signIn } from './login';
+import { LineError, lineWords, VideoLine } from '../kit/line/client';
+import { signIn, syncMcpRegistration } from './login';
 import { exitWhenDone } from '../utils/exit';
-
-function sameOrigin(a: string, b: string): boolean {
-  try {
-    return new URL(a).origin === new URL(b).origin;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The saved login, only when it belongs to the address the kit talks to. A
- * developer's saved local or tunnel address must never break a customer's make,
- * so any other saved address counts as not signed in. An explicit
- * GOOSEWORKS_API_BASE keeps the saved login as it is.
- */
-function savedLogin(apiBase: string, explicit: boolean): Credentials | null {
-  let creds: Credentials | null;
-  try {
-    creds = getCredentials();
-  } catch {
-    return null;
-  }
-  if (!creds) return null;
-  return explicit || sameOrigin(creds.api_base, apiBase) ? creds : null;
-}
 
 /** No one may be watching (CI, or no terminal), so a sign-in must not wait for approval. */
 function unattended(): boolean {
@@ -43,16 +19,26 @@ function unattended(): boolean {
   return !process.stdin.isTTY || !process.stdout.isTTY || (!!ci && ci !== '0' && ci !== 'false');
 }
 
+function savedEmail(): string | null {
+  try {
+    return getCredentials()?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Signs in on this computer, so the customer never has to run another command,
  * then reads the saved login back so its key stays paired with its own address.
- * Unattended, it prints the approval link and stops instead of waiting.
+ * The new login replaces this computer's GooseWorks login, and Claude Code's
+ * connection follows it. Unattended, it prints the approval link and stops instead of waiting.
  */
-async function signInForKit(apiBase: string, explicit: boolean): Promise<Credentials | null> {
+async function signInForKit(apiBase: string, choice: { chooseAccount?: boolean; videoId?: string } = {}): Promise<Credentials | null> {
   const noWait = unattended();
+  const before = savedEmail();
   console.log(noWait ? 'Signing in to GooseWorks first…' : 'Signing in to GooseWorks first, then carrying on…');
   try {
-    const outcome = await signIn(apiBase, undefined, noWait ? { wait: false } : {});
+    const outcome = await signIn(apiBase, undefined, { ...(noWait ? { wait: false } : {}), ...choice });
     if (outcome.status !== 'done') {
       console.log('Approve the sign-in at the link above, then run the same command again.');
       return null;
@@ -61,30 +47,93 @@ async function signInForKit(apiBase: string, explicit: boolean): Promise<Credent
     console.log('Sign-in did not finish. Run the same command again.');
     return null;
   }
-  const creds = savedLogin(apiBase, explicit);
-  if (!creds) console.log('Sign-in finished for a different GooseWorks server, so nothing was sent.');
+  const creds = connectionFor(apiBase);
+  if (!creds) {
+    console.log('Sign-in finished for a different GooseWorks server, so nothing was sent.');
+    return null;
+  }
+  if (before && before !== creds.email) console.log(`This computer now uses GooseWorks as ${creds.email} instead of ${before}.`);
+  syncMcpRegistration();
   return creds;
 }
 
-async function setUp() {
-  const explicit = !!process.env[KIT_ENV.apiBase];
+/**
+ * The kit talks to GOOSEWORKS_API_BASE or the environment's address, never a saved login's other address.
+ * `video make` passes its video, so a first sign-in already asks for an account that can make it.
+ */
+async function setUp(videoId?: string) {
   // The token leaves the environment as it is read, so no child process sees it.
   const settings = readKitEnv(process.env);
   const kit = { ...settings, noSelfUpdate: settings.noSelfUpdate || settings.worker };
   if (kit.worker && !kit.lineToken) throw new Error('This worker has no video token, so it cannot make the video.');
-  const creds = kit.worker ? null : (savedLogin(settings.apiBase, explicit) ?? (await signInForKit(settings.apiBase, explicit)));
-  const apiBase = kit.worker ? settings.apiBase : (creds?.api_base ?? settings.apiBase);
-  const login = creds?.api_key;
+  const apiBase = settings.apiBase;
+  const creds = kit.worker ? null : (connectionFor(apiBase) ?? (await signInForKit(apiBase, videoId ? { videoId } : {})));
+  if (creds) console.log(`Signed in to GooseWorks as ${creds.email}.`);
   const home = kitHome();
-  const line = new VideoLine({
-    apiBase,
-    deviceId: await deviceId(home),
-    workerId: kit.workerId,
-    login,
-    lineToken: kit.lineToken,
-  });
+  const device = await deviceId(home);
+  const lineFor = (login?: string) => new VideoLine({ apiBase, deviceId: device, workerId: kit.workerId, login, lineToken: kit.lineToken });
+  let line = lineFor(creds?.api_key);
   const log = new KitLog((text) => console.log(text), (text) => line.redact(text));
-  return { kit, home, line, log, apiBase, signedIn: kit.worker || !!login };
+  const session = {
+    kit,
+    home,
+    log,
+    apiBase,
+    signedIn: kit.worker || !!creds,
+    get line() {
+      return line;
+    },
+    /** After a new sign-in: the same line with the new login. */
+    relogin(login: string) {
+      line = lineFor(login);
+      return line;
+    },
+  };
+  return session;
+}
+
+type Session = Awaited<ReturnType<typeof setUp>>;
+
+/**
+ * Before any slow setup: may this login make the video? A wrong account or an
+ * expired sign-in signs in again by itself (choosing the account, bound to
+ * this video) and asks once more. Returns the line to make it with, or null.
+ */
+export async function lineForVideo(id: string, session: Session): Promise<VideoLine | null> {
+  if (session.kit.worker) return session.line;
+  let error: unknown;
+  try {
+    await session.line.access(id);
+    return session.line;
+  } catch (caught) {
+    error = caught;
+  }
+  if (!(error instanceof LineError)) throw error;
+  // A server without the access check: the hand-over checks the same things.
+  if (error.status === 404 && error.code !== 'not_found') return session.line;
+  recordRefusal(session.home, id, 'access refused', error);
+  if (error.next !== 'sign_in') {
+    session.log.say(lineWords(error));
+    return null;
+  }
+  const signedInAs = typeof error.details?.signed_in_as === 'string' ? error.details.signed_in_as : null;
+  session.log.say(
+    error.code === 'not_signed_in'
+      ? 'This computer’s GooseWorks sign-in has expired; signing in again…'
+      : `This computer is signed in as ${signedInAs ?? 'another account'}; signing in with the account from your chat…`,
+  );
+  const creds = await signInForKit(session.apiBase, { chooseAccount: error.code !== 'not_signed_in', videoId: id });
+  if (!creds) return null;
+  const line = session.relogin(creds.api_key);
+  try {
+    await line.access(id);
+    return line;
+  } catch (again) {
+    if (!(again instanceof LineError)) throw again;
+    recordRefusal(session.home, id, 'access refused', again);
+    session.log.say(lineWords(again));
+    return null;
+  }
 }
 
 /**
@@ -121,12 +170,17 @@ videoCommand
   .command('check')
   .description('Check this computer can make videos, set up what is missing, and report it')
   .action(async () => {
-    const { kit, home, line, log, signedIn } = await setUp();
+    const session = await setUp();
+    const { kit, home, line, log, apiBase, signedIn } = session;
     if (!signedIn) {
       process.exitCode = 1;
       return;
     }
-    const result = await checkComputer({ home, env: process.env, line, host: defaultHost(), say: (text) => log.say(text) });
+    const signInAgain = async () => {
+      const creds = await signInForKit(apiBase);
+      return creds ? session.relogin(creds.api_key) : null;
+    };
+    const result = await checkComputer({ home, env: process.env, line, host: defaultHost(), say: (text) => log.say(text), signInAgain });
     if (result.status === 'update_kit') {
       process.exitCode = await selfUpdate((text) => log.say(text), kit.noSelfUpdate, result.message);
       return;
@@ -138,8 +192,14 @@ videoCommand
   .command('make <id>')
   .description('Make an approved video: the same command resumes it after a stop or a crash')
   .action(async (id: string) => {
-    const { kit, home, line, log, apiBase, signedIn } = await setUp();
+    const session = await setUp(id);
+    const { kit, home, log, apiBase, signedIn } = session;
     if (!signedIn) {
+      process.exitCode = 1;
+      return;
+    }
+    const line = await lineForVideo(id, session);
+    if (!line) {
       process.exitCode = 1;
       return;
     }

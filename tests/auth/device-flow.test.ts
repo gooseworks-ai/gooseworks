@@ -300,6 +300,20 @@ describe('auth/device-flow', () => {
     ]);
   });
 
+  it('names the video it signs in for, and never resumes a sign-in started for another video', async () => {
+    const video = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+    api.replies[START] = [startOk, startOk];
+    await runDeviceFlow(api.base, { wait: false, now });
+    expect(api.calls(START)[0].body).toEqual({ scope_type: 'user' });
+
+    api.replies[POLL] = [success()];
+    const { sleep } = recordingSleep();
+    await runDeviceFlow(api.base, { sleep, now, videoId: video });
+
+    expect(api.calls(START)).toHaveLength(2);
+    expect(api.calls(START)[1].body).toEqual({ scope_type: 'user', video_id: video });
+  });
+
   it('ignores a pending sign-in saved for another API base, or one that expired or is broken', async () => {
     const other: PendingDeviceLogin = {
       device_code: 'other-code',

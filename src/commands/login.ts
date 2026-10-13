@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { getCredentials } from '../auth/credentials';
+import { getCredentials, sameOrigin, type Credentials } from '../auth/credentials';
 import { runOAuthFlow, type OAuthResult } from '../auth/oauth-server';
 import { DeviceFlowUnavailableError, readPendingDeviceLogin, runDeviceFlow } from '../auth/device-flow';
 import { chooseLoginMode } from '../auth/login-mode';
@@ -44,14 +44,14 @@ async function refreshEntrySkillsOnLogin(): Promise<void> {
  * mismatch reads as "project not found" / wrong org on every `mcp__gooseworks__*`
  * call, while `doctor` (creds-only) still passes — a confusing trap.
  */
-function syncMcpRegistration(): void {
+export function syncMcpRegistration(): void {
   if (getEnvironment() === 'staging') return;
   // Only re-point a Claude Code that is here. Without it (a cloud agent's
   // sandbox, GOOSE-3937) this would create ~/.claude.json holding the key.
   if (!isAgentInstalled('claude')) return;
   if (configureClaudeMcp()) {
     const creds = getCredentials();
-    logger.info(`Synced the gooseworks MCP → ${creds?.mcp_server_url ?? 'the configured server'}`);
+    logger.info(`Pointed Claude Code's GooseWorks connection at ${creds?.email ?? 'this account'}.`);
   }
 }
 
@@ -67,6 +67,10 @@ export interface SignInFlags {
   browser?: boolean;
   /** false with `--no-wait`: print the device link and return without waiting. */
   wait?: boolean;
+  /** Ask which account to use, even when the browser is already signed in. */
+  chooseAccount?: boolean;
+  /** The video kit signs in for this video; an account that can't make it gets no key. */
+  videoId?: string;
 }
 
 export type SignInOutcome = { status: 'done'; result: OAuthResult } | { status: 'pending' };
@@ -84,9 +88,13 @@ export async function signIn(apiBase: string, ref: string | undefined, flags: Si
     noWait,
     pendingLogin: readPendingDeviceLogin(apiBase) !== null,
   });
+  const choice = {
+    ...(flags.chooseAccount ? { chooseAccount: true } : {}),
+    ...(flags.videoId ? { videoId: flags.videoId } : {}),
+  };
   if (mode === 'device') {
     try {
-      const outcome = await runDeviceFlow(apiBase, { ref, wait: !noWait });
+      const outcome = await runDeviceFlow(apiBase, { ref, wait: !noWait, ...(flags.videoId ? { videoId: flags.videoId } : {}) });
       return outcome.status === 'done' ? outcome : { status: 'pending' };
     } catch (err) {
       if (!(err instanceof DeviceFlowUnavailableError)) throw err;
@@ -96,7 +104,16 @@ export async function signIn(apiBase: string, ref: string | undefined, flags: Si
       logger.warn("Device sign-in isn't available on this server yet; using browser sign-in.");
     }
   }
-  return { status: 'done', result: await runOAuthFlow(apiBase, ref) };
+  return { status: 'done', result: Object.keys(choice).length ? await runOAuthFlow(apiBase, ref, choice) : await runOAuthFlow(apiBase, ref) };
+}
+
+/** The saved login, or null when there is none or it was saved for another environment. */
+function savedLogin(): Credentials | null {
+  try {
+    return getCredentials();
+  } catch {
+    return null;
+  }
 }
 
 async function finishLogin(apiBase: string, ref: string | undefined, result: OAuthResult): Promise<void> {
@@ -116,7 +133,8 @@ export function createLoginCommand(): Command {
   .option('--browser', 'Sign in with a browser on this computer')
   .option('--no-wait', 'With --device: print the link and exit; run the command again to finish')
   .option('--paste [value]', 'Finish sign-in from the address your browser showed, or a GooseWorks key')
-  .action(async (opts) => {
+  .option('--switch', 'Sign in with another account, choosing it in the browser')
+  .action(async (opts, command: Command) => {
     assertConnection(opts.apiBase, 'api');
     if (opts.browser && (opts.device || opts.wait === false)) {
       logger.error('--browser signs in on this computer; it cannot be combined with --device or --no-wait.');
@@ -135,22 +153,30 @@ export function createLoginCommand(): Command {
       return;
     }
 
-    const existing = getCredentials();
-    if (existing) {
-      logger.success(`Already logged in as ${existing.email}`);
+    const existing = savedLogin();
+    // An address named on purpose (--api-base or GOOSEWORKS_API_BASE) that isn't the saved login's signs in there.
+    const named = command.getOptionValueSource('apiBase') === 'cli' || !!process.env.GOOSEWORKS_API_BASE;
+    const otherAddress = !!existing && named && !sameOrigin(existing.api_base, opts.apiBase);
+    if (existing && !opts.switch && !otherAddress) {
+      logger.success(`Already signed in as ${existing.email}. To use another account: gooseworks login --switch`);
       await recordAttributionRef(existing.api_base || opts.apiBase, opts.ref, existing.api_key);
       await refreshEntrySkillsOnLogin();
       syncMcpRegistration();
-      logger.info('Run "gooseworks logout" first to switch accounts.');
       return;
     }
 
     try {
-      const outcome = await signIn(opts.apiBase, opts.ref, { device: opts.device, browser: opts.browser, wait: opts.wait });
+      const outcome = await signIn(opts.apiBase, opts.ref, {
+        device: opts.device,
+        browser: opts.browser,
+        wait: opts.wait,
+        ...(opts.switch ? { chooseAccount: true } : {}),
+      });
       if (outcome.status === 'pending') {
         logger.info('After you approve, run this command again (without --no-wait) to finish.');
         return;
       }
+      if (otherAddress) logger.info(`Switched from ${new URL(existing!.api_base).origin} to ${new URL(opts.apiBase).origin}.`);
       await finishLogin(opts.apiBase, opts.ref, outcome.result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed';
@@ -168,7 +194,7 @@ export const loginCommand = createLoginCommand();
  */
 export async function ensureLoggedIn(apiBase: string = API_BASE, ref?: string) {
   assertConnection(apiBase, 'api');
-  const existing = getCredentials();
+  const existing = savedLogin();
   if (existing) {
     await recordAttributionRef(existing.api_base || apiBase, ref, existing.api_key);
     return existing;

@@ -3,6 +3,7 @@
 // never a system install), then sends the device report, so the catalogue
 // offers only the styles this computer can make.
 import { LineError, type VideoLine } from '../line/client';
+import type { DeviceAnswer } from '../line/types';
 import { deviceReport } from './device';
 import type { KitHost } from './host';
 import { inspectFfmpeg, type Toolchain } from './toolchain';
@@ -17,6 +18,8 @@ export interface CheckDeps {
   host: KitHost;
   say: (line: string) => void;
   tools?: Toolchain;
+  /** An expired or refused sign-in: sign in again and hand back the line with the new login. */
+  signInAgain?: () => Promise<VideoLine | null>;
 }
 
 export type CheckResult =
@@ -49,10 +52,18 @@ export async function checkComputer(deps: CheckDeps): Promise<CheckResult> {
     return { status: 'not_ready' };
   }
   try {
-    const answer = await line.reportDevice(report);
+    let answer: DeviceAnswer;
+    try {
+      answer = await line.reportDevice(report);
+    } catch (error) {
+      const again = error instanceof LineError && error.next === 'sign_in' && deps.signInAgain ? await deps.signInAgain() : null;
+      if (!again) throw error;
+      answer = await again.reportDevice(report);
+    }
     if (!answer.kit.ok) return { status: 'update_kit', message: 'This video kit is older than the oldest one that works.', min_version: answer.kit.min_version };
     const { ready: styles, total } = answer.styles;
-    say(ready ? `Ready: ${styles} ${styles === 1 ? 'style' : 'styles'}${total > styles ? ` of ${total}` : ''}.` : `Not ready yet: ${styles} of ${total} styles can be made here.`);
+    const account = answer.account ? `, signed in as ${answer.account.email}${answer.account.workspace_name ? ` (${answer.account.workspace_name})` : ''}` : '';
+    say(ready ? `Ready: ${styles} ${styles === 1 ? 'style' : 'styles'}${total > styles ? ` of ${total}` : ''}${account}.` : `Not ready yet: ${styles} of ${total} styles can be made here${account}.`);
     return { status: ready ? 'ready' : 'not_ready', ready: styles, total };
   } catch (error) {
     if (error instanceof LineError) {

@@ -14,7 +14,7 @@ jest.mock('../../src/auth/credentials', () => ({
 }));
 
 import { getCredentials } from '../../src/auth/credentials';
-import { configureClaudeMcp, removeClaudeMcp } from '../../src/agents/claude-mcp';
+import { configureClaudeMcp, otherGooseworksMcpEntries, removeClaudeMcp } from '../../src/agents/claude-mcp';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 const CONFIG_PATH = '/mock-home/.claude.json';
@@ -128,7 +128,7 @@ describe('agents/claude-mcp', () => {
         },
       }));
 
-      removeClaudeMcp();
+      expect(removeClaudeMcp()).toEqual(['gooseworks', 'gooseworks-files']);
 
       const writeCall = mockFs.writeFileSync.mock.calls.find((c) => c[0] === CONFIG_PATH);
       const written = JSON.parse(String(writeCall![1]).trim());
@@ -143,9 +143,29 @@ describe('agents/claude-mcp', () => {
         mcpServers: { other: {} },
       }));
 
-      removeClaudeMcp();
+      expect(removeClaudeMcp()).toEqual([]);
 
       expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('otherGooseworksMcpEntries', () => {
+    it('finds GooseWorks entries the CLI did not write, user-level and per project, and never its own', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({
+        mcpServers: {
+          gooseworks: { type: 'http', url: 'https://mcp.gooseworks.ai/mcp' },
+          'gooseworks-staging': { type: 'http', url: 'https://app-mcp.staging.gooseworks.ai/mcp' },
+          growth: { type: 'http', url: 'https://mcp.gooseworks.ai/mcp' },
+          other: { type: 'http', url: 'https://example.com/mcp' },
+        },
+        projects: {
+          '/work/site': { mcpServers: { 'gooseworks-staging': { type: 'http', url: 'https://app-mcp.staging.gooseworks.ai/mcp' } } },
+          '/work/other': { mcpServers: { other: { type: 'http', url: 'https://example.com/mcp' } } },
+        },
+      }));
+
+      expect(otherGooseworksMcpEntries()).toEqual(['gooseworks-staging', 'growth', 'gooseworks-staging (/work/site)']);
     });
   });
 });

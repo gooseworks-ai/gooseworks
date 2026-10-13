@@ -18,6 +18,38 @@ describe('the line client', () => {
     }
   });
 
+  it('asks for access with the login before any setup, and turns a wrong account into a sign_in refusal', async () => {
+    const seen: Array<{ url: string; method?: string; auth?: string }> = [];
+    const replies = [
+      new Response(JSON.stringify({ ok: true, account: { email: 'a@example.com', workspace_name: 'Kiss Cafe' } }), { status: 200 }),
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'wrong_account',
+            error: 'This computer is signed in to GooseWorks as b@example.com, but this video belongs to another account.',
+            fix: 'Sign in on this computer with the account you use in your chat, then run the same command again.',
+            next: 'sign_in',
+            details: { signed_in_as: 'b@example.com' },
+          },
+        }),
+        { status: 403 },
+      ),
+    ];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen.push({ url, method: init.method, auth: (init.headers as Record<string, string>).Authorization });
+      return replies.shift()!;
+    }) as unknown as typeof fetch;
+    const line = new VideoLine({ apiBase: 'https://api.test', deviceId: '11111111-2222-4333-8444-555555555555', login: LOGIN, fetch: fetchImpl, sleep: async () => undefined });
+
+    await expect(line.access('vid_1')).resolves.toEqual({ ok: true, account: { email: 'a@example.com', workspace_name: 'Kiss Cafe' } });
+    expect(seen[0]).toEqual({ url: 'https://api.test/v1/video-line/vid_1/access', method: 'GET', auth: `Bearer ${LOGIN}` });
+
+    const refused = await line.access('vid_1').catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(LineError);
+    expect(refused).toMatchObject({ code: 'wrong_account', next: 'sign_in', status: 403, details: { signed_in_as: 'b@example.com' } });
+    expect(seen).toHaveLength(2);
+  });
+
   it('stops a download that goes past its limit, without reading the rest', async () => {
     let pulled = 0;
     const chunk = new Uint8Array(64 * 1024);

@@ -20,6 +20,34 @@ export interface OAuthResult {
   mcp_server_url?: string;
 }
 
+export interface SignInChoice {
+  /** Ask which account to use, even when the browser is already signed in. */
+  chooseAccount?: boolean;
+  /** The video kit signs in for this video: the server gives no key to an account that can't make it. */
+  videoId?: string;
+}
+
+/** The `/cli/auth` link the browser opens. */
+export function cliAuthUrl(
+  frontendBase: string,
+  port: number,
+  state: string,
+  apiBase: string,
+  attributionRef?: string,
+  choice: SignInChoice = {},
+): string {
+  // Pass api_base so the frontend can route Google OAuth back through the
+  // correct backend (e.g. http://localhost:5999 for local dev vs. the
+  // ngrok/prod URL baked into NEXT_PUBLIC_API_URL).
+  let authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}&api_base=${encodeURIComponent(apiBase)}`;
+  // Preserve the existing creator-referral rail. The same value is sent to
+  // the authenticated attribution endpoint after OAuth for marketing refs.
+  if (attributionRef) authUrl += `&creator_ref=${encodeURIComponent(attributionRef)}`;
+  if (choice.chooseAccount) authUrl += '&choose_account=1';
+  if (choice.videoId) authUrl += `&video=${encodeURIComponent(choice.videoId)}`;
+  return authUrl;
+}
+
 /**
  * @param attributionRef Referral or marketing code (from `--ref`). Forwarded to
  *   the `/cli/auth` page as `?creator_ref=`, which passes it onto `/auth/google`
@@ -30,6 +58,7 @@ export interface OAuthResult {
 export async function runOAuthFlow(
   apiBase: string,
   attributionRef?: string,
+  choice: SignInChoice = {},
 ): Promise<OAuthResult> {
   const state = crypto.randomBytes(16).toString('hex');
   const frontendBase = FRONTEND_URL;
@@ -141,16 +170,7 @@ export async function runOAuthFlow(
         return;
       }
 
-      const port = addr.port;
-      // Pass api_base so the frontend can route Google OAuth back through the
-      // correct backend (e.g. http://localhost:5999 for local dev vs. the
-      // ngrok/prod URL baked into NEXT_PUBLIC_API_URL).
-      let authUrl = `${frontendBase}/cli/auth?callback_port=${port}&state=${state}&api_base=${encodeURIComponent(apiBase)}`;
-      // Preserve the existing creator-referral rail. The same value is sent to
-      // the authenticated attribution endpoint after OAuth for marketing refs.
-      if (attributionRef) {
-        authUrl += `&creator_ref=${encodeURIComponent(attributionRef)}`;
-      }
+      const authUrl = cliAuthUrl(frontendBase, addr.port, state, apiBase, attributionRef, choice);
 
       logger.info('Opening browser for Google sign-in...');
       // Always print the link: open() resolves even when no browser exists

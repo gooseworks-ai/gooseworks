@@ -19,6 +19,7 @@ export interface BrowserPreflightResult {
 }
 
 const MARKER = 'GOOSE_BROWSER_PREFLIGHT=';
+const STARTUP_TIMEOUT_MS = 10_000;
 
 // A separate Node process preserves native module resolution (including NODE_PATH)
 // and keeps a broken Playwright installation from hanging or crashing the CLI.
@@ -150,7 +151,13 @@ function processTable() {
 }
 // Without a process inventory we cannot safely clean up a detached browser.
 // Fail before launching it; never use a broad browser-name or user-wide kill.
-if (process.platform !== 'win32' && !processTable()) {
+// One slow ps on a busy machine is not a missing inventory, so ask a few times.
+function inventoryAvailable() {
+  const until = Date.now() + 1500;
+  do { if (processTable()) return true; } while (Date.now() < until);
+  return false;
+}
+if (process.platform !== 'win32' && !inventoryAvailable()) {
   process.stdout.write('GOOSE_BROWSER_PREFLIGHT=' + JSON.stringify({ ok: false, code: 'probe_failed', detail: 'Cannot inspect owned browser processes with /bin/ps; browser was not launched' }) + '\n');
   process.exit(1);
 }
@@ -233,9 +240,21 @@ function finish(code, override) {
   const text = 'GOOSE_BROWSER_PREFLIGHT=' + JSON.stringify(result) + '\n';
   process.stdout.write(text, () => process.exit(code));
 }
-const deadline = setTimeout(() => finish(1, {
-  ok: false, code: 'timeout', detail: 'Browser launch/close probe timed out',
-}), Number(args[2]) + Number(args[3]) + 500);
+// Starting Node and loading Playwright has its own bound; the launch/close
+// bound starts only when the probe is about to launch, so a slow start on a
+// busy machine never eats into the browser's own time.
+let deadline = setTimeout(() => finish(1, {
+  ok: false, code: 'timeout', detail: 'Browser probe did not start in time',
+}), Number(args[4]));
+let launching = false;
+function startLaunchDeadline() {
+  if (launching) return;
+  launching = true;
+  clearTimeout(deadline);
+  deadline = setTimeout(() => finish(1, {
+    ok: false, code: 'timeout', detail: 'Browser launch/close probe timed out',
+  }), Number(args[2]) + Number(args[3]) + 500);
+}
 child.stdout.on('data', chunk => {
   output += chunk;
   if (Buffer.byteLength(output) > 60000) finish(1, { ok: false, code: 'probe_failed', detail: 'Browser probe exceeded its diagnostic output limit' });
@@ -255,6 +274,7 @@ child.stdout.on('data', chunk => {
   const metadata = output.split(/\r?\n/).find(line => line.startsWith('GOOSE_BROWSER_PREFLIGHT_META=') && output.includes(line + '\n'));
   if (metadata) {
     try { meta = JSON.parse(metadata.slice('GOOSE_BROWSER_PREFLIGHT_META='.length)); } catch {}
+    startLaunchDeadline();
   }
   const line = output.split(/\r?\n/).find(line => line.startsWith('GOOSE_BROWSER_PREFLIGHT=') && output.includes(line + '\n'));
   if (line) {
@@ -274,8 +294,11 @@ child.on('close', () => finish(1, { ok: false, code: 'probe_failed', detail: 'Br
 export function checkBrowserPreflight(opts: {
   rendererScript?: string;
   cwd?: string;
+  /** Bounds the browser's own launch() only; Node and Playwright loading are bounded separately. */
   launchTimeoutMs?: number;
   closeTimeoutMs?: number;
+  /** Starting the probe and loading Playwright, before launch(). */
+  startupTimeoutMs?: number;
 } = {}): BrowserPreflightResult {
   const cwd = opts.cwd ?? process.cwd();
   const selected = opts.rendererScript !== undefined;
@@ -283,14 +306,15 @@ export function checkBrowserPreflight(opts: {
   const folder = path.dirname(anchor);
   const launchMs = opts.launchTimeoutMs ?? 15000;
   const closeMs = opts.closeTimeoutMs ?? 3000;
+  const startupMs = opts.startupTimeoutMs ?? STARTUP_TIMEOUT_MS;
   let result: Omit<BrowserPreflightResult, 'fix'>;
   try {
-    const probe = spawnSync(process.execPath, ['-e', SUPERVISOR, PROBE, anchor, String(selected), String(launchMs), String(closeMs)], {
+    const probe = spawnSync(process.execPath, ['-e', SUPERVISOR, PROBE, anchor, String(selected), String(launchMs), String(closeMs), String(startupMs)], {
       cwd,
       env: process.env,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: launchMs + closeMs + 3500,
+      timeout: startupMs + launchMs + closeMs + 3500,
       killSignal: 'SIGKILL',
       maxBuffer: 64 * 1024,
     });
