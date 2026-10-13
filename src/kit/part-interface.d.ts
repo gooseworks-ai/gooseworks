@@ -707,7 +707,8 @@ export interface StepRecord {
     inputs_hash: string;
     /** "<piece_key>:<inputs_hash>:<attempt>" */
     idempotency_key: string;
-    attempt: 1 | 2;
+    /** 1, 2, then one more per later run while the provider's failures are free. */
+    attempt: number;
     reused: boolean;
     /** From the line's answer (piece_credits); our ledger is the truth. */
     credits?: number;

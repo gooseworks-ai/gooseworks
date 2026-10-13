@@ -41,7 +41,7 @@ import { asPartError, KitStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
 import type { KitHost, LoadedPart } from './host';
 import type { KitLog } from './log';
-import { isInside, runLayout, type RunLayout } from './paths';
+import { isInside, runLayout, runName, type RunLayout } from './paths';
 import { FAILED_TWICE, PieceCache, PieceFailure, pieceOrderer } from './pieces';
 import { MAX_CHARS, plainWords } from './plain-words';
 import { ProgressBook, rowOf } from './progress';
@@ -287,6 +287,8 @@ class Maker {
   private readonly pieceLocks = new Map<string, Promise<void>>();
   /** Where the run is, for the failure report: a step id or a stage before or after the steps. */
   private at = 'hand-over';
+  /** This run's name: its log file and its keys in the order journal. */
+  private runId = '';
   private failureSent = false;
 
   constructor(private readonly videoId: string, private readonly deps: MakeDeps) {
@@ -331,6 +333,7 @@ class Maker {
     if (!answer.kit.ok) return { status: 'update_kit', message: 'This video kit is too old for this video.', min_version: answer.kit.min_version };
     if (!answer.line) return { status: 'stopped', message: 'This video can’t be made on this computer right now.' };
     this.handed = answer.line;
+    this.runId = runName(this.now(), this.handed.quote_id);
 
     this.layout = runLayout(deps.home, this.videoId);
     const release = await takeRunLock(this.layout, this.now());
@@ -855,6 +858,7 @@ class Maker {
           stepId: spec.id,
           part: spec.ref,
           models: spec.models,
+          runId: this.runId,
           workDir,
           runRoot: this.layout.root,
           cache: this.cache,

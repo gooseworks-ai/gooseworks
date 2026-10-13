@@ -24,9 +24,12 @@ export class PieceFailure extends PartError {
     super(code, line.error);
   }
 
-  /** A provider failure whose piece has used both its attempts: no later run may order it again. */
+  /**
+   * A charged provider failure whose piece has used both its attempts: no later run may order it
+   * again. A failure the line says was free never spends the piece; the next run tries it anew.
+   */
   get spent(): boolean {
-    return this.code === 'provider_failed' && this.attempt >= 2;
+    return this.code === 'provider_failed' && this.attempt >= 2 && this.line.details?.charged !== false;
   }
 }
 
@@ -37,13 +40,18 @@ export const FAILED_TWICE = 'One part of this video failed at its maker twice, s
  * Every key this video sent for one piece, and how it ended, saved before the
  * call goes out. A key whose piece is running or done is asked again, never
  * replaced, so a finished paid piece is never ordered under a new key; only a
- * provider failure earns the one new attempt.
+ * provider failure earns a new attempt. A charged failure earns one in all;
+ * a free one earns one again on every run, up to NEW_ATTEMPTS_PER_RUN.
  */
 interface OrderState {
   inputs_hash: string;
   piece_key: string;
-  attempts: Array<{ attempt: number; key: string; outcome: 'sent' | 'done' | 'failed'; failure?: LineErrorBody }>;
+  /** `run` names the run that made the key (keys from kits before it have none). */
+  attempts: Array<{ attempt: number; key: string; outcome: 'sent' | 'done' | 'failed'; failure?: LineErrorBody; run?: string }>;
 }
+
+/** New keys one run may make for one piece: its first try and the step's one retry. */
+const NEW_ATTEMPTS_PER_RUN = 2;
 
 interface CachedPiece {
   inputs_hash: string;
@@ -132,6 +140,8 @@ export interface PieceLine {
   part: PartRef;
   /** The models this part may order: the lock's entry (or the manifest's, for dev parts). */
   models: ModelNeed[];
+  /** This run's name in the order journal: a free failure's new attempts are counted per run. */
+  runId: string;
   workDir: string;
   runRoot: string;
   cache: PieceCache;
@@ -143,7 +153,7 @@ export interface PieceLine {
   /** One order at a time per piece hash, shared by the whole run. */
   locks: Map<string, Promise<void>>;
   /** Called after every piece, with the piece's record, once its files are saved. */
-  onPiece: (record: { piece: string; piece_key: string; inputs_hash: string; idempotency_key: string; attempt: 1 | 2; reused: boolean; credits?: number }) => Promise<void>;
+  onPiece: (record: { piece: string; piece_key: string; inputs_hash: string; idempotency_key: string; attempt: number; reused: boolean; credits?: number }) => Promise<void>;
   /** Called while a piece is still running at the provider. */
   onWait: () => void;
 }
@@ -270,26 +280,28 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
       if (cached) {
         const files: Record<string, FileRef> = {};
         for (const r of order.results) files[r.name] = await placeResult(ctx, inputs_hash, cached.files[r.pointer].sha256, r.name, r.media);
-        const attempt = (last?.attempt ?? 1) as 1 | 2;
-        await ctx.onPiece({ piece: order.piece, piece_key, inputs_hash, idempotency_key: last?.key ?? keyFor(1), attempt, reused: true });
+        await ctx.onPiece({ piece: order.piece, piece_key, inputs_hash, idempotency_key: last?.key ?? keyFor(1), attempt: last?.attempt ?? 1, reused: true });
         return { json: (cached.json ?? null) as JsonValue, files, reused: true };
       }
 
       // The key: the last one again while its piece may be running or is done.
       // A saved failure is acted on as the line said, before anything is sent:
-      // only a failure the line said to retry earns a new attempt, and only one.
+      // only a failure the line said to retry earns a new attempt.
       let current: OrderState['attempts'][number];
       if (last?.outcome === 'failed') {
         const saved = last.failure ?? { code: 'provider_failed', error: 'This piece failed.', fix: '', next: 'retry' as const };
         if (saved.next !== 'retry' || saved.code === 'provider_rejected') throw failureFor(saved, last.attempt);
-        // The line's own words here say to try once more, which no run can do now.
-        if (last.attempt >= 2) throw new KitStop(FAILED_TWICE, 'failed', 'provider_failed');
-        current = { attempt: last.attempt + 1, key: keyFor(last.attempt + 1), outcome: 'sent' };
+        const free = saved.details?.charged === false;
+        // A charged piece's line says to try once more, which no run can do now.
+        if (!free && last.attempt >= 2) throw new KitStop(FAILED_TWICE, 'failed', 'provider_failed');
+        // A free failure is tried anew on a later run, never more than twice in this one.
+        if (state.attempts.filter((a) => a.run === ctx.runId).length >= NEW_ATTEMPTS_PER_RUN) throw failureFor(saved, last.attempt);
+        current = { attempt: last.attempt + 1, key: keyFor(last.attempt + 1), outcome: 'sent', run: ctx.runId };
         state.attempts.push(current);
       } else if (last) {
         current = last;
       } else {
-        current = { attempt: 1, key: keyFor(1), outcome: 'sent' };
+        current = { attempt: 1, key: keyFor(1), outcome: 'sent', run: ctx.runId };
         state.attempts.push(current);
       }
 
@@ -311,7 +323,7 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
             const running = error.details?.idempotency_key;
             const prefix = `${piece_key}:${inputs_hash}:`;
             const runningAttempt = typeof running === 'string' && running.startsWith(prefix) ? running.slice(prefix.length) : null;
-            const match = runningAttempt === '1' || runningAttempt === '2';
+            const match = !!runningAttempt && /^[1-9]\d{0,3}$/.test(runningAttempt);
             if (match && running !== current.key) {
               current = { attempt: Number(runningAttempt), key: running as string, outcome: 'sent' };
               state.attempts.push(current);
@@ -368,7 +380,7 @@ export function pieceOrderer(ctx: PieceLine): (order: PieceOrder) => Promise<Pie
         piece_key,
         inputs_hash,
         idempotency_key: current.key,
-        attempt: current.attempt as 1 | 2,
+        attempt: current.attempt,
         reused: answer.replayed,
         credits: answer.piece_credits,
       });
