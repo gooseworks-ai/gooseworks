@@ -34,6 +34,10 @@ export const ANSWER_FIELDS: readonly string[] = [
   'harness_binding', 'requires_skills',
   // make-custom-video since gooseworks-app #2007: reference upload/attach and the server-added spend.
   'video_project', 'media_confirm', 'media_analyze', 'current_revision', 'committed_credits',
+  // make-custom-video in the custom one-run work (gooseworks-app #2019, #2022-#2027): template demo
+  // reference, free price check, redo allowance, clip checks, progress notes and the rebuild recipe.
+  'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
+  'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
@@ -48,8 +52,15 @@ export const ROUTER_MAX_CHARS = 6500;
  * make-custom-video carries the whole custom contract (reference viewing, two owner
  * reviews, local execution and the stored rebuild recipe), and the server text
  * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
+ * Raised to 8,000 for the custom one-run work (nearest template, final check, progress,
+ * redo allowance and clip checks, the kit hand-off): 7,554 characters on 2026-10-13.
  */
-export const CUSTOM_VIDEO_MAX_CHARS = 6000;
+export const CUSTOM_VIDEO_MAX_CHARS = 8000;
+/**
+ * goose-video's custom line now says not to run a template's renderer and call it
+ * custom (gooseworks-app #2022): 5,019 characters on 2026-10-13. Its own small margin.
+ */
+export const GOOSE_VIDEO_MAX_CHARS = 5100;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;

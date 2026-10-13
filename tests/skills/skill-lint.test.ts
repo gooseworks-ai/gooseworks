@@ -6,10 +6,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { getEntrySkills } from '../../src/skills/master-skill';
-import { ACTION_NAMES, CUSTOM_VIDEO_MAX_CHARS, ENTRY_SKILL_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
+import { ACTION_NAMES, CUSTOM_VIDEO_MAX_CHARS, ENTRY_SKILL_MAX_CHARS, GOOSE_VIDEO_MAX_CHARS, lintSkill, RECIPE_SLUGS, ROUTER_MAX_CHARS } from './skill-lint';
 
 const limitFor = (name: string) =>
-  name === 'gooseworks' ? ROUTER_MAX_CHARS : name === 'make-custom-video' ? CUSTOM_VIDEO_MAX_CHARS : ENTRY_SKILL_MAX_CHARS;
+  name === 'gooseworks' ? ROUTER_MAX_CHARS
+    : name === 'make-custom-video' ? CUSTOM_VIDEO_MAX_CHARS
+    : name === 'goose-video' ? GOOSE_VIDEO_MAX_CHARS
+    : ENTRY_SKILL_MAX_CHARS;
 
 it.each(getEntrySkills())('$name passes the skill lint', ({ name, content }) => {
   expect(lintSkill(content, { maxChars: limitFor(name) })).toEqual([]);
