@@ -352,6 +352,19 @@ class Maker {
     } catch (error) {
       return this.ended(error);
     }
+    // The lock comes before the hand-over: a second command for the same video must not take the
+    // line's lease from the run already making it.
+    this.layout = runLayout(deps.home, this.videoId);
+    const release = await takeRunLock(this.layout, this.now());
+    try {
+      return await this.makeLocked(dev);
+    } finally {
+      await release();
+    }
+  }
+
+  private async makeLocked(dev: { parts: string | null; styles: string | null }): Promise<MakeResult> {
+    const { deps } = this;
     // Every hand-over needs the video tools, so they are set up first. Without the browser yet, the
     // hand-over is a claim, so the card shows the video started while a first run downloads it.
     this.tools = deps.tools ?? (await inspectFfmpeg({ home: deps.home, env: deps.env, setup: true, download: (u, m) => deps.line.download(u, m), say: (l) => this.say(l) }));
@@ -372,11 +385,9 @@ class Maker {
     if (!answer.line) return { status: 'stopped', message: 'This video can’t be made on this computer right now.' };
     this.handed = answer.line;
 
-    this.layout = runLayout(deps.home, this.videoId);
-    const release = await takeRunLock(this.layout, this.now());
     let runLog: string | null = null;
     let result: MakeResult | null = null;
-    // From here on the lock is always given back, whatever fails.
+    // From here on the pending report is always kept, whatever fails.
     try {
       const run = deps.log.attachRun({
         index: this.layout.log,
@@ -408,7 +419,6 @@ class Maker {
       this.reporter?.close();
       await this.reporter?.flush().catch(() => undefined);
       await this.keepPendingReport().catch((error: unknown) => deps.log.write('warn', 'the failure report could not be saved', { error: error instanceof Error ? error.message : String(error) }));
-      await release();
       // Support reads what happened in this run's own log.
       if (runLog && (result?.status === 'failed' || (result?.status === 'stopped' && !this.ownStop))) this.say(`If you contact support, share this file: ${runLog}`);
     }

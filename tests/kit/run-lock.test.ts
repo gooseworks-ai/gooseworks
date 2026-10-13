@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync, utimesSync, writeFileSync } from
 import * as os from 'os';
 import { runLayout } from '../../src/kit/core/paths';
 import { takeoverPrefix, takeRunLock } from '../../src/kit/core/save';
-import { VIDEO, fakeLine, runMake, tempHome } from './harness';
+import { VIDEO, fakeLine, lineRoute, runMake, tempHome } from './harness';
 
 describe('the run lock', () => {
   it('lets only one of two makes started together through', async () => {
@@ -42,6 +42,15 @@ describe('the run lock', () => {
 });
 
 describe('a make the lock turns away', () => {
+  it('never hands the video over, so the run making it keeps the line', async () => {
+    const home = tempHome();
+    const release = await takeRunLock(runLayout(home, VIDEO), new Date());
+    const line = fakeLine();
+    await expect(runMake({ home, line })).rejects.toThrow(/already being made/);
+    expect(lineRoute(line.seen, '/device')).toHaveLength(0);
+    await release();
+  });
+
   it('starts no log of its own, so the video’s index lists only runs that ran', async () => {
     const home = tempHome();
     const layout = runLayout(home, VIDEO);
