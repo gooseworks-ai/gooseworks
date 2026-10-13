@@ -141,12 +141,39 @@ describe('reading an edit', () => {
     expect(await stopped(readPatch(layout, ['cut']))).toMatch(/has not been taken out/);
   });
 
+  it('cuts a non-ASCII diff on a character edge within the byte budget', async () => {
+    const { dir, layout } = await takenOut();
+    const long = Array.from({ length: 6000 }, (_, i) => `const s${i} = '日本語のテキスト';`).join('\n');
+    writeFileSync(path.join(dir, 'part.mjs'), long);
+    const [step] = (await readPatch(layout, ['clips'])).steps;
+    expect(Buffer.byteLength(JSON.stringify(step.diff), 'utf8')).toBeLessThanOrEqual(MAX_PATCH_DIFF_CHARS);
+    expect(step.diff).not.toContain('\uFFFD');
+    expect(step.diff_truncated).toBe(true);
+  });
+
+  it('makes a damaged untouched copy again when the step is taken out again, keeping the edits', async () => {
+    const { home, dir, layout } = await takenOut();
+    const edited = PART_MJS.replace('const b = 2;', 'const b = 3;');
+    writeFileSync(path.join(dir, 'part.mjs'), edited);
+    const original = path.join(layout.patches, 'clips.original', 'part.mjs');
+    chmodSync(original, 0o600);
+    writeFileSync(original, 'changed');
+    expect(await stopped(readPatch(layout, ['clips']))).toMatch(/untouched copy/);
+    const again = await takeOutStep({ home, videoId: VIDEO, step: 'clips', env: {}, loader: publishedLoader() });
+    expect(again.kept).toBe(true);
+    expect(readFileSync(path.join(dir, 'part.mjs'), 'utf8')).toBe(edited);
+    expect((await readPatch(layout, ['clips'])).steps[0].files).toEqual([{ path: 'part.mjs', original_sha256: sha(PART_MJS), patched_sha256: sha(edited) }]);
+  });
+
   it('cuts a long diff to fit, keeping the whole diff’s hash', async () => {
     const { dir, layout } = await takenOut();
     const long = Array.from({ length: 6000 }, (_, i) => `const line${i} = ${i};`).join('\n');
     writeFileSync(path.join(dir, 'part.mjs'), long);
     const [step] = (await readPatch(layout, ['clips'])).steps;
-    expect(step.diff.length).toBe(MAX_PATCH_DIFF_CHARS);
+    // The cut is measured as the request carries it: UTF-8 bytes of the JSON string.
+    const sent = Buffer.byteLength(JSON.stringify(step.diff), 'utf8');
+    expect(sent).toBeLessThanOrEqual(MAX_PATCH_DIFF_CHARS);
+    expect(sent).toBeGreaterThan(MAX_PATCH_DIFF_CHARS - 8);
     expect(step.diff_truncated).toBe(true);
     expect(step.diff_sha256).toBe(sha(unifiedDiff('part.mjs', Buffer.from(PART_MJS), Buffer.from(long))));
   });

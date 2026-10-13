@@ -356,27 +356,36 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
       if (error instanceof NotAFolder) throw new PartLoadError('bad_cache', `${error.at} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
       throw error;
     }
-    if (!(await readCopy(target, patched.files))) {
-      const parent = path.dirname(target);
-      const staging = await fs.mkdtemp(path.join(parent, '.staging-'));
-      try {
-        for (const [file, bytes] of read) {
-          const out = path.join(staging, ...file.split('/'));
-          await fs.mkdir(path.dirname(out), { recursive: true, mode: 0o700 });
-          await fs.writeFile(out, bytes, { mode: 0o600, flag: 'wx' });
+    // Another video with the same edit may be storing or checking this copy: one at a time per copy.
+    const parent = path.dirname(target);
+    let stored: boolean;
+    try {
+      stored = await withFolderLock(parent, `.${key}`, { timeoutMs, signal: request.signal }, async () => {
+        if (await readCopy(target, patched.files)) return true;
+        const staging = await fs.mkdtemp(path.join(parent, '.staging-'));
+        try {
+          for (const [file, bytes] of read) {
+            const out = path.join(staging, ...file.split('/'));
+            await fs.mkdir(path.dirname(out), { recursive: true, mode: 0o700 });
+            await fs.writeFile(out, bytes, { mode: 0o600, flag: 'wx' });
+          }
+          // A damaged copy is moved aside whole, then deleted without following links.
+          if (await fs.lstat(target).catch(() => null)) {
+            const aside = path.join(parent, `.aside-${key}-${randomBytes(6).toString('hex')}`);
+            await fs.rename(target, aside);
+            await removeTree(aside);
+          }
+          await fs.rename(staging, target);
+        } finally {
+          await removeTree(staging);
         }
-        // A damaged copy is moved aside whole, then deleted without following links.
-        if (await fs.lstat(target).catch(() => null)) {
-          const aside = path.join(parent, `.aside-${key}-${randomBytes(6).toString('hex')}`);
-          await fs.rename(target, aside);
-          await removeTree(aside);
-        }
-        await fs.rename(staging, target);
-      } finally {
-        await removeTree(staging);
-      }
-      if (!(await readCopy(target, patched.files))) throw edited('changed on this computer while it was stored; run the same command again');
+        return !!(await readCopy(target, patched.files));
+      });
+    } catch (error) {
+      if (error instanceof LockTimeout) throw new PartLoadError('bad_cache', `Another run is storing the edited ${ref.id} ${ref.version}. Run the same command again in a moment.`);
+      throw error;
     }
+    if (!stored) throw edited('changed on this computer while it was stored; run the same command again');
     const entry = path.join(target, 'part.mjs');
     const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${patched.files['part.mjs']}`);
     return { manifest, dir: target, run: exportedRun(ref, mod), source: 'published' };

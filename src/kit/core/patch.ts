@@ -21,6 +21,8 @@ import { readJson, writeJson } from './save';
 
 /** The server's step id rule. */
 const STEP_ID = /^[a-z0-9][a-z0-9_-]{0,59}$/;
+/** The paths an edit may change: the server's FILE_PATH (gooseworks-app video-line/patch.ts). */
+const PATCH_FILE_PATH = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}(\/[A-Za-z0-9_][A-Za-z0-9._-]{0,99}){0,7}$/;
 /** All steps' diffs together (the server's MAX_PATCH_DIFF_CHARS). */
 export const MAX_PATCH_DIFF_CHARS = 48 * 1024;
 export const MAX_PATCHED_STEPS = 4;
@@ -125,6 +127,30 @@ async function copyFiles(files: Map<string, Buffer>, dir: string, mode: number):
   }
 }
 
+/** Whether the untouched copy holds exactly the locked files. */
+async function originalIntact(dir: string, locked: Record<string, string>): Promise<boolean> {
+  const original = await filesIn(dir).catch(() => null);
+  if (!original || original.size !== Object.keys(locked).length) return false;
+  return Object.entries(locked).every(([file, hash]) => original.has(file) && sha256(original.get(file)!) === hash);
+}
+
+/** The longest start of `text` whose JSON string form fits in `maxBytes` of UTF-8, cut on a character edge. */
+function fitDiff(text: string, maxBytes: number): string {
+  const fits = (t: string) => Buffer.byteLength(JSON.stringify(t), 'utf8') <= maxBytes;
+  if (fits(text)) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(text.slice(0, mid))) lo = mid;
+    else hi = mid - 1;
+  }
+  let end = lo;
+  // Never end on the first half of a surrogate pair.
+  if (end > 0 && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+  return text.slice(0, end);
+}
+
 export interface TakenOut {
   dir: string;
   part: PartRef;
@@ -148,7 +174,24 @@ export async function takeOutStep(input: { home: string; videoId: string; step: 
 
   const record = await readJson<TakeOutRecord>(folders.record).catch(() => null);
   const same = record?.part.id === part.id && record.part.version === part.version && canonicalHash(record.files) === canonicalHash(locked);
-  if (same && (await fs.stat(folders.code).catch(() => null))) return { dir: folders.code, part, kept: true, movedAside: null };
+  const lockedFiles = async (): Promise<Map<string, Buffer>> => {
+    const loaded = await input.loader.load({ ref: part, lock, dev: false, home: input.home, env: input.env, signal: new AbortController().signal });
+    const files = new Map<string, Buffer>();
+    for (const file of Object.keys(locked)) {
+      const bytes = await fs.readFile(path.join(loaded.dir, ...file.split('/')));
+      if (sha256(bytes) !== locked[file]) throw new KitStop(`${part.id} ${part.version} changed on this computer while it was copied. Run the same command again.`, 'stop');
+      files.set(file, bytes);
+    }
+    return files;
+  };
+  if (same && (await fs.stat(folders.code).catch(() => null))) {
+    // The edits stay; a damaged untouched copy is made again from the locked part, so the edit can be read.
+    if (!(await originalIntact(folders.original, locked))) {
+      await fs.rm(folders.original, { recursive: true, force: true });
+      await copyFiles(await lockedFiles(), folders.original, 0o444);
+    }
+    return { dir: folders.code, part, kept: true, movedAside: null };
+  }
 
   let movedAside: string | null = null;
   if (await fs.lstat(folders.code).catch(() => null)) {
@@ -159,13 +202,7 @@ export async function takeOutStep(input: { home: string; videoId: string; step: 
   await fs.rm(folders.original, { recursive: true, force: true });
   await fs.rm(folders.record, { force: true });
 
-  const loaded = await input.loader.load({ ref: part, lock, dev: false, home: input.home, env: input.env, signal: new AbortController().signal });
-  const files = new Map<string, Buffer>();
-  for (const file of Object.keys(locked)) {
-    const bytes = await fs.readFile(path.join(loaded.dir, ...file.split('/')));
-    if (sha256(bytes) !== locked[file]) throw new KitStop(`${part.id} ${part.version} changed on this computer while it was copied. Run the same command again.`, 'stop');
-    files.set(file, bytes);
-  }
+  const files = await lockedFiles();
   await copyFiles(files, folders.original, 0o444);
   await copyFiles(files, folders.code, 0o600);
   await writeJson(folders.record, { take_out: 1, step: input.step, part, files: locked, taken_at: (input.now?.() ?? new Date()).toISOString() } satisfies TakeOutRecord);
@@ -207,6 +244,7 @@ export async function readPatch(layout: RunLayout, steps: string[]): Promise<Kit
       if (patched === record.files[file]) continue;
       // part.json holds the models and limits the customer's price was made from.
       if (file === 'part.json') throw new KitStop(`Step "${step}" changed part.json, which can’t change; edit the code only.`, 'refused');
+      if (!PATCH_FILE_PATH.test(file)) throw new KitStop(`Step "${step}" changed ${file}, a file the line takes no edit of (its path is too long or starts with "." or "-"); edit the code in another file.`, 'refused');
       files.push({ path: file, original_sha256: record.files[file], patched_sha256: patched });
       diffs.push(unifiedDiff(file, original.get(file)!, code.get(file)!));
     }
@@ -216,12 +254,11 @@ export async function readPatch(layout: RunLayout, steps: string[]): Promise<Kit
   }
   // Each step's diff is cut to its share, so every edit is on the record.
   const share = Math.floor(MAX_PATCH_DIFF_CHARS / read.length);
-  const out: PatchStep[] = read.map(({ fullDiff, ...step }) => ({
-    ...step,
-    diff: fullDiff.slice(0, share),
-    diff_sha256: sha256(Buffer.from(fullDiff, 'utf8')),
-    diff_truncated: fullDiff.length > share,
-  }));
+  // The share is in bytes as the request carries them (UTF-8, JSON-escaped), which the server's body limit counts.
+  const out: PatchStep[] = read.map(({ fullDiff, ...step }) => {
+    const diff = fitDiff(fullDiff, share);
+    return { ...step, diff, diff_sha256: sha256(Buffer.from(fullDiff, 'utf8')), diff_truncated: diff.length < fullDiff.length };
+  });
   return { patch: 1, sha256: patchSha256(out), steps: out };
 }
 
