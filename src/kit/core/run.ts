@@ -288,6 +288,8 @@ export function expectationOf(style: LoadedStyle['style'], plan: ApprovedPlan): 
     qc_flags: Array.isArray(style.traits?.qc_flags) ? style.traits.qc_flags : [],
     ...(script.length ? { script } : {}),
     ...(captionLook ? { caption_look: captionLook } : {}),
+    // So the check layer holds loudness to the sound layer's mark only when that layer ran.
+    layers: { brand: style.layers?.brand === true, captions: style.layers?.captions === true, sound: style.layers?.sound === true, check: true },
   };
 }
 

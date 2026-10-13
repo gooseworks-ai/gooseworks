@@ -10,4 +10,5 @@ Making a video on your computer recovers from stops more cleanly:
 - The kit no longer tells the server to blame your plan when its own checks failed.
 - Stop messages no longer say "nothing was spent"; the card shows what this video actually spent.
 - A second make command for a video that is already being made on this computer no longer interrupts the first one.
+- The final check knows which finishing steps your video's style uses, so it no longer fails the loudness of a video whose style leaves the sound as made.
 - `gooseworks logout` removes its Claude Code connection even when no sign-in is saved.
