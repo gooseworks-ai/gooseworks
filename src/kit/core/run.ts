@@ -981,7 +981,7 @@ class Maker {
   }
 
   /** The timeline, then the layers that are on. Saved steps with the same hash are reused. */
-  private async pipeline(): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline }> {
+  private async pipeline(): Promise<{ cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline; beforeSound?: string }> {
     const outputs = new Map<string, Record<string, unknown>>();
     const scope = { plan: this.planScope, brand: this.brand, steps: outputs, assets: this.style.assets };
     const hashes: Record<string, string> = {};
@@ -1011,7 +1011,9 @@ class Maker {
     let words: FileRef | undefined;
     let captions: FileRef | undefined;
     let verdict: CheckVerdict | null = null;
+    let beforeSound: string | undefined;
     for (const slot of this.layersOn()) {
+      if (slot === 'sound') beforeSound = cut.path;
       const id = `layer-${slot}`;
       const loaded = this.parts.get(id)!;
       const ref = { id: loaded.manifest.id, version: loaded.manifest.version };
@@ -1034,7 +1036,7 @@ class Maker {
       }
     }
     if (!verdict || typeof verdict.pass !== 'boolean' || !Array.isArray(verdict.checks)) throw new KitStop('The final check gave no verdict.', 'change_request');
-    return { cut, captions, verdict, steps: hashes, timeline };
+    return { cut, captions, verdict, steps: hashes, timeline, beforeSound };
   }
 
   /** A style step's inputs: a reference the kit can't resolve goes to the log, plain words to the person. */
@@ -1359,7 +1361,7 @@ class Maker {
   }
 
   /** Upload, our server's check, and one fix after a first failed check. */
-  private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline }): Promise<MakeResult> {
+  private async upload(result: { cut: FileRef; captions?: FileRef; verdict: CheckVerdict; steps: Record<string, string>; timeline: Timeline; beforeSound?: string }): Promise<MakeResult> {
     let current = result;
     this.at = 'upload';
     for (;;) {
@@ -1402,7 +1404,7 @@ class Maker {
         await this.cleanTmp();
         return {
           status: 'done',
-          message: `Your video is ready. It passed the final check. Saved here: ${final}`,
+          message: `The video was made and passed its file checks. Review the actual picture and audio before calling it ready. Saved here: ${final}`,
           final,
           ...(eyes?.contact_sheet ? { contact_sheet: eyes.contact_sheet } : {}),
           ...(eyes?.warnings.length ? { warnings: eyes.warnings.map((w) => w.message) } : {}),
@@ -1479,7 +1481,7 @@ class Maker {
   }
 
   /** The contact sheet and the product-presence warning, next to the final; never at the video's cost. */
-  private async lookAt(final: string, made: { timeline: Timeline }): Promise<Eyes | null> {
+  private async lookAt(final: string, made: { timeline: Timeline; beforeSound?: string }): Promise<Eyes | null> {
     const ffmpeg = this.tools.ffmpeg.path;
     if (!ffmpeg) return null;
     const listed = (this.planScope as { products?: unknown } | null)?.products;
@@ -1489,6 +1491,7 @@ class Maker {
         ffmpeg,
         final,
         timeline: made.timeline,
+        beforeSound: made.beforeSound,
         products: products.map((p) => ({
           ...(typeof p?.name === 'string' ? { name: p.name } : {}),
           photos: (Array.isArray(p?.images) ? p.images : []).filter((ref): ref is FileRef => isFileRef(ref) && ref.media === 'image').map((ref) => ref.path),

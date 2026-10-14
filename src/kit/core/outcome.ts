@@ -5,7 +5,8 @@ import { open, readdir, stat } from 'fs/promises';
 import { renameSync, writeFileSync, mkdirSync } from 'fs';
 import * as path from 'path';
 import type { ProgressStep } from '../line/types';
-import { LOOK_FOR, type Eyes, type SheetTile } from './eyes';
+import { LOOK_FOR, type Eyes, type SheetTile, type ReviewAudio } from './eyes';
+import { hashFile } from './files';
 import { runLayout, type RunLayout } from './paths';
 import type { MakeResult } from './run';
 import { isAlive, readJson, runLockHeld } from './save';
@@ -235,6 +236,10 @@ export interface VerifyRecord {
   /** What the final checks noted without failing the video. */
   warnings: string[];
   look_for: string[];
+  review_status?: 'required' | 'incomplete';
+  output_sha256?: string;
+  coverage?: Eyes['coverage'];
+  audio?: ReviewAudio;
 }
 
 /** Reads the finished video's folder for `video verify`. */
@@ -252,13 +257,19 @@ export async function verifyOf(home: string, videoId: string): Promise<VerifyRec
   const record: VerifyRecord = { event: 'verify', video_id: videoId, warnings: [], look_for: LOOK_FOR };
   // Only the final the last run finished and our server passed: never a leftover from a run that ended otherwise.
   if (!made || result?.status !== 'done' || result.final !== final) return record;
+  const current = await hashFile(final).catch(() => null);
+  const sameOutput = Boolean(current && eyes?.output_sha256 && current.sha256 === eyes.output_sha256);
   const sheet = typeof eyes?.contact_sheet === 'string' ? eyes.contact_sheet : null;
+  const sheetReady = Boolean(sheet && await stat(sheet).then((info) => info.isFile(), () => false));
   const warned = Array.isArray(result.warnings) ? result.warnings : (eyes?.warnings ?? []).map((w) => w.message);
+  const audioReady = !eyes?.audio?.required || Boolean(eyes.audio.final_mix && !eyes.warnings?.some((warning) => warning.check === 'review_audio') && (await Promise.all([eyes.audio.final_mix, ...(eyes.audio.before_sound ? [eyes.audio.before_sound] : [])].map((file) => stat(file).then((info) => info.isFile(), () => false)))).every(Boolean));
   return {
     ...record,
     final,
-    ...(sheet && (await stat(sheet).then(() => true, () => false)) ? { contact_sheet: sheet, tiles: eyes!.tiles } : {}),
-    warnings: warned.filter((w): w is string => typeof w === 'string'),
+    ...(sameOutput && sheetReady ? { contact_sheet: sheet!, tiles: eyes!.tiles } : {}),
+    ...(sameOutput ? { output_sha256: current!.sha256, coverage: eyes?.coverage, audio: eyes?.audio } : {}),
+    review_status: sameOutput && sheetReady && eyes?.coverage?.complete && audioReady ? 'required' : 'incomplete',
+    warnings: [...warned.filter((w): w is string => typeof w === 'string'), ...(!sameOutput ? ['Review evidence is missing or belongs to different output bytes. Review the actual current video.'] : [])],
   };
 }
 
@@ -270,6 +281,11 @@ export function verifyLines(found: VerifyRecord): string[] {
     found.contact_sheet
       ? `Its frame sheet: ${found.contact_sheet} (frames across the video, labelled by scene: S2 4.1 is scene 2 at 4.1 seconds, END the end card)`
       : 'No frame sheet was made for it, so watch the video itself.',
+    'File checks passed; picture and audio review is still required. This command does not certify clean speech or correct product scale.',
+    ...(found.audio?.final_mix ? [`Full final audio: ${found.audio.final_mix}`] : []),
+    ...(found.audio?.before_sound ? [`Audio before the sound layer: ${found.audio.before_sound} (may contain source ambience; compare it with the final mix)`] : []),
+    ...(found.audio?.windows ?? []).map((window) => `Listen closely at ${window.start_s.toFixed(2)}–${window.end_s.toFixed(2)} seconds (${window.reason === 'cut' ? 'cut boundary' : 'gap between recognised words; may be intentional silence'}).`),
+    ...(found.review_status === 'incomplete' ? ['Review evidence is incomplete. Do not call the video ready until the missing checks are performed on the actual output.'] : []),
     'Before you say it is ready, check:',
     ...found.look_for.map((item) => `- ${item}`),
     'If any of that is wrong, it isn’t ready: say what you saw and fix that scene first.',
