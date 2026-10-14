@@ -7,6 +7,8 @@ import { readFileSync } from 'fs';
 import * as path from 'path';
 import type { Command } from 'commander';
 import { videoCommand } from '../../src/commands/video';
+import { ASSEMBLY_FORMAT, finalContentReviewProblems, normalizeAssemblyTimeline } from '../../src/kit/core/assembly-timeline';
+import { KIT_FEATURES } from '../../src/kit/core/version';
 
 const pkg = JSON.parse(readFileSync(path.join(__dirname, '../../package.json'), 'utf8')) as {
   gooseworksKit?: { features?: unknown };
@@ -20,7 +22,10 @@ function hasOption(name: string, flag: string): boolean {
   return !!sub(name)?.options.some((option) => option.long === flag);
 }
 
-/** Where each feature the manifest may list lives in `gooseworks video`. */
+const coreRun = readFileSync(path.join(__dirname, '../../src/kit/core/run.ts'), 'utf8');
+const sourceRenderer = JSON.parse(readFileSync(path.join(__dirname, '../../src/kit/maker/parts/html-frames/1.3.0/part.json'), 'utf8'));
+
+/** Command features and the separately advertised runtime contracts. */
 const FEATURE_CHECKS: Record<string, () => boolean> = {
   detach: () => hasOption('make', '--detach'),
   status: () => !!sub('status'),
@@ -29,6 +34,10 @@ const FEATURE_CHECKS: Record<string, () => boolean> = {
   json: () => hasOption('make', '--json') && hasOption('status', '--json') && hasOption('verify', '--json'),
   step_edit: () => hasOption('step', '--edit'),
   patched: () => hasOption('make', '--patched'),
+  assembly_timeline_v1: () => KIT_FEATURES.includes('assembly_timeline_v1') && ASSEMBLY_FORMAT === 'gooseworks-assembly-timeline/1' && normalizeAssemblyTimeline(undefined).status === 'incomplete',
+  exact_final_content_review_v1: () => KIT_FEATURES.includes('exact_final_content_review_v1') && finalContentReviewProblems(undefined, '0'.repeat(64), normalizeAssemblyTimeline(undefined), null).length > 0,
+  content_review_resume: () => !!sub('make') && KIT_FEATURES.includes('content_review_resume') && coreRun.includes('content-review.json') && coreRun.includes('source-reviews.json'),
+  source_linked_html_frames_v1: () => KIT_FEATURES.includes('source_linked_html_frames_v1') && Boolean(sourceRenderer.inputs.properties.under_timeline.properties.assembly_timeline && sourceRenderer.outputs.properties.timeline.properties.assembly_timeline && sourceRenderer.outputs.properties.source_files),
 };
 
 describe('package.json gooseworksKit.features', () => {
@@ -39,7 +48,7 @@ describe('package.json gooseworksKit.features', () => {
     expect(new Set(features as string[]).size).toBe((features as string[]).length);
   });
 
-  it.each(Array.isArray(features) ? (features as string[]) : [])('%s is a real command or flag', (feature) => {
+  it.each(Array.isArray(features) ? (features as string[]) : [])('%s has its command or runtime contract', (feature) => {
     expect(FEATURE_CHECKS[feature]).toBeDefined();
     expect(FEATURE_CHECKS[feature]()).toBe(true);
   });

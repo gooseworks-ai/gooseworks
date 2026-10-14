@@ -1067,13 +1067,15 @@ class Maker {
       exposeAssemblyToDeclaredSchema(loaded, inputs);
       // Only the predeclared staged creator route consumes review evidence. Capture/script/budget stay frozen.
       const properties = (loaded.manifest.inputs as unknown as { properties?: Record<string, { enum?: unknown[] }> }).properties;
-      if (loaded.manifest.id === 'creator-h3' && properties?.generation_stage?.enum?.includes('reviewed_pipeline')) {
+      const stagedSourceReview = Boolean(properties?.accepted_sources && properties?.generation_stage?.enum?.includes('reviewed_pipeline'));
+      const alignedVoiceReview = Boolean(properties?.reviewed_alignments);
+      if (stagedSourceReview) {
         inputs.generation_stage = 'reviewed_pipeline';
         const reviewed = sourceReviews[step.id] as { accepted_sources?: unknown; qualification?: unknown } | undefined;
         if (reviewed?.accepted_sources !== undefined) inputs.accepted_sources = await retainReviewedFiles(reviewed.accepted_sources);
         if (reviewed?.qualification !== undefined) inputs.qualification = reviewed.qualification;
       }
-      if (loaded.manifest.id === 'voice-elevenlabs' && properties?.reviewed_alignments) {
+      if (alignedVoiceReview) {
         const reviewed = sourceReviews[step.id] as { reviewed_alignments?: unknown } | undefined;
         if (reviewed?.reviewed_alignments !== undefined) inputs.reviewed_alignments = await retainReviewedFiles(reviewed.reviewed_alignments);
       }
@@ -1082,16 +1084,16 @@ class Maker {
       acceptTimeline(out);
       outputs.set(step.id, out);
       const provenance = out.provenance as { source_content_review?: unknown } | undefined;
-      const creatorPending = loaded.manifest.id === 'creator-h3' && out.content_review_status === 'pending' && provenance?.source_content_review !== 'pass';
-      const voiceTimingPending = loaded.manifest.id === 'voice-elevenlabs' && out.timing_status === 'requires_reviewed_alignment';
+      const creatorPending = stagedSourceReview && out.content_review_status === 'pending' && provenance?.source_content_review !== 'pass';
+      const voiceTimingPending = alignedVoiceReview && out.timing_status === 'requires_reviewed_alignment';
       const voiceInputRevision = canonicalHash(hashView({ ...inputs, reviewed_alignments: undefined }));
-      const voiceSources = loaded.manifest.id === 'voice-elevenlabs' ? fileRefsIn(out).filter((file) => file.media === 'audio') : [];
+      const voiceSources = alignedVoiceReview ? fileRefsIn(out).filter((file) => file.media === 'audio') : [];
       const voiceRecord = sourceReviews[step.id] as { voice_reviews?: Array<{ source_sha256?: string; inputs_revision?: string; status?: string; reviewer?: string; audio_listened?: boolean; start_s?: number; end_s?: number; checks?: Record<string, string> }> } | undefined;
       const reviewedVoice = (file: FileRef): boolean => {
         const r = Array.isArray(voiceRecord?.voice_reviews) ? voiceRecord.voice_reviews.find((review) => review?.source_sha256 === file.sha256) : null;
         return !!r && r.inputs_revision === voiceInputRevision && r.status === 'pass' && typeof r.reviewer === 'string' && !!r.reviewer.trim() && r.audio_listened === true && typeof r.start_s === 'number' && Number.isFinite(r.start_s) && r.start_s === 0 && typeof r.end_s === 'number' && Number.isFinite(r.end_s) && file.duration_s !== undefined && r.end_s >= file.duration_s - 0.02 && ['script', 'voice', 'pronunciation', 'performance'].every((axis) => r.checks?.[axis] === 'pass');
       };
-      const voiceContentPending = loaded.manifest.id === 'voice-elevenlabs' && out.content_review_status === 'pending' && (!voiceSources.length || voiceSources.some((file) => !reviewedVoice(file)));
+      const voiceContentPending = alignedVoiceReview && out.content_review_status === 'pending' && (!voiceSources.length || voiceSources.some((file) => !reviewedVoice(file)));
       if (creatorPending || voiceTimingPending || voiceContentPending) {
         await mkdir(this.layout.final, { recursive: true, mode: 0o700 });
         const request = path.join(this.layout.final, `source-review-request-${step.id}.json`);

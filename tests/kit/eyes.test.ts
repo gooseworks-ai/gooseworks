@@ -91,9 +91,9 @@ it('writes the sheet and eyes.json next to the final, leaving out frames it coul
     expect(eyes.contact_sheet).toBe(path.join(dir, 'contact-sheet.png'));
     expect(fs.readFileSync(eyes.contact_sheet!).subarray(1, 4).toString('ascii')).toBe('PNG');
     expect(eyes.tiles).toHaveLength(13);
-    expect(eyes.warnings.map((w) => w.check)).toEqual(['product_visible', 'review_coverage']);
+    expect(eyes.warnings.map((w) => w.check)).toEqual(['product_visible', 'review_coverage', 'review_audio']);
     expect(eyes.coverage).toEqual({ complete: false, missing_scenes: [], unreadable_tiles: [4] });
-    expect(JSON.parse(fs.readFileSync(path.join(dir, 'eyes.json'), 'utf8'))).toMatchObject({ contact_sheet: eyes.contact_sheet, warnings: [{ check: 'product_visible' }, { check: 'review_coverage' }] });
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'eyes.json'), 'utf8'))).toMatchObject({ contact_sheet: eyes.contact_sheet, warnings: [{ check: 'product_visible' }, { check: 'review_coverage' }, { check: 'review_audio' }], audio: { required: true, final_mix: null }, content_review_status: 'incomplete', review_capability: { audio_perception: false, motion_perception: false } });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
