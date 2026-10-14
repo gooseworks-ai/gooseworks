@@ -13,6 +13,7 @@ jest.mock('../../src/kit/core/host', () => ({ defaultHost: () => ({}) }));
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { Command } from 'commander';
 import { saveCredentials } from '../../src/auth/credentials';
 import { selectEnvironment } from '../../src/environment';
@@ -312,7 +313,7 @@ describe('what video make leaves for whoever runs it', () => {
     fs.writeFileSync(result, JSON.stringify({ event: 'result', video_id: VIDEO, status: 'done', outcome: 'done', exit_code: 0, message: 'ok', final: path.join(final, 'final.mp4'), ended_at: new Date().toISOString() }));
     fs.writeFileSync(
       path.join(final, 'eyes.json'),
-      JSON.stringify({ contact_sheet: path.join(final, 'contact-sheet.png'), tiles: [], warnings: [{ check: 'product_visible', message: '“Tin” may not show clearly in the video.' }], look_for: [] }),
+      JSON.stringify({ output_sha256: createHash('sha256').update(fs.readFileSync(path.join(final, 'final.mp4'))).digest('hex'), contact_sheet: path.join(final, 'contact-sheet.png'), tiles: [], warnings: [{ check: 'product_visible', message: '“Tin” may not show clearly in the video.' }], look_for: [] }),
     );
     await video('verify', VIDEO);
     const said = printed();
