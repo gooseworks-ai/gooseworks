@@ -381,7 +381,7 @@ export function presenceWarning(name: string | undefined, photos: Float64Array[]
 export async function lookAtFinal(opts: {
   ffmpeg: string;
   final: string;
-  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card'> & { speech?: Timeline['speech']; fps?: number };
+  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card' | 'assembly_timeline'> & { speech?: Timeline['speech']; fps?: number };
   beforeSound?: string;
   products: Product[];
   signal: AbortSignal;

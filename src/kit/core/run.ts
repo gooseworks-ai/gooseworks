@@ -36,7 +36,7 @@ import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, typ
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
-import { CONTENT_DIMENSIONS, finalContentReviewProblems, normalizeAssemblyTimeline } from './assembly-timeline';
+import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline } from './assembly-timeline';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -1143,15 +1143,21 @@ class Maker {
     if (assembly.timeline) {
       if (Math.abs(assembly.timeline.duration_ms / 1000 - timeline.duration_s) > Math.max(0.05, 2 / timeline.fps)) throw new KitStop('The finished picture duration differs from its source-linked edit.', 'change_request', 'output_invalid');
       // A path in a declaration is insufficient: resolve against registered, hash-checked files.
-      const linked = [...assembly.timeline.segments.map((s) => s.video), ...assembly.timeline.audio_cues.map((c) => c.source),
-        ...assembly.timeline.segments.flatMap((s) => s.speech_driver ? [s.speech_driver] : []),
-        ...(assembly.timeline.visual_overrides ?? []).flatMap((v) => v.source ? [v.source] : [])];
+      const pictures = assemblyPictureSources(assembly.timeline);
+      const audible = [...assembly.timeline.audio_cues.map((c) => c.source),
+        ...assembly.timeline.segments.flatMap((s) => s.speech_driver ? [s.speech_driver] : [])];
+      const linked = [...pictures.map((p) => p.source), ...audible];
       const sourceProbe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? 'ffmpeg', ffprobe: this.tools.ffprobe.path ?? 'ffprobe', toolchain: this.toolchain }, this.stop.signal).probe;
       for (const source of linked) {
         const file = sourceFiles.get(source.sha256);
         if (!file || !(await intact(file))) throw new KitStop(`A timeline source is missing or changed: ${source.asset_id}`, 'change_request', 'output_invalid');
+        const sourcePictures = pictures.filter((p) => p.source.sha256 === source.sha256 && p.source.asset_id === source.asset_id);
+        if (sourcePictures.some((p) => p.source_kind !== file.media)) throw new KitStop(`A picture source has a different media kind: ${source.asset_id}`, 'change_request', 'output_invalid');
         const actual = await sourceProbe(file.path);
-        if (actual.duration_s === undefined || source.out_ms > actual.duration_s * 1000 + 1) throw new KitStop(`A timeline source window exceeds the actual file: ${source.asset_id}`, 'change_request', 'output_invalid');
+        if (sourcePictures.length && !actual.has_video) throw new KitStop(`A picture source has no readable picture: ${source.asset_id}`, 'change_request', 'output_invalid');
+        if (audible.some((a) => a.sha256 === source.sha256 && a.asset_id === source.asset_id) && !actual.has_audio) throw new KitStop(`An audio source has no readable audio: ${source.asset_id}`, 'change_request', 'output_invalid');
+        // A still is intentionally held; only moving/audio sources have a media clock.
+        if (file.media !== 'image' && (actual.duration_s === undefined || source.out_ms > actual.duration_s * 1000 + 1)) throw new KitStop(`A timeline source window exceeds the actual file: ${source.asset_id}`, 'change_request', 'output_invalid');
         source.path = file.path;
       }
       timeline.assembly_timeline = assembly.timeline;
@@ -1510,11 +1516,22 @@ class Maker {
       try { contentReview = JSON.parse(await readFile(reviewPath, 'utf8')); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new KitStop('The saved content review could not be read. Repair that JSON before resuming.', 'change_request', 'output_invalid');
       }
-      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly);
-      await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
-      if (this.style.style.id.startsWith('custom-') && contentProblems.length) {
+      const custom = this.style.style.id.startsWith('custom-');
+      let measuredDurationMs: number | null = null;
+      if (custom) {
+        try {
+          const probe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, this.stop.signal).probe;
+          const info = await probe(candidate);
+          measuredDurationMs = measuredFinalDurationMs(info.duration_s);
+        } catch {
+          // Missing measurement leaves review incomplete; the edit clock is not a fallback.
+        }
+      }
+      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined);
+      await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, measured_duration_ms: measuredDurationMs, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
+      if (custom && contentProblems.length) {
         await writeJson(path.join(this.layout.final, 'review-request.json'), {
-          candidate, output_sha256: sha256, timeline_revision: assembly.revision,
+          candidate, output_sha256: sha256, measured_duration_ms: measuredDurationMs, timeline_revision: assembly.revision,
           creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
           assembly_issues: assembly.issues, content_review_problems: contentProblems,
           instructions: 'Play this exact candidate completely at normal speed with sound. Record actual observations and unresolved issues. Save the completed review as content-review.json beside this request, then resume the same video make command. Missing listening or moving-picture access stays incomplete. This is a review declaration, not proof of human attention.',

@@ -47,7 +47,21 @@ export interface AssemblyTimeline {
   audio_cues: AssemblyCue[];
   pauses: Array<{ start_ms: number; end_ms: number; scope: 'speech' | 'all_audio'; reason: string }>;
   required_cue_ids: string[];
-  visual_overrides?: Array<{ start_ms: number; end_ms: number; kind: 'freeze' | 'transition'; reason: string; source?: AssemblySource; segment_ids?: string[] }>;
+  visual_overrides?: Array<{ start_ms: number; end_ms: number; kind: 'freeze' | 'transition'; reason: string; source?: AssemblySource; scene_id?: string; source_kind?: 'image' | 'video'; segment_ids?: string[] }>;
+}
+export interface AssemblyPictureSource {
+  id: string;
+  scene_id: string;
+  source: AssemblySource;
+  source_kind: 'image' | 'video';
+}
+
+/** Overrides can introduce picture bytes that never appear in ordinary clips. */
+export function assemblyPictureSources(timeline: AssemblyTimeline): AssemblyPictureSource[] {
+  return [
+    ...timeline.segments.map(segment => ({ id: segment.id, scene_id: segment.scene_id, source: segment.video, source_kind: 'video' as const })),
+    ...(timeline.visual_overrides ?? []).flatMap((override, index) => override.source ? [{ id: `override-${index + 1}`, scene_id: override.scene_id!, source: override.source, source_kind: override.source_kind! }] : []),
+  ];
 }
 export interface AssemblyCheck {
   status: 'complete' | 'incomplete' | 'invalid';
@@ -153,8 +167,11 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   for (const p of t.pauses) if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
   for (const v of t.visual_overrides ?? []) {
     if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
-    else if (v.kind === 'freeze' && !validSource(v.source, 'freeze frame')) issues.push('freeze requires its exact source');
-    else if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
+    else {
+      if (v.kind === 'freeze' && !v.source) issues.push('freeze requires its exact source');
+      if (v.source && (!validSource(v.source, 'override source') || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
+      if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
+    }
   }
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
   if (gaps([...t.segments, ...(t.visual_overrides ?? [])], t.duration_ms).length) issues.push('Picture coverage has undeclared padding or a missing source interval');
@@ -191,8 +208,17 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   return { status: issues.length ? 'invalid' : 'complete', timeline: t, revision: assemblyTimelineRevision(t), issues };
 }
 
-/** A signed/trusted reviewer must supply this record; metadata does not prove listening. */
-export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck): string[] {
+// A final frame and AAC padding can differ slightly from the edit clock.
+export const FINAL_ASSEMBLY_DURATION_TOLERANCE_MS = 100;
+
+export function measuredFinalDurationMs(seconds: number | null | undefined): number | null {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const duration = Math.ceil(seconds * 1000);
+  return Number.isSafeInteger(duration) ? duration : null;
+}
+
+/** Omit measurement only for preflight; final acceptance needs the measured duration. */
+export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck, measuredDurationMs?: number | null): string[] {
   if (!object(raw)) return ['Exact-final audiovisual content review is missing'];
   const r = raw as unknown as FinalContentReview;
   const problems: string[] = [];
@@ -200,9 +226,26 @@ export function finalContentReviewProblems(raw: unknown, outputSha: string, asse
   if (r.output_sha256 !== outputSha || r.timeline_revision !== assembly.revision || r.creative_contract_revision !== assembly.timeline?.creative_contract_revision) problems.push('Content review belongs to different final, timeline or approved intent bytes');
   if (r.verdict !== 'approved' || !text(r.reviewer)) problems.push('Content review is not approved by an identified reviewer');
   if (!r.capabilities?.audio_perception || !r.capabilities?.motion_perception) problems.push('Actual audio and continuous-motion review capability is missing');
-  const coverageValid = Array.isArray(r.coverage) && r.coverage.every((w) => object(w) && ms(w.start_ms) && ms(w.end_ms) && w.end_ms > w.start_ms && w.end_ms <= (assembly.timeline?.duration_ms ?? 0));
+  const measurementRequired = measuredDurationMs !== undefined;
+  const measured = ms(measuredDurationMs) && measuredDurationMs > 0 ? measuredDurationMs : null;
+  if (measurementRequired && measured === null) problems.push('The final playback duration could not be measured');
+  if (measured !== null && (!assembly.timeline || Math.abs(assembly.timeline.duration_ms - measured) > FINAL_ASSEMBLY_DURATION_TOLERANCE_MS))
+    problems.push(`Assembly duration must match the measured ${measured}ms final within ${FINAL_ASSEMBLY_DURATION_TOLERANCE_MS}ms`);
+  const duration = measured ?? assembly.timeline?.duration_ms ?? 0;
+  // Preflight accepts frame/AAC padding; final acceptance still covers the measured end.
+  const upperBound = duration + FINAL_ASSEMBLY_DURATION_TOLERANCE_MS;
+  const coverageValid = Array.isArray(r.coverage) && r.coverage.every((w) => object(w) && ms(w.start_ms) && ms(w.end_ms) && w.end_ms > w.start_ms && w.end_ms <= upperBound);
   if (!coverageValid) problems.push('Complete final playback coverage is missing or out of bounds');
-  else if (gaps(r.coverage, assembly.timeline?.duration_ms ?? 0).length) problems.push('Complete final playback coverage is missing');
+  else {
+    let end = 0;
+    let missing = 0;
+    for (const window of [...r.coverage].sort((a, b) => a.start_ms - b.start_ms)) {
+      missing += Math.max(0, window.start_ms - end);
+      end = Math.max(end, window.end_ms);
+    }
+    missing += Math.max(0, duration - end);
+    if (!r.coverage.length || missing > 1) problems.push(`Playback and listening must cover the complete ${duration}ms final (only 1ms total timestamp rounding is allowed)`);
+  }
   if (!Array.isArray(r.unresolved_issues) || r.unresolved_issues.some((i) => !i || i.severity === 'P0' || i.severity === 'P1')) problems.push('Required unresolved issues remain');
   for (const name of CONTENT_DIMENSIONS) {
     const dimension = r.dimensions?.[name];
