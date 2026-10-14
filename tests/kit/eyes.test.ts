@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { inflateSync } from 'zlib';
-import { bestCover, encodePng, lookAtFinal, presenceWarning, productColours, sheetTimes, SHEET_FRAMES, tileLabel } from '../../src/kit/core/eyes';
+import { audioReviewWindows, bestCover, encodePng, lookAtFinal, presenceWarning, productColours, sheetTimes, SHEET_FRAMES, tileLabel } from '../../src/kit/core/eyes';
 
 const timeline = {
   duration_s: 14,
@@ -91,11 +91,31 @@ it('writes the sheet and eyes.json next to the final, leaving out frames it coul
     expect(eyes.contact_sheet).toBe(path.join(dir, 'contact-sheet.png'));
     expect(fs.readFileSync(eyes.contact_sheet!).subarray(1, 4).toString('ascii')).toBe('PNG');
     expect(eyes.tiles).toHaveLength(13);
-    expect(eyes.warnings.map((w) => w.check)).toEqual(['product_visible']);
-    expect(JSON.parse(fs.readFileSync(path.join(dir, 'eyes.json'), 'utf8'))).toMatchObject({ contact_sheet: eyes.contact_sheet, warnings: [{ check: 'product_visible' }] });
+    expect(eyes.warnings.map((w) => w.check)).toEqual(['product_visible', 'review_coverage']);
+    expect(eyes.coverage).toEqual({ complete: false, missing_scenes: [], unreadable_tiles: [4] });
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'eyes.json'), 'utf8'))).toMatchObject({ contact_sheet: eyes.contact_sheet, warnings: [{ check: 'product_visible' }, { check: 'review_coverage' }] });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+it('includes a frame from each of 18 scenes, even when uniform samples miss short product shots', () => {
+  const scenes = Array.from({ length: 18 }, (_, i) => ({ id: `s${i + 1}`, start_s: i, end_s: i + 1 }));
+  const tiles = sheetTimes({ duration_s: 20, scenes, end_card: { start_s: 18, end_s: 20 } });
+  expect(new Set(tiles.filter((tile) => !tile.end_card).map((tile) => tile.scene_id))).toEqual(new Set(scenes.map((scene) => scene.id)));
+  expect(tiles.every((tile, i) => tile.tile === i + 1)).toBe(true);
+  expect(tiles.at(-1)).toMatchObject({ end_card: true, at_s: 19 });
+});
+
+it('marks the cut at 9 seconds and the unrecognised speech window from 8.4 to 10.2 for listening', () => {
+  const windows = audioReviewWindows({
+    duration_s: 12,
+    scenes: [{ id: 'face', start_s: 0, end_s: 9 }, { id: 'product', start_s: 9, end_s: 12 }],
+    speech: [{ text: 'cleans it', start_s: 8, end_s: 10.5, words: [{ text: 'cleans', start_s: 8, end_s: 8.4 }, { text: 'it', start_s: 10.2, end_s: 10.5 }] }],
+  });
+  expect(windows).toContainEqual({ start_s: 7.75, end_s: 10.25, reason: 'cut' });
+  expect(windows).toContainEqual({ start_s: 7.9, end_s: 10.7, reason: 'word_gap' });
+  expect(windows.every((window) => window.start_s >= 0 && window.end_s <= 12)).toBe(true);
 });
 
 it('writes no sheet when no frame could be read', async () => {

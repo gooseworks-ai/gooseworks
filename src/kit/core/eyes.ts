@@ -1,16 +1,12 @@
-// What an agent with eyes looks at before it says a video is ready, and the one content warning a
-// machine can give without a vision model:
-//   final/contact-sheet.png   about 12 frames across the video and its end card, each labelled by scene
-//   final/eyes.json           which scene and second each tile is, the sheet's path and the warnings
-// The product-presence warning compares the frozen product photos with the sampled frames by colour
-// alone, so it only ever warns: a product whose colours are nowhere in the video may not show.
+// Review evidence, not automatic content approval. Colour similarity only warns about product presence.
 import { spawn } from 'child_process';
-import { writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { deflateSync } from 'zlib';
 import type { Timeline } from '../part-interface';
 import type { CheckReason } from '../line/types';
 import { childEnv } from './toolchain';
+import { hashFile } from './files';
 
 /** Frames across the video, before the end card. */
 export const SHEET_FRAMES = 12;
@@ -33,6 +29,11 @@ export const LOOK_FOR = [
   'Every word on screen is readable on a phone.',
   'No other brand’s name or logo shows.',
   'No spoken or written word is cut off.',
+  'Compare every scene side by side: the product has its supported real-world size against people and furniture and is used in an allowed setting.',
+  'People, locations and props follow the approved plan; no unplanned strangers, objects or identity changes.',
+  'Play the exact final from start to finish at normal speed and listen to the complete actual audio, including the track before the sound layer when available.',
+  'Inspect every cut and unexplained word-timing gap with context for babble, repetitions and unwanted speech. A matching transcript or script-derived captions cannot clear this check.',
+  'Missing scene coverage or playback/listening capability means incomplete review, never a clean-speech or ready claim.',
 ];
 
 export interface SheetTile {
@@ -50,6 +51,16 @@ export interface Eyes {
   tiles: SheetTile[];
   warnings: CheckReason[];
   look_for: string[];
+  output_sha256?: string;
+  coverage?: { complete: boolean; missing_scenes: string[]; unreadable_tiles: number[] };
+  audio?: ReviewAudio;
+}
+
+export interface ReviewAudio {
+  required: boolean;
+  final_mix: string | null;
+  before_sound: string | null;
+  windows: Array<{ start_s: number; end_s: number; reason: 'cut' | 'word_gap' }>;
 }
 
 export interface Product {
@@ -102,18 +113,51 @@ export function tileSize(width: number, height: number): { width: number; height
 }
 
 /** Where the frames are taken: evenly across the video before its end card, then the end card's middle. */
-export function sheetTimes(timeline: Pick<Timeline, 'duration_s' | 'scenes' | 'end_card'>): SheetTile[] {
+export function sheetTimes(timeline: Pick<Timeline, 'duration_s' | 'scenes' | 'end_card'> & { fps?: number }): SheetTile[] {
   const card = timeline.end_card && timeline.end_card.end_s > timeline.end_card.start_s ? timeline.end_card : null;
   const bodyEnd = Math.max(card ? card.start_s : timeline.duration_s, 0.1);
   const scenes = [...(timeline.scenes ?? [])].sort((a, b) => a.start_s - b.start_s);
   const tiles: SheetTile[] = [];
   for (let i = 0; i < SHEET_FRAMES; i++) {
-    const at = +((bodyEnd * (i + 0.5)) / SHEET_FRAMES).toFixed(2);
+    const at = Math.max(0, Math.min(+((bodyEnd * (i + 0.5)) / SHEET_FRAMES).toFixed(2), bodyEnd - 1 / (timeline.fps && timeline.fps > 0 ? timeline.fps : 30)));
     const index = scenes.findIndex((scene) => at >= scene.start_s && at < scene.end_s);
     tiles.push({ tile: i + 1, at_s: at, ...(index >= 0 ? { scene_id: scenes[index].id, scene: index + 1 } : {}) });
   }
   if (card) tiles.push({ tile: SHEET_FRAMES + 1, at_s: +((card.start_s + card.end_s) / 2).toFixed(2), end_card: true });
-  return tiles;
+  const missing = scenes.filter((scene) => scene.start_s < bodyEnd && scene.end_s > scene.start_s && !tiles.some((tile) => tile.scene_id === scene.id));
+  for (const scene of missing) {
+    const index = scenes.indexOf(scene);
+    tiles.push({ tile: 0, at_s: (scene.start_s + Math.min(scene.end_s, bodyEnd)) / 2, scene_id: scene.id, scene: index + 1 });
+  }
+  return tiles.sort((a, b) => a.at_s - b.at_s).map((tile, i) => ({ ...tile, tile: i + 1 }));
+}
+
+export function audioReviewWindows(timeline: Pick<Timeline, 'duration_s' | 'scenes'> & { speech?: Timeline['speech'] }): ReviewAudio['windows'] {
+  const windows: ReviewAudio['windows'] = [];
+  const add = (start: number, end: number, reason: 'cut' | 'word_gap') => {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+    const start_s = Math.max(0, start);
+    const end_s = Math.min(timeline.duration_s, end);
+    if (end_s > start_s) windows.push({ start_s, end_s, reason });
+  };
+  for (const scene of timeline.scenes) if (scene.start_s > 0) add(scene.start_s - 1.25, scene.start_s + 1.25, 'cut');
+  const words = (timeline.speech ?? []).flatMap((speech) => speech.words ?? []).sort((a, b) => a.start_s - b.start_s);
+  let previousEnd = 0;
+  for (const word of words) {
+    if (word.start_s - previousEnd >= 0.5) add(previousEnd - 0.5, word.start_s + 0.5, 'word_gap');
+    previousEnd = Math.max(previousEnd, word.end_s);
+  }
+  if (words.length && timeline.duration_s - previousEnd >= 0.5) add(previousEnd - 0.5, timeline.duration_s, 'word_gap');
+  return windows.sort((a, b) => a.start_s - b.start_s);
+}
+
+async function extractReviewAudio(ffmpeg: string, source: string, output: string, signal: AbortSignal): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpeg, ['-nostdin', '-y', '-v', 'error', '-i', source, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', output], { stdio: 'ignore', env: childEnv(), signal });
+    const timer = setTimeout(() => child.kill('SIGKILL'), 60_000);
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', (code) => { clearTimeout(timer); resolve(code === 0 ? output : null); });
+  });
 }
 
 /** A tile's label: its scene and second, or END for the end card. */
@@ -307,7 +351,8 @@ export function presenceWarning(name: string | undefined, photos: Float64Array[]
 export async function lookAtFinal(opts: {
   ffmpeg: string;
   final: string;
-  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card'>;
+  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card'> & { speech?: Timeline['speech']; fps?: number };
+  beforeSound?: string;
   products: Product[];
   signal: AbortSignal;
   /** Replaces ffmpeg, for tests. */
@@ -344,7 +389,22 @@ export async function lookAtFinal(opts: {
     const warning = presenceWarning(product.name, colours, seen);
     if (warning) warnings.push(warning);
   }
-  const eyes: Eyes = { contact_sheet: sheet, tiles, warnings, look_for: LOOK_FOR };
+  const bodyEnd = opts.timeline.end_card?.start_s ?? opts.timeline.duration_s;
+  const missing_scenes = opts.timeline.scenes.filter((scene) => scene.start_s < bodyEnd && scene.end_s > scene.start_s && !frames.some((frame) => frame.frame && frame.tile.scene_id === scene.id)).map((scene) => scene.id);
+  const unreadable_tiles = frames.filter((frame) => !frame.frame).map((frame) => frame.tile.tile);
+  if (missing_scenes.length || unreadable_tiles.length) warnings.push({ check: 'review_coverage', message: 'The frame review is incomplete. Inspect the missing scenes in the actual video before calling it ready.' });
+  const required = Boolean(opts.timeline.speech?.length);
+  let audio: ReviewAudio = { required, final_mix: null, before_sound: null, windows: required ? audioReviewWindows(opts.timeline) : [] };
+  if (required) {
+    const audioDir = path.join(dir, 'review-audio');
+    await mkdir(audioDir, { recursive: true, mode: 0o700 });
+    const final_mix = await extractReviewAudio(opts.ffmpeg, opts.final, path.join(audioDir, 'final-mix.wav'), opts.signal);
+    const before_sound = opts.beforeSound ? await extractReviewAudio(opts.ffmpeg, opts.beforeSound, path.join(audioDir, 'before-sound.wav'), opts.signal) : null;
+    audio = { ...audio, final_mix, before_sound };
+    if (!final_mix || (opts.beforeSound && !before_sound)) warnings.push({ check: 'review_audio', message: 'Audio review evidence could not be extracted. Listen to the actual final and source takes before calling speech clean.' });
+  }
+  const output = await hashFile(opts.final).catch(() => null);
+  const eyes: Eyes = { contact_sheet: sheet, tiles, warnings, look_for: LOOK_FOR, ...(output ? { output_sha256: output.sha256 } : {}), coverage: { complete: Boolean(sheet) && !missing_scenes.length && !unreadable_tiles.length, missing_scenes, unreadable_tiles }, audio };
   await writeFile(path.join(dir, 'eyes.json'), JSON.stringify(eyes, null, 2) + '\n', { mode: 0o600 });
   return eyes;
 }

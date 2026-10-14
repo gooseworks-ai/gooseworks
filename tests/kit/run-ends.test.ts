@@ -52,7 +52,7 @@ it('sends what the final check noted without failing the video with the upload',
   })) as any;
   const result = await runMake({ home: tempHome(), line, parts: testParts({ checkRun }) });
   expect(result.status).toBe('done');
-  expect(lineRoute(line.seen, '/upload')[0].body.manifest.check_warnings).toEqual([{ check: 'flag:read_rate', message: 'The voice reads too fast: 3.40 words a second.' }]);
+  expect(lineRoute(line.seen, '/upload')[0].body.manifest.check_warnings).toEqual(expect.arrayContaining([{ check: 'flag:read_rate', message: 'The voice reads too fast: 3.40 words a second.' }]));
 });
 
 void json;
