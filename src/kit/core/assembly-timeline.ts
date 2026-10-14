@@ -182,7 +182,7 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   }
   for (const s of t.segments.filter((s) => s.depicts_speech)) {
     const driver = s.speech_mode === 'audio_driven_lipsync' ? s.speech_driver! : s.video;
-    const matching = t.audio_cues.filter((c) => speechRole(c.role) && c.source.sha256 === driver.sha256 && c.source.asset_id === driver.asset_id && Math.abs(c.source.speed - driver.speed) < 1e-9 && !c.loop)
+    const matching = t.audio_cues.filter((c) => c.role === s.speech_mode && c.gain_db > -80 && c.source.sha256 === driver.sha256 && c.source.asset_id === driver.asset_id && Math.abs(c.source.speed - driver.speed) < 1e-9 && !c.loop)
       .filter((c) => Math.abs((c.source.in_ms + (s.start_ms - c.start_ms) * c.source.speed) - driver.in_ms) <= 1)
       .map((c) => ({ start_ms: Math.max(s.start_ms, c.start_ms) - s.start_ms, end_ms: Math.min(s.end_ms, c.end_ms) - s.start_ms }))
       .filter((c) => c.end_ms > c.start_ms);
@@ -204,7 +204,7 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     for (const gap of gaps([...t.audio_cues, ...t.pauses.filter((p) => p.scope === 'all_audio')], t.duration_ms)) issues.push(`unplanned audio gap ${gap.start_ms}–${gap.end_ms}ms`);
   }
   if (t.speech_mode === 'none' && t.audio_cues.some((c) => speechRole(c.role))) issues.push('No-speech intent conflicts with speech cues');
-  if (t.speech_mode !== 'none') for (const gap of gaps([...t.audio_cues.filter((c) => speechRole(c.role)), ...t.pauses], t.duration_ms)) issues.push(`unplanned speech gap ${gap.start_ms}–${gap.end_ms}ms (music cannot substitute for speech intent)`);
+  if (t.speech_mode !== 'none') for (const gap of gaps([...t.audio_cues.filter((c) => speechRole(c.role) && c.gain_db > -80), ...t.pauses], t.duration_ms)) issues.push(`unplanned speech gap ${gap.start_ms}–${gap.end_ms}ms (music cannot substitute for speech intent)`);
   return { status: issues.length ? 'invalid' : 'complete', timeline: t, revision: assemblyTimelineRevision(t), issues };
 }
 
