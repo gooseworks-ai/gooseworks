@@ -1,25 +1,24 @@
-// The entry skill text our server builds, copied here because the CLI
-// cannot import gooseworks-app. Do not edit by hand.
+// Server-backed entry snapshots for the CLI. The production guidance stays at
+// its shipped snapshot; this change backports only the current approval text.
+// Regenerate committed skills from these snapshots; do not edit their output.
 //
-// Source: gooseworks-app akhil/vq-wp7a2-custom-kit-handoff @ 036fa8393
-//   apps/api/src/services/playbooks/entry-skill.ts      buildVideoEntrySkill(slug)
-//   apps/api/src/app-mcp-server/lib/video-policy.ts     renderEntrySkillRules(product)
-//
-// The video entry skills are the server's whole SKILL.md. The rules blocks are
-// the rulebook's entry-skill rules for the skills the CLI writes itself
-// (gooseworks, goose-ads, goose-product-photos), so no skill restates a rule
-// by hand. tests/skills/server-entry-skills.test.ts checks this file against
-// tests/fixtures/server-entry-skills.json, and that fixture against a
-// gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one.
+// Base: gooseworks dev 75ddf26 (goose-video 4.4.4, make-custom-video 3.5.1).
+// Approval fragments: gooseworks-app PR #2047, captured 2026-10-14:
+//   goose-video 4.4.6: universal in-chat approval rule (rulebook 1.4.1).
+//   make-custom-video 3.5.3: human summary, review heading and approval paragraph.
+// Other production text and shared rules are unchanged from the base.
+// This is an approval-only backport, not a full current-server skill snapshot.
+// tests/skills/server-entry-skills.test.ts checks delivery against the fixture;
+// its optional whole-server comparison is strict when a complete sync is wanted.
 
-/** The rulebook version this text was built from. */
+/** The rulebook version of the unchanged shared rules snapshot. */
 export const SERVER_RULEBOOK_VERSION = '1.3.2';
 
 export const SERVER_VIDEO_ENTRY_SKILLS = {
   'goose-video': `---
 name: goose-video
 description: "Make a video ad in this chat. Study a supplied video reference before comparing styles; follow the next_step in every answer."
-version: 4.4.4
+version: 4.4.6
 ---
 
 # GooseWorks video
@@ -55,21 +54,21 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
 - Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - A yes is to the credit total the customer was shown: their press on the plan card, or their yes in chat sent with that total.
-- Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
+- Every video approval, including a higher price or a priced fix, can happen in this chat. Show the plan and its price here when no card is visible; cards and websites are optional for approval.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
 `,
   'make-custom-video': `---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.5.1
+version: 3.5.3
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
 
 # Human version
 
-The owner approves the script, then actual storyboard/ingredients and budget. Both authenticated reviews must pass before production.
+Approve the script, then actual storyboard/ingredients and budget in this chat. Both reviews are required; cards and Studio are optional.
 
 ---
 
@@ -97,9 +96,9 @@ Reference resolve takes direct files and starts no paid social lookup. If it fai
 Follow the harness phases for the actual scenes; reuse suitable product photos and deterministic text animation. Bind operations to this project and approved scene/script revisions.
 video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Price each paid request free with estimate_only=1 and save preview_estimate/render_estimate, with its redo allowance, for the work still to buy (harness design brief); the server adds committed_credits. Never edit a field the owner approved: the save sets their approval aside until the approved text is back. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
 
-## Two authenticated owner reviews
+## Two owner reviews
 
-Show the complete saved script and exact cumulative budget on the authenticated review card. Only the owner's actual signed button press approves. Chat yes, OAuth, user_quote, widget origin or a copied token is not proof; never manufacture a click or self-approve. Text-only/large reviews use returned authenticated Studio phase buttons and approval_surface URL.
+Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional.
 Reread video_read after owner actions. Script approval permits quoted previews only. Save the actual storyboard, playable ingredients and render budget; ingredient approval permits clips. Require current script_approved/ingredients_approved, matching tokens/revision and budget. Changed reviews need renewed approval. A prior yes does not authorize changed work.
 
 ## Execute, check and deliver

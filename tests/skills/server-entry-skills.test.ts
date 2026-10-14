@@ -1,8 +1,8 @@
 /**
- * The CLI's goose-video and make-custom-video are our server's entry skills,
- * as built, and the skills the CLI writes itself carry the rulebook's rules
- * block. The fixture is the server's output; with GOOSEWORKS_APP_DIR pointing
- * at a gooseworks-app checkout, the fixture is checked against the server too.
+ * The CLI's reviewed video snapshots preserve shipped production guidance with
+ * approval-only fragments backported from the server. Other entries carry the
+ * unchanged shared rulebook snapshot. The fixture checks delivery parity.
+ * GOOSEWORKS_APP_DIR opts into a strict whole-server comparison for complete syncs.
  */
 import { execFileSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -19,7 +19,7 @@ interface ServerFixture {
 const fixture = JSON.parse(readFileSync(join(__dirname, '..', 'fixtures', 'server-entry-skills.json'), 'utf8')) as ServerFixture;
 const skill = (name: string) => getEntrySkills().find((entry) => entry.name === name)!.content;
 
-it('ships the server text unchanged', () => {
+it('ships reviewed video snapshots unchanged', () => {
   expect(SERVER_VIDEO_ENTRY_SKILLS).toEqual(fixture.skills);
   expect(SERVER_ENTRY_SKILL_RULES).toEqual(fixture.rules);
   expect(SERVER_RULEBOOK_VERSION).toBe(fixture.rulebook_version);

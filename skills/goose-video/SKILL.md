@@ -1,7 +1,7 @@
 ---
 name: goose-video
 description: "Make a video ad in this chat. Study a supplied video reference before comparing styles; follow the next_step in every answer."
-version: 4.4.4
+version: 4.4.6
 ---
 
 # GooseWorks video
@@ -37,6 +37,6 @@ If no available style fits, or they explicitly want custom, catalog_fetch type s
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
 - Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - A yes is to the credit total the customer was shown: their press on the plan card, or their yes in chat sent with that total.
-- Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
+- Every video approval, including a higher price or a priced fix, can happen in this chat. Show the plan and its price here when no card is visible; cards and websites are optional for approval.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.

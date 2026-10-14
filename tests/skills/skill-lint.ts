@@ -38,6 +38,8 @@ export const ANSWER_FIELDS: readonly string[] = [
   // reference, free price check, redo allowance, clip checks, progress notes and the rebuild recipe.
   'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
   'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
+  // Custom chat approval fields backported from the current server entry.
+  'approval_quote', 'review_token', 'total_credits',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
