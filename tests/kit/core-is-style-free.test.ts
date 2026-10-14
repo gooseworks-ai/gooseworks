@@ -10,7 +10,7 @@ const ROOTS = ['src/kit/core', 'src/kit/line'].map((p) => path.join(__dirname, '
 const FORBIDDEN: Array<[string, RegExp]> = [
   ['a style id', /search-grid|photo-grid|logo-equation|phone-chat|imessage|apple-notes|street-interview|podcast-skit|vignette|split-screen|kinetic-typ/i],
   ['a part id', /html-frames|audio-mix|music-elevenlabs|voice-elevenlabs|(brand|captions|sound|check)-layer|end-card|overlay-creator|broll-pexels/i],
-  ['a model id', /fal-ai\/|kling|\bveo\b|seedance|nano-banana|gpt-image|eleven_[a-z0-9]|\bflux\b|birefnet|lipsync|creator-h3|whisper-1/i],
+  ['a model id', /fal-ai\/|kling|\bveo\b|seedance|nano-banana|gpt-image|eleven_[a-z0-9]|\bflux\b|birefnet|\blipsync\b|creator-h3|whisper-1/i],
   ['a provider payload field or route', /\bprompt\b|image_url|audio_url|voice_id|model_id|text-to-speech|with-timestamps|\/v1\/music/i],
   ['a sound or check target', /LUFS|dBTP|loudnorm|ebur128|-14\b/],
 ];

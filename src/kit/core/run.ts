@@ -36,8 +36,9 @@ import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, typ
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
+import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline } from './assembly-timeline';
 import { RESUMABLE_CODES } from './outcome';
-import { canonicalHash, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
+import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
 import { asPartError, KitStop, lineStop, PartError } from './errors';
 import { fileRef, hashFile, intact, materialize } from './files';
@@ -63,6 +64,8 @@ import { getVersion } from '../../version';
 
 export const LAYER_ORDER: readonly LayerSlot[] = ['brand', 'captions', 'sound', 'check'];
 const SLOT_KIND: Record<LayerSlot, PartKind> = { brand: 'compose', captions: 'caption', sound: 'mix', check: 'check' };
+/** Matches the backend upload manifest limit, including source timeline and full rubric. */
+const MAX_MANIFEST_BYTES = 128 * 1024;
 /** The server's checks a layer can redo. */
 const SERVER_CHECK_SLOT: Record<string, LayerSlot> = { sound: 'sound', captions: 'captions' };
 /** Pixel size of each aspect the plan may pick (short side 1080). */
@@ -986,6 +989,70 @@ class Maker {
     const scope = { plan: this.planScope, brand: this.brand, steps: outputs, assets: this.style.assets };
     const hashes: Record<string, string> = {};
     let timeline: Timeline | null = null;
+    // Review metadata travels outside old part schemas, which reject unknown Timeline fields.
+    const customMetadata = this.style.style as unknown as Record<string, unknown>;
+    let assemblyRaw: unknown = customMetadata.assembly_timeline;
+    let contentReview: unknown = customMetadata.content_review;
+    const sourceReviewPath = path.join(this.layout.final, 'source-reviews.json');
+    let sourceReviews: Record<string, unknown> = {};
+    try {
+      const saved = JSON.parse(await readFile(sourceReviewPath, 'utf8')) as { steps?: Record<string, unknown> };
+      if (!saved || !saved.steps || typeof saved.steps !== 'object' || Array.isArray(saved.steps)) throw new Error('steps must be a map');
+      sourceReviews = saved.steps;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new KitStop('The saved source reviews could not be read. Repair source-reviews.json before resuming.', 'change_request', 'bad_input');
+    }
+    const sourceFiles = new Map<string, FileRef>();
+    const collectFiles = (value: unknown): void => {
+      if (isFileRef(value)) { sourceFiles.set(value.sha256, value); return; }
+      if (Array.isArray(value)) { value.forEach(collectFiles); return; }
+      if (value && typeof value === 'object') Object.values(value as Record<string, unknown>).forEach(collectFiles);
+    };
+    collectFiles(this.planScope);
+    const retainReviewedFiles = async (value: unknown): Promise<unknown> => {
+      if (isFileRef(value)) {
+        if (!isInside(this.layout.root, value.path)) throw new KitStop('A reviewed source belongs to another job.', 'change_request', 'bad_input');
+        const directory = path.join(this.layout.inputs, 'reviewed');
+        const held = { ...value, path: path.join(directory, `${value.sha256}${path.extname(value.path)}`) };
+        if (await intact(held)) return held;
+        if (!(await intact(value))) throw new KitStop('A reviewed source changed or is missing. Keep the candidate bytes before resuming.', 'change_request', 'bad_input');
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await copyFile(value.path, held.path);
+        if (!(await intact(held))) throw new KitStop('The retained source copy did not match its review.', 'failed', 'tool_failed');
+        return held;
+      }
+      if (Array.isArray(value)) return Promise.all(value.map(retainReviewedFiles));
+      if (value && typeof value === 'object') return Object.fromEntries(await Promise.all(Object.entries(value as Record<string, unknown>).map(async ([key, item]) => [key, await retainReviewedFiles(item)])));
+      return value;
+    };
+    const acceptTimeline = (out: Record<string, unknown>): void => {
+      collectFiles(out);
+      if (out.assembly_timeline !== undefined) assemblyRaw = out.assembly_timeline;
+      if (out.content_review !== undefined) contentReview = out.content_review;
+      if (out.timeline && typeof out.timeline === 'object') {
+        const { assembly_timeline, content_review, ...ordinary } = out.timeline as Timeline;
+        if (assembly_timeline !== undefined) assemblyRaw = assembly_timeline;
+        if (content_review !== undefined) contentReview = content_review;
+        timeline = ordinary;
+        out.timeline = ordinary;
+      }
+    };
+    const exposeAssemblyToDeclaredSchema = (loaded: LoadedPart, inputs: Record<string, unknown>): void => {
+      if (!assemblyRaw) return;
+      const root = loaded.manifest.inputs as unknown as Record<string, unknown>;
+      for (const key of ['timeline', 'under_timeline']) {
+        const value = inputs[key];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        let schema = (root.properties as Record<string, unknown> | undefined)?.[key] as Record<string, unknown> | undefined;
+        for (let depth = 0; depth < 8 && typeof schema?.$ref === 'string' && schema.$ref.startsWith('#/'); depth++) {
+          let target: unknown = root;
+          for (const name of schema.$ref.slice(2).split('/')) target = target && typeof target === 'object' ? (target as Record<string, unknown>)[name.replace(/~1/g, '/').replace(/~0/g, '~')] : undefined;
+          schema = target && typeof target === 'object' ? target as Record<string, unknown> : undefined;
+        }
+        const properties = schema?.properties as Record<string, unknown> | undefined;
+        if (properties && Object.prototype.hasOwnProperty.call(properties, 'assembly_timeline')) inputs[key] = { ...value, assembly_timeline: assemblyRaw };
+      }
+    };
     const fixes = this.run.fixes ?? [];
     const fixed = (id: string, inputs: Record<string, unknown>) => {
       const mine = fixes.filter((f) => f.target === id);
@@ -997,16 +1064,52 @@ class Maker {
     for (const step of this.style.style.timeline) {
       const loaded = this.parts.get(step.id)!;
       const { inputs, round } = fixed(step.id, this.bind(step.id, step.inputs as Record<string, unknown> | undefined, scope));
+      exposeAssemblyToDeclaredSchema(loaded, inputs);
+      // Only the predeclared staged creator route consumes review evidence. Capture/script/budget stay frozen.
+      const properties = (loaded.manifest.inputs as unknown as { properties?: Record<string, { enum?: unknown[] }> }).properties;
+      const stagedSourceReview = Boolean(properties?.accepted_sources && properties?.generation_stage?.enum?.includes('reviewed_pipeline'));
+      const alignedVoiceReview = Boolean(properties?.reviewed_alignments);
+      if (stagedSourceReview) {
+        inputs.generation_stage = 'reviewed_pipeline';
+        const reviewed = sourceReviews[step.id] as { accepted_sources?: unknown; qualification?: unknown } | undefined;
+        if (reviewed?.accepted_sources !== undefined) inputs.accepted_sources = await retainReviewedFiles(reviewed.accepted_sources);
+        if (reviewed?.qualification !== undefined) inputs.qualification = reviewed.qualification;
+      }
+      if (alignedVoiceReview) {
+        const reviewed = sourceReviews[step.id] as { reviewed_alignments?: unknown } | undefined;
+        if (reviewed?.reviewed_alignments !== undefined) inputs.reviewed_alignments = await retainReviewedFiles(reviewed.reviewed_alignments);
+      }
       const ref = lockedRef(step.part, this.lock);
       const out = await this.runStep({ id: step.id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
+      acceptTimeline(out);
       outputs.set(step.id, out);
-      if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
+      const provenance = out.provenance as { source_content_review?: unknown } | undefined;
+      const creatorPending = stagedSourceReview && out.content_review_status === 'pending' && provenance?.source_content_review !== 'pass';
+      const voiceTimingPending = alignedVoiceReview && out.timing_status === 'requires_reviewed_alignment';
+      const voiceInputRevision = canonicalHash(hashView({ ...inputs, reviewed_alignments: undefined }));
+      const voiceSources = alignedVoiceReview ? fileRefsIn(out).filter((file) => file.media === 'audio') : [];
+      const voiceRecord = sourceReviews[step.id] as { voice_reviews?: Array<{ source_sha256?: string; inputs_revision?: string; status?: string; reviewer?: string; audio_listened?: boolean; start_s?: number; end_s?: number; checks?: Record<string, string> }> } | undefined;
+      const reviewedVoice = (file: FileRef): boolean => {
+        const r = Array.isArray(voiceRecord?.voice_reviews) ? voiceRecord.voice_reviews.find((review) => review?.source_sha256 === file.sha256) : null;
+        return !!r && r.inputs_revision === voiceInputRevision && r.status === 'pass' && typeof r.reviewer === 'string' && !!r.reviewer.trim() && r.audio_listened === true && typeof r.start_s === 'number' && Number.isFinite(r.start_s) && r.start_s === 0 && typeof r.end_s === 'number' && Number.isFinite(r.end_s) && file.duration_s !== undefined && r.end_s >= file.duration_s - 0.02 && ['script', 'voice', 'pronunciation', 'performance'].every((axis) => r.checks?.[axis] === 'pass');
+      };
+      const voiceContentPending = alignedVoiceReview && out.content_review_status === 'pending' && (!voiceSources.length || voiceSources.some((file) => !reviewedVoice(file)));
+      if (creatorPending || voiceTimingPending || voiceContentPending) {
+        await mkdir(this.layout.final, { recursive: true, mode: 0o700 });
+        const request = path.join(this.layout.final, `source-review-request-${step.id}.json`);
+        await writeJson(request, { step: step.id, inputs_revision: creatorPending ? canonicalHash(hashView(inputs)) : voiceInputRevision, outputs: out,
+          instructions: creatorPending ? 'Review the actual source clips with moving picture and audio using the existing ingredient review. Save accepted_sources and qualification under this step in source-reviews.json, then resume the same command. Do not alter the approved script, capture or budget. Failed or incomplete source reviews cannot enter assembly.' : 'Listen to every actual source and finished voice track, including word endings and joins. Save voice_reviews under this step in source-reviews.json. Each record needs source_sha256, this inputs_revision, status pass, reviewer, audio_listened true, start_s 0, end_s covering the whole source, and checks script/voice/pronunciation/performance pass. If measured alignment is missing, also supply reviewed_alignments with tag-free spoken timings. No script, voice or model change is authorized by these review records.',
+          review_file: sourceReviewPath });
+        throw new KitStop(`A source candidate is saved for review at ${request}. Save its actual review in ${sourceReviewPath}, then resume this command; existing paid pieces are reused.`, 'stop', 'source_review_incomplete');
+      }
     }
     const last = this.style.style.timeline[this.style.style.timeline.length - 1];
     const made = outputs.get(last.id)?.video;
     if (!isFileRef(made) || made.media !== 'video') throw new KitStop('The style’s last step made no video.', 'change_request');
     let cut: FileRef = made;
     timeline ??= await this.bareTimeline(cut);
+    const assemblyBeforeLayers = normalizeAssemblyTimeline(assemblyRaw, { speech: this.style.style.traits.speech });
+    if (assemblyBeforeLayers.status === 'invalid') throw new KitStop(`The source-linked edit is inconsistent: ${assemblyBeforeLayers.issues.join(' ')}`, 'change_request', 'output_invalid');
 
     let words: FileRef | undefined;
     let captions: FileRef | undefined;
@@ -1018,7 +1121,9 @@ class Maker {
       const loaded = this.parts.get(id)!;
       const ref = { id: loaded.manifest.id, version: loaded.manifest.version };
       const { inputs, round } = fixed(id, { video: cut, timeline, brand: this.brand, expect: expectationOf(this.style.style, this.handed.plan), ...(words ? { words } : {}) });
+      exposeAssemblyToDeclaredSchema(loaded, inputs);
       const out = await this.runStep({ id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
+      acceptTimeline(out);
       if (slot === 'check') {
         verdict = out.verdict as CheckVerdict;
         continue;
@@ -1029,13 +1134,37 @@ class Maker {
         throw new KitStop(`Finishing this video gave back no video. ${PLAN_CHANGE}`, 'change_request', 'output_invalid');
       }
       cut = video;
-      if (out.timeline && typeof out.timeline === 'object') timeline = out.timeline as Timeline;
       if (slot === 'captions') {
         if (isFileRef(out.words)) words = out.words;
         if (isFileRef(out.captions)) captions = out.captions;
       }
     }
     if (!verdict || typeof verdict.pass !== 'boolean' || !Array.isArray(verdict.checks)) throw new KitStop('The final check gave no verdict.', 'change_request');
+    const assembly = normalizeAssemblyTimeline(assemblyRaw, { speech: this.style.style.traits.speech });
+    if (assembly.status === 'invalid') throw new KitStop(`The finished edit has inconsistent source timing: ${assembly.issues.join(' ')}`, 'change_request', 'output_invalid');
+    if (assembly.timeline) {
+      if (Math.abs(assembly.timeline.duration_ms / 1000 - timeline.duration_s) > Math.max(0.05, 2 / timeline.fps)) throw new KitStop('The finished picture duration differs from its source-linked edit.', 'change_request', 'output_invalid');
+      // A path in a declaration is insufficient: resolve against registered, hash-checked files.
+      const pictures = assemblyPictureSources(assembly.timeline);
+      const audible = [...assembly.timeline.audio_cues.map((c) => c.source),
+        ...assembly.timeline.segments.flatMap((s) => s.speech_driver ? [s.speech_driver] : [])];
+      const linked = [...pictures.map((p) => p.source), ...audible];
+      const sourceProbe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? 'ffmpeg', ffprobe: this.tools.ffprobe.path ?? 'ffprobe', toolchain: this.toolchain }, this.stop.signal).probe;
+      for (const source of linked) {
+        const file = sourceFiles.get(source.sha256);
+        if (!file || !(await intact(file))) throw new KitStop(`A timeline source is missing or changed: ${source.asset_id}`, 'change_request', 'output_invalid');
+        const sourcePictures = pictures.filter((p) => p.source.sha256 === source.sha256 && p.source.asset_id === source.asset_id);
+        if (sourcePictures.some((p) => p.source_kind !== file.media)) throw new KitStop(`A picture source has a different media kind: ${source.asset_id}`, 'change_request', 'output_invalid');
+        const actual = await sourceProbe(file.path);
+        if (sourcePictures.length && !actual.has_video) throw new KitStop(`A picture source has no readable picture: ${source.asset_id}`, 'change_request', 'output_invalid');
+        if (audible.some((a) => a.sha256 === source.sha256 && a.asset_id === source.asset_id) && !actual.has_audio) throw new KitStop(`An audio source has no readable audio: ${source.asset_id}`, 'change_request', 'output_invalid');
+        // A still is intentionally held; only moving/audio sources have a media clock.
+        if (file.media !== 'image' && (actual.duration_s === undefined || source.out_ms > actual.duration_s * 1000 + 1)) throw new KitStop(`A timeline source window exceeds the actual file: ${source.asset_id}`, 'change_request', 'output_invalid');
+        source.path = file.path;
+      }
+      timeline.assembly_timeline = assembly.timeline;
+    }
+    if (contentReview && typeof contentReview === 'object') timeline.content_review = contentReview as NonNullable<Timeline['content_review']>;
     return { cut, captions, verdict, steps: hashes, timeline, beforeSound };
   }
 
@@ -1383,6 +1512,41 @@ class Maker {
         captions_vtt = captions.toString('utf8');
       }
       const eyes = await this.lookAt(candidate, current);
+      const assembly = normalizeAssemblyTimeline(current.timeline.assembly_timeline, { speech: this.style.style.traits.speech });
+      let contentReview: unknown = current.timeline.content_review;
+      const reviewPath = path.join(this.layout.final, 'content-review.json');
+      try { contentReview = JSON.parse(await readFile(reviewPath, 'utf8')); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new KitStop('The saved content review could not be read. Repair that JSON before resuming.', 'change_request', 'output_invalid');
+      }
+      const custom = this.style.style.id.startsWith('custom-');
+      let measuredDurationMs: number | null = null;
+      if (custom) {
+        try {
+          const probe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, this.stop.signal).probe;
+          const info = await probe(candidate);
+          measuredDurationMs = measuredFinalDurationMs(info.duration_s);
+        } catch {
+          // Missing measurement leaves review incomplete; the edit clock is not a fallback.
+        }
+      }
+      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined);
+      await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, measured_duration_ms: measuredDurationMs, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
+      if (custom && contentProblems.length) {
+        await writeJson(path.join(this.layout.final, 'review-request.json'), {
+          candidate, output_sha256: sha256, measured_duration_ms: measuredDurationMs, timeline_revision: assembly.revision,
+          creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
+          assembly_issues: assembly.issues, content_review_problems: contentProblems,
+          instructions: 'Play this exact candidate completely at normal speed with sound. Record actual observations and unresolved issues. Save the completed review as content-review.json beside this request, then resume the same video make command. Missing listening or moving-picture access stays incomplete. This is a review declaration, not proof of human attention.',
+          template: { output_sha256: sha256, timeline_revision: assembly.revision, creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
+            reviewer: '', verdict: 'incomplete', capabilities: { audio_perception: false, motion_perception: false }, coverage: [], unresolved_issues: [],
+            dimensions: Object.fromEntries(CONTENT_DIMENSIONS.map((name) => [name, { status: 'incomplete', note: 'Not reviewed yet' }])) },
+        });
+        this.run.status = 'failed';
+        this.book.note = 'The candidate needs its actual picture and audio review';
+        await this.saveRun();
+        this.reporter.close();
+        return { status: 'stopped', code: 'content_review_incomplete', message: `The candidate is saved at ${candidate}. Its picture/audio review is incomplete. Save the actual review in ${reviewPath}, then resume the same command; unchanged assets are reused.` };
+      }
       this.book.note = 'Sending your video for its final check';
       this.run.status = 'uploading';
       await this.saveRun();
@@ -1391,7 +1555,12 @@ class Maker {
       let check: UploadCheck;
       try {
         const noted = [...verdictWarnings(current.verdict), ...(eyes?.warnings ?? [])].slice(0, MAX_SENT_WARNINGS);
-        check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps), ...(noted.length ? { check_warnings: noted } : {}) });
+        check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps),
+          ...(assembly.timeline ? { assembly_timeline: assembly.timeline } : {}),
+          ...(contentReview ? { content_review: contentReview } : {}),
+          assembly_evidence: { status: assembly.status, revision: assembly.revision, output_sha256: sha256, source_bytes_verified: assembly.status === 'complete', issues: assembly.issues },
+          content_review_status: contentProblems.length ? 'incomplete' : 'approved',
+          ...(noted.length ? { check_warnings: noted } : {}) });
       } catch (error) {
         if (error instanceof LineError) throw lineStop(lineWords(error), error.next, error.code);
         throw error;
@@ -1441,6 +1610,7 @@ class Maker {
    * that upload, which gives the same answer.
    */
   private async sendUpload(sha256: string, data: Buffer, captions_vtt: string | undefined, manifest: Record<string, unknown>): Promise<UploadCheck> {
+    if (Buffer.byteLength(JSON.stringify(manifest), 'utf8') > MAX_MANIFEST_BYTES) throw new KitStop('The source and review record exceeds the upload limit. Keep the candidate and move lengthy supporting notes to evidence files before resuming.', 'change_request', 'bad_input');
     const { line } = this.deps;
     type Stage = { upload_id: string; attempt: 1 | 2; sha256: string; quote_id: string; stage: 'requested' | 'put' | 'done'; result?: 'pass' | 'fail' };
     const saved = (await this.store.readUpload<{ uploads: Stage[] }>()) ?? { uploads: [] };

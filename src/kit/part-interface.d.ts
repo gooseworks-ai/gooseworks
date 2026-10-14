@@ -17,6 +17,8 @@
 // Basics
 // ---------------------------------------------------------------------------
 
+import type { AssemblyTimeline, FinalContentReview } from './core/assembly-timeline';
+
 /** The part interface version this file describes. A kit lists the versions it can run. */
 export type InterfaceVersion = 1;
 
@@ -517,6 +519,10 @@ export interface FixHint {
  * size, fps; no scenes or speech).
  */
 export interface Timeline {
+  /** Core-owned source intent; stripped from legacy part inputs and retained out-of-band. */
+  assembly_timeline?: AssemblyTimeline;
+  /** Only a review of the exact final bytes can clear content responsibilities. */
+  content_review?: FinalContentReview;
   duration_s: number;
   width: number;
   height: number;

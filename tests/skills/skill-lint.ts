@@ -40,6 +40,11 @@ export const ANSWER_FIELDS: readonly string[] = [
   'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
   // Custom chat approval fields backported from the current server entry.
   'approval_quote', 'review_token', 'total_credits',
+  // Custom quality release: source identity, creative intent and final review fields.
+  'media_id', 'media_revision', 'audio_perception', 'motion_perception',
+  'creative_contract', 'speech_mode', 'soundtrack_modes', 'required_features',
+  'reference_map', 'product_grounding', 'voice_plan', 'assembly_timeline',
+  'quality_report', 'content_review', 'creative_contract_revision',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */

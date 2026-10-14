@@ -54,6 +54,9 @@ export interface Eyes {
   output_sha256?: string;
   coverage?: { complete: boolean; missing_scenes: string[]; unreadable_tiles: number[] };
   audio?: ReviewAudio;
+  /** Samples and measurements never establish perceptual review. */
+  content_review_status?: 'incomplete';
+  review_capability?: { audio_perception: false; motion_perception: false };
 }
 
 export interface ReviewAudio {
@@ -61,6 +64,9 @@ export interface ReviewAudio {
   final_mix: string | null;
   before_sound: string | null;
   windows: Array<{ start_s: number; end_s: number; reason: 'cut' | 'word_gap' }>;
+  measured_near_silence?: Array<{ start_s: number; end_s: number }>;
+  unplanned_quiet_candidates?: Array<{ start_s: number; end_s: number }>;
+  measurement_status?: 'measured' | 'incomplete';
 }
 
 export interface Product {
@@ -157,6 +163,30 @@ async function extractReviewAudio(ffmpeg: string, source: string, output: string
     const timer = setTimeout(() => child.kill('SIGKILL'), 60_000);
     child.on('error', () => { clearTimeout(timer); resolve(null); });
     child.on('close', (code) => { clearTimeout(timer); resolve(code === 0 ? output : null); });
+  });
+}
+
+/** Whole-cut near-silence diagnostics. A quiet consonant or intended pause is not a defect verdict. */
+async function measureQuiet(ffmpeg: string, source: string, duration: number, signal: AbortSignal): Promise<ReviewAudio['measured_near_silence'] | null> {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpeg, ['-nostdin', '-hide_banner', '-i', source, '-vn', '-af', 'silencedetect=noise=-45dB:d=0.25', '-f', 'null', '-'], { stdio: ['ignore', 'ignore', 'pipe'], env: childEnv(), signal });
+    let log = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), 60_000);
+    child.stderr.on('data', (chunk: Buffer) => { if (log.length < 1_000_000) log += chunk.toString('utf8'); });
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) { resolve(null); return; }
+      const intervals: NonNullable<ReviewAudio['measured_near_silence']> = [];
+      let opened: number | null = null;
+      for (const match of log.matchAll(/silence_(start|end):\s*([0-9.]+)/g)) {
+        const at = Math.min(duration, Number(match[2]));
+        if (match[1] === 'start') opened = at;
+        else if (opened !== null) { intervals.push({ start_s: opened, end_s: at }); opened = null; }
+      }
+      if (opened !== null) intervals.push({ start_s: opened, end_s: duration });
+      resolve(intervals);
+    });
   });
 }
 
@@ -351,7 +381,7 @@ export function presenceWarning(name: string | undefined, photos: Float64Array[]
 export async function lookAtFinal(opts: {
   ffmpeg: string;
   final: string;
-  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card'> & { speech?: Timeline['speech']; fps?: number };
+  timeline: Pick<Timeline, 'duration_s' | 'width' | 'height' | 'scenes' | 'end_card' | 'assembly_timeline'> & { speech?: Timeline['speech']; fps?: number };
   beforeSound?: string;
   products: Product[];
   signal: AbortSignal;
@@ -393,7 +423,8 @@ export async function lookAtFinal(opts: {
   const missing_scenes = opts.timeline.scenes.filter((scene) => scene.start_s < bodyEnd && scene.end_s > scene.start_s && !frames.some((frame) => frame.frame && frame.tile.scene_id === scene.id)).map((scene) => scene.id);
   const unreadable_tiles = frames.filter((frame) => !frame.frame).map((frame) => frame.tile.tile);
   if (missing_scenes.length || unreadable_tiles.length) warnings.push({ check: 'review_coverage', message: 'The frame review is incomplete. Inspect the missing scenes in the actual video before calling it ready.' });
-  const required = Boolean(opts.timeline.speech?.length);
+  const assembly = opts.timeline.assembly_timeline;
+  const required = !(assembly?.speech_mode === 'none' && assembly.soundtrack_modes.includes('intentional_silence'));
   let audio: ReviewAudio = { required, final_mix: null, before_sound: null, windows: required ? audioReviewWindows(opts.timeline) : [] };
   if (required) {
     const audioDir = path.join(dir, 'review-audio');
@@ -401,10 +432,14 @@ export async function lookAtFinal(opts: {
     const final_mix = await extractReviewAudio(opts.ffmpeg, opts.final, path.join(audioDir, 'final-mix.wav'), opts.signal);
     const before_sound = opts.beforeSound ? await extractReviewAudio(opts.ffmpeg, opts.beforeSound, path.join(audioDir, 'before-sound.wav'), opts.signal) : null;
     audio = { ...audio, final_mix, before_sound };
+    const quiet = final_mix ? await measureQuiet(opts.ffmpeg, opts.final, opts.timeline.duration_s, opts.signal) : null;
+    const pauses = assembly?.pauses ?? [];
+    audio = { ...audio, measurement_status: quiet === null ? 'incomplete' : 'measured',
+      ...(quiet ? { measured_near_silence: quiet, unplanned_quiet_candidates: quiet.filter((q) => !pauses.some((p) => p.start_ms / 1000 <= q.start_s + 0.05 && p.end_ms / 1000 >= q.end_s - 0.05)) } : {}) };
     if (!final_mix || (opts.beforeSound && !before_sound)) warnings.push({ check: 'review_audio', message: 'Audio review evidence could not be extracted. Listen to the actual final and source takes before calling speech clean.' });
   }
   const output = await hashFile(opts.final).catch(() => null);
-  const eyes: Eyes = { contact_sheet: sheet, tiles, warnings, look_for: LOOK_FOR, ...(output ? { output_sha256: output.sha256 } : {}), coverage: { complete: Boolean(sheet) && !missing_scenes.length && !unreadable_tiles.length, missing_scenes, unreadable_tiles }, audio };
+  const eyes: Eyes = { contact_sheet: sheet, tiles, warnings, look_for: LOOK_FOR, ...(output ? { output_sha256: output.sha256 } : {}), coverage: { complete: Boolean(sheet) && !missing_scenes.length && !unreadable_tiles.length, missing_scenes, unreadable_tiles }, audio, content_review_status: 'incomplete', review_capability: { audio_perception: false, motion_perception: false } };
   await writeFile(path.join(dir, 'eyes.json'), JSON.stringify(eyes, null, 2) + '\n', { mode: 0o600 });
   return eyes;
 }

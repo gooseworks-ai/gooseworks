@@ -8,5 +8,9 @@ export const run: PartRun = async (inputs, ctx) => {
   const made = await makeOrSkip(inputs, ctx);
   // skip_blank with no text anywhere: no outputs at all.
   if (!made) return {};
-  return { video: made.video, seconds: made.seconds, timeline: made.timeline };
+  return {
+    video: made.video, seconds: made.seconds, timeline: made.timeline,
+    ...(made.timeline.assembly_timeline ? { assembly_timeline: made.timeline.assembly_timeline } : {}),
+    source_files: made.sourceFiles, provenance: made.provenance, content_review_status: 'pending',
+  };
 };

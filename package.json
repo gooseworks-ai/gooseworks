@@ -1,13 +1,25 @@
 {
   "name": "gooseworks",
   "version": "0.5.8",
-  "description": "GooseWorks CLI — give your coding agent real data tools",
+  "description": "GooseWorks CLI \u2014 give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "gooseworksKit": {
-    "features": ["detach", "status", "verify", "log", "json", "step_edit", "patched"]
+    "features": [
+      "detach",
+      "status",
+      "verify",
+      "log",
+      "json",
+      "step_edit",
+      "patched",
+      "assembly_timeline_v1",
+      "exact_final_content_review_v1",
+      "content_review_resume",
+      "source_linked_html_frames_v1"
+    ]
   },
   "scripts": {
     "build": "tsc",

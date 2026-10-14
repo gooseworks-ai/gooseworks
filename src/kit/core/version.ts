@@ -9,7 +9,8 @@
 import { satisfiesKitRange } from '../parts/semver';
 
 /** The kit core's version. Bump it with every kit change, by the rule above. */
-export const KIT_VERSION = '1.0.0';
+export const KIT_VERSION = '1.0.1';
+export const KIT_FEATURES: readonly string[] = ['assembly_timeline_v1', 'exact_final_content_review_v1', 'content_review_resume', 'source_linked_html_frames_v1'];
 
 /** Part interface versions this kit runs (part-interface.md section 2). */
 export const KIT_INTERFACES: readonly number[] = [1];

@@ -13,7 +13,7 @@ import type { LoadedPart } from '../../src/kit/core/host';
 import { runLayout, stepFolder } from '../../src/kit/core/paths';
 import { checkStyle, fetchStyle, styleHash } from '../../src/kit/core/style';
 import type { PartContext } from '../../src/kit/part-interface';
-import { API, VIDEO, fakeLine, fileSchema, manifest, runMake, style as baseStyle, tempHome, testParts } from './harness';
+import { API, VIDEO, fakeLine, fileSchema, lineRoute, manifest, runMake, style as baseStyle, tempHome, testParts } from './harness';
 
 const sha = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 
@@ -173,7 +173,12 @@ describe('a custom video made on the kit', () => {
     finishBreaks = false;
     const runsBefore = finishRuns;
     const second = customLine();
-    expect((await runMake({ home, line: second, parts: counted })).status).toBe('done');
+    const resumed = await runMake({ home, line: second, parts: counted });
+    expect(resumed.status).toBe('stopped');
+    expect(resumed.code).toBe('content_review_incomplete');
+    const reviewRequest = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'review-request.json'), 'utf8'));
+    expect(reviewRequest.content_review_problems.length).toBeGreaterThan(0);
+    expect(lineRoute(second.seen, '/upload')).toHaveLength(0);
     expect(second.pieces).toHaveLength(0);
     expect(clipRuns).toBe(1);
     expect(finishRuns).toBe(runsBefore + 1);

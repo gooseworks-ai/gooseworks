@@ -275,6 +275,9 @@ export function passThroughTimeline(
   scenes?: Array<{ id: string; start_s: number; end_s: number }>,
 ): Timeline {
   const end = out.duration_s;
+  if (under.assembly_timeline && Math.abs(end - under.duration_s) > 0.001) {
+    throw new Error('Changing the source-linked picture length requires a revised assembly timeline; speech and source clocks cannot be silently clamped');
+  }
   const cut = <T extends { start_s: number; end_s: number }>(items: T[]) =>
     items.filter((item) => item.start_s < end).map((item) => (item.end_s > end ? { ...item, end_s: end } : item));
   let speech = cut(under.speech);
@@ -289,6 +292,8 @@ export function passThroughTimeline(
     fps: out.fps,
     scenes: cut((scenes ?? under.scenes).map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
     speech,
+    ...(under.assembly_timeline ? { assembly_timeline: under.assembly_timeline } : {}),
+    // A new export needs its own exact-byte review even when its source clocks are unchanged.
   };
   if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
   const fit = coverFit({ width: under.width, height: under.height }, out);

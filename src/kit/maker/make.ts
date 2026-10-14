@@ -24,6 +24,8 @@ export interface MakerResult {
   timeline: Timeline;
   /** sha256 of every captured frame, in order. */
   frameHashes: string[];
+  sourceFiles: FileRef[];
+  provenance: Record<string, unknown>;
 }
 
 /** One frame may take this long before the maker gives up on the page. */
@@ -243,6 +245,9 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
       if (started === null) throw ctx.error('tool_failed', 'the frame page lost the kit runtime');
       checked(started);
       cues = cuesOf(started);
+      if (cues.length && spec.under?.timeline.assembly_timeline) {
+        throw ctx.error('bad_input', 'Page sound cues change a source-linked soundtrack. Declare their actual assets and revised cue timeline through the sound layer; an old audio intent or review cannot certify this mix.');
+      }
 
       let segmentStart = 0;
       let segmentBytes = 0;
@@ -360,12 +365,28 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
     if (stream?.pix_fmt !== 'yuv420p') wrong.push(`pixels ${stream?.pix_fmt ?? 'unknown'}`);
     if (stream?.nb_frames !== undefined && Number(stream.nb_frames) !== total) wrong.push(`${stream.nb_frames} frames`);
     if (cues.length && !info.has_audio) wrong.push('no sound for its cues');
+    if (underSound && !info.has_audio) wrong.push('retained source sound was lost');
     if (wrong.length) throw ctx.error('output_invalid', `the encoded video is wrong: ${wrong.join(', ')}`);
 
     const video = await ctx.file(name, 'video');
+    ctx.log.info('assembly source clocks', {
+      ...(spec.under ? { source_sha256: spec.under.file.sha256, source_in_ms: 0, source_out_ms: Math.round(seconds * 1000), picture_speed: 1, audio_speed: 1, native_audio: underSound ? 'preserve' : 'absent' } : {}),
+      cues: cues.map((cue) => ({ sound: cue.sound, requested_s: cue.at_s, gain: cue.gain, max_s: cue.max_s })),
+      content_review_status: 'incomplete',
+    });
     ctx.log.info('frames rendered', { frames: total, seconds, width: spec.output.width, height: spec.output.height });
     finished = true;
-    return { video, seconds, timeline: timelineOf(spec, logo), frameHashes };
+    return {
+      video, seconds, timeline: timelineOf(spec, logo), frameHashes,
+      sourceFiles: spec.under ? [spec.under.file] : [],
+      provenance: {
+        renderer_version: 'html-frames@1.3.0', content_review_status: 'pending',
+        ...(spec.under ? { source_sha256: spec.under.file.sha256, picture_speed: 1, audio_speed: 1, native_audio: underSound ? 'preserve' : 'absent' } : {}),
+        audio_intent_status: spec.under?.timeline.assembly_timeline && !cues.length ? 'source_clocks_preserved' : 'requires_authored_timeline',
+        page_sound_cues: cues.map((cue) => ({ sound: cue.sound, requested_s: cue.at_s, gain: cue.gain, max_s: cue.max_s })),
+        exact_final_review: 'pending',
+      },
+    };
   } finally {
     // The maker's own scratch goes on every exit; a failed run leaves no half-made video either.
     for (const dir of scratch) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
