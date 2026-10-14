@@ -46,6 +46,8 @@ export interface DeviceReport {
   arch: 'arm64' | 'x64';
   kit_version: string;
   interfaces: number[];
+  /** Source-linked assembly and actual-review handoff; older clients omit these. */
+  features?: string[];
   ffmpeg: ToolReport;
   ffprobe: ToolReport;
   browser: ToolReport;

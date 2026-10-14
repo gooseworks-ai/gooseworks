@@ -1,0 +1,215 @@
+// Source-linked edit intent. File/rebuild checks never certify audiovisual quality.
+import { canonicalHash } from './canonical';
+
+export const ASSEMBLY_FORMAT = 'gooseworks-assembly-timeline/1' as const;
+export const SPEECH_MODES = ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing', 'mixed', 'none'] as const;
+export const SOUNDTRACK_MODES = ['source_ambience', 'music', 'sfx', 'intentional_silence'] as const;
+export type SpeechMode = typeof SPEECH_MODES[number];
+export type SoundtrackMode = typeof SOUNDTRACK_MODES[number];
+export interface AssemblySource {
+  asset_id: string;
+  sha256: string;
+  /** Local transport only; excluded from the portable revision. */
+  path?: string;
+  in_ms: number;
+  out_ms: number;
+  speed: number;
+}
+export interface AssemblySegment {
+  id: string;
+  scene_id: string;
+  start_ms: number;
+  end_ms: number;
+  video: AssemblySource;
+  speech_mode: SpeechMode;
+  depicts_speech: boolean;
+  native_audio: 'preserve' | 'muted';
+  speech_driver?: AssemblySource & { task: 'exact_audio' };
+  intent?: string;
+}
+export interface AssemblyCue {
+  id: string;
+  role: Exclude<SpeechMode, 'mixed' | 'none'> | 'source_ambience' | 'music' | 'sfx';
+  source: AssemblySource;
+  start_ms: number;
+  end_ms: number;
+  gain_db: number;
+  loop: boolean;
+  intent?: string;
+}
+export interface AssemblyTimeline {
+  format: typeof ASSEMBLY_FORMAT;
+  creative_contract_revision: string;
+  duration_ms: number;
+  speech_mode: SpeechMode;
+  soundtrack_modes: SoundtrackMode[];
+  segments: AssemblySegment[];
+  audio_cues: AssemblyCue[];
+  pauses: Array<{ start_ms: number; end_ms: number; scope: 'speech' | 'all_audio'; reason: string }>;
+  required_cue_ids: string[];
+  visual_overrides?: Array<{ start_ms: number; end_ms: number; kind: 'freeze' | 'transition'; reason: string; source?: AssemblySource; segment_ids?: string[] }>;
+}
+export interface AssemblyCheck {
+  status: 'complete' | 'incomplete' | 'invalid';
+  timeline: AssemblyTimeline | null;
+  revision: string | null;
+  issues: string[];
+  /** Legacy intent is retained for review, never inferred from transcript absence. */
+  legacy?: Record<string, unknown>;
+}
+export interface FinalContentReview {
+  output_sha256: string;
+  timeline_revision: string;
+  creative_contract_revision: string;
+  reviewer: string;
+  verdict: 'approved' | 'needs_revision' | 'incomplete';
+  capabilities: { audio_perception: boolean; motion_perception: boolean };
+  coverage: Array<{ start_ms: number; end_ms: number }>;
+  unresolved_issues: Array<{ severity: 'P0' | 'P1' | 'P2'; message: string }>;
+  dimensions: Record<string, { status: 'pass' | 'needs_revision' | 'incomplete' | 'not_applicable'; note: string }>;
+}
+export const CONTENT_DIMENSIONS = ['reference_and_concept', 'brand_and_product', 'scale_and_geometry', 'action_and_continuity', 'lip_sync', 'voice_performance', 'pronunciation', 'sound_and_silence', 'pacing_and_joins', 'camera_and_lighting', 'overlays'] as const;
+
+const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
+const text = (v: unknown): v is string => typeof v === 'string' && !!v.trim();
+const ms = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const sourceSpan = (s: AssemblySource) => (s.out_ms - s.in_ms) / s.speed;
+const speechRole = (role: string) => ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing'].includes(role);
+
+/** Excludes machine-specific transport, while retaining exact assets and source clocks. */
+export function assemblyTimelineRevision(value: AssemblyTimeline): string {
+  const portable = (v: unknown): unknown => Array.isArray(v) ? v.map(portable)
+    : object(v) ? Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'path').map(([key, item]) => [key, portable(item)])) : v;
+  return canonicalHash(portable(value));
+}
+
+function gaps(items: Array<{ start_ms: number; end_ms: number }>, duration: number): Array<{ start_ms: number; end_ms: number }> {
+  const missing: Array<{ start_ms: number; end_ms: number }> = [];
+  let end = 0;
+  for (const item of [...items].sort((a, b) => a.start_ms - b.start_ms)) {
+    if (item.start_ms > end + 1) missing.push({ start_ms: end, end_ms: item.start_ms });
+    end = Math.max(end, item.end_ms);
+  }
+  if (end < duration - 1) missing.push({ start_ms: end, end_ms: duration });
+  return missing;
+}
+
+/** Structural and clock checks. A complete result still requires source-byte and content review. */
+export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, unknown>): AssemblyCheck {
+  if (!object(raw)) return { status: 'incomplete', timeline: null, revision: null,
+    issues: ['Source-linked assembly timeline is missing. Legacy sound must be reviewed before migration.'], ...(legacy ? { legacy } : {}) };
+  const issues: string[] = [];
+  if (raw.format !== ASSEMBLY_FORMAT) issues.push(`assembly format must be ${ASSEMBLY_FORMAT}`);
+  if (!hash(raw.creative_contract_revision)) issues.push('creative_contract_revision must identify approved bytes');
+  if (!ms(raw.duration_ms) || raw.duration_ms <= 0 || raw.duration_ms > 180_000) issues.push('duration_ms must be 1–180000');
+  if (!(SPEECH_MODES as readonly unknown[]).includes(raw.speech_mode)) issues.push('speech_mode is missing or unknown');
+  if (!Array.isArray(raw.soundtrack_modes) || raw.soundtrack_modes.some((m) => !(SOUNDTRACK_MODES as readonly unknown[]).includes(m)) || new Set(raw.soundtrack_modes).size !== raw.soundtrack_modes.length) issues.push('soundtrack_modes must be explicit and unique (an empty list means no extra soundtrack)');
+  if (!Array.isArray(raw.segments) || !raw.segments.length || raw.segments.length > 300) issues.push('segments must contain 1–300 source-linked entries');
+  if (!Array.isArray(raw.audio_cues) || raw.audio_cues.length > 500) issues.push('audio_cues must be an explicit list of at most 500');
+  if (!Array.isArray(raw.pauses) || raw.pauses.length > 500) issues.push('pauses must be an explicit list of at most 500');
+  if (!Array.isArray(raw.required_cue_ids) || raw.required_cue_ids.some((id) => !text(id))) issues.push('required_cue_ids must be explicit');
+  if (raw.visual_overrides !== undefined && (!Array.isArray(raw.visual_overrides) || raw.visual_overrides.length > 500)) issues.push('visual_overrides must be a bounded explicit list');
+  if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
+  const t = raw as unknown as AssemblyTimeline;
+  const validSource = (s: unknown, at: string): s is AssemblySource => {
+    if (!object(s) || !text(s.asset_id) || !hash(s.sha256) || !ms(s.in_ms) || !ms(s.out_ms) || s.out_ms <= s.in_ms || !finite(s.speed) || s.speed < 0.25 || s.speed > 4) {
+      issues.push(`${at}: exact asset, hash, bounds and supported speed required`); return false;
+    }
+    return true;
+  };
+  const validRange = (v: unknown, at: string) => {
+    if (!object(v) || !ms(v.start_ms) || !ms(v.end_ms) || v.end_ms <= v.start_ms || v.end_ms > t.duration_ms) { issues.push(`${at}: invalid final bounds`); return false; }
+    return true;
+  };
+  const ids = new Set<string>();
+  for (const s of t.segments) {
+    if (!object(s)) { issues.push('segment must be an object'); continue; }
+    if (!text(s.id) || ids.has(s.id) || !text(s.scene_id)) issues.push('segment ids must be unique and scene_id required');
+    ids.add(s.id);
+    if (!(SPEECH_MODES as readonly string[]).includes(s.speech_mode) || typeof s.depicts_speech !== 'boolean' || !['preserve', 'muted'].includes(s.native_audio)) issues.push(`${s.id}: explicit speech and native audio decisions required`);
+    if (validRange(s, s.id) && validSource(s.video, s.id) && Math.abs(sourceSpan(s.video) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: picture source duration/rate differs from final interval`);
+    if (s.video?.speed !== 1 && !text(s.intent)) issues.push(`${s.id}: speed change needs intent`);
+    if (s.depicts_speech && !['native_dialogue', 'audio_driven_lipsync', 'singing'].includes(s.speech_mode)) issues.push(`${s.id}: speaking face cannot use narration-only or no-speech routing`);
+    if (s.depicts_speech && s.speech_mode === 'native_dialogue' && s.native_audio !== 'preserve') issues.push(`${s.id}: native dialogue may not be muted`);
+    if (s.depicts_speech && s.speech_mode === 'audio_driven_lipsync' && (!validSource(s.speech_driver, `${s.id} driver`) || s.speech_driver?.task !== 'exact_audio')) issues.push(`${s.id}: exact driver audio is required; a voice reference is not a driver`);
+    else if (s.depicts_speech && s.speech_mode === 'audio_driven_lipsync' && Math.abs(sourceSpan(s.speech_driver!) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: driver window/rate differs from its speaking picture interval`);
+  }
+  ids.clear();
+  for (const c of t.audio_cues) {
+    if (!object(c)) { issues.push('audio cue must be an object'); continue; }
+    if (!text(c.id) || ids.has(c.id)) issues.push('audio cue ids must be unique');
+    ids.add(c.id);
+    if (!speechRole(c.role) && !['source_ambience', 'music', 'sfx'].includes(c.role)) issues.push(`${c.id}: unknown audio role`);
+    if (!finite(c.gain_db) || c.gain_db < -80 || c.gain_db > 24 || typeof c.loop !== 'boolean') issues.push(`${c.id}: explicit supported gain and loop decision required`);
+    if (validRange(c, c.id) && validSource(c.source, c.id)) {
+      if (!c.loop && Math.abs(sourceSpan(c.source) - (c.end_ms - c.start_ms)) > 1) issues.push(`${c.id}: audio source clock differs from final interval`);
+      if ((c.loop || c.source.speed !== 1) && !text(c.intent)) issues.push(`${c.id}: looping/retiming needs intent`);
+      if (c.loop && speechRole(c.role)) issues.push(`${c.id}: speech cannot loop to fill a scene`);
+    }
+  }
+  for (const id of t.required_cue_ids) if (!ids.has(id)) issues.push(`required cue ${id} is missing`);
+  for (const p of t.pauses) if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
+  for (const v of t.visual_overrides ?? []) {
+    if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
+    else if (v.kind === 'freeze' && !validSource(v.source, 'freeze frame')) issues.push('freeze requires its exact source');
+    else if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
+  }
+  if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
+  if (gaps([...t.segments, ...(t.visual_overrides ?? [])], t.duration_ms).length) issues.push('Picture coverage has undeclared padding or a missing source interval');
+  for (let a = 0; a < t.segments.length; a++) for (let b = a + 1; b < t.segments.length; b++) {
+    const left = t.segments[a], right = t.segments[b];
+    const start = Math.max(left.start_ms, right.start_ms), end = Math.min(left.end_ms, right.end_ms);
+    if (end > start + 1 && !(t.visual_overrides ?? []).some((v) => v.kind === 'transition' && v.start_ms <= start && v.end_ms >= end && v.segment_ids?.includes(left.id) && v.segment_ids.includes(right.id))) issues.push(`${left.id}/${right.id}: picture overlap needs a declared transition`);
+  }
+  for (const s of t.segments.filter((s) => s.depicts_speech)) {
+    const driver = s.speech_mode === 'audio_driven_lipsync' ? s.speech_driver! : s.video;
+    const matching = t.audio_cues.filter((c) => speechRole(c.role) && c.source.sha256 === driver.sha256 && c.source.asset_id === driver.asset_id && Math.abs(c.source.speed - driver.speed) < 1e-9 && !c.loop)
+      .filter((c) => Math.abs((c.source.in_ms + (s.start_ms - c.start_ms) * c.source.speed) - driver.in_ms) <= 1)
+      .map((c) => ({ start_ms: Math.max(s.start_ms, c.start_ms) - s.start_ms, end_ms: Math.min(s.end_ms, c.end_ms) - s.start_ms }))
+      .filter((c) => c.end_ms > c.start_ms);
+    if (gaps(matching, s.end_ms - s.start_ms).length) issues.push(`${s.id}: corresponding driver audio does not cover the speaking picture on its source clock`);
+  }
+  const silence = t.soundtrack_modes.includes('intentional_silence');
+  for (let a = 0; a < t.audio_cues.length; a++) for (let b = a + 1; b < t.audio_cues.length; b++) {
+    const left = t.audio_cues[a], right = t.audio_cues[b];
+    if (!speechRole(left.role) || !speechRole(right.role)) continue;
+    const start = Math.max(left.start_ms, right.start_ms), end = Math.min(left.end_ms, right.end_ms);
+    if (end <= start + 1) continue;
+    if (left.source.sha256 === right.source.sha256 && left.source.in_ms === right.source.in_ms && left.source.out_ms === right.source.out_ms && left.source.speed === right.source.speed && left.start_ms === right.start_ms && left.end_ms === right.end_ms) issues.push(`${left.id}/${right.id}: duplicated speech bus`);
+    else if (!(text(left.intent) && text(right.intent)) && !(t.visual_overrides ?? []).some((v) => v.kind === 'transition' && v.start_ms <= start && v.end_ms >= end)) issues.push(`${left.id}/${right.id}: overlapping speech needs explicit intent`);
+  }
+  if (silence && (t.soundtrack_modes.length !== 1 || t.audio_cues.length)) issues.push('intentional_silence cannot hide planned sound cues');
+  if (silence && t.speech_mode !== 'none') issues.push('total silence conflicts with required speech');
+  for (const role of ['music', 'sfx', 'source_ambience'] as const) if (t.soundtrack_modes.includes(role) && !t.audio_cues.some((c) => c.role === role)) issues.push(`planned ${role} has no cue`);
+  if (!silence) {
+    for (const gap of gaps([...t.audio_cues, ...t.pauses.filter((p) => p.scope === 'all_audio')], t.duration_ms)) issues.push(`unplanned audio gap ${gap.start_ms}–${gap.end_ms}ms`);
+  }
+  if (t.speech_mode === 'none' && t.audio_cues.some((c) => speechRole(c.role))) issues.push('No-speech intent conflicts with speech cues');
+  if (t.speech_mode !== 'none') for (const gap of gaps([...t.audio_cues.filter((c) => speechRole(c.role)), ...t.pauses], t.duration_ms)) issues.push(`unplanned speech gap ${gap.start_ms}–${gap.end_ms}ms (music cannot substitute for speech intent)`);
+  return { status: issues.length ? 'invalid' : 'complete', timeline: t, revision: assemblyTimelineRevision(t), issues };
+}
+
+/** A signed/trusted reviewer must supply this record; metadata does not prove listening. */
+export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck): string[] {
+  if (!object(raw)) return ['Exact-final audiovisual content review is missing'];
+  const r = raw as unknown as FinalContentReview;
+  const problems: string[] = [];
+  if (assembly.status !== 'complete' || !assembly.timeline) problems.push('Assembly evidence is incomplete');
+  if (r.output_sha256 !== outputSha || r.timeline_revision !== assembly.revision || r.creative_contract_revision !== assembly.timeline?.creative_contract_revision) problems.push('Content review belongs to different final, timeline or approved intent bytes');
+  if (r.verdict !== 'approved' || !text(r.reviewer)) problems.push('Content review is not approved by an identified reviewer');
+  if (!r.capabilities?.audio_perception || !r.capabilities?.motion_perception) problems.push('Actual audio and continuous-motion review capability is missing');
+  const coverageValid = Array.isArray(r.coverage) && r.coverage.every((w) => object(w) && ms(w.start_ms) && ms(w.end_ms) && w.end_ms > w.start_ms && w.end_ms <= (assembly.timeline?.duration_ms ?? 0));
+  if (!coverageValid) problems.push('Complete final playback coverage is missing or out of bounds');
+  else if (gaps(r.coverage, assembly.timeline?.duration_ms ?? 0).length) problems.push('Complete final playback coverage is missing');
+  if (!Array.isArray(r.unresolved_issues) || r.unresolved_issues.some((i) => !i || i.severity === 'P0' || i.severity === 'P1')) problems.push('Required unresolved issues remain');
+  for (const name of CONTENT_DIMENSIONS) {
+    const dimension = r.dimensions?.[name];
+    if (!dimension || !text(dimension.note) || !['pass', 'not_applicable'].includes(dimension.status)) problems.push(`${name}: required content review is incomplete or needs revision`);
+    if (dimension?.status === 'not_applicable' && ['reference_and_concept', 'brand_and_product', 'action_and_continuity', 'sound_and_silence', 'pacing_and_joins', 'camera_and_lighting'].includes(name)) problems.push(`${name}: this responsibility cannot be skipped`);
+    if (dimension?.status === 'not_applicable' && ['voice_performance', 'pronunciation'].includes(name) && assembly.timeline?.speech_mode !== 'none') problems.push(`${name}: speech is present`);
+    if (dimension?.status === 'not_applicable' && name === 'lip_sync' && assembly.timeline?.segments.some((s) => s.depicts_speech)) problems.push('lip_sync: a speaking face is present');
+  }
+  return problems;
+}
