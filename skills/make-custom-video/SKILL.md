@@ -1,14 +1,14 @@
 ---
 name: make-custom-video
 description: "Make a custom video from its brief and studied reference, with authenticated script and ingredient reviews."
-version: 3.5.1
+version: 3.5.3
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
 
 # Human version
 
-The owner approves the script, then actual storyboard/ingredients and budget. Both authenticated reviews must pass before production.
+Approve the script, then actual storyboard/ingredients and budget in this chat. Both reviews are required; cards and Studio are optional.
 
 ---
 
@@ -36,9 +36,9 @@ Reference resolve takes direct files and starts no paid social lookup. If it fai
 Follow the harness phases for the actual scenes; reuse suitable product photos and deterministic text animation. Bind operations to this project and approved scene/script revisions.
 video_change needs expected_revision (plan_revision), custom draft and optional script. Bind brand_context_digest to the returned bundle; never author server context. Keep packages outside the review payload. Price each paid request free with estimate_only=1 and save preview_estimate/render_estimate, with its redo allowance, for the work still to buy (harness design brief); the server adds committed_credits. Never edit a field the owner approved: the save sets their approval aside until the approved text is back. Missing price/unsupported inputs blocks production; no guessed rates/direct keys.
 
-## Two authenticated owner reviews
+## Two owner reviews
 
-Show the complete saved script and exact cumulative budget on the authenticated review card. Only the owner's actual signed button press approves. Chat yes, OAuth, user_quote, widget origin or a copied token is not proof; never manufacture a click or self-approve. Text-only/large reviews use returned authenticated Studio phase buttons and approval_surface URL.
+Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional.
 Reread video_read after owner actions. Script approval permits quoted previews only. Save the actual storyboard, playable ingredients and render budget; ingredient approval permits clips. Require current script_approved/ingredients_approved, matching tokens/revision and budget. Changed reviews need renewed approval. A prior yes does not authorize changed work.
 
 ## Execute, check and deliver

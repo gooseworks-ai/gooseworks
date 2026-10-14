@@ -211,7 +211,7 @@ For focused creative work you can also use:
 
 - `/goose-ads` for static ads, ad research, and ad performance.
 - `/goose-product-photos` for studio, lifestyle, marketplace, social, and on-model product photography.
-- `/goose-video` to make a video ad, or an original video from a brief, in the chat. Once you approve it on the plan card, `gooseworks video make <id>` makes it on this machine when the chat says so.
+- `/goose-video` to make a video ad, or an original video from a brief, in the chat. Approve each review and its credit total in chat or on its card. A higher total needs a fresh yes. `gooseworks video make <id>` makes it on this machine when the chat says so.
 - `goose-graphics` for social graphics, carousels, slides, and branded visual content.
 - `animate-image` to turn an approved still into a short motion creative.
 
@@ -306,9 +306,11 @@ complete. `gooseworks credits` shows your balance.
 
 ### Videos
 
-The `goose-video` and `make-custom-video` entry skills are built by the GooseWorks server and
-copied here unchanged. They start with `video_formats` and follow the `next_step` in every answer,
-which gives the step for the video's stage. Only your click on the plan card approves a video.
+The `goose-video` and `make-custom-video` entry skills use GooseWorks server guidance.
+They start with `video_formats` and follow the `next_step` in every answer,
+which gives the step for the video's stage. Approve the saved plan and credit total in chat or
+on its card. If the price rises, approve the new total in the same chat before work continues.
+Custom videos keep two reviews: the script first, then the prepared ingredients and total.
 When the chat says so, `gooseworks video make <id>` makes the approved video on this machine
 from versioned parts, each checked against the video's parts list before anything runs.
 

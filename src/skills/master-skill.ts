@@ -7,7 +7,7 @@
  *   - `goose-ads`            image ads: make, edit and study them.
  *   - `goose-product-photos` product photos.
  *   - `goose-video`, `make-custom-video`
- *                            our server's video entry skills, copied as built
+ *                            server-backed video snapshots with scoped updates
  *                            (server-entry-skills.ts). Every answer's next_step
  *                            carries the step for the video's stage.
  *   - `goose-video-local`    one line: a next_step that gives the kit's command
@@ -201,12 +201,12 @@ ${SERVER_ENTRY_SKILL_RULES.photos}
 `;
 }
 
-/** Our server's goose-video entry skill, as built. */
+/** The reviewed goose-video snapshot, including its approval-only backport. */
 export function getGooseVideoSkillContent(): string {
   return SERVER_VIDEO_ENTRY_SKILLS['goose-video'];
 }
 
-/** Our server's make-custom-video entry skill, as built. */
+/** The reviewed make-custom-video snapshot, including its approval-only backport. */
 export function getMakeCustomVideoSkillContent(): string {
   return SERVER_VIDEO_ENTRY_SKILLS['make-custom-video'];
 }
