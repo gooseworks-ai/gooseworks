@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ASSEMBLY_FORMAT, CONTENT_DIMENSIONS } from '../../src/kit/core/assembly-timeline';
+import { ASSEMBLY_FORMAT, CONTENT_DIMENSIONS, assemblyTimelineRevision } from '../../src/kit/core/assembly-timeline';
 import { canonicalHash, canonicalJson } from '../../src/kit/core/canonical';
 import { KitStop } from '../../src/kit/core/errors';
 import type { LoadedPart } from '../../src/kit/core/host';
@@ -279,7 +279,7 @@ describe('a reviewed custom video', () => {
     return { ...testParts(), 'edit-maker': edit };
   }
 
-  withFfmpeg('uploads once its saved review matches the exact final', async () => {
+  withFfmpeg('uploads once its saved review matches the exact final, keeping local paths off the server', async () => {
     const home = tempHome();
     const files = realEdit(mkdtempSync(path.join(os.tmpdir(), 'c1-real-edit-')));
     const parts = editParts(files);
@@ -316,6 +316,10 @@ describe('a reviewed custom video', () => {
     expect(sent.final_measure).toMatchObject({ format: 'gooseworks-final-measure/1', output_sha256: request.output_sha256, measured_duration_ms: request.measured_duration_ms });
     expect(sent.content_review.capabilities).toEqual({ audio: 'listened', motion: 'watched' });
     expect(sent.assembly_evidence).toMatchObject({ status: 'complete', revision: request.timeline_revision, output_sha256: request.output_sha256 });
+    // Local paths stay on this computer, and the revision the server recomputes is unchanged by that.
+    expect(JSON.stringify(sent.assembly_timeline)).not.toContain('"path"');
+    expect(JSON.stringify(sent)).not.toContain(home);
+    expect(assemblyTimelineRevision(sent.assembly_timeline)).toBe(request.timeline_revision);
     // Nothing was made twice: the edit step was reused from the first run.
     expect(second.pieces).toHaveLength(0);
   }, 60_000);

@@ -36,7 +36,7 @@ import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, typ
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
-import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline } from './assembly-timeline';
+import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline, portableTimeline } from './assembly-timeline';
 import { FINAL_MEASURE_FORMAT, finalMeasureFailures, measureFinal, type FinalMeasure } from './final-measure';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
@@ -1158,6 +1158,10 @@ class Maker {
         if (sourcePictures.some((p) => p.source_kind !== file.media)) throw new KitStop(`A picture source has a different media kind: ${source.asset_id}`, 'change_request', 'output_invalid');
         const actual = await sourceProbe(file.path);
         if (sourcePictures.length && !actual.has_video) throw new KitStop(`A picture source has no readable picture: ${source.asset_id}`, 'change_request', 'output_invalid');
+        for (const { source: shown } of sourcePictures) {
+          const crop = shown.crop;
+          if (crop && (!actual.width || !actual.height || crop.x + crop.w > actual.width || crop.y + crop.h > actual.height)) throw new KitStop(`A picture crop is outside its ${actual.width ?? '?'}×${actual.height ?? '?'} source: ${source.asset_id}`, 'change_request', 'output_invalid');
+        }
         if (audible.some((a) => a.sha256 === source.sha256 && a.asset_id === source.asset_id) && !actual.has_audio) throw new KitStop(`An audio source has no readable audio: ${source.asset_id}`, 'change_request', 'output_invalid');
         // A still is intentionally held; only moving/audio sources have a media clock.
         if (file.media !== 'image' && (actual.duration_s === undefined || source.out_ms > actual.duration_s * 1000 + 1)) throw new KitStop(`A timeline source window exceeds the actual file: ${source.asset_id}`, 'change_request', 'output_invalid');
@@ -1584,7 +1588,8 @@ class Maker {
       try {
         const noted = [...verdictWarnings(current.verdict), ...(eyes?.warnings ?? [])].slice(0, MAX_SENT_WARNINGS);
         check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps),
-          ...(assembly.timeline ? { assembly_timeline: assembly.timeline } : {}),
+          // Local file paths stay on this computer; the revision never included them.
+          ...(assembly.timeline ? { assembly_timeline: portableTimeline(assembly.timeline) } : {}),
           ...(contentReview ? { content_review: contentReview } : {}),
           ...(finalMeasure ? { final_measure: finalMeasure } : {}),
           assembly_evidence: { status: assembly.status, revision: assembly.revision, output_sha256: sha256, source_bytes_verified: assembly.status === 'complete', issues: assembly.issues },

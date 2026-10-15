@@ -1,5 +1,6 @@
 // Source-linked edit intent. File/rebuild checks never certify audiovisual quality.
 import { canonicalHash } from './canonical';
+import { FINAL_MEASURE_THRESHOLDS } from './final-measure';
 
 export const ASSEMBLY_FORMAT = 'gooseworks-assembly-timeline/1' as const;
 export const SPEECH_MODES = ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing', 'mixed', 'none'] as const;
@@ -9,12 +10,26 @@ export type SoundtrackMode = typeof SOUNDTRACK_MODES[number];
 export interface AssemblySource {
   asset_id: string;
   sha256: string;
-  /** Local transport only; excluded from the portable revision. */
+  /** Local transport only; excluded from the portable revision and stripped before upload. */
   path?: string;
   in_ms: number;
   out_ms: number;
   speed: number;
+  /** Picture sources only: the part of the source shown, in whole source pixels. */
+  crop?: { x: number; y: number; w: number; h: number };
+  /** Picture sources only: how the shown part is scaled. Uneven stretch over 2% and upscaling over 1.5x are refused. */
+  scale_x?: number;
+  scale_y?: number;
 }
+/** Picture stretch and upscale limits (fix-forward contract section 7). */
+export const MAX_UNEVEN_STRETCH = 0.02;
+export const MAX_UPSCALE = 1.5;
+/** Planned pause and freeze limits, the same numbers the final measurements use. */
+export const MAX_PLANNED_PAUSE_MS = FINAL_MEASURE_THRESHOLDS.planned_pause_max_ms;
+export const MAX_PLANNED_FREEZE_MS = FINAL_MEASURE_THRESHOLDS.planned_freeze_max_ms;
+export const MAX_PLANNED_TOTAL_SHARE = FINAL_MEASURE_THRESHOLDS.planned_pause_total_share;
+/** A segment that deliberately shows an earlier shot again says so with an intent starting with this. */
+export const CALLBACK_INTENT = 'callback:';
 export interface AssemblySegment {
   id: string;
   scene_id: string;
@@ -111,12 +126,48 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 const sourceSpan = (s: AssemblySource) => (s.out_ms - s.in_ms) / s.speed;
 const speechRole = (role: string) => ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing'].includes(role);
 
-/** Excludes machine-specific transport, while retaining exact assets and source clocks. */
-export function assemblyTimelineRevision(value: AssemblyTimeline): string {
+/** The timeline without machine-specific `path` values: what the revision hashes and what goes to the server. */
+export function portableTimeline<T>(value: T): T {
   const portable = (v: unknown): unknown => Array.isArray(v) ? v.map(portable)
     : object(v) ? Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'path').map(([key, item]) => [key, portable(item)])) : v;
-  return canonicalHash(portable(value));
+  return portable(value) as T;
 }
+
+/** Excludes machine-specific transport, while retaining exact assets and source clocks. */
+export function assemblyTimelineRevision(value: AssemblyTimeline): string {
+  return canonicalHash(portableTimeline(value));
+}
+
+/**
+ * Milliseconds and pixels are whole numbers, so the revision survives a database round trip
+ * (a stored fraction can come back rounded and no longer match its review).
+ */
+function fractionalUnits(raw: unknown): string[] {
+  const found: string[] = [];
+  const walk = (value: unknown, at: string, inCrop: boolean) => {
+    if (Array.isArray(value)) { value.forEach((item, i) => walk(item, `${at}[${i}]`, false)); return; }
+    if (!object(value)) return;
+    for (const [key, item] of Object.entries(value)) {
+      const here = at ? `${at}.${key}` : key;
+      const unit = key.endsWith('_ms') ? 'milliseconds' : inCrop && ['x', 'y', 'w', 'h'].includes(key) ? 'pixels' : null;
+      if (unit && typeof item === 'number' && Number.isFinite(item) && !Number.isInteger(item)) found.push(`${here} must be a whole number of ${unit} (got ${item})`);
+      else walk(item, here, key === 'crop');
+    }
+  };
+  walk(raw, '', false);
+  return found;
+}
+
+const overlaps = (a: AssemblySource, b: AssemblySource) => a.sha256 === b.sha256 && a.asset_id === b.asset_id && Math.min(a.out_ms, b.out_ms) > Math.max(a.in_ms, b.in_ms);
+const totalMs = (items: Array<{ start_ms: number; end_ms: number }>) => {
+  let total = 0;
+  let end = -1;
+  for (const item of [...items].sort((a, b) => a.start_ms - b.start_ms)) {
+    total += Math.max(0, item.end_ms - Math.max(item.start_ms, end));
+    end = Math.max(end, item.end_ms);
+  }
+  return total;
+};
 
 function gaps(items: Array<{ start_ms: number; end_ms: number }>, duration: number): Array<{ start_ms: number; end_ms: number }> {
   const missing: Array<{ start_ms: number; end_ms: number }> = [];
@@ -136,7 +187,8 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   const issues: string[] = [];
   if (raw.format !== ASSEMBLY_FORMAT) issues.push(`assembly format must be ${ASSEMBLY_FORMAT}`);
   if (!hash(raw.creative_contract_revision)) issues.push('creative_contract_revision must identify approved bytes');
-  if (!ms(raw.duration_ms) || raw.duration_ms <= 0 || raw.duration_ms > 180_000) issues.push('duration_ms must be 1–180000');
+  // A fraction is named once, by the whole-units check below.
+  if (!finite(raw.duration_ms) || raw.duration_ms < 1 || raw.duration_ms > 180_000) issues.push('duration_ms must be 1–180000');
   if (!(SPEECH_MODES as readonly unknown[]).includes(raw.speech_mode)) issues.push('speech_mode is missing or unknown');
   if (!Array.isArray(raw.soundtrack_modes) || raw.soundtrack_modes.some((m) => !(SOUNDTRACK_MODES as readonly unknown[]).includes(m)) || new Set(raw.soundtrack_modes).size !== raw.soundtrack_modes.length) issues.push('soundtrack_modes must be explicit and unique (an empty list means no extra soundtrack)');
   if (!Array.isArray(raw.segments) || !raw.segments.length || raw.segments.length > 300) issues.push('segments must contain 1–300 source-linked entries');
@@ -144,11 +196,25 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   if (!Array.isArray(raw.pauses) || raw.pauses.length > 500) issues.push('pauses must be an explicit list of at most 500');
   if (!Array.isArray(raw.required_cue_ids) || raw.required_cue_ids.some((id) => !text(id))) issues.push('required_cue_ids must be explicit');
   if (raw.visual_overrides !== undefined && (!Array.isArray(raw.visual_overrides) || raw.visual_overrides.length > 500)) issues.push('visual_overrides must be a bounded explicit list');
+  issues.push(...fractionalUnits(raw));
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
   const t = raw as unknown as AssemblyTimeline;
-  const validSource = (s: unknown, at: string): s is AssemblySource => {
+  const validSource = (s: unknown, at: string, picture = false): s is AssemblySource => {
     if (!object(s) || !text(s.asset_id) || !hash(s.sha256) || !ms(s.in_ms) || !ms(s.out_ms) || s.out_ms <= s.in_ms || !finite(s.speed) || s.speed < 0.25 || s.speed > 4) {
       issues.push(`${at}: exact asset, hash, bounds and supported speed required`); return false;
+    }
+    if (s.path !== undefined && typeof s.path !== 'string') { issues.push(`${at}: path must be a local file path`); return false; }
+    const framed = s.crop !== undefined || s.scale_x !== undefined || s.scale_y !== undefined;
+    if (framed && !picture) { issues.push(`${at}: crop and scale apply to picture sources only`); return false; }
+    if (s.crop !== undefined) {
+      const c = s.crop as Record<string, unknown>;
+      const px = (v: unknown, min: number) => typeof v === 'number' && Number.isSafeInteger(v) && v >= min;
+      if (!object(c) || Object.keys(c).some((k) => !['x', 'y', 'w', 'h'].includes(k)) || !px(c.x, 0) || !px(c.y, 0) || !px(c.w, 1) || !px(c.h, 1)) { issues.push(`${at}: crop needs whole source pixels x, y, w and h (w and h at least 1)`); return false; }
+    }
+    if (s.scale_x !== undefined || s.scale_y !== undefined) {
+      if (!finite(s.scale_x) || !finite(s.scale_y) || s.scale_x <= 0 || s.scale_y <= 0) { issues.push(`${at}: scale_x and scale_y go together and must be positive`); return false; }
+      if (Math.abs(s.scale_x / s.scale_y - 1) > MAX_UNEVEN_STRETCH) { issues.push(`${at}: uneven stretch (scale_x ${s.scale_x} vs scale_y ${s.scale_y}) distorts the picture by more than ${MAX_UNEVEN_STRETCH * 100}%`); return false; }
+      if (Math.max(s.scale_x, s.scale_y) > MAX_UPSCALE) { issues.push(`${at}: upscaling by ${Math.max(s.scale_x, s.scale_y)}x is over the ${MAX_UPSCALE}x limit; use a larger source`); return false; }
     }
     return true;
   };
@@ -162,7 +228,7 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     if (!text(s.id) || ids.has(s.id) || !text(s.scene_id)) issues.push('segment ids must be unique and scene_id required');
     ids.add(s.id);
     if (!(SPEECH_MODES as readonly string[]).includes(s.speech_mode) || typeof s.depicts_speech !== 'boolean' || !['preserve', 'muted'].includes(s.native_audio)) issues.push(`${s.id}: explicit speech and native audio decisions required`);
-    if (validRange(s, s.id) && validSource(s.video, s.id) && Math.abs(sourceSpan(s.video) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: picture source duration/rate differs from final interval`);
+    if (validRange(s, s.id) && validSource(s.video, s.id, true) && Math.abs(sourceSpan(s.video) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: picture source duration/rate differs from final interval`);
     if (s.video?.speed !== 1 && !text(s.intent)) issues.push(`${s.id}: speed change needs intent`);
     if (s.depicts_speech && !['native_dialogue', 'audio_driven_lipsync', 'singing'].includes(s.speech_mode)) issues.push(`${s.id}: speaking face cannot use narration-only or no-speech routing`);
     if (s.depicts_speech && s.speech_mode === 'native_dialogue' && s.native_audio !== 'preserve') issues.push(`${s.id}: native dialogue may not be muted`);
@@ -183,16 +249,33 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     }
   }
   for (const id of t.required_cue_ids) if (!ids.has(id)) issues.push(`required cue ${id} is missing`);
-  for (const p of t.pauses) if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
+  for (const p of t.pauses) {
+    if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
+    else if (p.end_ms - p.start_ms > MAX_PLANNED_PAUSE_MS) issues.push(`pause ${p.start_ms}–${p.end_ms}ms is longer than ${MAX_PLANNED_PAUSE_MS}ms`);
+  }
   for (const v of t.visual_overrides ?? []) {
     if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
     else {
       if (v.kind === 'freeze' && !v.source) issues.push('freeze requires its exact source');
-      if (v.source && (!validSource(v.source, 'override source') || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
+      if (v.kind === 'freeze' && v.end_ms - v.start_ms > MAX_PLANNED_FREEZE_MS) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${MAX_PLANNED_FREEZE_MS}ms`);
+      if (v.source && (!validSource(v.source, 'override source', true) || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
       if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
     }
   }
+  const planned = (items: Array<{ start_ms: number; end_ms: number }>, what: string) => {
+    const total = totalMs(items);
+    if (total > t.duration_ms * MAX_PLANNED_TOTAL_SHARE) issues.push(`planned ${what} add up to ${total}ms, more than ${MAX_PLANNED_TOTAL_SHARE * 100}% of the ${t.duration_ms}ms video`);
+  };
+  planned(t.pauses.filter(object), 'pauses');
+  planned((t.visual_overrides ?? []).filter((v) => object(v) && v.kind === 'freeze'), 'freezes');
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
+  // The same source moment shown twice is a repeat; only a declared callback may do it.
+  const ordered = [...t.segments].sort((a, b) => a.start_ms - b.start_ms);
+  for (let b = 1; b < ordered.length; b++) {
+    const repeated = ordered.slice(0, b).find((earlier) => overlaps(earlier.video, ordered[b].video));
+    const intent = ordered[b].intent?.trim().toLowerCase() ?? '';
+    if (repeated && !intent.startsWith(CALLBACK_INTENT)) issues.push(`${ordered[b].id}: shows ${repeated.id}'s source moment again; use another moment, or mark a deliberate repeat with intent "${CALLBACK_INTENT} <why>"`);
+  }
   if (gaps([...t.segments, ...(t.visual_overrides ?? [])], t.duration_ms).length) issues.push('Picture coverage has undeclared padding or a missing source interval');
   for (let a = 0; a < t.segments.length; a++) for (let b = a + 1; b < t.segments.length; b++) {
     const left = t.segments[a], right = t.segments[b];
