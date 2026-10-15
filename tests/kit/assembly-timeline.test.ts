@@ -86,7 +86,7 @@ describe('pause and freeze caps', () => {
   it('lets the end-card hold (a freeze ending the video) last up to 3.0 s', () => {
     const long = { duration_ms: 20_000, segments: [segment('s1', 0, 20_000)], audio_cues: [{ ...timeline().audio_cues[0], source: { ...timeline().audio_cues[0].source, out_ms: 20_000 }, end_ms: 20_000 }] };
     expect(issues({ ...long, visual_overrides: [freeze(17_000, 20_000)] })).toEqual([]);
-    expect(issues({ ...long, visual_overrides: [freeze(16_900, 20_000)] })).toEqual(['freeze 16900–20000ms is longer than 3000ms (the end-card hold limit)']);
+    expect(issues({ ...long, visual_overrides: [freeze(16_900, 20_000)] })).toEqual(['freeze 16900–20000ms is longer than 3000ms (the closing-hold limit)']);
     expect(issues({ ...long, visual_overrides: [freeze(16_000, 18_000)] })).toEqual(['freeze 16000–18000ms is longer than 1500ms']);
   });
 });

@@ -5,6 +5,10 @@
 // Measured here: digital silence, tone-only "music", unplanned silence, planned pause and freeze
 // limits, frozen picture, repeated shots and silence under a speaking face. The two word checks
 // need the server's own transcript of the final, so the kit marks them not_applicable.
+//
+// Calibration (15 Oct, from real reference ads): silence and frozen picture may run up to 1.5 s at
+// the start and 3.0 s at the end, an unplanned mid-video freeze may last 2.0 s, the tone check
+// looks at 80 Hz-8 kHz only, and the still-image share follows the reference when it is known.
 import { spawn } from 'child_process';
 import type { AssemblyTimeline } from './assembly-timeline';
 import { childEnv } from './toolchain';
@@ -24,17 +28,27 @@ export const FINAL_MEASURE_THRESHOLDS = {
   tone_max_peaks: 3,
   tone_peak_energy_share: 0.8,
   tone_steady_share: 0.5,
+  /** Calibration: the tone check analyses this band only, so a steady sub-bass line is not a "tone". */
+  tone_min_hz: 80,
+  tone_max_hz: 8000,
   quiet_dbfs: -45,
   quiet_window_ms: 100,
   unplanned_silence_s: 1.0,
+  /** Calibration: silence or a frozen picture that sits inside the first 1.5 s or the last 3.0 s is allowed. */
+  start_allowance_ms: 1500,
+  end_allowance_ms: 3000,
   speech_gap_in_sentence_s: 0.6,
   max_pause_ms: 1500,
   max_pause_share: 0.1,
   freeze_noise: 0.003,
   freeze_min_s: 1.0,
+  /** Calibration: an unplanned frozen run mid-video fails only past this length. */
+  unplanned_freeze_s: 2.0,
   max_frozen_share: 0.4,
+  /** Calibration: with a measured reference, the frozen share may reach max(40%, reference share + 15 points). */
+  reference_frozen_margin: 0.15,
   max_freeze_ms: 1500,
-  /** Amendment: a planned freeze that ends the video (the end-card hold) may last this long. */
+  /** Amendment: a planned freeze that ends the video (the closing hold) may last this long. */
   max_end_card_freeze_ms: 3000,
   repeated_shot_min_s: 1.0,
   repeated_shot_max_hamming: 6,
@@ -47,6 +61,22 @@ export const FINAL_MEASURE_THRESHOLDS = {
 /** The longest a planned freeze may last: 3.0 s when it holds the last shot to the end, else 1.5 s. */
 export function maxFreezeMs(freeze: { end_ms: number }, durationMs: number): number {
   return freeze.end_ms === durationMs ? FINAL_MEASURE_THRESHOLDS.max_end_card_freeze_ms : FINAL_MEASURE_THRESHOLDS.max_freeze_ms;
+}
+
+/** The share of the video the picture may be frozen: 40%, or the reference's share plus 15 points when that is known. */
+export function maxFrozenShare(referenceFrozenShare?: number | null): number {
+  const T = FINAL_MEASURE_THRESHOLDS;
+  return typeof referenceFrozenShare === 'number' && Number.isFinite(referenceFrozenShare) ? Math.max(T.max_frozen_share, referenceFrozenShare + T.reference_frozen_margin) : T.max_frozen_share;
+}
+
+/**
+ * How much of a run lies outside the opening 1.5 s and the closing 3.0 s, in ms. Silence or a held
+ * picture inside those is allowed, so only this remainder is held to a check's length limit: a 4.4 s
+ * closing freeze leaves 1.4 s, while a 7 s silent tail leaves 4 s.
+ */
+export function pastEdges([start, end]: [number, number], durationMs: number): number {
+  const T = FINAL_MEASURE_THRESHOLDS;
+  return Math.max(0, Math.min(end, durationMs - T.end_allowance_ms) - Math.max(start, T.start_allowance_ms));
 }
 
 /** An approved silent video: no speech and intentional_silence as the only soundtrack. */
@@ -205,12 +235,15 @@ export function analyseAudio(samples: Float32Array, rate: number): AudioFacts {
     quiet.push(dbfs(Math.sqrt(sum / (end - start))) < T.quiet_dbfs);
   }
 
-  // Tone: a Hann FFT of 4096 samples every 0.5 s. A window is tonal when its top 3 peaks (±2 bins)
-  // hold over 80% of the energy; the tone is steady when one peak (±2 bins) holds over half the windows.
+  // Tone: a Hann FFT of 4096 samples every 0.5 s, 80 Hz-8 kHz only. A window is tonal when its top 3
+  // peaks (±2 bins) hold over 80% of that band's energy; the tone is steady when one peak (±2 bins)
+  // holds over half the windows.
   const n = T.tone_fft_size;
   const stride = Math.max(1, Math.round(rate * T.tone_window_s));
   const hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)));
   const floor = 10 ** ((2 * T.digital_silence_peak_dbfs) / 20) * n;
+  const lowBin = Math.max(2, Math.ceil((T.tone_min_hz * n) / rate));
+  const highBin = Math.min(n / 2, Math.floor((T.tone_max_hz * n) / rate));
   const windows: Array<number | null> = [];
   for (let start = 0; start + n <= samples.length; start += stride) {
     const re = new Float64Array(n);
@@ -219,7 +252,7 @@ export function analyseAudio(samples: Float32Array, rate: number): AudioFacts {
     fft(re, im);
     const power = new Float64Array(n / 2 + 1);
     let total = 0;
-    for (let k = 2; k <= n / 2; k++) {
+    for (let k = lowBin; k <= highBin; k++) {
       power[k] = re[k] * re[k] + im[k] * im[k];
       total += power[k];
     }
@@ -277,8 +310,9 @@ const ranges = (intervals: Interval[]) => intervals.slice(0, 6).map(([a, b]) => 
 
 /**
  * The checks from what was measured, as the harness's final_measure.py decides them, plus the
- * 15 Oct amendments (an approved silent video, the end-card hold, no word timings). Pure: the
- * measuring itself is `measureFinal`.
+ * 15 Oct amendments (an approved silent video, the closing hold, no word timings) and the
+ * calibration (opening and closing allowance, 2.0 s mid-video freezes, the reference's still-image
+ * share). Pure: the measuring itself is `measureFinal`.
  */
 export function finalMeasureChecks(input: {
   durationMs: number;
@@ -287,6 +321,8 @@ export function finalMeasureChecks(input: {
   freezes: Interval[];
   shots: MeasuredShot[] | null;
   timeline: AssemblyTimeline | null;
+  /** The reference ad's measured frozen share (0..1), when known; otherwise the 40% cap applies. */
+  referenceFrozenShare?: number | null;
 }): FinalMeasureCheck[] {
   const { durationMs: d, audio, timeline } = input;
   const result = (id: FinalMeasureCheckId, failed: boolean, detail: string, intervals: Interval[] = []): FinalMeasureCheck =>
@@ -301,14 +337,20 @@ export function finalMeasureChecks(input: {
   const quiet = audio ? audio.quiet : Array.from({ length: Math.max(1, Math.ceil(d / step)) }, () => true);
   const checks = new Map<FinalMeasureCheckId, FinalMeasureCheck>();
   const add = (c: FinalMeasureCheck) => checks.set(c.id, c);
+  /** True when the part of a run outside the opening and closing allowance is longer than `limitMs`. */
+  const tooLong = (r: Interval, limitMs: number) => pastEdges(r, d) > limitMs + 1e-6;
+  const allowance = `outside the first ${seconds(T.start_allowance_ms)} s and last ${seconds(T.end_allowance_ms)} s`;
   const silentNote = 'The approved plan is a silent video (speech none, intentional_silence).';
 
   // Sound.
   if (silent) add(na('digital_silence', silentNote));
   else if (!audio) add(result('digital_silence', true, 'The final has no sound track.', [[0, d]]));
   else if (audio.peak_dbfs < T.digital_silence_peak_dbfs) add(result('digital_silence', true, `The whole sound track peaks at ${Number.isFinite(audio.peak_dbfs) ? `${audio.peak_dbfs.toFixed(1)} dBFS` : 'digital silence'}, below ${T.digital_silence_peak_dbfs} dBFS.`, [[0, d]]));
-  else if (audio.zero_runs_ms.length) add(result('digital_silence', true, `Digital silence (exact zero samples) longer than ${T.digital_zero_run_s} s at ${ranges(audio.zero_runs_ms)}.`, audio.zero_runs_ms));
-  else add(result('digital_silence', false, `Peak ${audio.peak_dbfs.toFixed(1)} dBFS; no exact-zero run over ${T.digital_zero_run_s} s.`));
+  else if (audio.zero_runs_ms.some((r) => tooLong(r, T.digital_zero_run_s * 1000))) {
+    const zeros = audio.zero_runs_ms.filter((r) => tooLong(r, T.digital_zero_run_s * 1000));
+    add(result('digital_silence', true, `Digital silence (exact zero samples) longer than ${T.digital_zero_run_s} s ${allowance} at ${ranges(zeros)}.`, zeros));
+  }
+  else add(result('digital_silence', false, `Peak ${audio.peak_dbfs.toFixed(1)} dBFS; no exact-zero run over ${T.digital_zero_run_s} s ${allowance}.`));
 
   if (!audio) add(na('tone_only', 'The final has no sound track.'));
   else if (audio.tone_share > T.tone_steady_share) add(result('tone_only', true, `A steady tone near ${audio.tone_hz} Hz holds ${Math.round(audio.tone_share * 100)}% of the sound track; a sine bed or drone is not music.`, [[0, d]]));
@@ -316,9 +358,9 @@ export function finalMeasureChecks(input: {
 
   if (silent) add(na('unplanned_silence', silentNote));
   else {
-    const unplanned = runs(quiet, step, T.unplanned_silence_s * 1000).map(([a, b]) => [a, Math.min(b, d)] as Interval).filter((r) => !covered(r, allowedPauses));
+    const unplanned = runs(quiet, step, T.unplanned_silence_s * 1000).map(([a, b]) => [a, Math.min(b, d)] as Interval).filter((r) => tooLong(r, T.unplanned_silence_s * 1000) && !covered(r, allowedPauses));
     add(unplanned.length
-      ? result('unplanned_silence', true, `Silence (quieter than ${T.quiet_dbfs} dBFS) longer than ${T.unplanned_silence_s} s with no planned all-audio pause of ${seconds(T.max_pause_ms)} s or less around it, at ${ranges(unplanned)}.`, unplanned)
+      ? result('unplanned_silence', true, `Silence (quieter than ${T.quiet_dbfs} dBFS) longer than ${T.unplanned_silence_s} s ${allowance}, with no planned all-audio pause of ${seconds(T.max_pause_ms)} s or less around it, at ${ranges(unplanned)}.`, unplanned)
       : result('unplanned_silence', false, 'No unplanned silence over the limit.'));
   }
 
@@ -337,14 +379,16 @@ export function finalMeasureChecks(input: {
     const detail = [...(long.length ? [`a planned pause is longer than ${seconds(T.max_pause_ms)} s at ${ranges(long)}`] : []), ...(total > T.max_pause_share * d ? [`planned pauses add up to ${seconds(total)} s, over ${Math.round(T.max_pause_share * 100)}% of the video`] : [])];
     add(result('planned_pause_too_long', detail.length > 0, detail.length ? sentence(detail) : 'Planned pauses within the caps.', long));
     const longFreezes = planned.filter((v) => v.end_ms - v.start_ms > maxFreezeMs(v, timeline.duration_ms)).map((v) => [v.start_ms, v.end_ms] as Interval);
-    add(result('planned_freeze_too_long', longFreezes.length > 0, longFreezes.length ? `A planned freeze is longer than ${seconds(T.max_freeze_ms)} s (${seconds(T.max_end_card_freeze_ms)} s for the end-card hold) at ${ranges(longFreezes)}.` : 'Planned freezes within the cap.', longFreezes));
+    add(result('planned_freeze_too_long', longFreezes.length > 0, longFreezes.length ? `A planned freeze is longer than ${seconds(T.max_freeze_ms)} s (${seconds(T.max_end_card_freeze_ms)} s for a closing hold) at ${ranges(longFreezes)}.` : 'Planned freezes within the cap.', longFreezes));
   }
 
   // Picture.
   {
-    const unplanned = input.freezes.filter((f) => !covered(f, allowedFreezes));
+    const unplanned = input.freezes.filter((f) => tooLong(f, T.unplanned_freeze_s * 1000) && !covered(f, allowedFreezes));
     const share = d > 0 ? input.freezes.reduce((sum, [a, b]) => sum + (b - a), 0) / d : 0;
-    const detail = [...(unplanned.length ? [`the picture is frozen for more than ${T.freeze_min_s} s with no planned freeze around it at ${ranges(unplanned)}`] : []), ...(share > T.max_frozen_share ? [`the picture is frozen ${Math.round(share * 100)}% of the time (a still-image ad)`] : [])];
+    const maxShare = maxFrozenShare(input.referenceFrozenShare);
+    const shareNote = maxShare > T.max_frozen_share ? `, over the ${Math.round(maxShare * 100)}% the reference allows` : '';
+    const detail = [...(unplanned.length ? [`the picture is frozen for more than ${T.unplanned_freeze_s} s ${allowance}, with no planned freeze around it, at ${ranges(unplanned)}`] : []), ...(share > maxShare + 1e-9 ? [`the picture is frozen ${Math.round(share * 100)}% of the time${shareNote} (a still-image ad)`] : [])];
     add(result('frozen_picture', detail.length > 0, detail.length ? sentence(detail) : 'No unplanned frozen picture.', unplanned.length ? unplanned : detail.length ? input.freezes : []));
   }
 
@@ -446,6 +490,8 @@ export async function measureFinal(opts: {
   durationMs: number;
   hasAudio: boolean;
   timeline: AssemblyTimeline | null;
+  /** The reference ad's measured frozen share (0..1), when the caller has it. */
+  referenceFrozenShare?: number | null;
   signal: AbortSignal;
 }): Promise<FinalMeasure> {
   const d = opts.durationMs;
@@ -479,7 +525,7 @@ export async function measureFinal(opts: {
     format: FINAL_MEASURE_FORMAT,
     output_sha256: opts.outputSha256,
     measured_duration_ms: d,
-    checks: finalMeasureChecks({ durationMs: d, audio, freezes, shots, timeline: opts.timeline }),
+    checks: finalMeasureChecks({ durationMs: d, audio, freezes, shots, timeline: opts.timeline, referenceFrozenShare: opts.referenceFrozenShare }),
     thresholds: FINAL_MEASURE_THRESHOLDS,
   };
 }

@@ -401,7 +401,7 @@ describe('a reviewed custom video', () => {
     expect([stopped.status, stopped.code]).toEqual(['stopped', 'final_measure_failed']);
     expect(stopped.message).toContain('failed its measured checks');
     expect(stopped.message).toMatch(/tone only: A steady tone near \d+ Hz holds 100% of the sound track/);
-    expect(stopped.message).toMatch(/frozen picture: The picture is frozen for more than 1 s with no planned freeze around it at 0\.0–2\.0 s/);
+    expect(stopped.message).toMatch(/frozen picture: The picture is frozen 100% of the time \(a still-image ad\)/);
     expect(lineRoute(line.seen, '/upload')).toHaveLength(0);
     expect(lastProgress(line.seen).note).toBe(WAITING_FOR_MEASURED_FIX);
     const measured = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'final-measure.json'), 'utf8'));

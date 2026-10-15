@@ -265,7 +265,7 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
     else {
       if (v.kind === 'freeze' && !v.source) issues.push('freeze requires its exact source');
-      if (v.kind === 'freeze' && v.end_ms - v.start_ms > maxFreezeMs(v, t.duration_ms)) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${maxFreezeMs(v, t.duration_ms)}ms${v.end_ms === t.duration_ms ? ' (the end-card hold limit)' : ''}`);
+      if (v.kind === 'freeze' && v.end_ms - v.start_ms > maxFreezeMs(v, t.duration_ms)) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${maxFreezeMs(v, t.duration_ms)}ms${v.end_ms === t.duration_ms ? ' (the closing-hold limit)' : ''}`);
       if (v.source && (!validSource(v.source, 'override source', true) || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
       if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
     }
