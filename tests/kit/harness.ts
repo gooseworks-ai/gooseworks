@@ -339,6 +339,16 @@ export interface RunOptions {
   ceilingMs?: number;
   forceEnd?: (result: MakeResult) => void;
   patched?: string[];
+  /** Real video tools, for a test that makes actual video files; the fake paths by default. */
+  tools?: Toolchain;
+}
+
+/** The video tools on PATH (TEST_FFMPEG / TEST_FFPROBE override), as the kit reports bundled ones. */
+export function realTools(ffmpeg = process.env.TEST_FFMPEG || 'ffmpeg', ffprobe = process.env.TEST_FFPROBE || 'ffprobe'): Toolchain {
+  return {
+    ffmpeg: { path: ffmpeg, report: { ok: true, version: 'test', bundled: true }, filters: [], encoders: [] },
+    ffprobe: { path: ffprobe, report: { ok: true, version: 'test', bundled: true } },
+  };
 }
 
 export async function runMake(opts: RunOptions): Promise<MakeResult> {
@@ -357,7 +367,7 @@ export async function runMake(opts: RunOptions): Promise<MakeResult> {
     host: opts.host ?? testHost(opts.parts ?? testParts(), opts.loads),
     log: new KitLog((text) => printed.push(text), (text) => client.redact(text)),
     environment: 'staging',
-    tools,
+    tools: opts.tools ?? tools,
     sleep: async () => undefined,
     heartbeatMs: opts.heartbeatMs ?? 3_600_000,
     ...(opts.lastWordMs ? { lastWordMs: opts.lastWordMs } : {}),

@@ -18,7 +18,8 @@
       "assembly_timeline_v1",
       "exact_final_content_review_v1",
       "content_review_resume",
-      "source_linked_html_frames_v1"
+      "source_linked_html_frames_v1",
+      "final_measure_v1"
     ]
   },
   "scripts": {

@@ -8,6 +8,7 @@ import * as path from 'path';
 import type { Command } from 'commander';
 import { videoCommand } from '../../src/commands/video';
 import { ASSEMBLY_FORMAT, finalContentReviewProblems, normalizeAssemblyTimeline } from '../../src/kit/core/assembly-timeline';
+import { FINAL_MEASURE_FORMAT, measureFinal } from '../../src/kit/core/final-measure';
 import { KIT_FEATURES } from '../../src/kit/core/version';
 
 const pkg = JSON.parse(readFileSync(path.join(__dirname, '../../package.json'), 'utf8')) as {
@@ -23,7 +24,7 @@ function hasOption(name: string, flag: string): boolean {
 }
 
 const coreRun = readFileSync(path.join(__dirname, '../../src/kit/core/run.ts'), 'utf8');
-const sourceRenderer = JSON.parse(readFileSync(path.join(__dirname, '../../src/kit/maker/parts/html-frames/1.3.0/part.json'), 'utf8'));
+const sourceRenderer = JSON.parse(readFileSync(path.join(__dirname, '../../src/kit/maker/parts/html-frames/1.3.1/part.json'), 'utf8'));
 
 /** Command features and the separately advertised runtime contracts. */
 const FEATURE_CHECKS: Record<string, () => boolean> = {
@@ -37,6 +38,7 @@ const FEATURE_CHECKS: Record<string, () => boolean> = {
   assembly_timeline_v1: () => KIT_FEATURES.includes('assembly_timeline_v1') && ASSEMBLY_FORMAT === 'gooseworks-assembly-timeline/1' && normalizeAssemblyTimeline(undefined).status === 'incomplete',
   exact_final_content_review_v1: () => KIT_FEATURES.includes('exact_final_content_review_v1') && finalContentReviewProblems(undefined, '0'.repeat(64), normalizeAssemblyTimeline(undefined), null).length > 0,
   content_review_resume: () => !!sub('make') && KIT_FEATURES.includes('content_review_resume') && coreRun.includes('content-review.json') && coreRun.includes('source-reviews.json'),
+  final_measure_v1: () => KIT_FEATURES.includes('final_measure_v1') && FINAL_MEASURE_FORMAT === 'gooseworks-final-measure/1' && typeof measureFinal === 'function' && coreRun.includes('final_measure: finalMeasure'),
   source_linked_html_frames_v1: () => KIT_FEATURES.includes('source_linked_html_frames_v1') && Boolean(sourceRenderer.inputs.properties.under_timeline.properties.assembly_timeline && sourceRenderer.outputs.properties.timeline.properties.assembly_timeline && sourceRenderer.outputs.properties.source_files),
 };
 

@@ -36,7 +36,8 @@ import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, typ
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
-import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline } from './assembly-timeline';
+import { CONTENT_DIMENSIONS, MAX_ZOOM, assemblyPictureSources, cropZoom, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline, portableTimeline } from './assembly-timeline';
+import { FINAL_MEASURE_FORMAT, finalMeasureFailures, measureFinal, type FinalMeasure } from './final-measure';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -186,6 +187,14 @@ const REPORTED_STOPS: ReadonlyMap<string, string> = new Map([
   ['file_unavailable', 'file_unavailable'],
   ['piece_lost', 'piece_lost'],
 ]);
+
+/**
+ * The card's notes while a custom video waits on its maker's agent (plain words, at most 200
+ * characters, never a path). The run is still on: the same command resumes it.
+ */
+export const WAITING_FOR_SOURCE_REVIEW = 'Waiting for the new clips to be reviewed before the edit goes on';
+export const WAITING_FOR_CONTENT_REVIEW = 'Waiting for the finished video’s picture and sound review before it is sent';
+export const WAITING_FOR_MEASURED_FIX = 'The finished video failed a sound or picture measurement and is being fixed before it is sent';
 
 /** At most this many warnings go up with the video, for its delivery summary. */
 const MAX_SENT_WARNINGS = 6;
@@ -781,6 +790,19 @@ class Maker {
     void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000), ...(fromPart === undefined ? {} : { from_part: fromPart }) });
   }
 
+  /**
+   * A stop that waits on a review or a fix the agent makes: before the kit exits, the line hears a
+   * running report with a plain note, so the card says what it waits for instead of going quiet.
+   * Never throws; a report that can't be sent only costs the card its note.
+   */
+  private async reportWaiting(note: string): Promise<void> {
+    if (!this.reporter || this.reporter.refused) return;
+    this.book.note = note;
+    this.reporter.resume();
+    await this.reporter.send(true).catch(() => undefined);
+    await this.reporter.flush().catch(() => undefined);
+  }
+
   private async saveRun(): Promise<void> {
     this.run.updated_at = this.now().toISOString();
     await this.store.writeRun(this.run);
@@ -1037,21 +1059,33 @@ class Maker {
         out.timeline = ordinary;
       }
     };
-    const exposeAssemblyToDeclaredSchema = (loaded: LoadedPart, inputs: Record<string, unknown>): void => {
-      if (!assemblyRaw) return;
+    /**
+     * The declaration rule: a part gets the source-linked timeline only where its input schema
+     * declares `assembly_timeline`, as a top-level input or inside an object input (its `timeline`,
+     * `under_timeline` or any other, after following local `$ref`s). Older parts never see it.
+     * Returns whether the part declared it, so its answer may carry the timeline back.
+     */
+    const exposeAssemblyToDeclaredSchema = (loaded: LoadedPart, inputs: Record<string, unknown>): boolean => {
       const root = loaded.manifest.inputs as unknown as Record<string, unknown>;
-      for (const key of ['timeline', 'under_timeline']) {
-        const value = inputs[key];
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-        let schema = (root.properties as Record<string, unknown> | undefined)?.[key] as Record<string, unknown> | undefined;
+      const declares = (node: unknown): boolean => {
+        let schema = node as Record<string, unknown> | undefined;
         for (let depth = 0; depth < 8 && typeof schema?.$ref === 'string' && schema.$ref.startsWith('#/'); depth++) {
           let target: unknown = root;
           for (const name of schema.$ref.slice(2).split('/')) target = target && typeof target === 'object' ? (target as Record<string, unknown>)[name.replace(/~1/g, '/').replace(/~0/g, '~')] : undefined;
           schema = target && typeof target === 'object' ? target as Record<string, unknown> : undefined;
         }
         const properties = schema?.properties as Record<string, unknown> | undefined;
-        if (properties && Object.prototype.hasOwnProperty.call(properties, 'assembly_timeline')) inputs[key] = { ...value, assembly_timeline: assemblyRaw };
+        return !!properties && Object.prototype.hasOwnProperty.call(properties, 'assembly_timeline');
+      };
+      let declared = declares(root);
+      if (declared && assemblyRaw) inputs.assembly_timeline = assemblyRaw;
+      const properties = (root.properties ?? {}) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(inputs)) {
+        if (key === 'assembly_timeline' || !value || typeof value !== 'object' || Array.isArray(value) || isFileRef(value) || !declares(properties[key])) continue;
+        declared = true;
+        if (assemblyRaw) inputs[key] = { ...value, assembly_timeline: assemblyRaw };
       }
+      return declared;
     };
     const fixes = this.run.fixes ?? [];
     const fixed = (id: string, inputs: Record<string, unknown>) => {
@@ -1100,6 +1134,7 @@ class Maker {
         await writeJson(request, { step: step.id, inputs_revision: creatorPending ? canonicalHash(hashView(inputs)) : voiceInputRevision, outputs: out,
           instructions: creatorPending ? 'Review the actual source clips with moving picture and audio using the existing ingredient review. Save accepted_sources and qualification under this step in source-reviews.json, then resume the same command. Do not alter the approved script, capture or budget. Failed or incomplete source reviews cannot enter assembly.' : 'Listen to every actual source and finished voice track, including word endings and joins. Save voice_reviews under this step in source-reviews.json. Each record needs source_sha256, this inputs_revision, status pass, reviewer, audio_listened true, start_s 0, end_s covering the whole source, and checks script/voice/pronunciation/performance pass. If measured alignment is missing, also supply reviewed_alignments with tag-free spoken timings. No script, voice or model change is authorized by these review records.',
           review_file: sourceReviewPath });
+        await this.reportWaiting(WAITING_FOR_SOURCE_REVIEW);
         throw new KitStop(`A source candidate is saved for review at ${request}. Save its actual review in ${sourceReviewPath}, then resume this command; existing paid pieces are reused.`, 'stop', 'source_review_incomplete');
       }
     }
@@ -1121,12 +1156,17 @@ class Maker {
       const loaded = this.parts.get(id)!;
       const ref = { id: loaded.manifest.id, version: loaded.manifest.version };
       const { inputs, round } = fixed(id, { video: cut, timeline, brand: this.brand, expect: expectationOf(this.style.style, this.handed.plan), ...(words ? { words } : {}) });
-      exposeAssemblyToDeclaredSchema(loaded, inputs);
+      const linked = exposeAssemblyToDeclaredSchema(loaded, inputs);
       const out = await this.runStep({ id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
-      acceptTimeline(out);
       if (slot === 'check') {
+        // The check judges the video; it never replaces its timeline or its source-linked edit.
+        collectFiles(out);
         verdict = out.verdict as CheckVerdict;
         continue;
+      }
+      acceptTimeline(out);
+      if (assemblyRaw && !linked && (slot === 'sound' || slot === 'captions')) {
+        this.deps.log.write('warn', 'a layer cannot update the source-linked timeline', { step: id, part: `${ref.id}@${ref.version}`, note: 'its changes are checked only by the final measurements' });
       }
       const video = out.video;
       if (!isFileRef(video) || video.media !== 'video') {
@@ -1157,6 +1197,14 @@ class Maker {
         if (sourcePictures.some((p) => p.source_kind !== file.media)) throw new KitStop(`A picture source has a different media kind: ${source.asset_id}`, 'change_request', 'output_invalid');
         const actual = await sourceProbe(file.path);
         if (sourcePictures.length && !actual.has_video) throw new KitStop(`A picture source has no readable picture: ${source.asset_id}`, 'change_request', 'output_invalid');
+        for (const { source: shown } of sourcePictures) {
+          const crop = shown.crop;
+          if (!crop) continue;
+          if (!actual.width || !actual.height || crop.x + crop.w > actual.width || crop.y + crop.h > actual.height) throw new KitStop(`A picture crop is outside its ${actual.width ?? '?'}×${actual.height ?? '?'} source: ${source.asset_id}`, 'change_request', 'output_invalid');
+          // Zoom, not resolution: scaling the whole frame up is fine, cropping in past 1.5x is not.
+          const zoom = cropZoom(crop, { width: actual.width, height: actual.height }, timeline);
+          if (zoom > MAX_ZOOM + 1e-9) throw new KitStop(`A picture crop zooms in ${zoom.toFixed(2)}x, over the ${MAX_ZOOM}x limit: ${source.asset_id}. Use a wider or sharper source.`, 'change_request', 'output_invalid');
+        }
         if (audible.some((a) => a.sha256 === source.sha256 && a.asset_id === source.asset_id) && !actual.has_audio) throw new KitStop(`An audio source has no readable audio: ${source.asset_id}`, 'change_request', 'output_invalid');
         // A still is intentionally held; only moving/audio sources have a media clock.
         if (file.media !== 'image' && (actual.duration_s === undefined || source.out_ms > actual.duration_s * 1000 + 1)) throw new KitStop(`A timeline source window exceeds the actual file: ${source.asset_id}`, 'change_request', 'output_invalid');
@@ -1520,30 +1568,57 @@ class Maker {
       }
       const custom = this.style.style.id.startsWith('custom-');
       let measuredDurationMs: number | null = null;
+      let hasAudio = false;
       if (custom) {
         try {
           const probe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, this.stop.signal).probe;
           const info = await probe(candidate);
           measuredDurationMs = measuredFinalDurationMs(info.duration_s);
+          hasAudio = info.has_audio === true;
         } catch {
           // Missing measurement leaves review incomplete; the edit clock is not a fallback.
         }
       }
-      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined);
+      // Early feedback on the exact bytes (gooseworks-final-measure/1); the server measures them again and decides.
+      let finalMeasure: FinalMeasure | null = null;
+      let measureProblem: string | null = null;
+      const measurePath = path.join(this.layout.final, 'final-measure.json');
+      if (custom) {
+        if (measuredDurationMs === null || !this.tools.ffmpeg.path) measureProblem = 'its length could not be read';
+        else {
+          try {
+            finalMeasure = await measureFinal({ ffmpeg: this.tools.ffmpeg.path, file: candidate, outputSha256: sha256, durationMs: measuredDurationMs, hasAudio, timeline: assembly.timeline, signal: this.stop.signal });
+          } catch (error) {
+            measureProblem = 'the video tools could not read it';
+            this.deps.log.write('warn', 'the final could not be measured', { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        await writeJson(measurePath, finalMeasure ?? { format: FINAL_MEASURE_FORMAT, output_sha256: sha256, measured_duration_ms: measuredDurationMs, checks: [], error: measureProblem });
+      }
+      const measureFailures = finalMeasure ? finalMeasureFailures(finalMeasure) : [];
+      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined, finalMeasure);
       await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, measured_duration_ms: measuredDurationMs, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
+      if (custom && (measureProblem || measureFailures.length)) {
+        this.run.status = 'failed';
+        await this.saveRun();
+        await this.reportWaiting(WAITING_FOR_MEASURED_FIX);
+        this.reporter.close();
+        const why = measureProblem ? `The candidate at ${candidate} could not be measured (${measureProblem}), so it wasn’t sent.` : `The candidate at ${candidate} failed its measured checks, so it wasn’t sent. ${measureFailures.join(' ')}`;
+        return { status: 'stopped', code: 'final_measure_failed', message: `${why} Fix the edit, then run the same command again; unchanged assets are reused. The measurements are in ${measurePath}.` };
+      }
       if (custom && contentProblems.length) {
         await writeJson(path.join(this.layout.final, 'review-request.json'), {
           candidate, output_sha256: sha256, measured_duration_ms: measuredDurationMs, timeline_revision: assembly.revision,
           creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
-          assembly_issues: assembly.issues, content_review_problems: contentProblems,
-          instructions: 'Play this exact candidate completely at normal speed with sound. Record actual observations and unresolved issues. Save the completed review as content-review.json beside this request, then resume the same video make command. Missing listening or moving-picture access stays incomplete. This is a review declaration, not proof of human attention.',
+          assembly_issues: assembly.issues, content_review_problems: contentProblems, final_measure_file: measurePath,
+          instructions: 'Review this exact candidate from start to end. Record actual observations and unresolved issues (severity P0, P1 or P2; only P2 lets it go up). Save the completed review as content-review.json beside this request, then resume the same video make command. capabilities says how you perceived it: audio is listened only when a person or an audio-capable model heard the whole final, otherwise measured; motion is watched only when the moving picture was actually watched, otherwise measured. A measured review is accepted only when the final measurements pass (final-measure.json). Never claim listened or watched that did not happen. Fields not in the template are refused.',
           template: { output_sha256: sha256, timeline_revision: assembly.revision, creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
-            reviewer: '', verdict: 'incomplete', capabilities: { audio_perception: false, motion_perception: false }, coverage: [], unresolved_issues: [],
+            reviewer: '', verdict: 'incomplete', capabilities: { audio: 'measured', motion: 'measured' }, coverage: [], unresolved_issues: [],
             dimensions: Object.fromEntries(CONTENT_DIMENSIONS.map((name) => [name, { status: 'incomplete', note: 'Not reviewed yet' }])) },
         });
         this.run.status = 'failed';
-        this.book.note = 'The candidate needs its actual picture and audio review';
         await this.saveRun();
+        await this.reportWaiting(WAITING_FOR_CONTENT_REVIEW);
         this.reporter.close();
         return { status: 'stopped', code: 'content_review_incomplete', message: `The candidate is saved at ${candidate}. Its picture/audio review is incomplete. Save the actual review in ${reviewPath}, then resume the same command; unchanged assets are reused.` };
       }
@@ -1556,8 +1631,10 @@ class Maker {
       try {
         const noted = [...verdictWarnings(current.verdict), ...(eyes?.warnings ?? [])].slice(0, MAX_SENT_WARNINGS);
         check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps),
-          ...(assembly.timeline ? { assembly_timeline: assembly.timeline } : {}),
+          // Local file paths stay on this computer; the revision never included them.
+          ...(assembly.timeline ? { assembly_timeline: portableTimeline(assembly.timeline) } : {}),
           ...(contentReview ? { content_review: contentReview } : {}),
+          ...(finalMeasure ? { final_measure: finalMeasure } : {}),
           assembly_evidence: { status: assembly.status, revision: assembly.revision, output_sha256: sha256, source_bytes_verified: assembly.status === 'complete', issues: assembly.issues },
           content_review_status: contentProblems.length ? 'incomplete' : 'approved',
           ...(noted.length ? { check_warnings: noted } : {}) });
@@ -1662,6 +1739,7 @@ class Maker {
         final,
         timeline: made.timeline,
         beforeSound: made.beforeSound,
+        custom: this.style.style.id.startsWith('custom-'),
         products: products.map((p) => ({
           ...(typeof p?.name === 'string' ? { name: p.name } : {}),
           photos: (Array.isArray(p?.images) ? p.images : []).filter((ref): ref is FileRef => isFileRef(ref) && ref.media === 'image').map((ref) => ref.path),

@@ -74,7 +74,7 @@ harness_binding: gooseworks/video-actions/v1
 
 # Human version
 
-Approve the script, then actual storyboard/ingredients and budget in this chat. Both reviews are required; cards and Studio are optional. Production preserves the approved action, product and sound. File checks support full audiovisual review.
+The owner approves the script, then actual ingredients and budget in this chat; cards and Studio are optional. Production preserves approved action, product and sound. File checks support a separate full audiovisual review.
 
 ---
 
@@ -98,8 +98,7 @@ Use connected creator language and reference-appropriate pace. Reuse accepted ch
 ## Save and review twice
 
 video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free with estimate_only=1; save preview/render estimates including redo allowance. No guessed rates or direct keys. Changing approved intent sets approval aside.
-Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional.
-Reread video_read after owner actions. Script approval permits quoted previews only. Save the actual storyboard, playable ingredients, voice auditions and render budget; ingredient approval permits clips. Require current script_approved/ingredients_approved, matching tokens/revision and budget. Changed reviews need renewed approval. A prior yes does not authorize changed work. Honor Stop.
+Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
 
 ## Produce, assemble and deliver
 
@@ -109,7 +108,7 @@ Use the harness source-linked assembly_timeline. Keep native picture/audio range
 Watch the exact final at normal speed with actual listening, then targeted native-rate lips/actions and joins. Save quality_report.content_review with final SHA-256, timeline revision, returned creative_contract_revision, identified reviewer, capabilities, full coverage and per-dimension findings. Measurements, ASR and an average score cannot certify content. Incomplete review or serious defects block delivery.
 Direct builds also need the stored rebuild recipe (references/recipe-format.md). Complete with the confirmed same-project H.264/AAC MP4 URL and real quality evidence; report complete again while server checks run. Kit uploads also require exact-final content evidence; follow the saved review-request, supply the reviewed record and resume the same cached run. Pin only the checked complete version and read final/manifest back. Repairs reuse accepted assets and renew changed approvals/budget.
 
-Use plain words. Never invent claims, approvals, assets or passing checks.
+Use plain words and returned credits. Never invent claims, approvals, assets or passing checks.
 `,
 } as const;
 

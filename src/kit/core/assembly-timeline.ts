@@ -1,5 +1,6 @@
 // Source-linked edit intent. File/rebuild checks never certify audiovisual quality.
 import { canonicalHash } from './canonical';
+import { FINAL_MEASURE_THRESHOLDS, maxFreezeMs } from './final-measure';
 
 export const ASSEMBLY_FORMAT = 'gooseworks-assembly-timeline/1' as const;
 export const SPEECH_MODES = ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing', 'mixed', 'none'] as const;
@@ -9,12 +10,35 @@ export type SoundtrackMode = typeof SOUNDTRACK_MODES[number];
 export interface AssemblySource {
   asset_id: string;
   sha256: string;
-  /** Local transport only; excluded from the portable revision. */
+  /** Local transport only; excluded from the portable revision and stripped before upload. */
   path?: string;
   in_ms: number;
   out_ms: number;
   speed: number;
+  /** Picture sources only: the part of the source shown, in whole source pixels. */
+  crop?: { x: number; y: number; w: number; h: number };
+  /** Picture sources only: how the shown part is scaled. Uneven stretch over 2% is refused; zoom is checked against the real source. */
+  scale_x?: number;
+  scale_y?: number;
 }
+/** Picture stretch and zoom limits (fix-forward contract section 7, as amended 15 Oct). */
+export const MAX_UNEVEN_STRETCH = 0.02;
+/**
+ * The most a crop may zoom in: the crop's fit-scale over the full source frame's fit-scale.
+ * Plain resolution scaling of the whole frame (H3's 432×768 to 1080×1920) is not zoom.
+ */
+export const MAX_ZOOM = 1.5;
+/** Planned pause and freeze limits, the same numbers the final measurements use. */
+export const MAX_PLANNED_PAUSE_MS = FINAL_MEASURE_THRESHOLDS.max_pause_ms;
+export const MAX_PLANNED_TOTAL_SHARE = FINAL_MEASURE_THRESHOLDS.max_pause_share;
+
+/** How far a crop zooms in when its picture fills a `frame` (cover fit); 1 for the whole source. */
+export function cropZoom(crop: { w: number; h: number }, source: { width: number; height: number }, frame: { width: number; height: number }): number {
+  const fit = (w: number, h: number) => Math.max(frame.width / w, frame.height / h);
+  return fit(crop.w, crop.h) / fit(source.width, source.height);
+}
+/** A segment that deliberately shows an earlier shot again says so with an intent starting with this. */
+export const CALLBACK_INTENT = 'callback:';
 export interface AssemblySegment {
   id: string;
   scene_id: string;
@@ -71,16 +95,35 @@ export interface AssemblyCheck {
   /** Legacy intent is retained for review, never inferred from transcript absence. */
   legacy?: Record<string, unknown>;
 }
+/** How the reviewer perceived the sound: heard it (a person or an audio-capable model), or relied on the measurements. */
+export type AudioPerception = 'listened' | 'measured';
+/** How the reviewer perceived the moving picture: watched it, or relied on the measurements. */
+export type MotionPerception = 'watched' | 'measured';
+export const AUDIO_PERCEPTIONS: readonly AudioPerception[] = ['listened', 'measured'];
+export const MOTION_PERCEPTIONS: readonly MotionPerception[] = ['watched', 'measured'];
+/**
+ * `capabilities` (fix-forward contract section 2). The old boolean shape still parses for one release:
+ * `true` reads as listened/watched; `false` is refused.
+ */
+export type ReviewCapabilities =
+  | { audio: AudioPerception; motion: MotionPerception }
+  | { audio_perception: boolean; motion_perception: boolean };
 export interface FinalContentReview {
   output_sha256: string;
   timeline_revision: string;
   creative_contract_revision: string;
   reviewer: string;
   verdict: 'approved' | 'needs_revision' | 'incomplete';
-  capabilities: { audio_perception: boolean; motion_perception: boolean };
+  capabilities: ReviewCapabilities;
   coverage: Array<{ start_ms: number; end_ms: number }>;
-  unresolved_issues: Array<{ severity: 'P0' | 'P1' | 'P2'; message: string }>;
+  /** Matched case-insensitively: only P2 lets the upload go on; P0, P1, blocker and anything unknown block. */
+  unresolved_issues: Array<{ severity: string; message: string }>;
   dimensions: Record<string, { status: 'pass' | 'needs_revision' | 'incomplete' | 'not_applicable'; note: string }>;
+}
+/** What a measured review leans on: the kit's own final measurements of the same bytes. */
+export interface FinalMeasureSummary {
+  output_sha256: string;
+  checks: Array<{ id: string; result: 'pass' | 'fail' | 'not_applicable' }>;
 }
 export const CONTENT_DIMENSIONS = ['reference_and_concept', 'brand_and_product', 'scale_and_geometry', 'action_and_continuity', 'lip_sync', 'voice_performance', 'pronunciation', 'sound_and_silence', 'pacing_and_joins', 'camera_and_lighting', 'overlays'] as const;
 
@@ -92,12 +135,48 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 const sourceSpan = (s: AssemblySource) => (s.out_ms - s.in_ms) / s.speed;
 const speechRole = (role: string) => ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing'].includes(role);
 
-/** Excludes machine-specific transport, while retaining exact assets and source clocks. */
-export function assemblyTimelineRevision(value: AssemblyTimeline): string {
+/** The timeline without machine-specific `path` values: what the revision hashes and what goes to the server. */
+export function portableTimeline<T>(value: T): T {
   const portable = (v: unknown): unknown => Array.isArray(v) ? v.map(portable)
     : object(v) ? Object.fromEntries(Object.entries(v).filter(([key]) => key !== 'path').map(([key, item]) => [key, portable(item)])) : v;
-  return canonicalHash(portable(value));
+  return portable(value) as T;
 }
+
+/** Excludes machine-specific transport, while retaining exact assets and source clocks. */
+export function assemblyTimelineRevision(value: AssemblyTimeline): string {
+  return canonicalHash(portableTimeline(value));
+}
+
+/**
+ * Milliseconds and pixels are whole numbers, so the revision survives a database round trip
+ * (a stored fraction can come back rounded and no longer match its review).
+ */
+function fractionalUnits(raw: unknown): string[] {
+  const found: string[] = [];
+  const walk = (value: unknown, at: string, inCrop: boolean) => {
+    if (Array.isArray(value)) { value.forEach((item, i) => walk(item, `${at}[${i}]`, false)); return; }
+    if (!object(value)) return;
+    for (const [key, item] of Object.entries(value)) {
+      const here = at ? `${at}.${key}` : key;
+      const unit = key.endsWith('_ms') ? 'milliseconds' : inCrop && ['x', 'y', 'w', 'h'].includes(key) ? 'pixels' : null;
+      if (unit && typeof item === 'number' && Number.isFinite(item) && !Number.isInteger(item)) found.push(`${here} must be a whole number of ${unit} (got ${item})`);
+      else walk(item, here, key === 'crop');
+    }
+  };
+  walk(raw, '', false);
+  return found;
+}
+
+const overlaps = (a: AssemblySource, b: AssemblySource) => a.sha256 === b.sha256 && a.asset_id === b.asset_id && Math.min(a.out_ms, b.out_ms) > Math.max(a.in_ms, b.in_ms);
+const totalMs = (items: Array<{ start_ms: number; end_ms: number }>) => {
+  let total = 0;
+  let end = -1;
+  for (const item of [...items].sort((a, b) => a.start_ms - b.start_ms)) {
+    total += Math.max(0, item.end_ms - Math.max(item.start_ms, end));
+    end = Math.max(end, item.end_ms);
+  }
+  return total;
+};
 
 function gaps(items: Array<{ start_ms: number; end_ms: number }>, duration: number): Array<{ start_ms: number; end_ms: number }> {
   const missing: Array<{ start_ms: number; end_ms: number }> = [];
@@ -117,7 +196,8 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   const issues: string[] = [];
   if (raw.format !== ASSEMBLY_FORMAT) issues.push(`assembly format must be ${ASSEMBLY_FORMAT}`);
   if (!hash(raw.creative_contract_revision)) issues.push('creative_contract_revision must identify approved bytes');
-  if (!ms(raw.duration_ms) || raw.duration_ms <= 0 || raw.duration_ms > 180_000) issues.push('duration_ms must be 1–180000');
+  // A fraction is named once, by the whole-units check below.
+  if (!finite(raw.duration_ms) || raw.duration_ms < 1 || raw.duration_ms > 180_000) issues.push('duration_ms must be 1–180000');
   if (!(SPEECH_MODES as readonly unknown[]).includes(raw.speech_mode)) issues.push('speech_mode is missing or unknown');
   if (!Array.isArray(raw.soundtrack_modes) || raw.soundtrack_modes.some((m) => !(SOUNDTRACK_MODES as readonly unknown[]).includes(m)) || new Set(raw.soundtrack_modes).size !== raw.soundtrack_modes.length) issues.push('soundtrack_modes must be explicit and unique (an empty list means no extra soundtrack)');
   if (!Array.isArray(raw.segments) || !raw.segments.length || raw.segments.length > 300) issues.push('segments must contain 1–300 source-linked entries');
@@ -125,11 +205,24 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
   if (!Array.isArray(raw.pauses) || raw.pauses.length > 500) issues.push('pauses must be an explicit list of at most 500');
   if (!Array.isArray(raw.required_cue_ids) || raw.required_cue_ids.some((id) => !text(id))) issues.push('required_cue_ids must be explicit');
   if (raw.visual_overrides !== undefined && (!Array.isArray(raw.visual_overrides) || raw.visual_overrides.length > 500)) issues.push('visual_overrides must be a bounded explicit list');
+  issues.push(...fractionalUnits(raw));
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
   const t = raw as unknown as AssemblyTimeline;
-  const validSource = (s: unknown, at: string): s is AssemblySource => {
+  const validSource = (s: unknown, at: string, picture = false): s is AssemblySource => {
     if (!object(s) || !text(s.asset_id) || !hash(s.sha256) || !ms(s.in_ms) || !ms(s.out_ms) || s.out_ms <= s.in_ms || !finite(s.speed) || s.speed < 0.25 || s.speed > 4) {
       issues.push(`${at}: exact asset, hash, bounds and supported speed required`); return false;
+    }
+    if (s.path !== undefined && typeof s.path !== 'string') { issues.push(`${at}: path must be a local file path`); return false; }
+    const framed = s.crop !== undefined || s.scale_x !== undefined || s.scale_y !== undefined;
+    if (framed && !picture) { issues.push(`${at}: crop and scale apply to picture sources only`); return false; }
+    if (s.crop !== undefined) {
+      const c = s.crop as Record<string, unknown>;
+      const px = (v: unknown, min: number) => typeof v === 'number' && Number.isSafeInteger(v) && v >= min;
+      if (!object(c) || Object.keys(c).some((k) => !['x', 'y', 'w', 'h'].includes(k)) || !px(c.x, 0) || !px(c.y, 0) || !px(c.w, 1) || !px(c.h, 1)) { issues.push(`${at}: crop needs whole source pixels x, y, w and h (w and h at least 1)`); return false; }
+    }
+    if (s.scale_x !== undefined || s.scale_y !== undefined) {
+      if (!finite(s.scale_x) || !finite(s.scale_y) || s.scale_x <= 0 || s.scale_y <= 0) { issues.push(`${at}: scale_x and scale_y go together and must be positive`); return false; }
+      if (Math.abs(s.scale_x / s.scale_y - 1) > MAX_UNEVEN_STRETCH) { issues.push(`${at}: uneven stretch (scale_x ${s.scale_x} vs scale_y ${s.scale_y}) distorts the picture by more than ${MAX_UNEVEN_STRETCH * 100}%`); return false; }
     }
     return true;
   };
@@ -143,7 +236,7 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     if (!text(s.id) || ids.has(s.id) || !text(s.scene_id)) issues.push('segment ids must be unique and scene_id required');
     ids.add(s.id);
     if (!(SPEECH_MODES as readonly string[]).includes(s.speech_mode) || typeof s.depicts_speech !== 'boolean' || !['preserve', 'muted'].includes(s.native_audio)) issues.push(`${s.id}: explicit speech and native audio decisions required`);
-    if (validRange(s, s.id) && validSource(s.video, s.id) && Math.abs(sourceSpan(s.video) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: picture source duration/rate differs from final interval`);
+    if (validRange(s, s.id) && validSource(s.video, s.id, true) && Math.abs(sourceSpan(s.video) - (s.end_ms - s.start_ms)) > 1) issues.push(`${s.id}: picture source duration/rate differs from final interval`);
     if (s.video?.speed !== 1 && !text(s.intent)) issues.push(`${s.id}: speed change needs intent`);
     if (s.depicts_speech && !['native_dialogue', 'audio_driven_lipsync', 'singing'].includes(s.speech_mode)) issues.push(`${s.id}: speaking face cannot use narration-only or no-speech routing`);
     if (s.depicts_speech && s.speech_mode === 'native_dialogue' && s.native_audio !== 'preserve') issues.push(`${s.id}: native dialogue may not be muted`);
@@ -164,16 +257,31 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     }
   }
   for (const id of t.required_cue_ids) if (!ids.has(id)) issues.push(`required cue ${id} is missing`);
-  for (const p of t.pauses) if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
+  for (const p of t.pauses) {
+    if (!validRange(p, 'pause') || !text(p.reason) || !['speech', 'all_audio'].includes(p.scope)) issues.push('every pause needs its range, scope and reason');
+    else if (p.end_ms - p.start_ms > MAX_PLANNED_PAUSE_MS) issues.push(`pause ${p.start_ms}–${p.end_ms}ms is longer than ${MAX_PLANNED_PAUSE_MS}ms`);
+  }
   for (const v of t.visual_overrides ?? []) {
     if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
     else {
       if (v.kind === 'freeze' && !v.source) issues.push('freeze requires its exact source');
-      if (v.source && (!validSource(v.source, 'override source') || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
+      if (v.kind === 'freeze' && v.end_ms - v.start_ms > maxFreezeMs(v, t.duration_ms)) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${maxFreezeMs(v, t.duration_ms)}ms${v.end_ms === t.duration_ms ? ' (the closing-hold limit)' : ''}`);
+      if (v.source && (!validSource(v.source, 'override source', true) || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
       if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
     }
   }
+  const pauseTotal = totalMs(t.pauses.filter(object));
+  if (pauseTotal > t.duration_ms * MAX_PLANNED_TOTAL_SHARE) issues.push(`planned pauses add up to ${pauseTotal}ms, more than ${MAX_PLANNED_TOTAL_SHARE * 100}% of the ${t.duration_ms}ms video`);
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
+  // The same source moment shown again later (not the very next segment, both over 1 s) is a
+  // repeat; only a declared callback may do it. As in the harness, the prefix is case-sensitive.
+  const ordered = [...t.segments].sort((a, b) => a.start_ms - b.start_ms || a.end_ms - b.end_ms);
+  const long = (x: AssemblySegment) => x.end_ms - x.start_ms > FINAL_MEASURE_THRESHOLDS.repeated_shot_min_s * 1000;
+  for (let b = 2; b < ordered.length; b++) {
+    const later = ordered[b];
+    const repeated = long(later) ? ordered.slice(0, b - 1).find((earlier) => long(earlier) && overlaps(earlier.video, later.video)) : undefined;
+    if (repeated && !(typeof later.intent === 'string' && later.intent.startsWith(CALLBACK_INTENT))) issues.push(`${later.id}: shows ${repeated.id}'s source moment again; use another moment, or mark a deliberate repeat with intent "${CALLBACK_INTENT} <why>"`);
+  }
   if (gaps([...t.segments, ...(t.visual_overrides ?? [])], t.duration_ms).length) issues.push('Picture coverage has undeclared padding or a missing source interval');
   for (let a = 0; a < t.segments.length; a++) for (let b = a + 1; b < t.segments.length; b++) {
     const left = t.segments[a], right = t.segments[b];
@@ -204,7 +312,15 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     for (const gap of gaps([...t.audio_cues, ...t.pauses.filter((p) => p.scope === 'all_audio')], t.duration_ms)) issues.push(`unplanned audio gap ${gap.start_ms}–${gap.end_ms}ms`);
   }
   if (t.speech_mode === 'none' && t.audio_cues.some((c) => speechRole(c.role))) issues.push('No-speech intent conflicts with speech cues');
-  if (t.speech_mode !== 'none') for (const gap of gaps([...t.audio_cues.filter((c) => speechRole(c.role) && c.gain_db > -80), ...t.pauses], t.duration_ms)) issues.push(`unplanned speech gap ${gap.start_ms}–${gap.end_ms}ms (music cannot substitute for speech intent)`);
+  // Speech covers every segment that plans speech; a music-only intro or end card (speech_mode none) needs none.
+  if (t.speech_mode !== 'none') {
+    const speech = [...t.audio_cues.filter((c) => speechRole(c.role) && c.gain_db > -80), ...t.pauses];
+    for (const segment of ordered.filter((x) => x.speech_mode !== 'none')) {
+      const inside = speech.filter((i) => i.end_ms > segment.start_ms && i.start_ms < segment.end_ms)
+        .map((i) => ({ start_ms: Math.max(i.start_ms, segment.start_ms) - segment.start_ms, end_ms: Math.min(i.end_ms, segment.end_ms) - segment.start_ms }));
+      for (const gap of gaps(inside, segment.end_ms - segment.start_ms)) issues.push(`unplanned speech gap ${gap.start_ms + segment.start_ms}–${gap.end_ms + segment.start_ms}ms in ${segment.id} (music cannot substitute for speech intent)`);
+    }
+  }
   return { status: issues.length ? 'invalid' : 'complete', timeline: t, revision: assemblyTimelineRevision(t), issues };
 }
 
@@ -217,15 +333,92 @@ export function measuredFinalDurationMs(seconds: number | null | undefined): num
   return Number.isSafeInteger(duration) ? duration : null;
 }
 
-/** Omit measurement only for preflight; final acceptance needs the measured duration. */
-export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck, measuredDurationMs?: number | null): string[] {
+const REVIEW_FIELDS = ['output_sha256', 'timeline_revision', 'creative_contract_revision', 'reviewer', 'verdict', 'capabilities', 'coverage', 'unresolved_issues', 'dimensions'] as const;
+const CAPABILITY_FIELDS = ['audio', 'motion', 'audio_perception', 'motion_perception'] as const;
+/** At most this many unresolved issues are named one by one; the rest are counted. */
+const NAMED_ISSUES = 10;
+
+/** Every field the review format doesn't have, by its path, so the reviewer knows exactly what to remove. */
+function unknownReviewFields(r: Record<string, unknown>): string[] {
+  const extra: string[] = [];
+  const check = (value: unknown, allowed: readonly string[], at: string) => {
+    if (!object(value)) return;
+    for (const key of Object.keys(value)) if (!allowed.includes(key)) extra.push(`${at}${key}`);
+  };
+  check(r, REVIEW_FIELDS, '');
+  check(r.capabilities, CAPABILITY_FIELDS, 'capabilities.');
+  if (Array.isArray(r.coverage)) r.coverage.forEach((w, i) => check(w, ['start_ms', 'end_ms'], `coverage[${i}].`));
+  if (Array.isArray(r.unresolved_issues)) r.unresolved_issues.forEach((issue, i) => check(issue, ['severity', 'message'], `unresolved_issues[${i}].`));
+  if (object(r.dimensions)) {
+    check(r.dimensions, CONTENT_DIMENSIONS, 'dimensions.');
+    for (const name of CONTENT_DIMENSIONS) check(r.dimensions[name], ['status', 'note'], `dimensions.${name}.`);
+  }
+  return extra;
+}
+
+/**
+ * The review's perception, in the new shape. The old booleans are aliases: `true` reads as
+ * listened/watched and `false` is refused, so a review that admits it could not hear or see never passes.
+ */
+export function reviewCapabilities(raw: unknown): { audio: AudioPerception | null; motion: MotionPerception | null; problems: string[] } {
+  const problems: string[] = [];
+  if (!object(raw)) return { audio: null, motion: null, problems: ['capabilities must say how the sound and the moving picture were reviewed: audio listened or measured, motion watched or measured'] };
+  const axis = <T extends string>(name: 'audio' | 'motion', legacy: 'audio_perception' | 'motion_perception', allowed: readonly T[], heard: T): T | null => {
+    const current = raw[name];
+    const old = raw[legacy];
+    if (current !== undefined && old !== undefined) { problems.push(`capabilities has both ${name} and ${legacy}; keep only ${name}`); return null; }
+    if (current !== undefined) {
+      if (typeof current === 'string' && (allowed as readonly string[]).includes(current)) return current as T;
+      problems.push(`capabilities.${name} must be ${allowed.join(' or ')}`);
+      return null;
+    }
+    if (old === true) return heard;
+    if (old === false) { problems.push(`capabilities.${legacy} is false: the ${name === 'audio' ? 'sound' : 'moving picture'} was not reviewed. Review it, or record ${name}: "measured" and rely on passing final measurements`); return null; }
+    if (old !== undefined) { problems.push(`capabilities.${legacy} must be true, or use ${name}: ${allowed.join(' | ')}`); return null; }
+    problems.push(`capabilities.${name} is missing: record ${allowed.join(' or ')}`);
+    return null;
+  };
+  const audio = axis('audio', 'audio_perception', AUDIO_PERCEPTIONS, 'listened');
+  const motion = axis('motion', 'motion_perception', MOTION_PERCEPTIONS, 'watched');
+  return { audio, motion, problems };
+}
+
+/** One blocking issue, named: P0, P1 and blocker block as they are, anything unknown blocks as P1. */
+function blockingIssues(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return ['unresolved_issues must be a list (an empty list when nothing is open)'];
+  const blocking: string[] = [];
+  raw.forEach((issue, index) => {
+    const message = object(issue) && text(issue.message) ? issue.message.trim().slice(0, 200) : '';
+    const severity = object(issue) && typeof issue.severity === 'string' ? issue.severity.trim().toLowerCase() : '';
+    if (severity === 'p2' && message) return;
+    const label = severity === 'p0' ? 'P0' : severity === 'p1' ? 'P1' : severity === 'blocker' ? 'blocker'
+      : `issue with unknown severity ${JSON.stringify(object(issue) ? issue.severity ?? null : issue)} (counts as P1)`;
+    blocking.push(message ? `Unresolved ${label}${label.startsWith('issue') ? '' : ' issue'}: ${message}` : `unresolved_issues[${index}] needs a severity (P0, P1 or P2) and a message; it counts as P1 until then`);
+  });
+  if (blocking.length > NAMED_ISSUES) return [...blocking.slice(0, NAMED_ISSUES), `${blocking.length - NAMED_ISSUES} more unresolved issues block the upload`];
+  return blocking;
+}
+
+/**
+ * Omit measurement only for preflight; final acceptance needs the measured duration. A `measured`
+ * perception is accepted only with `finalMeasure` of the same bytes in which every check passed
+ * (or does not apply); the server adds its own frame judge on top.
+ */
+export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck, measuredDurationMs?: number | null, finalMeasure?: FinalMeasureSummary | null): string[] {
   if (!object(raw)) return ['Exact-final audiovisual content review is missing'];
   const r = raw as unknown as FinalContentReview;
   const problems: string[] = [];
+  for (const field of unknownReviewFields(raw)) problems.push(`content_review has an unknown field "${field}". Remove it, then resume`);
   if (assembly.status !== 'complete' || !assembly.timeline) problems.push('Assembly evidence is incomplete');
   if (r.output_sha256 !== outputSha || r.timeline_revision !== assembly.revision || r.creative_contract_revision !== assembly.timeline?.creative_contract_revision) problems.push('Content review belongs to different final, timeline or approved intent bytes');
   if (r.verdict !== 'approved' || !text(r.reviewer)) problems.push('Content review is not approved by an identified reviewer');
-  if (!r.capabilities?.audio_perception || !r.capabilities?.motion_perception) problems.push('Actual audio and continuous-motion review capability is missing');
+  const perceived = reviewCapabilities(r.capabilities);
+  problems.push(...perceived.problems);
+  if (perceived.audio === 'measured' || perceived.motion === 'measured') {
+    const measuredPass = !!finalMeasure && finalMeasure.output_sha256 === outputSha && Array.isArray(finalMeasure.checks) && finalMeasure.checks.length > 0
+      && finalMeasure.checks.every((c) => c.result === 'pass' || c.result === 'not_applicable');
+    if (!measuredPass) problems.push('A measured review needs passing final measurements of these exact bytes (final-measure.json); fix the failing checks or review by listening and watching');
+  }
   const measurementRequired = measuredDurationMs !== undefined;
   const measured = ms(measuredDurationMs) && measuredDurationMs > 0 ? measuredDurationMs : null;
   if (measurementRequired && measured === null) problems.push('The final playback duration could not be measured');
@@ -246,7 +439,7 @@ export function finalContentReviewProblems(raw: unknown, outputSha: string, asse
     missing += Math.max(0, duration - end);
     if (!r.coverage.length || missing > 1) problems.push(`Playback and listening must cover the complete ${duration}ms final (only 1ms total timestamp rounding is allowed)`);
   }
-  if (!Array.isArray(r.unresolved_issues) || r.unresolved_issues.some((i) => !i || i.severity === 'P0' || i.severity === 'P1')) problems.push('Required unresolved issues remain');
+  problems.push(...blockingIssues(r.unresolved_issues));
   for (const name of CONTENT_DIMENSIONS) {
     const dimension = r.dimensions?.[name];
     if (!dimension || !text(dimension.note) || !['pass', 'not_applicable'].includes(dimension.status)) problems.push(`${name}: required content review is incomplete or needs revision`);

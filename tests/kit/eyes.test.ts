@@ -82,6 +82,7 @@ it('writes the sheet and eyes.json next to the final, leaving out frames it coul
       timeline,
       products: [{ name: 'Tin', photos: ['/photos/tin.png'] }],
       signal: new AbortController().signal,
+      custom: true,
       grab: async (file, _args, bytes) => {
         if (file === '/photos/tin.png') return photo();
         if (grabs++ === 3) throw new Error('unreadable');
@@ -116,6 +117,21 @@ it('marks the cut at 9 seconds and the unrecognised speech window from 8.4 to 10
   expect(windows).toContainEqual({ start_s: 7.75, end_s: 10.25, reason: 'cut' });
   expect(windows).toContainEqual({ start_s: 7.9, end_s: 10.7, reason: 'word_gap' });
   expect(windows.every((window) => window.start_s >= 0 && window.end_s <= 12)).toBe(true);
+});
+
+it('never asks for an audio review of a silent template video', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eyes-'));
+  try {
+    // A template with no planned speech: no audio is required, extracted or warned about.
+    const eyes = await lookAtFinal({ ffmpeg: '/no/ffmpeg', final: path.join(dir, 'final.mp4'), timeline, products: [], signal: new AbortController().signal, grab: async (_file, _args, bytes) => picture(180, 320, [40, 90, 200]).subarray(0, bytes) });
+    expect(eyes.warnings.map((w) => w.check)).toEqual([]);
+    expect(eyes.audio).toMatchObject({ required: false, final_mix: null, windows: [] });
+    // The same silent final made as a custom video still needs its sound reviewed.
+    const custom = await lookAtFinal({ ffmpeg: '/no/ffmpeg', final: path.join(dir, 'final.mp4'), timeline, products: [], signal: new AbortController().signal, custom: true, grab: async (_file, _args, bytes) => picture(180, 320, [40, 90, 200]).subarray(0, bytes) });
+    expect(custom.warnings.map((w) => w.check)).toEqual(['review_audio']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 it('writes no sheet when no frame could be read', async () => {

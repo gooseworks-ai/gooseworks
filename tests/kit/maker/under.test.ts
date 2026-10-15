@@ -6,9 +6,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readInputs } from '../../../src/kit/maker/inputs';
-import { makeVideo } from '../../../src/kit/maker/make';
+import { makeVideo, pageSoundRefusal } from '../../../src/kit/maker/make';
 import { segmentArgs } from '../../../src/kit/maker/encode';
-import { compositeArgs, passThroughTimeline, quietBandOf, underIsShared, underSceneFrames } from '../../../src/kit/maker/under';
+import { compositeArgs, linkedLengthTolerance, passThroughTimeline, quietBandOf, underIsShared, underSceneFrames } from '../../../src/kit/maker/under';
 import type { Timeline } from '../../../src/kit/part-interface';
 import { TestPartError, describeMedia, fileRef, partContext, pixelAt, runFfmpeg } from './helpers';
 
@@ -144,6 +144,42 @@ describe('the timeline of a video drawn over', () => {
     const eight = Array.from({ length: 8 }, (_, k) => ({ use: 'logo' as const, x: 100 + k * 10, y: 100, w: 50, h: 50 }));
     const out = passThroughTimeline({ ...underTimeline, safe_zones: eight }, { duration_s: 3, width: 1080, height: 1920, fps: 30 });
     expect(out.safe_zones).toHaveLength(8);
+  });
+});
+
+describe('a source-linked video drawn over (1.3.1)', () => {
+  const H = (c: string) => c.repeat(64);
+  const assembly = {
+    format: 'gooseworks-assembly-timeline/1', creative_contract_revision: H('c'), duration_ms: 2000, speech_mode: 'native_dialogue', soundtrack_modes: ['music', 'sfx'],
+    segments: [{ id: 'seg-1', scene_id: 's1', start_ms: 0, end_ms: 2000, video: { asset_id: 'take', sha256: H('a'), in_ms: 0, out_ms: 2000, speed: 1 }, speech_mode: 'native_dialogue', depicts_speech: true, native_audio: 'preserve' }],
+    // Cues the sound layer declared: music and an effect.
+    audio_cues: [
+      { id: 'voice', role: 'native_dialogue', source: { asset_id: 'take', sha256: H('a'), in_ms: 0, out_ms: 2000, speed: 1 }, start_ms: 0, end_ms: 2000, gain_db: 0, loop: false },
+      { id: 'bed', role: 'music', source: { asset_id: 'music', sha256: H('b'), in_ms: 0, out_ms: 2000, speed: 1 }, start_ms: 0, end_ms: 2000, gain_db: -18, loop: false },
+      { id: 'pop', role: 'sfx', source: { asset_id: 'pop', sha256: H('d'), in_ms: 0, out_ms: 300, speed: 1 }, start_ms: 900, end_ms: 1200, gain_db: -6, loop: false },
+    ],
+    pauses: [], required_cue_ids: ['voice'],
+  } as unknown as NonNullable<Timeline['assembly_timeline']>;
+
+  it('refuses only sound the page itself adds', () => {
+    expect(pageSoundRefusal(1, assembly)).toMatch(/^Page sound cues would change a source-linked soundtrack/);
+    // The sound layer's declared music and effect are not page sound.
+    expect(pageSoundRefusal(0, assembly)).toBeNull();
+    // Without a source-linked video under it, page cues are the page's own sound.
+    expect(pageSoundRefusal(2, undefined)).toBeNull();
+    expect(pageSoundRefusal(2, { segments: [] })).toBeNull();
+  });
+
+  it('lets the length move by up to one output frame, never more', () => {
+    expect(linkedLengthTolerance(30)).toBeCloseTo(1 / 30, 9);
+    expect(linkedLengthTolerance(2000)).toBe(0.001);
+    expect(linkedLengthTolerance(0)).toBe(0.001);
+    const linked: Timeline = { ...underTimeline, assembly_timeline: assembly };
+    const out = passThroughTimeline(linked, { duration_s: 2 + 1 / 30, width: 1080, height: 1920, fps: 30 });
+    expect(out.assembly_timeline).toBe(assembly);
+    expect(() => passThroughTimeline(linked, { duration_s: 1.97, width: 1080, height: 1920, fps: 30 })).not.toThrow();
+    expect(() => passThroughTimeline(linked, { duration_s: 2.05, width: 1080, height: 1920, fps: 30 })).toThrow(/requires a revised assembly timeline/);
+    expect(() => passThroughTimeline(linked, { duration_s: 2.0015, width: 1080, height: 1920, fps: 1000 })).toThrow(/requires a revised assembly timeline/);
   });
 });
 

@@ -139,6 +139,18 @@ export async function makeVideo(rawInputs: unknown, ctx: MakerContext, options: 
 }
 
 /**
+ * Page-embedded sound (kit.cue) over a source-linked video would change a soundtrack the timeline
+ * declares, so it is refused. Cues the sound layer declares in the timeline (music, sfx) are
+ * not page sound and pass: the page leaves the source sound as it is.
+ */
+export function pageSoundRefusal(pageCues: number, underAssembly: unknown): string | null {
+  const segments = underAssembly && typeof underAssembly === 'object' ? (underAssembly as { segments?: unknown }).segments : undefined;
+  const sourceLinked = Array.isArray(segments) && segments.length > 0;
+  if (!pageCues || !sourceLinked) return null;
+  return 'Page sound cues would change a source-linked soundtrack. Remove kit.cue from the page and add the sound through the sound layer, which declares its cues in the timeline; an old audio intent or review cannot certify this mix.';
+}
+
+/**
  * What the part runs: the video, or null when skip_blank is on and no scene
  * has on-screen text or a line (the step then gives no outputs, and the kit
  * leaves out every reference to them).
@@ -245,9 +257,8 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
       if (started === null) throw ctx.error('tool_failed', 'the frame page lost the kit runtime');
       checked(started);
       cues = cuesOf(started);
-      if (cues.length && spec.under?.timeline.assembly_timeline) {
-        throw ctx.error('bad_input', 'Page sound cues change a source-linked soundtrack. Declare their actual assets and revised cue timeline through the sound layer; an old audio intent or review cannot certify this mix.');
-      }
+      const refused = pageSoundRefusal(cues.length, spec.under?.timeline.assembly_timeline);
+      if (refused) throw ctx.error('bad_input', refused);
 
       let segmentStart = 0;
       let segmentBytes = 0;
@@ -380,7 +391,7 @@ export async function makeOrSkip(rawInputs: unknown, ctx: MakerContext, options:
       video, seconds, timeline: timelineOf(spec, logo), frameHashes,
       sourceFiles: spec.under ? [spec.under.file] : [],
       provenance: {
-        renderer_version: 'html-frames@1.3.0', content_review_status: 'pending',
+        renderer_version: 'html-frames@1.3.1', content_review_status: 'pending',
         ...(spec.under ? { source_sha256: spec.under.file.sha256, picture_speed: 1, audio_speed: 1, native_audio: underSound ? 'preserve' : 'absent' } : {}),
         audio_intent_status: spec.under?.timeline.assembly_timeline && !cues.length ? 'source_clocks_preserved' : 'requires_authored_timeline',
         page_sound_cues: cues.map((cue) => ({ sound: cue.sound, requested_s: cue.at_s, gain: cue.gain, max_s: cue.max_s })),
