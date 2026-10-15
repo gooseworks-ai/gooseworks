@@ -188,6 +188,14 @@ const REPORTED_STOPS: ReadonlyMap<string, string> = new Map([
   ['piece_lost', 'piece_lost'],
 ]);
 
+/**
+ * The card's notes while a custom video waits on its maker's agent (plain words, at most 200
+ * characters, never a path). The run is still on: the same command resumes it.
+ */
+export const WAITING_FOR_SOURCE_REVIEW = 'Waiting for the new clips to be reviewed before the edit goes on';
+export const WAITING_FOR_CONTENT_REVIEW = 'Waiting for the finished video’s picture and sound review before it is sent';
+export const WAITING_FOR_MEASURED_FIX = 'The finished video failed a sound or picture measurement and is being fixed before it is sent';
+
 /** At most this many warnings go up with the video, for its delivery summary. */
 const MAX_SENT_WARNINGS = 6;
 
@@ -782,6 +790,19 @@ class Maker {
     void this.reporter.fail({ step: step.slice(0, 60), code: FAILURE_CODE.test(code) ? code : 'change_request', detail: detail.trim().slice(0, 2000), ...(fromPart === undefined ? {} : { from_part: fromPart }) });
   }
 
+  /**
+   * A stop that waits on a review or a fix the agent makes: before the kit exits, the line hears a
+   * running report with a plain note, so the card says what it waits for instead of going quiet.
+   * Never throws; a report that can't be sent only costs the card its note.
+   */
+  private async reportWaiting(note: string): Promise<void> {
+    if (!this.reporter || this.reporter.refused) return;
+    this.book.note = note;
+    this.reporter.resume();
+    await this.reporter.send(true).catch(() => undefined);
+    await this.reporter.flush().catch(() => undefined);
+  }
+
   private async saveRun(): Promise<void> {
     this.run.updated_at = this.now().toISOString();
     await this.store.writeRun(this.run);
@@ -1113,6 +1134,7 @@ class Maker {
         await writeJson(request, { step: step.id, inputs_revision: creatorPending ? canonicalHash(hashView(inputs)) : voiceInputRevision, outputs: out,
           instructions: creatorPending ? 'Review the actual source clips with moving picture and audio using the existing ingredient review. Save accepted_sources and qualification under this step in source-reviews.json, then resume the same command. Do not alter the approved script, capture or budget. Failed or incomplete source reviews cannot enter assembly.' : 'Listen to every actual source and finished voice track, including word endings and joins. Save voice_reviews under this step in source-reviews.json. Each record needs source_sha256, this inputs_revision, status pass, reviewer, audio_listened true, start_s 0, end_s covering the whole source, and checks script/voice/pronunciation/performance pass. If measured alignment is missing, also supply reviewed_alignments with tag-free spoken timings. No script, voice or model change is authorized by these review records.',
           review_file: sourceReviewPath });
+        await this.reportWaiting(WAITING_FOR_SOURCE_REVIEW);
         throw new KitStop(`A source candidate is saved for review at ${request}. Save its actual review in ${sourceReviewPath}, then resume this command; existing paid pieces are reused.`, 'stop', 'source_review_incomplete');
       }
     }
@@ -1574,8 +1596,8 @@ class Maker {
       await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, measured_duration_ms: measuredDurationMs, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
       if (custom && (measureProblem || measureFailures.length)) {
         this.run.status = 'failed';
-        this.book.note = 'The finished video needs a fix before it is sent';
         await this.saveRun();
+        await this.reportWaiting(WAITING_FOR_MEASURED_FIX);
         this.reporter.close();
         const why = measureProblem ? `The candidate at ${candidate} could not be measured (${measureProblem}), so it wasn’t sent.` : `The candidate at ${candidate} failed its measured checks, so it wasn’t sent. ${measureFailures.join(' ')}`;
         return { status: 'stopped', code: 'final_measure_failed', message: `${why} Fix the edit, then run the same command again; unchanged assets are reused. The measurements are in ${measurePath}.` };
@@ -1591,8 +1613,8 @@ class Maker {
             dimensions: Object.fromEntries(CONTENT_DIMENSIONS.map((name) => [name, { status: 'incomplete', note: 'Not reviewed yet' }])) },
         });
         this.run.status = 'failed';
-        this.book.note = 'The candidate needs its actual picture and audio review';
         await this.saveRun();
+        await this.reportWaiting(WAITING_FOR_CONTENT_REVIEW);
         this.reporter.close();
         return { status: 'stopped', code: 'content_review_incomplete', message: `The candidate is saved at ${candidate}. Its picture/audio review is incomplete. Save the actual review in ${reviewPath}, then resume the same command; unchanged assets are reused.` };
       }

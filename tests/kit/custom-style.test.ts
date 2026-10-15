@@ -13,9 +13,17 @@ import { canonicalHash, canonicalJson } from '../../src/kit/core/canonical';
 import { KitStop } from '../../src/kit/core/errors';
 import type { LoadedPart } from '../../src/kit/core/host';
 import { runLayout, stepFolder } from '../../src/kit/core/paths';
+import { WAITING_FOR_CONTENT_REVIEW, WAITING_FOR_MEASURED_FIX, WAITING_FOR_SOURCE_REVIEW } from '../../src/kit/core/run';
 import { checkStyle, fetchStyle, styleHash } from '../../src/kit/core/style';
 import type { PartContext } from '../../src/kit/part-interface';
-import { API, VIDEO, fakeLine, fileSchema, lineRoute, manifest, realTools, runMake, style as baseStyle, tempHome, testParts } from './harness';
+import { API, VIDEO, fakeLine, fileSchema, lineRoute, manifest, realTools, runMake, style as baseStyle, tempHome, testParts, type Seen } from './harness';
+
+/** The last progress report before the kit exited: a running report (no failure) with this note. */
+function lastProgress(seen: Seen[]) {
+  const reports = lineRoute(seen, '/progress');
+  expect(reports.every((r) => r.body.failure === undefined)).toBe(true);
+  return reports[reports.length - 1].body;
+}
 
 const ffmpeg = process.env.TEST_FFMPEG || 'ffmpeg';
 const withFfmpeg = spawnSync(ffmpeg, ['-version'], { stdio: 'ignore' }).status === 0 ? it : it.skip;
@@ -289,6 +297,8 @@ describe('a reviewed custom video', () => {
     const stopped = await runMake({ home, line: first, parts, tools });
     expect([stopped.status, stopped.code]).toEqual(['stopped', 'content_review_incomplete']);
     expect(lineRoute(first.seen, '/upload')).toHaveLength(0);
+    // The line hears the run waits on its review, so the card doesn't go quiet.
+    expect(lastProgress(first.seen).note).toBe(WAITING_FOR_CONTENT_REVIEW);
     const final = runLayout(home, VIDEO).final;
     const request = JSON.parse(readFileSync(path.join(final, 'review-request.json'), 'utf8'));
     expect(request.template.capabilities).toEqual({ audio: 'measured', motion: 'measured' });
@@ -381,7 +391,29 @@ describe('a reviewed custom video', () => {
     expect(stopped.message).toMatch(/tone only: .*0\.0–2\.0 s/);
     expect(stopped.message).toMatch(/frozen picture: The picture is frozen/);
     expect(lineRoute(line.seen, '/upload')).toHaveLength(0);
+    expect(lastProgress(line.seen).note).toBe(WAITING_FOR_MEASURED_FIX);
     const measured = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'final-measure.json'), 'utf8'));
     expect(measured.checks.filter((c: { result: string }) => c.result === 'fail').map((c: { id: string }) => c.id)).toEqual(['tone_only', 'frozen_picture']);
   }, 60_000);
+});
+
+describe('a source review stop', () => {
+  it('tells the line the run waits on the review, without reporting a failure', async () => {
+    const home = tempHome();
+    const parts = testParts({
+      clip: {
+        inputs: { type: 'object', additionalProperties: false, required: ['scenes'], properties: { scenes: { type: 'array' }, generation_stage: { enum: ['candidates', 'reviewed_pipeline'] }, accepted_sources: { type: 'array' }, qualification: { type: 'object' } } },
+        outputs: { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object' }, content_review_status: { type: 'string' }, provenance: { type: 'object' } } },
+      },
+      clipRun: (async (inputs: any, ctx: PartContext) => {
+        expect(inputs.generation_stage).toBe('reviewed_pipeline');
+        writeFileSync(path.join(ctx.workDir, 'candidate.mp4'), 'a candidate take');
+        return { video: await ctx.file('candidate.mp4', 'video'), timeline: { duration_s: 5, width: 1080, height: 1920, fps: 30, scenes: [], speech: [] }, content_review_status: 'pending', provenance: { source_content_review: 'pending' } };
+      }) as LoadedPart['run'],
+    });
+    const line = fakeLine();
+    const stopped = await runMake({ home, line, parts });
+    expect([stopped.status, stopped.code]).toEqual(['stopped', 'source_review_incomplete']);
+    expect(lastProgress(line.seen).note).toBe(WAITING_FOR_SOURCE_REVIEW);
+  });
 });
