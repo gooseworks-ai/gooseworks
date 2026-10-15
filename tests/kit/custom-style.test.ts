@@ -3,17 +3,42 @@
 // a subset of its seed style's files, copied byte for byte, under a new
 // manifest. The kit takes it like any other style, refuses it when one byte
 // differs, and on a re-run reuses every finished step, so nothing is paid twice.
+import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { ASSEMBLY_FORMAT, CONTENT_DIMENSIONS } from '../../src/kit/core/assembly-timeline';
 import { canonicalHash, canonicalJson } from '../../src/kit/core/canonical';
 import { KitStop } from '../../src/kit/core/errors';
 import type { LoadedPart } from '../../src/kit/core/host';
 import { runLayout, stepFolder } from '../../src/kit/core/paths';
 import { checkStyle, fetchStyle, styleHash } from '../../src/kit/core/style';
 import type { PartContext } from '../../src/kit/part-interface';
-import { API, VIDEO, fakeLine, fileSchema, lineRoute, manifest, runMake, style as baseStyle, tempHome, testParts } from './harness';
+import { API, VIDEO, fakeLine, fileSchema, lineRoute, manifest, realTools, runMake, style as baseStyle, tempHome, testParts } from './harness';
+
+const ffmpeg = process.env.TEST_FFMPEG || 'ffmpeg';
+const withFfmpeg = spawnSync(ffmpeg, ['-version'], { stdio: 'ignore' }).status === 0 ? it : it.skip;
+
+/** Runs ffmpeg for a fixture; a fixture that can't be encoded fails the test that needs it. */
+function encode(args: string[]): void {
+  const result = spawnSync(ffmpeg, ['-y', '-v', 'error', ...args], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || 'fixture could not be encoded');
+}
+
+/**
+ * A real two-second edit: a moving test picture and a noise bed (sound, not a tone), muxed into the
+ * final. The picture and the bed are its sources, declared in the source-linked timeline.
+ */
+function realEdit(dir: string): { picture: string; bed: string; final: string } {
+  const picture = path.join(dir, 'picture.mp4');
+  const bed = path.join(dir, 'bed.wav');
+  const final = path.join(dir, 'final.mp4');
+  encode(['-f', 'lavfi', '-i', 'testsrc2=s=160x288:r=30:d=2', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', picture]);
+  encode(['-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.3:sample_rate=48000:duration=2', '-ac', '1', bed]);
+  encode(['-i', picture, '-i', bed, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '96k', '-shortest', final]);
+  return { picture, bed, final };
+}
 
 const sha = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 
@@ -40,8 +65,8 @@ const customStyle = {
 };
 
 /** The package as the server writes it: style.json, the copied frame, and a new manifest. */
-function customPackage(frameBytes: Buffer = seedFiles[FRAME]) {
-  const styleBytes = Buffer.from(JSON.stringify(customStyle));
+function customPackage(frameBytes: Buffer = seedFiles[FRAME], pinned: Record<string, unknown> = customStyle) {
+  const styleBytes = Buffer.from(JSON.stringify(pinned));
   const listed = [
     { path: 'style.json', sha256: sha(styleBytes), bytes: styleBytes.length },
     // The manifest lists the seed's bytes; `frameBytes` is what the download actually serves.
@@ -62,7 +87,7 @@ function customPackage(frameBytes: Buffer = seedFiles[FRAME]) {
     expires_at: null,
   };
   served.set(`${API}/pkg/view`, Buffer.from(JSON.stringify({ package: view })));
-  const ref = { style_id: CUSTOM_ID, version: CUSTOM_VERSION, style_hash: styleHash(customStyle), url: `${API}/pkg/view`, sha256: view.sha256 };
+  const ref = { style_id: CUSTOM_ID, version: CUSTOM_VERSION, style_hash: styleHash(pinned), url: `${API}/pkg/view`, sha256: view.sha256 };
   return { ref, served };
 }
 
@@ -113,14 +138,14 @@ describe('a custom style package', () => {
 
 describe('a custom video made on the kit', () => {
   /** The fake line, handing over the custom style and serving its package. */
-  function customLine() {
-    const { ref, served } = customPackage();
+  function customLine(pinned: Record<string, unknown> = customStyle, extraPart = 'frame-finish') {
+    const { ref, served } = customPackage(seedFiles[FRAME], pinned);
     const line = fakeLine({
-      style: customStyle,
+      style: pinned,
       lock: (lock) => ({
         ...lock,
         style: { id: CUSTOM_ID, version: CUSTOM_VERSION },
-        parts: { ...lock.parts, 'frame-finish': { version: '1.0.0', files: {}, models: [], kit: '>=1.0.0' } },
+        parts: { ...lock.parts, [extraPart]: { version: '1.0.0', files: {}, models: [], kit: '>=1.0.0' } },
       }),
       handOver: (handed) => ({ ...handed, plan: { ...handed.plan, style_id: CUSTOM_ID, style_version: CUSTOM_VERSION }, style_package: ref }),
     });
@@ -185,4 +210,105 @@ describe('a custom video made on the kit', () => {
     expect(recordOf('clips').step_hash).toBe(firstClips.step_hash);
     expect(recordOf('finish').status).toBe('done');
   });
+});
+
+describe('a reviewed custom video', () => {
+  const editStyle = {
+    ...baseStyle,
+    id: CUSTOM_ID,
+    version: CUSTOM_VERSION,
+    timeline: [{ id: 'edit', part: { id: 'edit-maker', version: '1.0.0' }, inputs: {} }],
+    layers: { brand: false, captions: false, sound: false, check: true },
+    assets: { fonts: [], frames: [] },
+  };
+
+  function customLine() {
+    const { ref, served } = customPackage(seedFiles[FRAME], editStyle);
+    const line = fakeLine({
+      style: editStyle,
+      lock: (lock) => ({ ...lock, style: { id: CUSTOM_ID, version: CUSTOM_VERSION }, parts: { ...lock.parts, 'edit-maker': { version: '1.0.0', files: {}, models: [], kit: '>=1.0.0' } } }),
+      handOver: (handed) => ({ ...handed, plan: { ...handed.plan, style_id: CUSTOM_ID, style_version: CUSTOM_VERSION }, style_package: ref }),
+    });
+    const inner = line.fetch;
+    const fetchImpl = (async (input: any, init: any = {}) => {
+      const u = new URL(String(input));
+      const data = u.origin === API && u.pathname.startsWith('/pkg/') ? served.get(`${u.origin}${u.pathname}`) : undefined;
+      return data ? new Response(data, { status: 200 }) : inner(input, init);
+    }) as typeof fetch;
+    return { ...line, fetch: fetchImpl };
+  }
+
+  /** The edit step: the real final, its two sources, and the timeline that links them. */
+  function editParts(files: { picture: string; bed: string; final: string }): Record<string, LoadedPart> {
+    const edit: LoadedPart = {
+      source: 'published',
+      dir: '/parts/edit-maker/1.0.0',
+      manifest: manifest('edit-maker', {
+        kind: 'compose',
+        inputs: { type: 'object', additionalProperties: false, properties: {} },
+        outputs: { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object' }, sources: { type: 'array' }, assembly_timeline: { type: 'object' } } },
+      }),
+      run: (async (_inputs: any, ctx: PartContext) => {
+        copyFileSync(files.picture, path.join(ctx.workDir, 'picture.mp4'));
+        copyFileSync(files.bed, path.join(ctx.workDir, 'bed.wav'));
+        copyFileSync(files.final, path.join(ctx.workDir, 'final.mp4'));
+        const picture = await ctx.file('picture.mp4', 'video');
+        const bed = await ctx.file('bed.wav', 'audio');
+        return {
+          video: await ctx.file('final.mp4', 'video'),
+          timeline: { duration_s: 2, width: 160, height: 288, fps: 30, scenes: [], speech: [] },
+          sources: [picture, bed],
+          assembly_timeline: {
+            format: ASSEMBLY_FORMAT,
+            creative_contract_revision: 'c'.repeat(64),
+            duration_ms: 2000,
+            speech_mode: 'none',
+            soundtrack_modes: ['music'],
+            segments: [{ id: 'seg-1', scene_id: 's1', start_ms: 0, end_ms: 2000, video: { asset_id: 'picture', sha256: picture.sha256, path: picture.path, in_ms: 0, out_ms: 2000, speed: 1 }, speech_mode: 'none', depicts_speech: false, native_audio: 'muted' }],
+            audio_cues: [{ id: 'bed', role: 'music', source: { asset_id: 'bed', sha256: bed.sha256, in_ms: 0, out_ms: 2000, speed: 1 }, start_ms: 0, end_ms: 2000, gain_db: 0, loop: false }],
+            pauses: [],
+            required_cue_ids: ['bed'],
+          },
+        };
+      }) as LoadedPart['run'],
+    };
+    return { ...testParts(), 'edit-maker': edit };
+  }
+
+  withFfmpeg('uploads once its saved review matches the exact final', async () => {
+    const home = tempHome();
+    const files = realEdit(mkdtempSync(path.join(os.tmpdir(), 'c1-real-edit-')));
+    const parts = editParts(files);
+    const tools = realTools();
+
+    const first = customLine();
+    const stopped = await runMake({ home, line: first, parts, tools });
+    expect([stopped.status, stopped.code]).toEqual(['stopped', 'content_review_incomplete']);
+    expect(lineRoute(first.seen, '/upload')).toHaveLength(0);
+    const final = runLayout(home, VIDEO).final;
+    const request = JSON.parse(readFileSync(path.join(final, 'review-request.json'), 'utf8'));
+    expect(request.template.capabilities).toEqual({ audio: 'measured', motion: 'measured' });
+
+    // The reviewer fills the template in for these exact bytes and the same command resumes.
+    writeFileSync(path.join(final, 'content-review.json'), JSON.stringify({
+      ...request.template,
+      reviewer: 'Akhil',
+      verdict: 'approved',
+      capabilities: { audio: 'listened', motion: 'watched' },
+      coverage: [{ start_ms: 0, end_ms: request.measured_duration_ms }],
+      unresolved_issues: [{ severity: 'p2', message: 'The noise bed could be quieter.' }],
+      dimensions: Object.fromEntries(CONTENT_DIMENSIONS.map((name) => [name, { status: ['lip_sync', 'voice_performance', 'pronunciation'].includes(name) ? 'not_applicable' : 'pass', note: 'Played end to end with sound.' }])),
+    }));
+    const second = customLine();
+    const done = await runMake({ home, line: second, parts, tools });
+    expect(done).toMatchObject({ status: 'done', final: path.join(final, 'final.mp4') });
+    const [upload] = lineRoute(second.seen, '/upload');
+    expect(upload.body.sha256).toBe(request.output_sha256);
+    const sent = upload.body.manifest;
+    expect(sent.content_review_status).toBe('approved');
+    expect(sent.content_review.capabilities).toEqual({ audio: 'listened', motion: 'watched' });
+    expect(sent.assembly_evidence).toMatchObject({ status: 'complete', revision: request.timeline_revision, output_sha256: request.output_sha256 });
+    // Nothing was made twice: the edit step was reused from the first run.
+    expect(second.pieces).toHaveLength(0);
+  }, 60_000);
 });

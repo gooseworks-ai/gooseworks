@@ -1536,9 +1536,9 @@ class Maker {
           candidate, output_sha256: sha256, measured_duration_ms: measuredDurationMs, timeline_revision: assembly.revision,
           creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
           assembly_issues: assembly.issues, content_review_problems: contentProblems,
-          instructions: 'Play this exact candidate completely at normal speed with sound. Record actual observations and unresolved issues. Save the completed review as content-review.json beside this request, then resume the same video make command. Missing listening or moving-picture access stays incomplete. This is a review declaration, not proof of human attention.',
+          instructions: 'Review this exact candidate from start to end. Record actual observations and unresolved issues (severity P0, P1 or P2; only P2 lets it go up). Save the completed review as content-review.json beside this request, then resume the same video make command. capabilities says how you perceived it: audio is listened only when a person or an audio-capable model heard the whole final, otherwise measured; motion is watched only when the moving picture was actually watched, otherwise measured. A measured review is accepted only when the final measurements pass (final-measure.json). Never claim listened or watched that did not happen. Fields not in the template are refused.',
           template: { output_sha256: sha256, timeline_revision: assembly.revision, creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
-            reviewer: '', verdict: 'incomplete', capabilities: { audio_perception: false, motion_perception: false }, coverage: [], unresolved_issues: [],
+            reviewer: '', verdict: 'incomplete', capabilities: { audio: 'measured', motion: 'measured' }, coverage: [], unresolved_issues: [],
             dimensions: Object.fromEntries(CONTENT_DIMENSIONS.map((name) => [name, { status: 'incomplete', note: 'Not reviewed yet' }])) },
         });
         this.run.status = 'failed';

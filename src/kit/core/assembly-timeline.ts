@@ -71,16 +71,35 @@ export interface AssemblyCheck {
   /** Legacy intent is retained for review, never inferred from transcript absence. */
   legacy?: Record<string, unknown>;
 }
+/** How the reviewer perceived the sound: heard it (a person or an audio-capable model), or relied on the measurements. */
+export type AudioPerception = 'listened' | 'measured';
+/** How the reviewer perceived the moving picture: watched it, or relied on the measurements. */
+export type MotionPerception = 'watched' | 'measured';
+export const AUDIO_PERCEPTIONS: readonly AudioPerception[] = ['listened', 'measured'];
+export const MOTION_PERCEPTIONS: readonly MotionPerception[] = ['watched', 'measured'];
+/**
+ * `capabilities` (fix-forward contract section 2). The old boolean shape still parses for one release:
+ * `true` reads as listened/watched; `false` is refused.
+ */
+export type ReviewCapabilities =
+  | { audio: AudioPerception; motion: MotionPerception }
+  | { audio_perception: boolean; motion_perception: boolean };
 export interface FinalContentReview {
   output_sha256: string;
   timeline_revision: string;
   creative_contract_revision: string;
   reviewer: string;
   verdict: 'approved' | 'needs_revision' | 'incomplete';
-  capabilities: { audio_perception: boolean; motion_perception: boolean };
+  capabilities: ReviewCapabilities;
   coverage: Array<{ start_ms: number; end_ms: number }>;
-  unresolved_issues: Array<{ severity: 'P0' | 'P1' | 'P2'; message: string }>;
+  /** Matched case-insensitively: only P2 lets the upload go on; P0, P1, blocker and anything unknown block. */
+  unresolved_issues: Array<{ severity: string; message: string }>;
   dimensions: Record<string, { status: 'pass' | 'needs_revision' | 'incomplete' | 'not_applicable'; note: string }>;
+}
+/** What a measured review leans on: the kit's own final measurements of the same bytes. */
+export interface FinalMeasureSummary {
+  output_sha256: string;
+  checks: Array<{ id: string; result: 'pass' | 'fail' | 'not_applicable' }>;
 }
 export const CONTENT_DIMENSIONS = ['reference_and_concept', 'brand_and_product', 'scale_and_geometry', 'action_and_continuity', 'lip_sync', 'voice_performance', 'pronunciation', 'sound_and_silence', 'pacing_and_joins', 'camera_and_lighting', 'overlays'] as const;
 
@@ -217,15 +236,92 @@ export function measuredFinalDurationMs(seconds: number | null | undefined): num
   return Number.isSafeInteger(duration) ? duration : null;
 }
 
-/** Omit measurement only for preflight; final acceptance needs the measured duration. */
-export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck, measuredDurationMs?: number | null): string[] {
+const REVIEW_FIELDS = ['output_sha256', 'timeline_revision', 'creative_contract_revision', 'reviewer', 'verdict', 'capabilities', 'coverage', 'unresolved_issues', 'dimensions'] as const;
+const CAPABILITY_FIELDS = ['audio', 'motion', 'audio_perception', 'motion_perception'] as const;
+/** At most this many unresolved issues are named one by one; the rest are counted. */
+const NAMED_ISSUES = 10;
+
+/** Every field the review format doesn't have, by its path, so the reviewer knows exactly what to remove. */
+function unknownReviewFields(r: Record<string, unknown>): string[] {
+  const extra: string[] = [];
+  const check = (value: unknown, allowed: readonly string[], at: string) => {
+    if (!object(value)) return;
+    for (const key of Object.keys(value)) if (!allowed.includes(key)) extra.push(`${at}${key}`);
+  };
+  check(r, REVIEW_FIELDS, '');
+  check(r.capabilities, CAPABILITY_FIELDS, 'capabilities.');
+  if (Array.isArray(r.coverage)) r.coverage.forEach((w, i) => check(w, ['start_ms', 'end_ms'], `coverage[${i}].`));
+  if (Array.isArray(r.unresolved_issues)) r.unresolved_issues.forEach((issue, i) => check(issue, ['severity', 'message'], `unresolved_issues[${i}].`));
+  if (object(r.dimensions)) {
+    check(r.dimensions, CONTENT_DIMENSIONS, 'dimensions.');
+    for (const name of CONTENT_DIMENSIONS) check(r.dimensions[name], ['status', 'note'], `dimensions.${name}.`);
+  }
+  return extra;
+}
+
+/**
+ * The review's perception, in the new shape. The old booleans are aliases: `true` reads as
+ * listened/watched and `false` is refused, so a review that admits it could not hear or see never passes.
+ */
+export function reviewCapabilities(raw: unknown): { audio: AudioPerception | null; motion: MotionPerception | null; problems: string[] } {
+  const problems: string[] = [];
+  if (!object(raw)) return { audio: null, motion: null, problems: ['capabilities must say how the sound and the moving picture were reviewed: audio listened or measured, motion watched or measured'] };
+  const axis = <T extends string>(name: 'audio' | 'motion', legacy: 'audio_perception' | 'motion_perception', allowed: readonly T[], heard: T): T | null => {
+    const current = raw[name];
+    const old = raw[legacy];
+    if (current !== undefined && old !== undefined) { problems.push(`capabilities has both ${name} and ${legacy}; keep only ${name}`); return null; }
+    if (current !== undefined) {
+      if (typeof current === 'string' && (allowed as readonly string[]).includes(current)) return current as T;
+      problems.push(`capabilities.${name} must be ${allowed.join(' or ')}`);
+      return null;
+    }
+    if (old === true) return heard;
+    if (old === false) { problems.push(`capabilities.${legacy} is false: the ${name === 'audio' ? 'sound' : 'moving picture'} was not reviewed. Review it, or record ${name}: "measured" and rely on passing final measurements`); return null; }
+    if (old !== undefined) { problems.push(`capabilities.${legacy} must be true, or use ${name}: ${allowed.join(' | ')}`); return null; }
+    problems.push(`capabilities.${name} is missing: record ${allowed.join(' or ')}`);
+    return null;
+  };
+  const audio = axis('audio', 'audio_perception', AUDIO_PERCEPTIONS, 'listened');
+  const motion = axis('motion', 'motion_perception', MOTION_PERCEPTIONS, 'watched');
+  return { audio, motion, problems };
+}
+
+/** One blocking issue, named: P0, P1 and blocker block as they are, anything unknown blocks as P1. */
+function blockingIssues(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return ['unresolved_issues must be a list (an empty list when nothing is open)'];
+  const blocking: string[] = [];
+  raw.forEach((issue, index) => {
+    const message = object(issue) && text(issue.message) ? issue.message.trim().slice(0, 200) : '';
+    const severity = object(issue) && typeof issue.severity === 'string' ? issue.severity.trim().toLowerCase() : '';
+    if (severity === 'p2' && message) return;
+    const label = severity === 'p0' ? 'P0' : severity === 'p1' ? 'P1' : severity === 'blocker' ? 'blocker'
+      : `issue with unknown severity ${JSON.stringify(object(issue) ? issue.severity ?? null : issue)} (counts as P1)`;
+    blocking.push(message ? `Unresolved ${label}${label.startsWith('issue') ? '' : ' issue'}: ${message}` : `unresolved_issues[${index}] needs a severity (P0, P1 or P2) and a message; it counts as P1 until then`);
+  });
+  if (blocking.length > NAMED_ISSUES) return [...blocking.slice(0, NAMED_ISSUES), `${blocking.length - NAMED_ISSUES} more unresolved issues block the upload`];
+  return blocking;
+}
+
+/**
+ * Omit measurement only for preflight; final acceptance needs the measured duration. A `measured`
+ * perception is accepted only with `finalMeasure` of the same bytes in which every check passed
+ * (or does not apply); the server adds its own frame judge on top.
+ */
+export function finalContentReviewProblems(raw: unknown, outputSha: string, assembly: AssemblyCheck, measuredDurationMs?: number | null, finalMeasure?: FinalMeasureSummary | null): string[] {
   if (!object(raw)) return ['Exact-final audiovisual content review is missing'];
   const r = raw as unknown as FinalContentReview;
   const problems: string[] = [];
+  for (const field of unknownReviewFields(raw)) problems.push(`content_review has an unknown field "${field}". Remove it, then resume`);
   if (assembly.status !== 'complete' || !assembly.timeline) problems.push('Assembly evidence is incomplete');
   if (r.output_sha256 !== outputSha || r.timeline_revision !== assembly.revision || r.creative_contract_revision !== assembly.timeline?.creative_contract_revision) problems.push('Content review belongs to different final, timeline or approved intent bytes');
   if (r.verdict !== 'approved' || !text(r.reviewer)) problems.push('Content review is not approved by an identified reviewer');
-  if (!r.capabilities?.audio_perception || !r.capabilities?.motion_perception) problems.push('Actual audio and continuous-motion review capability is missing');
+  const perceived = reviewCapabilities(r.capabilities);
+  problems.push(...perceived.problems);
+  if (perceived.audio === 'measured' || perceived.motion === 'measured') {
+    const measuredPass = !!finalMeasure && finalMeasure.output_sha256 === outputSha && Array.isArray(finalMeasure.checks) && finalMeasure.checks.length > 0
+      && finalMeasure.checks.every((c) => c.result === 'pass' || c.result === 'not_applicable');
+    if (!measuredPass) problems.push('A measured review needs passing final measurements of these exact bytes (final-measure.json); fix the failing checks or review by listening and watching');
+  }
   const measurementRequired = measuredDurationMs !== undefined;
   const measured = ms(measuredDurationMs) && measuredDurationMs > 0 ? measuredDurationMs : null;
   if (measurementRequired && measured === null) problems.push('The final playback duration could not be measured');
@@ -246,7 +342,7 @@ export function finalContentReviewProblems(raw: unknown, outputSha: string, asse
     missing += Math.max(0, duration - end);
     if (!r.coverage.length || missing > 1) problems.push(`Playback and listening must cover the complete ${duration}ms final (only 1ms total timestamp rounding is allowed)`);
   }
-  if (!Array.isArray(r.unresolved_issues) || r.unresolved_issues.some((i) => !i || i.severity === 'P0' || i.severity === 'P1')) problems.push('Required unresolved issues remain');
+  problems.push(...blockingIssues(r.unresolved_issues));
   for (const name of CONTENT_DIMENSIONS) {
     const dimension = r.dimensions?.[name];
     if (!dimension || !text(dimension.note) || !['pass', 'not_applicable'].includes(dimension.status)) problems.push(`${name}: required content review is incomplete or needs revision`);
