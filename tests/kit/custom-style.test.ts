@@ -226,10 +226,10 @@ describe('a reviewed custom video', () => {
     assets: { fonts: [], frames: [] },
   };
 
-  function customLine() {
-    const { ref, served } = customPackage(seedFiles[FRAME], editStyle);
+  function customLine(pinned: Record<string, unknown> = editStyle) {
+    const { ref, served } = customPackage(seedFiles[FRAME], pinned);
     const line = fakeLine({
-      style: editStyle,
+      style: pinned,
       lock: (lock) => ({ ...lock, style: { id: CUSTOM_ID, version: CUSTOM_VERSION }, parts: { ...lock.parts, 'edit-maker': { version: '1.0.0', files: {}, models: [], kit: '>=1.0.0' } } }),
       handOver: (handed) => ({ ...handed, plan: { ...handed.plan, style_id: CUSTOM_ID, style_version: CUSTOM_VERSION }, style_package: ref }),
     });
@@ -322,6 +322,53 @@ describe('a reviewed custom video', () => {
     expect(assemblyTimelineRevision(sent.assembly_timeline)).toBe(request.timeline_revision);
     // Nothing was made twice: the edit step was reused from the first run.
     expect(second.pieces).toHaveLength(0);
+  }, 60_000);
+
+  (withFfmpeg === it ? it.each : it.skip.each)(['inside its timeline input', 'as a top-level input'])('passes the timeline to a sound layer that declares it %s, takes its cues back, and never takes one from the check', async (shape) => {
+    const topLevel = shape === 'as a top-level input';
+    const home = tempHome();
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'c1-linked-sound-'));
+    const files = realEdit(dir);
+    const popFile = path.join(dir, 'pop.wav');
+    encode(['-f', 'lavfi', '-i', 'anoisesrc=color=white:amplitude=0.5:sample_rate=48000:duration=0.3', '-ac', '1', popFile]);
+    const soundStyle = { ...editStyle, layers: { ...editStyle.layers, sound: true } };
+    type Linked = { audio_cues: Array<{ id: string }> };
+    const seen: Array<{ assembly_timeline?: Linked; timeline?: { assembly_timeline?: Linked } }> = [];
+    const declared = { assembly_timeline: { type: 'object' } };
+    const layerInputs = { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object', ...(topLevel ? {} : { properties: declared }) }, ...(topLevel ? declared : {}), brand: { type: 'object' }, expect: { type: 'object' }, words: fileSchema('json') } };
+    const parts = editParts(files);
+    parts['sound-layer'] = {
+      source: 'published',
+      dir: '/parts/sound-layer/1.0.0',
+      manifest: manifest('sound-layer', { kind: 'mix', layer: 'sound', inputs: layerInputs, outputs: { type: 'object', additionalProperties: false, required: ['video', 'timeline'], properties: { video: fileSchema('video'), timeline: { type: 'object' }, source_files: { type: 'array' }, assembly_timeline: { type: 'object' } } } }),
+      run: (async (inputs: any, ctx: PartContext) => {
+        seen.push(inputs);
+        copyFileSync(inputs.video.path, path.join(ctx.workDir, 'mixed.mp4'));
+        copyFileSync(popFile, path.join(ctx.workDir, 'pop.wav'));
+        const pop = await ctx.file('pop.wav', 'audio');
+        const linked = topLevel ? inputs.assembly_timeline : inputs.timeline.assembly_timeline;
+        const updated = { ...linked, soundtrack_modes: ['music', 'sfx'], audio_cues: [...linked.audio_cues, { id: 'pop', role: 'sfx', source: { asset_id: 'pop', sha256: pop.sha256, in_ms: 0, out_ms: 300, speed: 1 }, start_ms: 900, end_ms: 1200, gain_db: -6, loop: false }] };
+        return {
+          video: await ctx.file('mixed.mp4', 'video'),
+          timeline: topLevel ? inputs.timeline : { ...inputs.timeline, assembly_timeline: updated },
+          ...(topLevel ? { assembly_timeline: updated } : {}),
+          source_files: [pop],
+        };
+      }) as LoadedPart['run'],
+    };
+    parts['check-layer'] = {
+      ...parts['check-layer'],
+      manifest: manifest('check-layer', { kind: 'check', layer: 'check', inputs: layerInputs, outputs: { type: 'object', additionalProperties: false, required: ['verdict'], properties: { verdict: { type: 'object' }, timeline: { type: 'object' } } } }),
+      run: (async () => ({ verdict: { pass: true, checks: [] }, timeline: { duration_s: 9, width: 1, height: 1, fps: 1, scenes: [], speech: [], assembly_timeline: { format: 'not-a-timeline' } } })) as LoadedPart['run'],
+    };
+    const stopped = await runMake({ home, line: customLine(soundStyle), parts, tools: realTools() });
+    expect([stopped.status, stopped.code]).toEqual(['stopped', 'content_review_incomplete']);
+    expect((topLevel ? seen[0].assembly_timeline : seen[0].timeline?.assembly_timeline)?.audio_cues.map((c) => c.id)).toEqual(['bed']);
+    if (topLevel) expect(seen[0].timeline?.assembly_timeline).toBeUndefined();
+    const evidence = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'assembly-evidence.json'), 'utf8'));
+    expect(evidence.status).toBe('complete');
+    expect(evidence.timeline.audio_cues.map((c: { id: string }) => c.id)).toEqual(['bed', 'pop']);
+    expect(evidence.timeline.soundtrack_modes).toEqual(['music', 'sfx']);
   }, 60_000);
 
   withFfmpeg('never sends a final that fails its measurements, and says where', async () => {

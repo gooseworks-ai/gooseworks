@@ -24,7 +24,7 @@ function hasOption(name: string, flag: string): boolean {
 }
 
 const coreRun = readFileSync(path.join(__dirname, '../../src/kit/core/run.ts'), 'utf8');
-const sourceRenderer = JSON.parse(readFileSync(path.join(__dirname, '../../src/kit/maker/parts/html-frames/1.3.0/part.json'), 'utf8'));
+const sourceRenderer = JSON.parse(readFileSync(path.join(__dirname, '../../src/kit/maker/parts/html-frames/1.3.1/part.json'), 'utf8'));
 
 /** Command features and the separately advertised runtime contracts. */
 const FEATURE_CHECKS: Record<string, () => boolean> = {

@@ -1038,21 +1038,33 @@ class Maker {
         out.timeline = ordinary;
       }
     };
-    const exposeAssemblyToDeclaredSchema = (loaded: LoadedPart, inputs: Record<string, unknown>): void => {
-      if (!assemblyRaw) return;
+    /**
+     * The declaration rule: a part gets the source-linked timeline only where its input schema
+     * declares `assembly_timeline`, as a top-level input or inside an object input (its `timeline`,
+     * `under_timeline` or any other, after following local `$ref`s). Older parts never see it.
+     * Returns whether the part declared it, so its answer may carry the timeline back.
+     */
+    const exposeAssemblyToDeclaredSchema = (loaded: LoadedPart, inputs: Record<string, unknown>): boolean => {
       const root = loaded.manifest.inputs as unknown as Record<string, unknown>;
-      for (const key of ['timeline', 'under_timeline']) {
-        const value = inputs[key];
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-        let schema = (root.properties as Record<string, unknown> | undefined)?.[key] as Record<string, unknown> | undefined;
+      const declares = (node: unknown): boolean => {
+        let schema = node as Record<string, unknown> | undefined;
         for (let depth = 0; depth < 8 && typeof schema?.$ref === 'string' && schema.$ref.startsWith('#/'); depth++) {
           let target: unknown = root;
           for (const name of schema.$ref.slice(2).split('/')) target = target && typeof target === 'object' ? (target as Record<string, unknown>)[name.replace(/~1/g, '/').replace(/~0/g, '~')] : undefined;
           schema = target && typeof target === 'object' ? target as Record<string, unknown> : undefined;
         }
         const properties = schema?.properties as Record<string, unknown> | undefined;
-        if (properties && Object.prototype.hasOwnProperty.call(properties, 'assembly_timeline')) inputs[key] = { ...value, assembly_timeline: assemblyRaw };
+        return !!properties && Object.prototype.hasOwnProperty.call(properties, 'assembly_timeline');
+      };
+      let declared = declares(root);
+      if (declared && assemblyRaw) inputs.assembly_timeline = assemblyRaw;
+      const properties = (root.properties ?? {}) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(inputs)) {
+        if (key === 'assembly_timeline' || !value || typeof value !== 'object' || Array.isArray(value) || isFileRef(value) || !declares(properties[key])) continue;
+        declared = true;
+        if (assemblyRaw) inputs[key] = { ...value, assembly_timeline: assemblyRaw };
       }
+      return declared;
     };
     const fixes = this.run.fixes ?? [];
     const fixed = (id: string, inputs: Record<string, unknown>) => {
@@ -1122,12 +1134,17 @@ class Maker {
       const loaded = this.parts.get(id)!;
       const ref = { id: loaded.manifest.id, version: loaded.manifest.version };
       const { inputs, round } = fixed(id, { video: cut, timeline, brand: this.brand, expect: expectationOf(this.style.style, this.handed.plan), ...(words ? { words } : {}) });
-      exposeAssemblyToDeclaredSchema(loaded, inputs);
+      const linked = exposeAssemblyToDeclaredSchema(loaded, inputs);
       const out = await this.runStep({ id, ref, loaded, inputs, models: this.modelsOf(ref, loaded), fix: round }, hashes);
-      acceptTimeline(out);
       if (slot === 'check') {
+        // The check judges the video; it never replaces its timeline or its source-linked edit.
+        collectFiles(out);
         verdict = out.verdict as CheckVerdict;
         continue;
+      }
+      acceptTimeline(out);
+      if (assemblyRaw && !linked && (slot === 'sound' || slot === 'captions')) {
+        this.deps.log.write('warn', 'a layer cannot update the source-linked timeline', { step: id, part: `${ref.id}@${ref.version}`, note: 'its changes are checked only by the final measurements' });
       }
       const video = out.video;
       if (!isFileRef(video) || video.media !== 'video') {

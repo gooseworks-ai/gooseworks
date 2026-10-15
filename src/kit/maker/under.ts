@@ -262,6 +262,11 @@ function fitZone<Z extends { x: number; y: number; w: number; h: number }>(zone:
   return { ...zone, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) };
 }
 
+/** How far a source-linked video's length may move when drawn over: max(1 ms, one frame at the output fps), in seconds. */
+export function linkedLengthTolerance(fps: number): number {
+  return Math.max(0.001, Number.isFinite(fps) && fps > 0 ? 1 / fps : 0);
+}
+
 /**
  * The timeline of a video drawn over: the video's own scenes, speech, end card
  * and safe zones carried through (cut to the new length, zones moved to the
@@ -275,7 +280,8 @@ export function passThroughTimeline(
   scenes?: Array<{ id: string; start_s: number; end_s: number }>,
 ): Timeline {
   const end = out.duration_s;
-  if (under.assembly_timeline && Math.abs(end - under.duration_s) > 0.001) {
+  // The encoder lands on whole output frames, so a source-linked length may move by up to one frame.
+  if (under.assembly_timeline && Math.abs(end - under.duration_s) > linkedLengthTolerance(out.fps) + 1e-9) {
     throw new Error('Changing the source-linked picture length requires a revised assembly timeline; speech and source clocks cannot be silently clamped');
   }
   const cut = <T extends { start_s: number; end_s: number }>(items: T[]) =>
