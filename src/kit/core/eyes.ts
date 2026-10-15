@@ -385,6 +385,12 @@ export async function lookAtFinal(opts: {
   beforeSound?: string;
   products: Product[];
   signal: AbortSignal;
+  /**
+   * A custom video: its whole sound needs review unless the plan is silent on purpose. A template
+   * video keeps the earlier rule (audio review only when speech is planned) and never gets the
+   * review-audio warning, so a silent template is not flagged.
+   */
+  custom?: boolean;
   /** Replaces ffmpeg, for tests. */
   grab?: Grab;
 }): Promise<Eyes> {
@@ -424,7 +430,7 @@ export async function lookAtFinal(opts: {
   const unreadable_tiles = frames.filter((frame) => !frame.frame).map((frame) => frame.tile.tile);
   if (missing_scenes.length || unreadable_tiles.length) warnings.push({ check: 'review_coverage', message: 'The frame review is incomplete. Inspect the missing scenes in the actual video before calling it ready.' });
   const assembly = opts.timeline.assembly_timeline;
-  const required = !(assembly?.speech_mode === 'none' && assembly.soundtrack_modes.includes('intentional_silence'));
+  const required = opts.custom ? !(assembly?.speech_mode === 'none' && assembly.soundtrack_modes.includes('intentional_silence')) : Boolean(opts.timeline.speech?.length);
   let audio: ReviewAudio = { required, final_mix: null, before_sound: null, windows: required ? audioReviewWindows(opts.timeline) : [] };
   if (required) {
     const audioDir = path.join(dir, 'review-audio');
@@ -436,7 +442,7 @@ export async function lookAtFinal(opts: {
     const pauses = assembly?.pauses ?? [];
     audio = { ...audio, measurement_status: quiet === null ? 'incomplete' : 'measured',
       ...(quiet ? { measured_near_silence: quiet, unplanned_quiet_candidates: quiet.filter((q) => !pauses.some((p) => p.start_ms / 1000 <= q.start_s + 0.05 && p.end_ms / 1000 >= q.end_s - 0.05)) } : {}) };
-    if (!final_mix || (opts.beforeSound && !before_sound)) warnings.push({ check: 'review_audio', message: 'Audio review evidence could not be extracted. Listen to the actual final and source takes before calling speech clean.' });
+    if (opts.custom && (!final_mix || (opts.beforeSound && !before_sound))) warnings.push({ check: 'review_audio', message: 'Audio review evidence could not be extracted. Listen to the actual final and source takes before calling speech clean.' });
   }
   const output = await hashFile(opts.final).catch(() => null);
   const eyes: Eyes = { contact_sheet: sheet, tiles, warnings, look_for: LOOK_FOR, ...(output ? { output_sha256: output.sha256 } : {}), coverage: { complete: Boolean(sheet) && !missing_scenes.length && !unreadable_tiles.length, missing_scenes, unreadable_tiles }, audio, content_review_status: 'incomplete', review_capability: { audio_perception: false, motion_perception: false } };

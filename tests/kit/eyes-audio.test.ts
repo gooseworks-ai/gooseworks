@@ -48,9 +48,13 @@ withFfmpeg('keeps a failed audio extraction explicit when the timeline promises 
   try {
     const final = path.join(dir, 'final.mp4');
     makeVideo(final);
-    const eyes = await lookAtFinal({ ffmpeg, final, timeline, products: [], signal: new AbortController().signal });
+    const eyes = await lookAtFinal({ ffmpeg, final, timeline, products: [], signal: new AbortController().signal, custom: true });
     expect(eyes.audio).toMatchObject({ required: true, final_mix: null });
     expect(eyes.warnings.some((warning) => warning.check === 'review_audio')).toBe(true);
+    // A template keeps the audio required for its planned speech, but sends no review warning.
+    const template = await lookAtFinal({ ffmpeg, final, timeline, products: [], signal: new AbortController().signal });
+    expect(template.audio).toMatchObject({ required: true, final_mix: null });
+    expect(template.warnings.some((warning) => warning.check === 'review_audio')).toBe(false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

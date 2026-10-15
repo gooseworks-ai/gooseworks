@@ -1739,6 +1739,7 @@ class Maker {
         final,
         timeline: made.timeline,
         beforeSound: made.beforeSound,
+        custom: this.style.style.id.startsWith('custom-'),
         products: products.map((p) => ({
           ...(typeof p?.name === 'string' ? { name: p.name } : {}),
           photos: (Array.isArray(p?.images) ? p.images : []).filter((ref): ref is FileRef => isFileRef(ref) && ref.media === 'image').map((ref) => ref.path),
