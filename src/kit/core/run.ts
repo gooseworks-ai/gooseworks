@@ -36,7 +36,7 @@ import { LineError, lineWords, linkedSignal, sleep as realSleep, type Sleep, typ
 import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAnswer, type HandedVideo, type HandOver, type ProgressFailure, type ProgressStep, type UploadCheck, type CheckReason } from '../line/types';
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
-import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline, portableTimeline } from './assembly-timeline';
+import { CONTENT_DIMENSIONS, MAX_ZOOM, assemblyPictureSources, cropZoom, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline, portableTimeline } from './assembly-timeline';
 import { FINAL_MEASURE_FORMAT, finalMeasureFailures, measureFinal, type FinalMeasure } from './final-measure';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
@@ -1199,7 +1199,11 @@ class Maker {
         if (sourcePictures.length && !actual.has_video) throw new KitStop(`A picture source has no readable picture: ${source.asset_id}`, 'change_request', 'output_invalid');
         for (const { source: shown } of sourcePictures) {
           const crop = shown.crop;
-          if (crop && (!actual.width || !actual.height || crop.x + crop.w > actual.width || crop.y + crop.h > actual.height)) throw new KitStop(`A picture crop is outside its ${actual.width ?? '?'}×${actual.height ?? '?'} source: ${source.asset_id}`, 'change_request', 'output_invalid');
+          if (!crop) continue;
+          if (!actual.width || !actual.height || crop.x + crop.w > actual.width || crop.y + crop.h > actual.height) throw new KitStop(`A picture crop is outside its ${actual.width ?? '?'}×${actual.height ?? '?'} source: ${source.asset_id}`, 'change_request', 'output_invalid');
+          // Zoom, not resolution: scaling the whole frame up is fine, cropping in past 1.5x is not.
+          const zoom = cropZoom(crop, { width: actual.width, height: actual.height }, timeline);
+          if (zoom > MAX_ZOOM + 1e-9) throw new KitStop(`A picture crop zooms in ${zoom.toFixed(2)}x, over the ${MAX_ZOOM}x limit: ${source.asset_id}. Use a wider or sharper source.`, 'change_request', 'output_invalid');
         }
         if (audible.some((a) => a.sha256 === source.sha256 && a.asset_id === source.asset_id) && !actual.has_audio) throw new KitStop(`An audio source has no readable audio: ${source.asset_id}`, 'change_request', 'output_invalid');
         // A still is intentionally held; only moving/audio sources have a media clock.
@@ -1583,7 +1587,7 @@ class Maker {
         if (measuredDurationMs === null || !this.tools.ffmpeg.path) measureProblem = 'its length could not be read';
         else {
           try {
-            finalMeasure = await measureFinal({ ffmpeg: this.tools.ffmpeg.path, file: candidate, outputSha256: sha256, durationMs: measuredDurationMs, hasAudio, timeline: assembly.timeline, scenes: current.timeline.scenes ?? [], signal: this.stop.signal });
+            finalMeasure = await measureFinal({ ffmpeg: this.tools.ffmpeg.path, file: candidate, outputSha256: sha256, durationMs: measuredDurationMs, hasAudio, timeline: assembly.timeline, signal: this.stop.signal });
           } catch (error) {
             measureProblem = 'the video tools could not read it';
             this.deps.log.write('warn', 'the final could not be measured', { error: error instanceof Error ? error.message : String(error) });

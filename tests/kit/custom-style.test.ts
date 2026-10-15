@@ -251,7 +251,7 @@ describe('a reviewed custom video', () => {
   }
 
   /** The edit step: the real final, its two sources, and the timeline that links them. */
-  function editParts(files: { picture: string; bed: string; final: string }): Record<string, LoadedPart> {
+  function editParts(files: { picture: string; bed: string; final: string }, tweak: (timeline: any) => void = () => undefined): Record<string, LoadedPart> {
     const edit: LoadedPart = {
       source: 'published',
       dir: '/parts/edit-maker/1.0.0',
@@ -266,7 +266,7 @@ describe('a reviewed custom video', () => {
         copyFileSync(files.final, path.join(ctx.workDir, 'final.mp4'));
         const picture = await ctx.file('picture.mp4', 'video');
         const bed = await ctx.file('bed.wav', 'audio');
-        return {
+        const made = {
           video: await ctx.file('final.mp4', 'video'),
           timeline: { duration_s: 2, width: 160, height: 288, fps: 30, scenes: [], speech: [] },
           sources: [picture, bed],
@@ -282,6 +282,8 @@ describe('a reviewed custom video', () => {
             required_cue_ids: ['bed'],
           },
         };
+        tweak(made.assembly_timeline);
+        return made;
       }) as LoadedPart['run'],
     };
     return { ...testParts(), 'edit-maker': edit };
@@ -381,6 +383,16 @@ describe('a reviewed custom video', () => {
     expect(evidence.timeline.soundtrack_modes).toEqual(['music', 'sfx']);
   }, 60_000);
 
+  withFfmpeg('refuses a crop that zooms in past 1.5x on its real source, and takes one that only fills the frame', async () => {
+    const files = realEdit(mkdtempSync(path.join(os.tmpdir(), 'c1-crop-edit-')));
+    // The source is 160x288, the same as the frame: a half-size crop is a 2x zoom.
+    const zoomed = await runMake({ home: tempHome(), line: customLine(), parts: editParts(files, (t) => { t.segments[0].video.crop = { x: 0, y: 0, w: 80, h: 144 }; }), tools: realTools() });
+    expect(zoomed.status).toBe('failed');
+    expect(zoomed.message).toContain('zooms in 2.00x, over the 1.5x limit');
+    const filled = await runMake({ home: tempHome(), line: customLine(), parts: editParts(files, (t) => { t.segments[0].video.crop = { x: 0, y: 0, w: 160, h: 288 }; t.segments[0].video.scale_x = 1; t.segments[0].video.scale_y = 1; }), tools: realTools() });
+    expect(filled.code).toBe('content_review_incomplete');
+  }, 60_000);
+
   withFfmpeg('never sends a final that fails its measurements, and says where', async () => {
     const home = tempHome();
     const parts = editParts(realEdit(mkdtempSync(path.join(os.tmpdir(), 'c1-flawed-edit-')), true));
@@ -388,8 +400,8 @@ describe('a reviewed custom video', () => {
     const stopped = await runMake({ home, line, parts, tools: realTools() });
     expect([stopped.status, stopped.code]).toEqual(['stopped', 'final_measure_failed']);
     expect(stopped.message).toContain('failed its measured checks');
-    expect(stopped.message).toMatch(/tone only: .*0\.0–2\.0 s/);
-    expect(stopped.message).toMatch(/frozen picture: The picture is frozen/);
+    expect(stopped.message).toMatch(/tone only: A steady tone near \d+ Hz holds 100% of the sound track/);
+    expect(stopped.message).toMatch(/frozen picture: The picture is frozen for more than 1 s with no planned freeze around it at 0\.0–2\.0 s/);
     expect(lineRoute(line.seen, '/upload')).toHaveLength(0);
     expect(lastProgress(line.seen).note).toBe(WAITING_FOR_MEASURED_FIX);
     const measured = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'final-measure.json'), 'utf8'));

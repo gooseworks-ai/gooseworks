@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ASSEMBLY_FORMAT, type AssemblyTimeline } from '../../src/kit/core/assembly-timeline';
-import { FINAL_MEASURE_CHECKS, FINAL_MEASURE_THRESHOLDS, analyseAudio, dHash, finalMeasureChecks, finalMeasureFailures, hamming, measureFinal, uncovered, type AudioFacts, type MeasuredShot } from '../../src/kit/core/final-measure';
+import { FINAL_MEASURE_CHECKS, FINAL_MEASURE_THRESHOLDS, analyseAudio, covered, dHash, finalMeasureChecks, finalMeasureFailures, hamming, maxFreezeMs, measureFinal, type AudioFacts, type MeasuredShot } from '../../src/kit/core/final-measure';
 
 const RATE = 16_000;
 const H = (c: string) => c.repeat(64);
@@ -48,35 +48,46 @@ function timeline(overrides: Partial<AssemblyTimeline> = {}): AssemblyTimeline {
   };
 }
 
-const loud: AudioFacts = { peak_dbfs: -3, zero_runs_ms: [], quiet_runs_ms: [], tone_runs_ms: [], tone_share: 0 };
+/** 100 ms quiet flags for `ms` of sound, quiet inside the given ranges. */
+const quietFlags = (ms: number, ...quiet: Array<[number, number]>) => Array.from({ length: Math.ceil(ms / 100) }, (_, i) => quiet.some(([a, b]) => i * 100 >= a && (i + 1) * 100 <= b));
+const loud: AudioFacts = { peak_dbfs: -3, zero_runs_ms: [], quiet: quietFlags(10_000), tone_share: 0, tone_hz: null };
 const byId = (checks: ReturnType<typeof finalMeasureChecks>, id: string) => checks.find((c) => c.id === id)!;
 const run = (input: Partial<Parameters<typeof finalMeasureChecks>[0]> = {}) => finalMeasureChecks({ durationMs: 10_000, audio: loud, freezes: [], shots: null, timeline: timeline(), ...input });
+const pause = (start: number, end: number, scope: 'speech' | 'all_audio' = 'all_audio') => ({ start_ms: start, end_ms: end, scope, reason: 'beat' });
+const freeze = (start: number, end: number) => ({ start_ms: start, end_ms: end, kind: 'freeze' as const, reason: 'hold on the product', source: { asset_id: 'p', sha256: H('a'), in_ms: 0, out_ms: 1000, speed: 1 }, scene_id: 's1', source_kind: 'image' as const });
 
 it('reports every check of the format once, in its order', () => {
   expect(run().map((c) => c.id)).toEqual([...FINAL_MEASURE_CHECKS]);
   expect(run().filter((c) => c.result === 'fail')).toEqual([]);
-  expect(byId(run(), 'speech_gap_in_sentence').result).toBe('not_applicable');
-  expect(byId(run(), 'first_last_words').result).toBe('not_applicable');
+});
+
+it('marks the word checks not applicable without word timings of these bytes', () => {
+  for (const id of ['speech_gap_in_sentence', 'first_last_words']) {
+    expect(byId(run(), id)).toMatchObject({ result: 'not_applicable', detail: expect.stringContaining('No word timings') });
+    expect(byId(run({ timeline: timeline({ speech_mode: 'none' }) }), id).detail).toBe('No speech planned.');
+  }
 });
 
 describe('sound', () => {
   it('passes noise-like sound and finds a steady tone, a chord and silence', () => {
     const n = noise(0.3);
-    expect(analyseAudio(samples(4, () => n()), RATE)).toMatchObject({ zero_runs_ms: [], quiet_runs_ms: [], tone_share: 0 });
+    expect(analyseAudio(samples(4, () => n()), RATE)).toMatchObject({ zero_runs_ms: [], tone_share: 0 });
+    expect(analyseAudio(samples(4, () => n()), RATE).quiet.every((q) => !q)).toBe(true);
     const sine = analyseAudio(samples(4, (t) => 0.5 * Math.sin(2 * Math.PI * 440 * t)), RATE);
     expect(sine.tone_share).toBeGreaterThan(0.9);
+    expect(sine.tone_hz).toBeGreaterThan(430);
+    expect(sine.tone_hz).toBeLessThan(450);
     const chord = analyseAudio(samples(4, (t) => 0.2 * (Math.sin(2 * Math.PI * 261.6 * t) + Math.sin(2 * Math.PI * 329.6 * t) + Math.sin(2 * Math.PI * 392 * t))), RATE);
     expect(chord.tone_share).toBeGreaterThan(0.9);
     const quiet = analyseAudio(samples(4, () => 0.001), RATE);
     expect(quiet.peak_dbfs).toBeLessThan(-59);
-    expect(quiet.quiet_runs_ms).toEqual([[0, 4000]]);
+    expect(quiet.quiet.every(Boolean)).toBe(true);
   });
 
   it('finds an exact-zero gap longer than 1 s inside noise', () => {
     const n = noise(0.3);
     const audio = analyseAudio(concat(samples(2, () => n()), new Float32Array(1.5 * RATE), samples(2, () => n())), RATE);
     expect(audio.zero_runs_ms).toEqual([[2000, 3500]]);
-    expect(audio.quiet_runs_ms).toEqual([[2000, 3500]]);
     const checks = run({ audio, durationMs: 5500 });
     expect(byId(checks, 'digital_silence')).toMatchObject({ result: 'fail', intervals_ms: [[2000, 3500]] });
     expect(byId(checks, 'digital_silence').detail).toContain('2.0–3.5 s');
@@ -86,53 +97,71 @@ describe('sound', () => {
   it('fails a whole track below -60 dBFS, a missing track, and a steady tone', () => {
     expect(byId(run({ audio: { ...loud, peak_dbfs: -70 } }), 'digital_silence')).toMatchObject({ result: 'fail', intervals_ms: [[0, 10_000]] });
     expect(byId(run({ audio: null }), 'digital_silence').detail).toBe('The final has no sound track.');
-    expect(byId(run({ audio: { ...loud, tone_share: 0.8, tone_runs_ms: [[0, 8000]] } }), 'tone_only')).toMatchObject({ result: 'fail', intervals_ms: [[0, 8000]] });
-    expect(byId(run({ audio: { ...loud, tone_share: 0.4, tone_runs_ms: [[0, 4000]] } }), 'tone_only').result).toBe('pass');
+    expect(byId(run({ audio: null }), 'tone_only').result).toBe('not_applicable');
+    expect(byId(run({ audio: null }), 'unplanned_silence')).toMatchObject({ result: 'fail', intervals_ms: [[0, 10_000]] });
+    expect(byId(run({ audio: { ...loud, tone_share: 0.8, tone_hz: 440 } }), 'tone_only')).toMatchObject({ result: 'fail', intervals_ms: [[0, 10_000]], detail: expect.stringContaining('near 440 Hz') });
+    expect(byId(run({ audio: { ...loud, tone_share: 0.4, tone_hz: 440 } }), 'tone_only').result).toBe('pass');
   });
 
-  it('lets a planned pause of 1.5 s or less cover silence, never a longer one', () => {
-    const audio = { ...loud, quiet_runs_ms: [[3000, 4300]] as Array<[number, number]> };
-    expect(byId(run({ audio }), 'unplanned_silence').result).toBe('fail');
-    expect(byId(run({ audio, timeline: timeline({ pauses: [{ start_ms: 3000, end_ms: 4300, scope: 'all_audio', reason: 'beat' }] }) }), 'unplanned_silence').result).toBe('pass');
-    const long = run({ audio: { ...loud, quiet_runs_ms: [[3000, 5000]] }, timeline: timeline({ pauses: [{ start_ms: 3000, end_ms: 5000, scope: 'all_audio', reason: 'beat' }] }) });
+  it('lets one all-audio pause of 1.5 s or less hold a silence, never a longer or a speech-only one', () => {
+    const audio = { ...loud, quiet: quietFlags(10_000, [3000, 4300]) };
+    expect(byId(run({ audio }), 'unplanned_silence')).toMatchObject({ result: 'fail', intervals_ms: [[3000, 4300]] });
+    expect(byId(run({ audio, timeline: timeline({ pauses: [pause(3000, 4300)] }) }), 'unplanned_silence').result).toBe('pass');
+    expect(byId(run({ audio, timeline: timeline({ pauses: [pause(3000, 4300, 'speech')] }) }), 'unplanned_silence').result).toBe('fail');
+    const long = run({ audio: { ...loud, quiet: quietFlags(10_000, [3000, 5000]) }, timeline: timeline({ pauses: [pause(3000, 5000)] }) });
     expect(byId(long, 'unplanned_silence').result).toBe('fail');
     expect(byId(long, 'planned_pause_too_long')).toMatchObject({ result: 'fail', intervals_ms: [[3000, 5000]] });
   });
 
   it('caps all planned pauses together at 10% of the video', () => {
     // Three 300 ms pauses are 9% of 10 s; a fourth makes 12%.
-    const pauses = [1000, 3000, 5000].map((start) => ({ start_ms: start, end_ms: start + 300, scope: 'speech' as const, reason: 'breath' }));
+    const pauses = [1000, 3000, 5000].map((start) => pause(start, start + 300, 'speech'));
     expect(byId(run({ timeline: timeline({ pauses }) }), 'planned_pause_too_long').result).toBe('pass');
-    const more = [...pauses, { start_ms: 7000, end_ms: 7300, scope: 'speech' as const, reason: 'breath' }];
-    expect(byId(run({ timeline: timeline({ pauses: more }) }), 'planned_pause_too_long')).toMatchObject({ result: 'fail' });
+    expect(byId(run({ timeline: timeline({ pauses: [...pauses, pause(7000, 7300, 'speech')] }) }), 'planned_pause_too_long')).toMatchObject({ result: 'fail', detail: expect.stringMatching(/^Planned pauses add up to .* over 10% of the video\.$/) });
+    expect(byId(run({ timeline: null }), 'planned_pause_too_long').result).toBe('not_applicable');
   });
 
-  it('marks the sound checks not applicable for an approved silent video', () => {
+  it('an approved silent video skips the silence checks, but a tone still fails', () => {
     const silent = timeline({ speech_mode: 'none', soundtrack_modes: ['intentional_silence'] });
-    const checks = run({ audio: null, timeline: silent });
-    for (const id of ['digital_silence', 'tone_only', 'unplanned_silence']) expect(byId(checks, id).result).toBe('not_applicable');
+    const checks = run({ audio: { ...loud, peak_dbfs: -Infinity, quiet: quietFlags(10_000, [0, 10_000]) }, timeline: silent });
+    expect(byId(checks, 'digital_silence').result).toBe('not_applicable');
+    expect(byId(checks, 'unplanned_silence').result).toBe('not_applicable');
+    expect(byId(checks, 'tone_only').result).toBe('pass');
+    expect(byId(run({ audio: { ...loud, tone_share: 0.9, tone_hz: 60 }, timeline: silent }), 'tone_only').result).toBe('fail');
+    // Silence with any other plan still fails.
+    expect(byId(run({ audio: { ...loud, peak_dbfs: -Infinity } }), 'digital_silence').result).toBe('fail');
   });
 
   it('fails silence over 0.3 s while a face is shown speaking', () => {
     const speaking = timeline({ segments: [{ ...timeline().segments[0], end_ms: 4000, video: { ...timeline().segments[0].video, out_ms: 4000 }, depicts_speech: true, speech_mode: 'native_dialogue', native_audio: 'preserve' }, { ...timeline().segments[0], id: 'seg-2', start_ms: 4000, video: { ...timeline().segments[0].video, out_ms: 6000 } }] });
-    expect(byId(run({ timeline: speaking, audio: { ...loud, quiet_runs_ms: [[1000, 1200], [3800, 4600]] } }), 'speech_over_silent_face').result).toBe('pass');
-    expect(byId(run({ timeline: speaking, audio: { ...loud, quiet_runs_ms: [[1000, 1400]] } }), 'speech_over_silent_face')).toMatchObject({ result: 'fail', intervals_ms: [[1000, 1400]] });
+    expect(byId(run({ timeline: speaking, audio: { ...loud, quiet: quietFlags(10_000, [1000, 1300], [3800, 4600]) } }), 'speech_over_silent_face').result).toBe('pass');
+    expect(byId(run({ timeline: speaking, audio: { ...loud, quiet: quietFlags(10_000, [1000, 1400]) } }), 'speech_over_silent_face')).toMatchObject({ result: 'fail', intervals_ms: [[1000, 1400]] });
     expect(byId(run({ timeline: null }), 'speech_over_silent_face').result).toBe('not_applicable');
   });
 });
 
 describe('picture', () => {
-  it('lets a planned freeze of 1.5 s or less cover a frozen run', () => {
-    const freeze = { start_ms: 2000, end_ms: 3400, kind: 'freeze' as const, reason: 'hold on the product', source: { asset_id: 'p', sha256: H('a'), in_ms: 0, out_ms: 1000, speed: 1 }, scene_id: 's1', source_kind: 'image' as const };
+  it('lets a planned freeze of 1.5 s or less hold a frozen run', () => {
     expect(byId(run({ freezes: [[2000, 3500]] }), 'frozen_picture')).toMatchObject({ result: 'fail', intervals_ms: [[2000, 3500]] });
-    expect(byId(run({ freezes: [[2000, 3500]], timeline: timeline({ visual_overrides: [freeze] }) }), 'frozen_picture').result).toBe('pass');
-    const long = run({ freezes: [[2000, 4000]], timeline: timeline({ visual_overrides: [{ ...freeze, end_ms: 4000 }] }) });
+    expect(byId(run({ freezes: [[2000, 3400]], timeline: timeline({ visual_overrides: [freeze(2000, 3400)] }) }), 'frozen_picture').result).toBe('pass');
+    const long = run({ freezes: [[2000, 4000]], timeline: timeline({ visual_overrides: [freeze(2000, 4000)] }) });
     expect(byId(long, 'frozen_picture').result).toBe('fail');
     expect(byId(long, 'planned_freeze_too_long')).toMatchObject({ result: 'fail', intervals_ms: [[2000, 4000]] });
   });
 
-  it('fails a picture frozen for over 40% of the video, even in short planned runs', () => {
-    expect(byId(run({ freezes: [[0, 2500], [3000, 5000]] }), 'frozen_picture').detail).toContain('plays as a still image');
+  it('lets the end-card hold last up to 3.0 s, and no longer', () => {
+    const endCard = run({ freezes: [[7200, 10_000]], timeline: timeline({ visual_overrides: [freeze(7200, 10_000)] }) });
+    expect(byId(endCard, 'planned_freeze_too_long').result).toBe('pass');
+    expect(byId(endCard, 'frozen_picture').result).toBe('pass');
+    const tooLong = run({ freezes: [[6500, 10_000]], timeline: timeline({ visual_overrides: [freeze(6500, 10_000)] }) });
+    expect(byId(tooLong, 'planned_freeze_too_long').result).toBe('fail');
+    expect(byId(tooLong, 'frozen_picture').result).toBe('fail');
+    expect(maxFreezeMs({ end_ms: 10_000 }, 10_000)).toBe(3000);
+    expect(maxFreezeMs({ end_ms: 9000 }, 10_000)).toBe(1500);
+  });
+
+  it('fails a picture frozen for over 40% of the video', () => {
+    expect(byId(run({ freezes: [[0, 2500], [3000, 5000]] }), 'frozen_picture').detail).toContain('a still-image ad');
   });
 
   it('fails a shot shown again later unless it is marked as a callback', () => {
@@ -142,12 +171,14 @@ describe('picture', () => {
       { id: 'b', start_ms: 2000, end_ms: 4000, hash: ~hash & 0xffffffffffffffffn },
       { id: 'c', start_ms: 4000, end_ms: 6000, hash: hash ^ 0b111n, ...(intent ? { intent } : {}) },
     ];
-    expect(byId(run({ shots: shots() }), 'repeated_shot')).toMatchObject({ result: 'fail', intervals_ms: [[4000, 6000]] });
+    expect(byId(run({ shots: shots() }), 'repeated_shot')).toMatchObject({ result: 'fail', intervals_ms: [[0, 2000], [4000, 6000]] });
     expect(byId(run({ shots: shots() }), 'repeated_shot').detail).toContain('c repeats a');
     expect(byId(run({ shots: shots('callback: back to the opening shot') }), 'repeated_shot').result).toBe('pass');
-    // Next to each other is a continuing shot, not a repeat; a short shot is never compared.
+    // The prefix is case-sensitive, as in the harness.
+    expect(byId(run({ shots: shots('Callback: back to the opening shot') }), 'repeated_shot').result).toBe('fail');
+    // Next to each other is a continuing shot, not a repeat; a shot with no hash is never compared.
     expect(byId(run({ shots: [{ id: 'a', start_ms: 0, end_ms: 2000, hash }, { id: 'b', start_ms: 2000, end_ms: 4000, hash }] }), 'repeated_shot').result).toBe('pass');
-    expect(byId(run({ shots: [{ ...shots()[0], end_ms: 900 }, shots()[1], { ...shots()[2], start_ms: 4000 }] }), 'repeated_shot').result).toBe('pass');
+    expect(byId(run({ shots: [{ ...shots()[0], hash: null }, shots()[1], shots()[2]] }), 'repeated_shot').result).toBe('pass');
   });
 
   it('hashes a 9x8 picture by its left-to-right brightness steps', () => {
@@ -159,13 +190,22 @@ describe('picture', () => {
   });
 });
 
-it('subtracts covers with 100 ms of slack', () => {
-  expect(uncovered([1000, 3000], [[1500, 2000]])).toEqual([[1000, 1400], [2100, 3000]]);
-  expect(uncovered([1000, 3000], [[1050, 2950]])).toEqual([]);
+it('holds a run only inside one allowed interval, with 100 ms of slack', () => {
+  expect(covered([1000, 3000], [[1050, 2950]])).toBe(true);
+  expect(covered([1000, 3000], [[1000, 2000], [2000, 3000]])).toBe(false);
+  expect(covered([1000, 3000], [[1200, 3000]])).toBe(false);
 });
 
-it('keeps the shared thresholds the contract names', () => {
-  expect(FINAL_MEASURE_THRESHOLDS).toMatchObject({ digital_silence_peak_dbfs: -60, digital_zero_run_ms: 1000, tone_energy_share: 0.8, tone_max_peaks: 3, tone_steady_share: 0.5, tone_fft_size: 4096, tone_window_ms: 500, quiet_dbfs: -45, unplanned_silence_ms: 1000, speech_gap_in_sentence_ms: 600, planned_pause_max_ms: 1500, planned_pause_total_share: 0.1, freeze_noise: 0.003, freeze_min_ms: 1000, frozen_total_share: 0.4, planned_freeze_max_ms: 1500, repeated_shot_max_hamming: 6, silent_face_ms: 300 });
+it('keeps the harness threshold names and the contract numbers', () => {
+  expect(FINAL_MEASURE_THRESHOLDS).toEqual({
+    digital_silence_peak_dbfs: -60, digital_zero_run_s: 1.0,
+    tone_fft_size: 4096, tone_window_s: 0.5, tone_peak_halfwidth_bins: 2, tone_max_peaks: 3, tone_peak_energy_share: 0.8, tone_steady_share: 0.5,
+    quiet_dbfs: -45, quiet_window_ms: 100, unplanned_silence_s: 1.0, speech_gap_in_sentence_s: 0.6,
+    max_pause_ms: 1500, max_pause_share: 0.1,
+    freeze_noise: 0.003, freeze_min_s: 1.0, max_frozen_share: 0.4, max_freeze_ms: 1500, max_end_card_freeze_ms: 3000,
+    repeated_shot_min_s: 1.0, repeated_shot_max_hamming: 6, scene_cut_threshold: 0.4,
+    edge_words: 3, edge_window_s: 4.0, silent_face_s: 0.3,
+  });
 });
 
 const ffmpeg = process.env.TEST_FFMPEG || 'ffmpeg';
@@ -181,16 +221,16 @@ withFfmpeg('measures a real file: moving picture with noise passes, a still card
   try {
     const good = path.join(dir, 'good.mp4');
     encode(['-f', 'lavfi', '-i', 'testsrc2=s=160x288:r=30:d=3', '-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.3:duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', good]);
-    const measured = await measureFinal({ ffmpeg, file: good, outputSha256: H('a'), durationMs: 3000, hasAudio: true, timeline: null, scenes: [], signal: new AbortController().signal });
+    const measured = await measureFinal({ ffmpeg, file: good, outputSha256: H('a'), durationMs: 3000, hasAudio: true, timeline: null, signal: new AbortController().signal });
     expect(finalMeasureFailures(measured)).toEqual([]);
     expect(measured).toMatchObject({ format: 'gooseworks-final-measure/1', output_sha256: H('a'), measured_duration_ms: 3000, thresholds: FINAL_MEASURE_THRESHOLDS });
 
     const bad = path.join(dir, 'bad.mp4');
     encode(['-f', 'lavfi', '-i', 'color=c=blue:s=160x288:r=30:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', bad]);
-    const still = await measureFinal({ ffmpeg, file: bad, outputSha256: H('b'), durationMs: 3000, hasAudio: true, timeline: null, scenes: [{ id: 'one', start_s: 0, end_s: 1.2 }, { id: 'two', start_s: 1.2, end_s: 1.6 }, { id: 'three', start_s: 1.6, end_s: 3 }], signal: new AbortController().signal });
+    const still = await measureFinal({ ffmpeg, file: bad, outputSha256: H('b'), durationMs: 3000, hasAudio: true, timeline: null, signal: new AbortController().signal });
     const failed = still.checks.filter((c) => c.result === 'fail').map((c) => c.id);
-    expect(failed).toEqual(['tone_only', 'frozen_picture', 'repeated_shot']);
-    expect(finalMeasureFailures(still)[1]).toMatch(/^frozen picture: The picture is frozen for \d+% of the video/);
+    expect(failed).toEqual(['tone_only', 'frozen_picture']);
+    expect(finalMeasureFailures(still)[1]).toMatch(/^frozen picture: The picture is frozen for more than 1 s/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 // Source-linked edit intent. File/rebuild checks never certify audiovisual quality.
 import { canonicalHash } from './canonical';
-import { FINAL_MEASURE_THRESHOLDS } from './final-measure';
+import { FINAL_MEASURE_THRESHOLDS, maxFreezeMs } from './final-measure';
 
 export const ASSEMBLY_FORMAT = 'gooseworks-assembly-timeline/1' as const;
 export const SPEECH_MODES = ['native_dialogue', 'audio_driven_lipsync', 'narration', 'singing', 'mixed', 'none'] as const;
@@ -17,17 +17,26 @@ export interface AssemblySource {
   speed: number;
   /** Picture sources only: the part of the source shown, in whole source pixels. */
   crop?: { x: number; y: number; w: number; h: number };
-  /** Picture sources only: how the shown part is scaled. Uneven stretch over 2% and upscaling over 1.5x are refused. */
+  /** Picture sources only: how the shown part is scaled. Uneven stretch over 2% is refused; zoom is checked against the real source. */
   scale_x?: number;
   scale_y?: number;
 }
-/** Picture stretch and upscale limits (fix-forward contract section 7). */
+/** Picture stretch and zoom limits (fix-forward contract section 7, as amended 15 Oct). */
 export const MAX_UNEVEN_STRETCH = 0.02;
-export const MAX_UPSCALE = 1.5;
+/**
+ * The most a crop may zoom in: the crop's fit-scale over the full source frame's fit-scale.
+ * Plain resolution scaling of the whole frame (H3's 432×768 to 1080×1920) is not zoom.
+ */
+export const MAX_ZOOM = 1.5;
 /** Planned pause and freeze limits, the same numbers the final measurements use. */
-export const MAX_PLANNED_PAUSE_MS = FINAL_MEASURE_THRESHOLDS.planned_pause_max_ms;
-export const MAX_PLANNED_FREEZE_MS = FINAL_MEASURE_THRESHOLDS.planned_freeze_max_ms;
-export const MAX_PLANNED_TOTAL_SHARE = FINAL_MEASURE_THRESHOLDS.planned_pause_total_share;
+export const MAX_PLANNED_PAUSE_MS = FINAL_MEASURE_THRESHOLDS.max_pause_ms;
+export const MAX_PLANNED_TOTAL_SHARE = FINAL_MEASURE_THRESHOLDS.max_pause_share;
+
+/** How far a crop zooms in when its picture fills a `frame` (cover fit); 1 for the whole source. */
+export function cropZoom(crop: { w: number; h: number }, source: { width: number; height: number }, frame: { width: number; height: number }): number {
+  const fit = (w: number, h: number) => Math.max(frame.width / w, frame.height / h);
+  return fit(crop.w, crop.h) / fit(source.width, source.height);
+}
 /** A segment that deliberately shows an earlier shot again says so with an intent starting with this. */
 export const CALLBACK_INTENT = 'callback:';
 export interface AssemblySegment {
@@ -214,7 +223,6 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     if (s.scale_x !== undefined || s.scale_y !== undefined) {
       if (!finite(s.scale_x) || !finite(s.scale_y) || s.scale_x <= 0 || s.scale_y <= 0) { issues.push(`${at}: scale_x and scale_y go together and must be positive`); return false; }
       if (Math.abs(s.scale_x / s.scale_y - 1) > MAX_UNEVEN_STRETCH) { issues.push(`${at}: uneven stretch (scale_x ${s.scale_x} vs scale_y ${s.scale_y}) distorts the picture by more than ${MAX_UNEVEN_STRETCH * 100}%`); return false; }
-      if (Math.max(s.scale_x, s.scale_y) > MAX_UPSCALE) { issues.push(`${at}: upscaling by ${Math.max(s.scale_x, s.scale_y)}x is over the ${MAX_UPSCALE}x limit; use a larger source`); return false; }
     }
     return true;
   };
@@ -257,24 +265,22 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     if (!validRange(v, 'visual override') || !text(v.reason) || !['freeze', 'transition'].includes(v.kind)) issues.push('visual overrides need bounds, kind and reason');
     else {
       if (v.kind === 'freeze' && !v.source) issues.push('freeze requires its exact source');
-      if (v.kind === 'freeze' && v.end_ms - v.start_ms > MAX_PLANNED_FREEZE_MS) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${MAX_PLANNED_FREEZE_MS}ms`);
+      if (v.kind === 'freeze' && v.end_ms - v.start_ms > maxFreezeMs(v, t.duration_ms)) issues.push(`freeze ${v.start_ms}–${v.end_ms}ms is longer than ${maxFreezeMs(v, t.duration_ms)}ms${v.end_ms === t.duration_ms ? ' (the end-card hold limit)' : ''}`);
       if (v.source && (!validSource(v.source, 'override source', true) || !text(v.scene_id) || !['image', 'video'].includes(v.source_kind ?? ''))) issues.push('override sources need exact bytes, scene_id and source_kind (image or video)');
       if (v.kind === 'transition' && (!Array.isArray(v.segment_ids) || v.segment_ids.length < 2 || v.segment_ids.some((id) => !t.segments.some((s) => s.id === id)))) issues.push('transition must name its source segments');
     }
   }
-  const planned = (items: Array<{ start_ms: number; end_ms: number }>, what: string) => {
-    const total = totalMs(items);
-    if (total > t.duration_ms * MAX_PLANNED_TOTAL_SHARE) issues.push(`planned ${what} add up to ${total}ms, more than ${MAX_PLANNED_TOTAL_SHARE * 100}% of the ${t.duration_ms}ms video`);
-  };
-  planned(t.pauses.filter(object), 'pauses');
-  planned((t.visual_overrides ?? []).filter((v) => object(v) && v.kind === 'freeze'), 'freezes');
+  const pauseTotal = totalMs(t.pauses.filter(object));
+  if (pauseTotal > t.duration_ms * MAX_PLANNED_TOTAL_SHARE) issues.push(`planned pauses add up to ${pauseTotal}ms, more than ${MAX_PLANNED_TOTAL_SHARE * 100}% of the ${t.duration_ms}ms video`);
   if (issues.length) return { status: 'invalid', timeline: null, revision: null, issues };
-  // The same source moment shown twice is a repeat; only a declared callback may do it.
-  const ordered = [...t.segments].sort((a, b) => a.start_ms - b.start_ms);
-  for (let b = 1; b < ordered.length; b++) {
-    const repeated = ordered.slice(0, b).find((earlier) => overlaps(earlier.video, ordered[b].video));
-    const intent = ordered[b].intent?.trim().toLowerCase() ?? '';
-    if (repeated && !intent.startsWith(CALLBACK_INTENT)) issues.push(`${ordered[b].id}: shows ${repeated.id}'s source moment again; use another moment, or mark a deliberate repeat with intent "${CALLBACK_INTENT} <why>"`);
+  // The same source moment shown again later (not the very next segment, both over 1 s) is a
+  // repeat; only a declared callback may do it. As in the harness, the prefix is case-sensitive.
+  const ordered = [...t.segments].sort((a, b) => a.start_ms - b.start_ms || a.end_ms - b.end_ms);
+  const long = (x: AssemblySegment) => x.end_ms - x.start_ms > FINAL_MEASURE_THRESHOLDS.repeated_shot_min_s * 1000;
+  for (let b = 2; b < ordered.length; b++) {
+    const later = ordered[b];
+    const repeated = long(later) ? ordered.slice(0, b - 1).find((earlier) => long(earlier) && overlaps(earlier.video, later.video)) : undefined;
+    if (repeated && !(typeof later.intent === 'string' && later.intent.startsWith(CALLBACK_INTENT))) issues.push(`${later.id}: shows ${repeated.id}'s source moment again; use another moment, or mark a deliberate repeat with intent "${CALLBACK_INTENT} <why>"`);
   }
   if (gaps([...t.segments, ...(t.visual_overrides ?? [])], t.duration_ms).length) issues.push('Picture coverage has undeclared padding or a missing source interval');
   for (let a = 0; a < t.segments.length; a++) for (let b = a + 1; b < t.segments.length; b++) {
@@ -306,7 +312,15 @@ export function normalizeAssemblyTimeline(raw: unknown, legacy?: Record<string, 
     for (const gap of gaps([...t.audio_cues, ...t.pauses.filter((p) => p.scope === 'all_audio')], t.duration_ms)) issues.push(`unplanned audio gap ${gap.start_ms}–${gap.end_ms}ms`);
   }
   if (t.speech_mode === 'none' && t.audio_cues.some((c) => speechRole(c.role))) issues.push('No-speech intent conflicts with speech cues');
-  if (t.speech_mode !== 'none') for (const gap of gaps([...t.audio_cues.filter((c) => speechRole(c.role) && c.gain_db > -80), ...t.pauses], t.duration_ms)) issues.push(`unplanned speech gap ${gap.start_ms}–${gap.end_ms}ms (music cannot substitute for speech intent)`);
+  // Speech covers every segment that plans speech; a music-only intro or end card (speech_mode none) needs none.
+  if (t.speech_mode !== 'none') {
+    const speech = [...t.audio_cues.filter((c) => speechRole(c.role) && c.gain_db > -80), ...t.pauses];
+    for (const segment of ordered.filter((x) => x.speech_mode !== 'none')) {
+      const inside = speech.filter((i) => i.end_ms > segment.start_ms && i.start_ms < segment.end_ms)
+        .map((i) => ({ start_ms: Math.max(i.start_ms, segment.start_ms) - segment.start_ms, end_ms: Math.min(i.end_ms, segment.end_ms) - segment.start_ms }));
+      for (const gap of gaps(inside, segment.end_ms - segment.start_ms)) issues.push(`unplanned speech gap ${gap.start_ms + segment.start_ms}–${gap.end_ms + segment.start_ms}ms in ${segment.id} (music cannot substitute for speech intent)`);
+    }
+  }
   return { status: issues.length ? 'invalid' : 'complete', timeline: t, revision: assemblyTimelineRevision(t), issues };
 }
 
