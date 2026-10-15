@@ -30,12 +30,13 @@ function encode(args: string[]): void {
  * A real two-second edit: a moving test picture and a noise bed (sound, not a tone), muxed into the
  * final. The picture and the bed are its sources, declared in the source-linked timeline.
  */
-function realEdit(dir: string): { picture: string; bed: string; final: string } {
+function realEdit(dir: string, flawed = false): { picture: string; bed: string; final: string } {
   const picture = path.join(dir, 'picture.mp4');
   const bed = path.join(dir, 'bed.wav');
   const final = path.join(dir, 'final.mp4');
-  encode(['-f', 'lavfi', '-i', 'testsrc2=s=160x288:r=30:d=2', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', picture]);
-  encode(['-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.3:sample_rate=48000:duration=2', '-ac', '1', bed]);
+  // The flawed edit is the audit's worst case: a still card over a sine "music" bed.
+  encode(['-f', 'lavfi', '-i', flawed ? 'color=c=blue:s=160x288:r=30:d=2' : 'testsrc2=s=160x288:r=30:d=2', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', picture]);
+  encode(['-f', 'lavfi', '-i', flawed ? 'sine=frequency=440:sample_rate=48000:duration=2' : 'anoisesrc=color=pink:amplitude=0.3:sample_rate=48000:duration=2', '-ac', '1', bed]);
   encode(['-i', picture, '-i', bed, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '96k', '-shortest', final]);
   return { picture, bed, final };
 }
@@ -199,10 +200,13 @@ describe('a custom video made on the kit', () => {
     const runsBefore = finishRuns;
     const second = customLine();
     const resumed = await runMake({ home, line: second, parts: counted });
+    // These fake files can't be measured, and a custom final that can't be measured is never sent.
     expect(resumed.status).toBe('stopped');
-    expect(resumed.code).toBe('content_review_incomplete');
-    const reviewRequest = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'review-request.json'), 'utf8'));
-    expect(reviewRequest.content_review_problems.length).toBeGreaterThan(0);
+    expect(resumed.code).toBe('final_measure_failed');
+    expect(resumed.message).toContain('could not be measured');
+    const measured = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'final-measure.json'), 'utf8'));
+    expect(measured).toMatchObject({ format: 'gooseworks-final-measure/1', checks: [] });
+    expect(typeof measured.error).toBe('string');
     expect(lineRoute(second.seen, '/upload')).toHaveLength(0);
     expect(second.pieces).toHaveLength(0);
     expect(clipRuns).toBe(1);
@@ -302,13 +306,31 @@ describe('a reviewed custom video', () => {
     const second = customLine();
     const done = await runMake({ home, line: second, parts, tools });
     expect(done).toMatchObject({ status: 'done', final: path.join(final, 'final.mp4') });
+    const measured = JSON.parse(readFileSync(path.join(final, 'final-measure.json'), 'utf8'));
+    expect(measured.checks.filter((c: { result: string }) => c.result === 'fail')).toEqual([]);
     const [upload] = lineRoute(second.seen, '/upload');
     expect(upload.body.sha256).toBe(request.output_sha256);
     const sent = upload.body.manifest;
     expect(sent.content_review_status).toBe('approved');
+    expect(sent.final_measure).toEqual(measured);
+    expect(sent.final_measure).toMatchObject({ format: 'gooseworks-final-measure/1', output_sha256: request.output_sha256, measured_duration_ms: request.measured_duration_ms });
     expect(sent.content_review.capabilities).toEqual({ audio: 'listened', motion: 'watched' });
     expect(sent.assembly_evidence).toMatchObject({ status: 'complete', revision: request.timeline_revision, output_sha256: request.output_sha256 });
     // Nothing was made twice: the edit step was reused from the first run.
     expect(second.pieces).toHaveLength(0);
+  }, 60_000);
+
+  withFfmpeg('never sends a final that fails its measurements, and says where', async () => {
+    const home = tempHome();
+    const parts = editParts(realEdit(mkdtempSync(path.join(os.tmpdir(), 'c1-flawed-edit-')), true));
+    const line = customLine();
+    const stopped = await runMake({ home, line, parts, tools: realTools() });
+    expect([stopped.status, stopped.code]).toEqual(['stopped', 'final_measure_failed']);
+    expect(stopped.message).toContain('failed its measured checks');
+    expect(stopped.message).toMatch(/tone only: .*0\.0–2\.0 s/);
+    expect(stopped.message).toMatch(/frozen picture: The picture is frozen/);
+    expect(lineRoute(line.seen, '/upload')).toHaveLength(0);
+    const measured = JSON.parse(readFileSync(path.join(runLayout(home, VIDEO).final, 'final-measure.json'), 'utf8'));
+    expect(measured.checks.filter((c: { result: string }) => c.result === 'fail').map((c: { id: string }) => c.id)).toEqual(['tone_only', 'frozen_picture']);
   }, 60_000);
 });

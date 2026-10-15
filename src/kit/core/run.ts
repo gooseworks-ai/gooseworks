@@ -37,6 +37,7 @@ import { MAX_CAPTIONS_BYTES, MAX_UPLOAD_BYTES, type ApprovedPlan, type DeviceAns
 import { bindInputs } from './bind';
 import { lookAtFinal, type Eyes } from './eyes';
 import { CONTENT_DIMENSIONS, assemblyPictureSources, finalContentReviewProblems, measuredFinalDurationMs, normalizeAssemblyTimeline } from './assembly-timeline';
+import { FINAL_MEASURE_FORMAT, finalMeasureFailures, measureFinal, type FinalMeasure } from './final-measure';
 import { RESUMABLE_CODES } from './outcome';
 import { canonicalHash, hashView, isFileRef, pieceSeed, sha256Hex, stepHash } from './canonical';
 import { deviceId, deviceReport } from './device';
@@ -1520,22 +1521,49 @@ class Maker {
       }
       const custom = this.style.style.id.startsWith('custom-');
       let measuredDurationMs: number | null = null;
+      let hasAudio = false;
       if (custom) {
         try {
           const probe = kitTools({ ffmpeg: this.tools.ffmpeg.path ?? '', ffprobe: this.tools.ffprobe.path ?? '', toolchain: this.toolchain }, this.stop.signal).probe;
           const info = await probe(candidate);
           measuredDurationMs = measuredFinalDurationMs(info.duration_s);
+          hasAudio = info.has_audio === true;
         } catch {
           // Missing measurement leaves review incomplete; the edit clock is not a fallback.
         }
       }
-      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined);
+      // Early feedback on the exact bytes (gooseworks-final-measure/1); the server measures them again and decides.
+      let finalMeasure: FinalMeasure | null = null;
+      let measureProblem: string | null = null;
+      const measurePath = path.join(this.layout.final, 'final-measure.json');
+      if (custom) {
+        if (measuredDurationMs === null || !this.tools.ffmpeg.path) measureProblem = 'its length could not be read';
+        else {
+          try {
+            finalMeasure = await measureFinal({ ffmpeg: this.tools.ffmpeg.path, file: candidate, outputSha256: sha256, durationMs: measuredDurationMs, hasAudio, timeline: assembly.timeline, scenes: current.timeline.scenes ?? [], signal: this.stop.signal });
+          } catch (error) {
+            measureProblem = 'the video tools could not read it';
+            this.deps.log.write('warn', 'the final could not be measured', { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        await writeJson(measurePath, finalMeasure ?? { format: FINAL_MEASURE_FORMAT, output_sha256: sha256, measured_duration_ms: measuredDurationMs, checks: [], error: measureProblem });
+      }
+      const measureFailures = finalMeasure ? finalMeasureFailures(finalMeasure) : [];
+      const contentProblems = finalContentReviewProblems(contentReview, sha256, assembly, custom ? measuredDurationMs : undefined, finalMeasure);
       await writeJson(path.join(this.layout.final, 'assembly-evidence.json'), { output_sha256: sha256, measured_duration_ms: measuredDurationMs, ...assembly, source_bytes_verified: assembly.status === 'complete', content_review_status: contentProblems.length ? 'incomplete' : 'approved', content_review_problems: contentProblems });
+      if (custom && (measureProblem || measureFailures.length)) {
+        this.run.status = 'failed';
+        this.book.note = 'The finished video needs a fix before it is sent';
+        await this.saveRun();
+        this.reporter.close();
+        const why = measureProblem ? `The candidate at ${candidate} could not be measured (${measureProblem}), so it wasn’t sent.` : `The candidate at ${candidate} failed its measured checks, so it wasn’t sent. ${measureFailures.join(' ')}`;
+        return { status: 'stopped', code: 'final_measure_failed', message: `${why} Fix the edit, then run the same command again; unchanged assets are reused. The measurements are in ${measurePath}.` };
+      }
       if (custom && contentProblems.length) {
         await writeJson(path.join(this.layout.final, 'review-request.json'), {
           candidate, output_sha256: sha256, measured_duration_ms: measuredDurationMs, timeline_revision: assembly.revision,
           creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
-          assembly_issues: assembly.issues, content_review_problems: contentProblems,
+          assembly_issues: assembly.issues, content_review_problems: contentProblems, final_measure_file: measurePath,
           instructions: 'Review this exact candidate from start to end. Record actual observations and unresolved issues (severity P0, P1 or P2; only P2 lets it go up). Save the completed review as content-review.json beside this request, then resume the same video make command. capabilities says how you perceived it: audio is listened only when a person or an audio-capable model heard the whole final, otherwise measured; motion is watched only when the moving picture was actually watched, otherwise measured. A measured review is accepted only when the final measurements pass (final-measure.json). Never claim listened or watched that did not happen. Fields not in the template are refused.',
           template: { output_sha256: sha256, timeline_revision: assembly.revision, creative_contract_revision: assembly.timeline?.creative_contract_revision ?? null,
             reviewer: '', verdict: 'incomplete', capabilities: { audio: 'measured', motion: 'measured' }, coverage: [], unresolved_issues: [],
@@ -1558,6 +1586,7 @@ class Maker {
         check = await this.sendUpload(sha256, data, captions_vtt, { ...this.manifestFor(current.steps),
           ...(assembly.timeline ? { assembly_timeline: assembly.timeline } : {}),
           ...(contentReview ? { content_review: contentReview } : {}),
+          ...(finalMeasure ? { final_measure: finalMeasure } : {}),
           assembly_evidence: { status: assembly.status, revision: assembly.revision, output_sha256: sha256, source_bytes_verified: assembly.status === 'complete', issues: assembly.issues },
           content_review_status: contentProblems.length ? 'incomplete' : 'approved',
           ...(noted.length ? { check_warnings: noted } : {}) });
