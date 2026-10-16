@@ -39,7 +39,7 @@ export const ANSWER_FIELDS: readonly string[] = [
   'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
   'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
   // make-custom-video 3.6.1 (gooseworks-app #2086): the read-only price check, a catalog tool outside the action contract.
-  'data_price_provider',
+  'data_price_provider', 'price_unknown',
   // Custom chat approval fields backported from the current server entry.
   'approval_quote', 'review_token', 'total_credits',
   // Custom quality release: source identity, creative intent and final review fields.
