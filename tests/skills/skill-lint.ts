@@ -51,6 +51,9 @@ export const ANSWER_FIELDS: readonly string[] = [
   'quality_report', 'content_review', 'creative_contract_revision',
   // goose-video 4.5.0: a found reference ad is picked by its candidate id (video_references pick).
   'candidate_id',
+  // make-custom-video 3.8.0 (gooseworks-app #2076, carrying the 3.7.x server text): the reviewed changes from the
+  // reference, the character step and the measured final check.
+  'changes_from_reference', 'make_character', 'final_measure',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
