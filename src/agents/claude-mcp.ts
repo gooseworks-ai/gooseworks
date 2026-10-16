@@ -103,21 +103,52 @@ export async function verifyMcpReachable(timeoutMs = 5000): Promise<{ ok: boolea
   }
 }
 
-export function removeClaudeMcp(): void {
+const OWN_ENTRIES = ['gooseworks', 'gooseworks-files'];
+
+/** The CLI's own entries (`gooseworks`, legacy `gooseworks-files`); returns the names it removed. */
+export function removeClaudeMcp(): string[] {
+  const removed: string[] = [];
   try {
-    if (!fs.existsSync(CLAUDE_CONFIG_PATH)) return;
+    if (!fs.existsSync(CLAUDE_CONFIG_PATH)) return removed;
     const config = readConfig();
-    let changed = false;
-    if (config.mcpServers?.gooseworks) {
-      delete config.mcpServers.gooseworks;
-      changed = true;
+    for (const name of OWN_ENTRIES) {
+      if (config.mcpServers?.[name]) {
+        delete config.mcpServers[name];
+        removed.push(name);
+      }
     }
-    if (config.mcpServers?.['gooseworks-files']) {
-      delete config.mcpServers['gooseworks-files'];
-      changed = true;
-    }
-    if (changed) writeConfig(config);
+    if (removed.length) writeConfig(config);
   } catch {
     // Best-effort
   }
+  return removed;
+}
+
+function isGooseworksEntry(name: string, entry: { url?: string } | undefined): boolean {
+  if (/gooseworks/i.test(name)) return true;
+  try {
+    const host = new URL(entry?.url ?? '').hostname;
+    return host === 'gooseworks.ai' || host.endsWith('.gooseworks.ai');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * GooseWorks connections in ~/.claude.json the CLI never writes (other names,
+ * or set for one project), so logout can mention them without touching them.
+ */
+export function otherGooseworksMcpEntries(): string[] {
+  const config = readConfig();
+  const found: string[] = [];
+  for (const [name, entry] of Object.entries(config.mcpServers ?? {})) {
+    if (!OWN_ENTRIES.includes(name) && isGooseworksEntry(name, entry)) found.push(name);
+  }
+  const projects = config.projects as Record<string, { mcpServers?: ClaudeConfig['mcpServers'] }> | undefined;
+  for (const [project, settings] of Object.entries(projects ?? {})) {
+    for (const [name, entry] of Object.entries(settings?.mcpServers ?? {})) {
+      if (isGooseworksEntry(name, entry)) found.push(`${name} (${project})`);
+    }
+  }
+  return found;
 }

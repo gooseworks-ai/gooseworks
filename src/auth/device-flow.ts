@@ -27,6 +27,8 @@ export interface PendingDeviceLogin {
   expires_at: string;
   /** Seconds between polls. */
   interval: number;
+  /** The video the kit signed in for: only an account that can make it may approve. */
+  video_id?: string;
 }
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -145,6 +147,7 @@ export function readPendingDeviceLogin(apiBase: string, now: () => number = Date
       api_base: parsed.api_base,
       expires_at: parsed.expires_at,
       interval: saneInterval(parsed.interval, DEFAULT_INTERVAL_S),
+      ...(typeof parsed.video_id === 'string' && parsed.video_id ? { video_id: parsed.video_id } : {}),
     };
   } catch {
     return null;
@@ -215,6 +218,7 @@ export async function startDeviceLogin(
   ref?: string,
   now: () => number = Date.now,
   sleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  videoId?: string,
 ): Promise<PendingDeviceLogin> {
   let res: StartResponse | undefined;
   // Cloud agents share egress IPs, so a busy platform can hit the per-IP
@@ -225,7 +229,7 @@ export async function startDeviceLogin(
         apiBase: trimBase(apiBase),
         method: 'POST',
         path: '/api/cli/device/start',
-        body: { scope_type: 'user' },
+        body: { scope_type: 'user', ...(videoId ? { video_id: videoId } : {}) },
         timeoutMs: REQUEST_TIMEOUT_MS,
       });
     } catch (err) {
@@ -250,6 +254,7 @@ export async function startDeviceLogin(
     api_base: apiBase,
     expires_at: new Date(now() + expiresIn * 1000).toISOString(),
     interval: saneInterval(data.interval, DEFAULT_INTERVAL_S),
+    ...(videoId ? { video_id: videoId } : {}),
   };
   savePendingDeviceLogin(pending);
   return pending;
@@ -430,16 +435,18 @@ export async function waitForDeviceLogin(
  */
 export async function runDeviceFlow(
   apiBase: string,
-  opts: { ref?: string; wait?: boolean } & DeviceWaitDeps = {},
+  opts: { ref?: string; wait?: boolean; videoId?: string } & DeviceWaitDeps = {},
 ): Promise<DeviceFlowOutcome> {
   const now = opts.now ?? Date.now;
   let existing = readPendingDeviceLogin(apiBase, now);
+  // A sign-in started for another video (or none) is not resumed for this one.
+  if (existing && opts.videoId !== undefined && existing.video_id !== opts.videoId) existing = null;
   if (existing && opts.wait === false) {
     const step = await pollOnce(apiBase, existing, existing.interval);
     if (step.kind === 'done') return { status: 'done', result: step.result };
     if (step.kind === 'gone') existing = null;
   }
-  const pending = existing ?? await startDeviceLogin(apiBase, opts.ref, now, opts.sleep);
+  const pending = existing ?? await startDeviceLogin(apiBase, opts.ref, now, opts.sleep, opts.videoId);
   printDeviceInstructions(pending, { resumed: existing !== null, now });
   if (opts.wait === false) return { status: 'pending', pending };
   const result = await waitForDeviceLogin(apiBase, pending, { sleep: opts.sleep, now });

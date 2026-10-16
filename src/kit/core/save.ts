@@ -159,36 +159,70 @@ export function takeoverPrefix(lockFile: string, raw: string): string {
 }
 
 /**
- * Takes run.lock. A lock left by a process that is gone on this computer is
- * taken over, so "run the same command again" works after a crash; a live one,
- * or one from another computer sharing the folder, is refused. Only the one
- * process that claims a stale lock (claimJob) may remove it, and only while it
- * is still the same stale lock.
+ * Takes one lock file for this process: a function that gives it back, or why it is held. A lock left by a
+ * process that is gone on this computer is taken over; only the one process that claims a stale lock
+ * (claimJob) may remove it, and only while it is still the same stale lock.
  */
-export async function takeRunLock(layout: RunLayout, now: Date): Promise<() => Promise<void>> {
-  await mkdir(layout.root, { recursive: true, mode: 0o700 });
+async function takeLock(file: string, now: Date): Promise<(() => Promise<void>) | 'live' | 'elsewhere'> {
   const mine: LockFile = { pid: process.pid, host: os.hostname(), at: now.toISOString(), started_at: now.toISOString(), holder: randomUUID() };
   for (let tries = 0; tries < 40; tries++) {
-    if (await createExclusive(layout.lock, JSON.stringify(mine) + '\n')) {
-      await dropClaims(layout.lock, 'claim');
+    if (await createExclusive(file, JSON.stringify(mine) + '\n')) {
+      await dropClaims(file, 'claim');
       return async () => {
-        const held = await readJson<LockFile>(layout.lock);
-        if (held && held.holder === mine.holder) await unlink(layout.lock).catch(() => undefined);
+        const held = await readJson<LockFile>(file);
+        if (held && held.holder === mine.holder) await unlink(file).catch(() => undefined);
       };
     }
-    const found = await lockState(layout.lock, mine.host);
+    const found = await lockState(file, mine.host);
     if (found.state === 'free') continue;
-    if (found.state === 'elsewhere') throw new Error('This video is being made on another computer that shares this folder.');
-    if (found.state === 'live') throw new Error('This video is already being made in another window on this computer.');
-    if ((await claimJob(takeoverPrefix(layout.lock, found.raw))) === 'taken') {
+    if (found.state === 'elsewhere' || found.state === 'live') return found.state;
+    if ((await claimJob(takeoverPrefix(file, found.raw))) === 'taken') {
       // Another live run is taking it over; the next look sees its lock.
       await pause(50);
       continue;
     }
-    const again = await lockState(layout.lock, mine.host);
-    if (again.state === 'stale' && again.raw === found.raw) await unlink(layout.lock).catch(() => undefined);
+    const again = await lockState(file, mine.host);
+    if (again.state === 'stale' && again.raw === found.raw) await unlink(file).catch(() => undefined);
   }
-  throw new Error('This video is already being made in another window on this computer.');
+  return 'live';
+}
+
+/**
+ * Takes run.lock. A lock left by a process that is gone on this computer is
+ * taken over, so "run the same command again" works after a crash; a live one,
+ * or one from another computer sharing the folder, is refused.
+ */
+export async function takeRunLock(layout: RunLayout, now: Date): Promise<() => Promise<void>> {
+  await mkdir(layout.root, { recursive: true, mode: 0o700 });
+  const taken = await takeLock(layout.lock, now);
+  if (taken === 'elsewhere') throw new Error('This video is being made on another computer that shares this folder.');
+  if (taken === 'live') throw new Error('This video is already being made in another window on this computer.');
+  return taken;
+}
+
+/** Whether a live process on this computer holds the video's run lock: a run of it is going now. */
+export async function runLockHeld(layout: RunLayout): Promise<boolean> {
+  try {
+    return (await lockState(layout.lock, os.hostname())).state === 'live';
+  } catch {
+    return false;
+  }
+}
+
+/** Waits until this process holds `file`, one holder at a time on this computer; gives it back when called. */
+export async function waitForLock(file: string, signal?: AbortSignal, everyMs = 5_000): Promise<() => Promise<void>> {
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  for (;;) {
+    if (signal?.aborted) throw signal.reason ?? new Error('stopped');
+    const taken = await takeLock(file, new Date());
+    if (typeof taken === 'function') return taken;
+    await pause(everyMs);
+  }
+}
+
+/** Whether `pid` is a live process on this computer. */
+export function isAlive(pid: unknown): boolean {
+  return typeof pid === 'number' && Number.isInteger(pid) && pid > 0 && processAlive(pid);
 }
 
 /** The run folder's records: run.json, each step's record.json and the upload stages. */

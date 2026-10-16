@@ -262,6 +262,11 @@ function fitZone<Z extends { x: number; y: number; w: number; h: number }>(zone:
   return { ...zone, x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) };
 }
 
+/** How far a source-linked video's length may move when drawn over: max(1 ms, one frame at the output fps), in seconds. */
+export function linkedLengthTolerance(fps: number): number {
+  return Math.max(0.001, Number.isFinite(fps) && fps > 0 ? 1 / fps : 0);
+}
+
 /**
  * The timeline of a video drawn over: the video's own scenes, speech, end card
  * and safe zones carried through (cut to the new length, zones moved to the
@@ -275,6 +280,10 @@ export function passThroughTimeline(
   scenes?: Array<{ id: string; start_s: number; end_s: number }>,
 ): Timeline {
   const end = out.duration_s;
+  // The encoder lands on whole output frames, so a source-linked length may move by up to one frame.
+  if (under.assembly_timeline && Math.abs(end - under.duration_s) > linkedLengthTolerance(out.fps) + 1e-9) {
+    throw new Error('Changing the source-linked picture length requires a revised assembly timeline; speech and source clocks cannot be silently clamped');
+  }
   const cut = <T extends { start_s: number; end_s: number }>(items: T[]) =>
     items.filter((item) => item.start_s < end).map((item) => (item.end_s > end ? { ...item, end_s: end } : item));
   let speech = cut(under.speech);
@@ -289,6 +298,8 @@ export function passThroughTimeline(
     fps: out.fps,
     scenes: cut((scenes ?? under.scenes).map((s) => ({ id: s.id, start_s: s.start_s, end_s: s.end_s }))),
     speech,
+    ...(under.assembly_timeline ? { assembly_timeline: under.assembly_timeline } : {}),
+    // A new export needs its own exact-byte review even when its source clocks are unchanged.
   };
   if (under.end_card && under.end_card.start_s < end) timeline.end_card = { start_s: under.end_card.start_s, end_s: Math.min(end, under.end_card.end_s) };
   const fit = coverFit({ width: under.width, height: under.height }, out);

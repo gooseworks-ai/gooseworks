@@ -135,6 +135,21 @@ async function contactSheet(ffmpeg: string, ffprobe: string, video: string, out:
   if (r.code !== 0) throw new Error(`contact sheet failed: ${r.err.trim().split('\n').at(-1)}`);
 }
 
+/** The last run's own log, as the video's log.ndjson names it; log.ndjson itself before per-run logs. */
+function lastRunLog(runRoot: string): string {
+  const index = path.join(runRoot, 'log.ndjson');
+  if (!existsSync(index)) return index;
+  for (const line of readFileSync(index, 'utf8').trim().split('\n').reverse()) {
+    try {
+      const entry = JSON.parse(line) as { message?: unknown; fields?: { file?: unknown } };
+      if (entry.message === 'run started' && typeof entry.fields?.file === 'string') return path.join(runRoot, entry.fields.file);
+    } catch {
+      // A torn line: look further back.
+    }
+  }
+  return index;
+}
+
 function lastProblems(logFile: string, n = 12): string[] {
   if (!existsSync(logFile)) return [];
   return readFileSync(logFile, 'utf8')
@@ -386,7 +401,7 @@ async function main(): Promise<number> {
   // Summary.
   say(`${result.status}: ${result.message}`);
   for (const c of checks) say(`  ${c.status.padEnd(14)} ${c.code}${c.status === 'fail' ? `  found ${JSON.stringify(c.found)} expected ${JSON.stringify(c.expected)}` : ''}`);
-  if (result.status !== 'done') for (const l of lastProblems(path.join(runRoot, 'log.ndjson'))) say(`  log: ${l.slice(0, 600)}`);
+  if (result.status !== 'done') for (const l of lastProblems(lastRunLog(runRoot))) say(`  log: ${l.slice(0, 600)}`);
   if (real) say(`spent about $${real.runSpentUsd.toFixed(3)} this run (ledger: ${args.ledger})`);
   if (contactProblem || (video && !existsSync(path.join(args.out, 'contact.png')))) say('no contact sheet was made, so this run does not count as passing');
   if (line.refused.length) say(`${line.refused.length} call(s) to other addresses were refused`);

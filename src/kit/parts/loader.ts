@@ -4,10 +4,11 @@
 // `<raw base>/parts/<id>/<version>/` holds part.json, part.mjs and assets. The
 // video's PartsLock, handed over by our server at the yes, is the trust
 // anchor: every file's sha256 must match it on every load, and the part's
-// models and kit range must match both the lock and the published index.
-// A version that is withdrawn, missing from the index or out of this kit's
-// range is refused. Nothing is imported until every check has passed, so a
-// refused part never runs and nothing is spent.
+// models and kit range must match the lock. A version that is withdrawn or out
+// of this kit's range is refused. Nothing is imported until every check has
+// passed, so a refused part never runs and nothing is spent. A file the
+// published folder doesn't serve yet is a miss to try again later, not a
+// refusal: the lock's hashes already say what the part is.
 //
 // Each verified copy is a folder of its own, keyed by the part and the exact
 // file hashes the lock gives it: <home>/kit/parts/<id>/<version>/<key>/. It is
@@ -20,6 +21,11 @@
 // with different locks never share a folder, and a part only ever sees the
 // files its lock vouches for. No link is followed below the kit home.
 //
+// An edited step (`video make <id> --patched <step>`) runs a copy of its locked part in which only
+// the edited files differ: the published part is checked as above, the edited copy must hold the
+// lock's files with exactly the hashes the edit names, and those verified bytes are what is
+// imported. part.json never changes, so the models and kit range stay the lock's.
+//
 // GOOSE_KIT_PARTS_DIR (a local goose-skills checkout) loads parts from disk
 // without the lock's hashes, for building parts during the sprint. It works
 // only against staging or a local server and marks the part `source: "dev"`.
@@ -30,20 +36,7 @@ import { pathToFileURL } from 'url';
 import type { LockedPart, ModelNeed, PartManifest, PartRef, PartRun, PartsLock } from '../part-interface';
 import { apiEnvironment, kitApiBase, KIT_DEV_ENV } from '../env';
 import { gooseSkillsSource } from '../../skills/installer';
-import {
-  CatalogError,
-  fetchBytes,
-  fetchCatalog,
-  fileHashes,
-  isPartId,
-  modelList,
-  partKey,
-  parseWithdrawn,
-  sameFiles,
-  sameModels,
-  type FetchLike,
-  type PartsCatalog,
-} from './catalog';
+import { CatalogError, fetchBytes, fetchWithdrawn, fileHashes, isPartId, modelList, partKey, parseWithdrawn, sameModels, type FetchLike } from './catalog';
 import { LockTimeout, NotAFolder, realFolder, removeTree, withFolderLock } from './fs-safe';
 import { isExactVersion, satisfiesKitRange } from './semver';
 
@@ -57,7 +50,6 @@ export type PartLoadCode =
   | 'withdrawn'
   | 'not_published'
   | 'hash_mismatch'
-  | 'index_mismatch'
   | 'manifest_mismatch'
   | 'kit_range'
   | 'too_large'
@@ -66,7 +58,7 @@ export type PartLoadCode =
   | 'bad_cache'
   | 'bad_part';
 
-/** A part that must not run. The message is plain and names the part; nothing was spent. */
+/** A part that must not run. The message is plain and names the part. */
 export class PartLoadError extends Error {
   constructor(
     readonly code: PartLoadCode,
@@ -96,6 +88,8 @@ export interface PartLoadRequest {
   home: string;
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
+  /** An edited copy of this part to run instead: its folder and every file's expected hash. */
+  patched?: { dir: string; files: Record<string, string> };
 }
 
 export interface PartLoaderOptions {
@@ -223,16 +217,16 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
   const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
   const importModule = options.importModule ?? nativeImport;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  // The lists are read once per run of the kit, from the origin the first load used.
-  const catalogs = new Map<string, Promise<PartsCatalog>>();
+  // The withdrawn list is read once per run of the kit, from the origin the first load used.
+  const lists = new Map<string, Promise<Set<string>>>();
 
-  function catalogFor(rawBase: string, signal: AbortSignal): Promise<PartsCatalog> {
-    let pending = catalogs.get(rawBase);
+  function withdrawnFor(rawBase: string, signal: AbortSignal): Promise<Set<string>> {
+    let pending = lists.get(rawBase);
     if (!pending) {
-      pending = fetchCatalog(fetchImpl, rawBase, { timeoutMs, signal });
+      pending = fetchWithdrawn(fetchImpl, rawBase, { timeoutMs, signal });
       // A failed read is not kept: the next load tries again.
-      pending.catch(() => catalogs.delete(rawBase));
-      catalogs.set(rawBase, pending);
+      pending.catch(() => lists.delete(rawBase));
+      lists.set(rawBase, pending);
     }
     return pending;
   }
@@ -248,21 +242,14 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     } catch (error) {
       throw new PartLoadError('unreachable', (error as Error).message);
     }
-    let catalog: PartsCatalog;
+    let withdrawn: Set<string>;
     try {
-      catalog = await catalogFor(source.rawBase, request.signal);
+      withdrawn = await withdrawnFor(source.rawBase, request.signal);
     } catch (error) {
-      throw new PartLoadError('unreachable', error instanceof CatalogError ? error.message : 'Could not read the published parts list.');
+      throw new PartLoadError('unreachable', error instanceof CatalogError ? error.message : 'Could not read the list of withdrawn parts.');
     }
-    if (catalog.withdrawn.has(partKey(ref.id, ref.version))) {
+    if (withdrawn.has(partKey(ref.id, ref.version))) {
       throw new PartLoadError('withdrawn', `${named(ref)} was withdrawn, so this video can’t use it. The video needs a new plan.`);
-    }
-    const published = catalog.index.get(partKey(ref.id, ref.version));
-    if (!published) {
-      throw new PartLoadError('not_published', `${named(ref)} is not in the published parts list.`);
-    }
-    if (!sameFiles(published.files, locked.files) || !sameModels(published.models, locked.models) || published.kit !== locked.kit) {
-      throw new PartLoadError('index_mismatch', `${named(ref)} in this video’s parts list does not match the published part.`);
     }
 
     await fs.mkdir(request.home, { recursive: true, mode: 0o700 });
@@ -338,11 +325,70 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     }
 
     const manifest = checkManifest(ref, verified.get('part.json')!, locked);
+    if (request.patched) return loadPatched(request, request.patched, locked, home);
     const entry = path.join(dir, 'part.mjs');
     // The folder is keyed by the lock's hashes and the address by the entry's,
     // so Node's module cache can only hand back these exact bytes.
     const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${locked.files['part.mjs']}`);
     return { manifest, dir, run: exportedRun(ref, mod), source: 'published' };
+  }
+
+  /** The edited copy, after the published part passed: its verified bytes, copied where nothing else writes. */
+  async function loadPatched(
+    request: PartLoadRequest,
+    patched: { dir: string; files: Record<string, string> },
+    locked: { files: Record<string, string>; models: ModelNeed[]; kit: string },
+    home: string,
+  ): Promise<LoadedPart> {
+    const { ref } = request;
+    const lockedFiles = Object.keys(locked.files);
+    const edited = (what: string) => new PartLoadError('hash_mismatch', `The edited copy of ${ref.id} ${ref.version} ${what}.`);
+    if (Object.keys(patched.files).length !== lockedFiles.length || lockedFiles.some((file) => !patched.files[file])) throw edited('does not hold the same files as the part');
+    if (patched.files['part.json'] !== locked.files['part.json']) throw edited('changed part.json');
+    const read = await readCopy(path.resolve(patched.dir), patched.files);
+    if (!read) throw edited('changed after the edit was read, or holds other files; make the video again with it');
+    const manifest = checkManifest(ref, read.get('part.json')!, locked);
+    const key = copyKey(ref, patched.files);
+    let target: string;
+    try {
+      target = path.join(await realFolder(home, ['kit', 'patched', ref.id, ref.version]), key);
+    } catch (error) {
+      if (error instanceof NotAFolder) throw new PartLoadError('bad_cache', `${error.at} is not a plain folder, so the kit will not store parts through it. Move it away and run the same command again.`);
+      throw error;
+    }
+    // Another video with the same edit may be storing or checking this copy: one at a time per copy.
+    const parent = path.dirname(target);
+    let stored: boolean;
+    try {
+      stored = await withFolderLock(parent, `.${key}`, { timeoutMs, signal: request.signal }, async () => {
+        if (await readCopy(target, patched.files)) return true;
+        const staging = await fs.mkdtemp(path.join(parent, '.staging-'));
+        try {
+          for (const [file, bytes] of read) {
+            const out = path.join(staging, ...file.split('/'));
+            await fs.mkdir(path.dirname(out), { recursive: true, mode: 0o700 });
+            await fs.writeFile(out, bytes, { mode: 0o600, flag: 'wx' });
+          }
+          // A damaged copy is moved aside whole, then deleted without following links.
+          if (await fs.lstat(target).catch(() => null)) {
+            const aside = path.join(parent, `.aside-${key}-${randomBytes(6).toString('hex')}`);
+            await fs.rename(target, aside);
+            await removeTree(aside);
+          }
+          await fs.rename(staging, target);
+        } finally {
+          await removeTree(staging);
+        }
+        return !!(await readCopy(target, patched.files));
+      });
+    } catch (error) {
+      if (error instanceof LockTimeout) throw new PartLoadError('bad_cache', `Another run is storing the edited ${ref.id} ${ref.version}. Run the same command again in a moment.`);
+      throw error;
+    }
+    if (!stored) throw edited('changed on this computer while it was stored; run the same command again');
+    const entry = path.join(target, 'part.mjs');
+    const mod = await importModule(`${pathToFileURL(entry).href}?sha256=${patched.files['part.mjs']}`);
+    return { manifest, dir: target, run: exportedRun(ref, mod), source: 'published' };
   }
 
   async function loadDev(request: PartLoadRequest): Promise<LoadedPart> {
@@ -389,6 +435,7 @@ export function createPartLoader(options: PartLoaderOptions): PartLoader {
     async load(request) {
       checkRef(request.ref);
       if (request.signal.aborted) throw new PartLoadError('unreachable', 'The video was stopped before its parts loaded.');
+      if (request.dev && request.patched) throw new PartLoadError('dev_refused', 'An edited step runs from the published parts, not a local parts folder.');
       return request.dev ? loadDev(request) : loadPublished(request);
     },
   };

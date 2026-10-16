@@ -20,9 +20,9 @@ export interface KitPartBuild {
 export const KIT_PARTS: KitPartBuild[] = [
   {
     id: 'html-frames',
-    version: '1.2.0',
+    version: '1.3.1',
     entry: path.join(ROOT, 'src/kit/maker/parts/html-frames/src/part.ts'),
-    out: path.join(ROOT, 'src/kit/maker/parts/html-frames/1.2.0/part.mjs'),
+    out: path.join(ROOT, 'src/kit/maker/parts/html-frames/1.3.1/part.mjs'),
   },
 ];
 

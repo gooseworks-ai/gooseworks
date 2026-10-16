@@ -33,8 +33,13 @@ describe('the caption look in the expectation', () => {
     const expectation = expectationOf(styleWith({}), approved);
     expect(expectation).not.toHaveProperty('caption_look');
     expect(Object.keys(expectation).sort()).toEqual(
-      ['aspect', 'captions', 'duration_s', 'end_card', 'height', 'qc_flags', 'script', 'speech', 'width'],
+      ['aspect', 'captions', 'duration_s', 'end_card', 'height', 'layers', 'qc_flags', 'script', 'speech', 'width'],
     );
+  });
+
+  it('names the style’s layer switches, so the check layer knows whether the sound layer ran', () => {
+    const quiet = { ...style, layers: { brand: false, captions: true, sound: false, check: true } } as unknown as LoadedStyle['style'];
+    expect(expectationOf(quiet, approved).layers).toEqual({ brand: false, captions: true, sound: false, check: true });
   });
 
   it.each([

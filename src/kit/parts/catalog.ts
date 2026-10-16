@@ -1,34 +1,17 @@
-// The published parts lists in goose-skills, as the loader reads them
-// (part-interface.md section 6):
+// The published list the loader reads from goose-skills (part-interface.md section 6):
 //
-//   parts/index.json      { interface: 1, parts: [{ id, version, kind, kit, files: {path: sha256}, models }] }
 //   parts/withdrawn.json  { withdrawn: [{ id, version, reason }] }
 //
-// Both lists can change at any time, unlike the frozen version folders, so
-// they are read fresh for every run. A list that cannot be read stops the
-// video: a part is never run without knowing whether it was withdrawn.
+// It can change at any time, unlike the frozen version folders, so it is read
+// fresh for every run. A list that cannot be read stops the video: a part is
+// never run without knowing whether it was withdrawn. The published index is
+// not read: the video's lock already holds every file's hash, and the index is
+// served from a cache that can lag behind it.
 import type { ModelNeed } from '../part-interface';
-import { isExactVersion } from './semver';
 
-export const MAX_INDEX_BYTES = 8 * 1024 * 1024;
 export const MAX_WITHDRAWN_BYTES = 1024 * 1024;
 
 export type FetchLike = (url: string, init: { signal: AbortSignal }) => Promise<Response>;
-
-export interface IndexEntry {
-  id: string;
-  version: string;
-  kit: string;
-  files: Record<string, string>;
-  models: ModelNeed[];
-}
-
-export interface PartsCatalog {
-  /** `${id}@${version}` → entry. */
-  index: Map<string, IndexEntry>;
-  /** `${id}@${version}` of every withdrawn version. */
-  withdrawn: Set<string>;
-}
 
 export class CatalogError extends Error {}
 
@@ -88,32 +71,6 @@ export function modelList(value: unknown): ModelNeed[] | null {
 export function sameModels(a: readonly ModelNeed[], b: readonly ModelNeed[]): boolean {
   const key = (list: readonly ModelNeed[]) => list.map((m) => `${m.provider}\u0000${m.model}`).sort().join('\u0001');
   return a.length === b.length && key(a) === key(b);
-}
-
-/** The same paths with the same hashes. */
-export function sameFiles(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every((file) => Object.prototype.hasOwnProperty.call(b, file) && b[file] === a[file]);
-}
-
-export function parseIndex(raw: unknown): Map<string, IndexEntry> {
-  const body = raw as { interface?: unknown; parts?: unknown };
-  if (!body || typeof body !== 'object' || body.interface !== 1 || !Array.isArray(body.parts)) {
-    throw new CatalogError('The published parts list is not in a shape this kit reads.');
-  }
-  const index = new Map<string, IndexEntry>();
-  for (const item of body.parts as unknown[]) {
-    const entry = item as Partial<IndexEntry> | null;
-    if (!entry || !isPartId(entry.id) || !isExactVersion(entry.version)) continue;
-    const files = fileHashes(entry.files);
-    const models = modelList(entry.models);
-    if (!files || !models || typeof entry.kit !== 'string') {
-      // A broken row cannot vouch for its part; the part is then refused as unlisted.
-      continue;
-    }
-    index.set(partKey(entry.id, entry.version), { id: entry.id, version: entry.version, kit: entry.kit, files, models });
-  }
-  return index;
 }
 
 export function parseWithdrawn(raw: unknown): Set<string> {
@@ -195,14 +152,8 @@ function parseJson(bytes: Buffer, what: string): unknown {
   }
 }
 
-/** Reads index.json and withdrawn.json from `<rawBase>/parts/`. */
-export async function fetchCatalog(fetchImpl: FetchLike, rawBase: string, opts: { timeoutMs: number; signal?: AbortSignal }): Promise<PartsCatalog> {
-  const [indexBytes, withdrawnBytes] = await Promise.all([
-    fetchBytes(fetchImpl, `${rawBase}/parts/index.json`, { ...opts, maxBytes: MAX_INDEX_BYTES, what: 'the published parts list' }),
-    fetchBytes(fetchImpl, `${rawBase}/parts/withdrawn.json`, { ...opts, maxBytes: MAX_WITHDRAWN_BYTES, what: 'the list of withdrawn parts' }),
-  ]);
-  return {
-    index: parseIndex(parseJson(indexBytes, 'The published parts list')),
-    withdrawn: parseWithdrawn(parseJson(withdrawnBytes, 'The list of withdrawn parts')),
-  };
+/** Reads `<rawBase>/parts/withdrawn.json`: `${id}@${version}` of every withdrawn version. */
+export async function fetchWithdrawn(fetchImpl: FetchLike, rawBase: string, opts: { timeoutMs: number; signal?: AbortSignal }): Promise<Set<string>> {
+  const bytes = await fetchBytes(fetchImpl, `${rawBase}/parts/withdrawn.json`, { ...opts, maxBytes: MAX_WITHDRAWN_BYTES, what: 'the list of withdrawn parts' });
+  return parseWithdrawn(parseJson(bytes, 'The list of withdrawn parts'));
 }

@@ -34,6 +34,17 @@ export const ANSWER_FIELDS: readonly string[] = [
   'harness_binding', 'requires_skills',
   // make-custom-video since gooseworks-app #2007: reference upload/attach and the server-added spend.
   'video_project', 'media_confirm', 'media_analyze', 'current_revision', 'committed_credits',
+  // make-custom-video in the custom one-run work (gooseworks-app #2019, #2022-#2027): template demo
+  // reference, free price check, redo allowance, clip checks, progress notes and the rebuild recipe.
+  'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
+  'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
+  // Custom chat approval fields backported from the current server entry.
+  'approval_quote', 'review_token', 'total_credits',
+  // Custom quality release: source identity, creative intent and final review fields.
+  'media_id', 'media_revision', 'audio_perception', 'motion_perception',
+  'creative_contract', 'speech_mode', 'soundtrack_modes', 'required_features',
+  'reference_map', 'product_grounding', 'voice_plan', 'assembly_timeline',
+  'quality_report', 'content_review', 'creative_contract_revision',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
@@ -64,6 +75,8 @@ const INSTALL_COMMANDS = [
   /\b(?:curl|wget)\b[^\n]*\|\s*(?:ba|z)?sh\b/i,
   /\bgooseworks\s+(?:install|update)\b/i,
 ];
+// Each answer hands over its own exact kit command and version; a skill copy would go stale under a video.
+const KIT_COMMAND = /\bgooseworks@[0-9A-Za-z.<>-]+|\bvideo\s+make\b/i;
 const KEBAB = /(?<![a-z0-9-])[a-z0-9]+(?:-[a-z0-9]+)+(?![a-z0-9-])/g;
 const RENDER_ATOM = /(?<![a-z0-9-])render-[a-z0-9]+(?:-[a-z0-9]+)*/g;
 
@@ -142,10 +155,10 @@ function lintView(text: string, actions: Set<string>, recipes: Set<string>): str
 
   const sign = CURRENCY_SIGN.exec(text);
   if (sign) problems.push(`money.credits_only: a currency sign (${sign[0]})`);
-  // The server gives only these two pinned kit commands; other npx usage remains a setup request.
-  const setupText = text.replace(/\bnpx -y gooseworks@\d+\.\d+\.\d+(?: --env (?:staging|production))? video (?:make <id>|check)(?=\s|[.,;`]|$)/g, 'GooseWorks video command');
+  const kit = KIT_COMMAND.exec(text);
+  if (kit) problems.push(`setup.no_install: spells out the kit command (${kit[0]})`);
   for (const command of INSTALL_COMMANDS) {
-    const found = command.exec(setupText);
+    const found = command.exec(text);
     if (found) problems.push(`setup.no_install: an install command (${found[0]})`);
   }
   for (const sentence of text.split(/[.!?\n]/)) {

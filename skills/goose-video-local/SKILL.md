@@ -1,7 +1,7 @@
 ---
 name: goose-video-local
-description: Make an approved GooseWorks video on this computer when the server's next_step says to.
-version: 1.0.2
+description: Make an approved GooseWorks video when an answer's next_step gives its command.
+version: 1.0.3
 ---
 
-Run `gooseworks video make <id>` when the server's next_step says so.
+When an answer's next_step gives a command to make a video, its last line says who starts it and how: follow that line exactly, with the command exactly as given.

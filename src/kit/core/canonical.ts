@@ -42,8 +42,8 @@ export function hashView(value: unknown): unknown {
   return value;
 }
 
-/** Local cache key of one step: { interface, part, toolchain, inputs }. */
-export function stepHash(input: { interface: number; part: PartRef; toolchain: string; inputs: unknown; fix?: number }): string {
+/** Local cache key of one step: { interface, part, toolchain, inputs }, plus the step's edit and remade takes when it has them. */
+export function stepHash(input: { interface: number; part: PartRef; toolchain: string; inputs: unknown; fix?: number; patch?: string; takes?: Record<string, number> }): string {
   const { fix, ...rest } = input;
   return canonicalHash(hashView(fix ? { ...rest, fix } : rest));
 }

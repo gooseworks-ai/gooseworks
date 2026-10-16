@@ -1,7 +1,7 @@
 ---
 name: goose-video
 description: "Make a video ad in this chat. Study a supplied video reference before comparing styles; follow the next_step in every answer."
-version: 4.4.3
+version: 4.4.6
 ---
 
 # GooseWorks video
@@ -10,7 +10,7 @@ From an installed entry, first catalog_fetch type skill goose-video on this same
 
 For a video already started, call video_read and follow its next_step.
 
-Explicit custom: skip video_formats and steps 5–6. Keep their mechanics and assets; research the brand/product and study the reference for its custom plan. Check current custom support before any write.
+Explicit custom: skip steps 5–6. Keep their mechanics and assets; research the brand/product, study the reference and follow the custom rule below.
 
 For other new videos start with get_started (wants video, request). A card is not a style choice or proof of viewing. Follow the reference rule before style selection or a plan.
 
@@ -25,18 +25,18 @@ For other new videos start with get_started (wants video, request). A card is no
 
 Watch the actual video before choosing a style or writing a custom plan. Play through it, or inspect timestamped frames spanning it plus its audio/transcript. A URL, title, caption or thumbnail is not a viewing. Record the hook, scene order, pacing, narration/dialogue, framing, product interactions, text and ending, with timestamps and gaps. If access or sampling cannot answer an essential detail, ask for an accessible video or their choice to continue from the brief; never claim it was watched.
 When they have not chosen custom, call video_formats after brand research. For plausible matches, catalog_fetch type template returns the style's plan_note, scenes, duration, cast, sound and assets. Compare these against the observed reference and their essential choices. A similar title or high brand ranking does not prove a match. Explain fit or mismatch before they choose. Keep an explicit style choice; do not quietly change constraints or over-adapt it. Reassess a later reference before creating or rewriting a plan.
-If no available style fits, or they explicitly want custom, catalog_fetch type skill make-custom-video on this connection before a project write. Require its complete production-harness dependency and current custom schemas. Follow its separate authenticated script and ingredient approvals, cumulative budgets and verified execution capability. If anything is unavailable, say so and keep the brief; do not substitute a template, import the reference as a finished video, use retired actions or switch environments. Fetching a skill alone proves no execution capability.
+If no available style fits, or they explicitly want custom, catalog_fetch type skill make-custom-video on this connection before a project write and follow it: its full harness, current schemas, two authenticated approvals, cumulative budgets and verified execution. If anything is unavailable, say so and keep the brief; never run a template's renderer and call it custom, import the reference as a finished video, use retired actions or switch environments. Fetching a skill proves no execution capability.
 
 ## Rules
 
 - Talk to marketers: what they get and decide, never how it's made.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except npx -y gooseworks@0.5.7 video check and npx -y gooseworks@0.5.7 video make <id> when a next_step gives them.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
-- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; you never approve.
-- A yes counts only for the price the customer was shown: their press on the plan card, or their yes in chat sent with that price.
-- Where the app shows no card, print the plan and its price and ask for the customer's yes here; never send them to a website to approve.
+- Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
+- A yes is to the credit total the customer was shown: their press on the plan card, or their yes in chat sent with that total.
+- Every video approval, including a higher price or a priced fix, can happen in this chat. Show the plan and its price here when no card is visible; cards and websites are optional for approval.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.

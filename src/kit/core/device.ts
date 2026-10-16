@@ -8,7 +8,7 @@ import type { DeviceReport, ToolReport } from '../line/types';
 import { devicePath, partsCacheDir } from './paths';
 import { sha256Hex } from './canonical';
 import { atomicWrite, claimJob, createExclusive } from './save';
-import { isExactVersion, KIT_INTERFACES, KIT_VERSION } from './version';
+import { isExactVersion, KIT_FEATURES, KIT_INTERFACES, KIT_VERSION } from './version';
 import type { Toolchain } from './toolchain';
 
 const DEVICE_ID = /^[A-Za-z0-9-]{8,64}$/;
@@ -110,6 +110,7 @@ export async function deviceReport(input: {
     arch: archOf(),
     kit_version: KIT_VERSION,
     interfaces: [...KIT_INTERFACES],
+    features: [...KIT_FEATURES],
     ffmpeg: input.tools.ffmpeg.report,
     ffprobe: input.tools.ffprobe.report,
     browser,
