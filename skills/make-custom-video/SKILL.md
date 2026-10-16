@@ -1,7 +1,7 @@
 ---
 name: make-custom-video
 description: "Create a custom video with sourced product accuracy, explicit sound routing and exact-final audiovisual review."
-version: 3.6.0
+version: 3.6.1
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -31,8 +31,8 @@ Use connected creator language and reference-appropriate pace. Reuse accepted ch
 
 ## Save and review twice
 
-video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free with estimate_only=1. Save shot_list with the script to price Standard and Best; render_estimate.upgrade_allowance is picture upgrades only (about two at high), never a clip. No guessed rates or direct keys. Changing approved intent sets approval aside.
-Show the full saved script or actual playable ingredients and exact cumulative budget here. At the script show both approval_quote.tier_quotes totals and covers-up-to numbers as given, no own math; owner picks, Standard default. Seedance is in neither total: offer seedance_addons prices; only the owner's yes adds one. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote (their quality_tier and its total if two), expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
+video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free and read-only with data_price_provider (up to 20 per call; follow any price_unknown entry's next_step first). Save shot_list with the script to price Standard and Best; render_estimate.upgrade_allowance is for pictures only. No guessed rates or direct keys. Changing approved intent sets approval aside.
+Show the full saved script or actual playable ingredients and exact cumulative budget here. At the script show both approval_quote.tier_quotes totals and covers-up-to numbers as given, no own math; owner picks, Standard default. Seedance: offer seedance_addons prices; only the owner's yes adds one. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote (their quality_tier and its total if two), expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
 
 ## Produce, assemble and deliver
 
