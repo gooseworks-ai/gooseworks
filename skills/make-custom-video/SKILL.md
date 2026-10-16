@@ -1,7 +1,7 @@
 ---
 name: make-custom-video
 description: "Create a custom video with sourced product accuracy, explicit sound routing and exact-final audiovisual review."
-version: 3.6.0
+version: 3.6.1
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -31,7 +31,7 @@ Use connected creator language and reference-appropriate pace. Reuse accepted ch
 
 ## Save and review twice
 
-video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free with estimate_only=1; save preview/render estimates including redo allowance. No guessed rates or direct keys. Changing approved intent sets approval aside.
+video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free and read-only with data_price_provider (up to 20 per call; follow any price_unknown entry's next_step first); save preview/render estimates including redo allowance. No guessed rates or direct keys. Changing approved intent sets approval aside.
 Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
 
 ## Produce, assemble and deliver
