@@ -42,6 +42,8 @@ export const ANSWER_FIELDS: readonly string[] = [
   'data_price_provider', 'price_unknown',
   // Custom chat approval fields backported from the current server entry.
   'approval_quote', 'review_token', 'total_credits',
+  // Standard and Best script prices (gooseworks-app #2084).
+  'shot_list', 'upgrade_allowance', 'tier_quotes', 'quality_tier', 'seedance_addons',
   // Custom quality release: source identity, creative intent and final review fields.
   'media_id', 'media_revision', 'audio_perception', 'motion_perception',
   'creative_contract', 'speech_mode', 'soundtrack_modes', 'required_features',
@@ -63,8 +65,9 @@ export const ROUTER_MAX_CHARS = 6500;
  * make-custom-video carries the whole custom contract (reference viewing, two owner
  * reviews, local execution and the stored rebuild recipe), and the server text
  * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
+ * Raised to 6,200 for the Standard/Best script prices (gooseworks-app #2084).
  */
-export const CUSTOM_VIDEO_MAX_CHARS = 6000;
+export const CUSTOM_VIDEO_MAX_CHARS = 6200;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;
