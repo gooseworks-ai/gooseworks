@@ -41,7 +41,7 @@ export const ANSWER_FIELDS: readonly string[] = [
   // Custom chat approval fields backported from the current server entry.
   'approval_quote', 'review_token', 'total_credits',
   // Standard and Best script prices (gooseworks-app #2084).
-  'shot_list', 'upgrade_allowance', 'tier_quotes', 'quality_tier',
+  'shot_list', 'upgrade_allowance', 'tier_quotes', 'quality_tier', 'seedance_addons',
   // Custom quality release: source identity, creative intent and final review fields.
   'media_id', 'media_revision', 'audio_perception', 'motion_perception',
   'creative_contract', 'speech_mode', 'soundtrack_modes', 'required_features',
