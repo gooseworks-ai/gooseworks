@@ -31,8 +31,8 @@ Use connected creator language and reference-appropriate pace. Reuse accepted ch
 
 ## Save and review twice
 
-video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free with estimate_only=1; save preview/render estimates including redo allowance. No guessed rates or direct keys. Changing approved intent sets approval aside.
-Show the full saved script or actual playable ingredients and exact cumulative budget here. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote, expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Cards and Studio are optional. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
+video_change needs expected_revision and current brand_context_digest. Never author server context. Estimate paid requests free with estimate_only=1. Save shot_list with the script to price Standard and Best; put upgrade/redo money in render_estimate.upgrade_allowance. No guessed rates or direct keys. Changing approved intent sets approval aside.
+Show the full saved script or actual playable ingredients and exact cumulative budget here. At the script show both approval_quote.tier_quotes totals and covers-up-to numbers as given, no own math; owner picks, Standard default. After the owner's explicit yes, call video_approve with custom phase, review_token and total_credits from custom_review.approval_quote (their quality_tier and its total if two), expected_revision from custom_review.plan_revision, and their words as user_quote. Never infer consent or approve yourself. Script approval permits quoted previews only. Save actual ingredients, voice auditions and render budget for the second review. Reread video_read; require current approvals, matching tokens/revision and budget. Honor Stop.
 
 ## Produce, assemble and deliver
 
