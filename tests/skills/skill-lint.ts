@@ -38,13 +38,22 @@ export const ANSWER_FIELDS: readonly string[] = [
   // reference, free price check, redo allowance, clip checks, progress notes and the rebuild recipe.
   'media_url', 'estimate_only', 'reroll_allowance', 'progress_note', 'clip_check', 'clip_checks',
   'suggest_kill', 'reroll_scene', 'output_url', 'pack_recipe', 'check_recipe', 'production_source',
+  // make-custom-video 3.6.1 (gooseworks-app #2086): the read-only price check, a catalog tool outside the action contract.
+  'data_price_provider', 'price_unknown',
   // Custom chat approval fields backported from the current server entry.
   'approval_quote', 'review_token', 'total_credits',
+  // Standard and Best script prices (gooseworks-app #2084).
+  'shot_list', 'upgrade_allowance', 'tier_quotes', 'quality_tier', 'seedance_addons',
   // Custom quality release: source identity, creative intent and final review fields.
   'media_id', 'media_revision', 'audio_perception', 'motion_perception',
   'creative_contract', 'speech_mode', 'soundtrack_modes', 'required_features',
   'reference_map', 'product_grounding', 'voice_plan', 'assembly_timeline',
   'quality_report', 'content_review', 'creative_contract_revision',
+  // goose-video 4.5.0: a found reference ad is picked by its candidate id (video_references pick).
+  'candidate_id',
+  // make-custom-video 3.8.0 (gooseworks-app #2076, carrying the 3.7.x server text): the reviewed changes from the
+  // reference, the character step and the measured final check.
+  'changes_from_reference', 'make_character', 'final_measure',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */
@@ -59,8 +68,9 @@ export const ROUTER_MAX_CHARS = 6500;
  * make-custom-video carries the whole custom contract (reference viewing, two owner
  * reviews, local execution and the stored rebuild recipe), and the server text
  * passed 5,000 on dev on 2026-10-12. Its own budget; other entry skills keep 5,000.
+ * Raised to 6,200 for the Standard/Best script prices (gooseworks-app #2084).
  */
-export const CUSTOM_VIDEO_MAX_CHARS = 6000;
+export const CUSTOM_VIDEO_MAX_CHARS = 6200;
 
 const SNAKE_NAME = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 const SERVER_PREFIX = /\bmcp__[a-z0-9_-]+?__/gi;
