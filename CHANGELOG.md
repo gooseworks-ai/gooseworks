@@ -1,5 +1,13 @@
 # gooseworks
 
+## 0.5.10
+
+### Patch Changes
+
+- 0b86cd2: Start new videos from a real reference ad by default: the goose-video entry skill now picks the product, finds ads like the brand's (or takes the customer's own), and remakes the pick as a custom video. Ready-made styles stay available when nothing fits or the customer asks for one. The make-custom-video entry (3.8.0) follows the same order: without a reference it finds ads like the brand's and uses the customer's pick, never a template's demo. Release with the matching server support for finding reference ads.
+- 90864bf: The make-custom-video entry (3.6.1) prices paid requests with one read-only data_price_provider call instead of estimate_only=1, so Codex's auto-review no longer reviews, and can no longer refuse, a price check. Release with the server's data_price_provider (gooseworks-app #2082) and the matching entry text (#2086).
+- 65d29fa: Custom videos show two script prices, Standard and Best, each with how much it covers. The customer picks one (Standard by default) and the approval carries that choice and its total. Drafts save the shot list so GooseWorks can price both. Release with the matching server support.
+
 ## 0.5.9
 
 ### Patch Changes
