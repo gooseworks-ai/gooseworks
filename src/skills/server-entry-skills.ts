@@ -11,6 +11,7 @@
 // gooseworks-app akhil/custom-first-default @ b229eec47 (PR athina-ai/gooseworks-app#2076), rules block included (rulebook 1.5.1).
 // make-custom-video 3.8.0 (custom-first: video_references find and pick when no reference is given; price check and
 // Standard/Best prices included) is copied whole from gooseworks-app akhil/custom-first-default @ 50472f801 (PR #2076).
+// Actor/voice selection and format guidance backported from the custom entry companion PR (2026-10-19).
 // Custom review wording keeps approvals in this chat.
 // Other entries and rule blocks retain the earlier source above.
 // Video entries combine the recorded server snapshots above. The rules blocks are
@@ -70,7 +71,7 @@ Custom route (a picked or supplied reference, or explicit custom): catalog_fetch
   'make-custom-video': `---
 name: make-custom-video
 description: "Create a custom video with sourced product accuracy, explicit sound routing and exact-final audiovisual review."
-version: 3.8.0
+version: 3.8.2
 requires_skills: [video-production-harness]
 harness_binding: gooseworks/video-actions/v1
 ---
@@ -106,7 +107,7 @@ Custom skips the style picker. With a supplied reference, create once with style
 Read brand_read and knowledge_search. Source product geometry, colour, label, allowed use and scale; size-sensitive shots need dimensions or a known-scale photo. Never guess capacity or invent a real process.
 Save reference_observation bound to media_id/media_revision with duration, full coverage, audio_perception (listened, or measured from the server's sound profile), motion_perception and timed picture/audio findings. Skipping a reference needs the owner's brief-only user_quote.
 Save draft.creative_contract: speech_mode, soundtrack_modes, required_features, reference_map per scene (beat/action/proof/sound), sourced product_grounding, voice_plan and changes_from_reference. Native speech keeps source audio; external speech over a speaking face needs exact-audio lip sync. No detected words never authorizes mute.
-Default capture: a phone, deep focus, a lived-in room, no retouching. People come from create-creator-takes-h3's make_character.py; real people and products use gpt-image-2 edit, packaging from the real photo.
+Match capture/finish to the brief/reference; phone texture only for phone footage. Read harness references/talking-actor.md for speaking people: three actor options when needed, then playable voice choices beside the selected actor. Compare the generated voice with its audition.
 
 ## Save and review twice
 
