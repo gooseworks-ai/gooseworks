@@ -62,8 +62,9 @@ export const ENTRY_SKILL_MAX_CHARS = 5000;
  * The `gooseworks` router also carries the terminal data commands the
  * research and lead skills rely on, so it has its own, larger budget. Taking
  * it to 3,000 means moving those commands into the skills that use them.
- * Raised to 7,500 for the Brand Brain steps (read brain_map first, save brand facts with
- * brain_save) and the description that loads the router when the user talks about their brand.
+ * Raised to 7,500 for the Marketing Brain steps (read brain_map first, save brand facts with
+ * brain_save), the description that loads the router when the user talks about their brand, and
+ * the rulebook 1.5.3 rules block.
  */
 export const ROUTER_MAX_CHARS = 7500;
 /**
