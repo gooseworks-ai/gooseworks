@@ -13,7 +13,9 @@
 // Standard/Best prices included) is copied whole from gooseworks-app akhil/custom-first-default @ 50472f801 (PR #2076).
 // Actor/voice selection and format guidance backported from the custom entry companion PR (2026-10-19).
 // Custom review wording keeps approvals in this chat.
-// Other entries and rule blocks retain the earlier source above.
+// The rules blocks (gooseworks, goose-ads, goose-product-photos) are rulebook 1.5.3 from gooseworks-app
+// dev @ f9d52a970 (renderEntrySkillRules), captured 2026-10-19: ads and photos start brand work with brain_map.
+// Other entries retain the earlier source above.
 // Video entries combine the recorded server snapshots above. The rules blocks are
 // the rulebook's entry-skill rules for the skills the CLI writes itself
 // (gooseworks, goose-ads, goose-product-photos), so no skill restates a rule
@@ -22,7 +24,7 @@
 // gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one.
 
 /** The rulebook version of the unchanged shared rules snapshot. */
-export const SERVER_RULEBOOK_VERSION = '1.3.2';
+export const SERVER_RULEBOOK_VERSION = '1.5.3';
 
 export const SERVER_VIDEO_ENTRY_SKILLS = {
   'goose-video': `---
@@ -131,8 +133,8 @@ export type ServerVideoEntrySlug = keyof typeof SERVER_VIDEO_ENTRY_SKILLS;
 /** renderEntrySkillRules(product) for the products the CLI's own entry skills cover. */
 export const SERVER_ENTRY_SKILL_RULES = {
   all: `- Talk to marketers: what they get and decide, never how it's made.
-- Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
+- Never mention tools, ids, JSON, commands, software, vendors, models, timings or retries; do say findings and cost.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it; its last line says who starts it, and where this app does, never show it to them (original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
@@ -140,23 +142,23 @@ export const SERVER_ENTRY_SKILL_RULES = {
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   ads: `- Talk to marketers: what they get and decide, never how it's made.
-- Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
+- Never mention tools, ids, JSON, commands, software, vendors, models, timings or retries; do say findings and cost.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it; its last line says who starts it, and where this app does, never show it to them (original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
 - Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
-- Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
+- Start brand work with brain_map and its core. Open the chapters the job needs; search gaps. Never guess unknown facts.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
   photos: `- Talk to marketers: what they get and decide, never how it's made.
-- Never mention tools, ids, JSON, commands, software, vendors, models, timings, retries or your checks.
-- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it (its last line says who starts it; original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
+- Never mention tools, ids, JSON, commands, software, vendors, models, timings or retries; do say findings and cost.
+- Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it; its last line says who starts it, and where this app does, never show it to them (original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
 - Follow the next_step in every answer.
 - Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
 - Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
-- Before choosing an angle, claim, product or source, or asking a brand fact, brand_read then knowledge_search for the task.
+- Start brand work with brain_map and its core. Open the chapters the job needs; search gaps. Never guess unknown facts.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.`,
 } as const;
