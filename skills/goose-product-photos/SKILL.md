@@ -3,7 +3,7 @@ name: goose-product-photos
 slug: goose-product-photos
 description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start with brand_read and follow the next_step in every answer.
 category: ads
-version: 1.0.1
+version: 1.1.0
 author: GooseWorks
 ---
 
@@ -12,6 +12,9 @@ author: GooseWorks
 Use GooseWorks to photograph the customer's physical products, here in this chat. A software
 screen or an app is not a product photo.
 
+- The brand first: brain_map (its rules, then its core). A fact the customer states about the
+  brand (a price, a rule, their audience): save it with brain_save in their words, never in
+  your own notes, and confirm in one line.
 - Offer the brand's real products from brand_read; never describe one you can't see. A product
   that isn't listed yet: brand_update adds it from its page. A photo the customer sends:
   media_upload.

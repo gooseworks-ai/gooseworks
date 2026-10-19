@@ -1,9 +1,9 @@
 {
-  "$comment": "SNAPSHOT of the 69 action names in the action contract. The CLI cannot import gooseworks-app, so the skill lint (tests/skills/skill-lint.test.ts) checks generated skills against this list, and checks this list against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. Refresh it from the file below whenever an action is added, renamed or removed there.",
+  "$comment": "SNAPSHOT of the 73 action names in the action contract. The CLI cannot import gooseworks-app, so the skill lint (tests/skills/skill-lint.test.ts) checks generated skills against this list, and checks this list against a gooseworks-app checkout when GOOSEWORKS_APP_DIR points at one. Refresh it from the file below whenever an action is added, renamed or removed there.",
   "source_repo": "gooseworks-app",
   "source_file": "apps/api/src/app-mcp-server/mcp-tools/v2/contract.ts (ACTION_NAMES)",
-  "source_ref": "akhil/video-references-tool @ 339fa04e7 (adds video_references, PR athina-ai/gooseworks-app#2072)",
-  "captured": "2026-10-15",
+  "source_ref": "dev @ 42a3dec20 (adds brain_map, brain_open, brain_search and brain_save, PRs athina-ai/gooseworks-app#2104 and #2107)",
+  "captured": "2026-10-19",
   "actions": [
     "get_started",
     "card_wait",
@@ -51,6 +51,10 @@
     "social_inspiration_save",
     "brand_setup",
     "brand_update",
+    "brain_map",
+    "brain_open",
+    "brain_search",
+    "brain_save",
     "knowledge_search",
     "knowledge_import",
     "knowledge_sync",

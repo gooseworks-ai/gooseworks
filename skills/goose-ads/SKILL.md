@@ -3,7 +3,7 @@ name: goose-ads
 slug: goose-ads
 description: Make, edit and study image ads with GooseWorks in this chat, from the brand's own products and approved sources. Start with brand_read and follow the next_step in every answer.
 category: ads
-version: 3.0.1
+version: 3.1.0
 author: GooseWorks
 ---
 
@@ -12,6 +12,9 @@ author: GooseWorks
 Use GooseWorks to make and improve the customer's image ads, here in this chat. Recommend one
 direction with a one-line reason and offer at most two others.
 
+- The brand first: brain_map (its rules, then its core). A fact the customer states about the
+  brand (an offer, a price, a rule, their audience): save it with brain_save in their words,
+  never in your own notes, and confirm in one line.
 - New ads: pick a source from the brand's own ads and templates, or find one with catalog_search
   and open it with catalog_fetch. ads_generate makes the ads: get its price first, tell the
   customer the credit total, and make them only after their yes.
