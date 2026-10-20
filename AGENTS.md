@@ -32,6 +32,8 @@ committed and must not be deleted.
 
 ## Plugin files
 
-`.claude-plugin/` (plugin.json + marketplace.json) and `.codex-plugin/` make this
-repo installable as a Claude Code plugin marketplace
-(`/plugin marketplace add gooseworks-ai/gooseworks`).
+`.claude-plugin/marketplace.json` makes this repo the Claude Code plugin marketplace
+(`claude plugin marketplace add gooseworks-ai/gooseworks`). Its `gooseworks` entry
+installs the plugin from `gooseworks-ai/agent-plugin`, not from this repo, so
+`.claude-plugin/plugin.json` here is no longer what Claude Code users get.
+`.codex-plugin/` still packages this repo for Codex.

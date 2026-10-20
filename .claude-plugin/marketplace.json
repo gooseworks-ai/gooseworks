@@ -12,8 +12,11 @@
   "plugins": [
     {
       "name": "gooseworks",
-      "source": "./",
-      "description": "GooseWorks skills + MCP server: create and remix ads, generate product photos and video, plus 100+ data tools for scraping, research, lead generation, and enrichment (Twitter/X, Reddit, LinkedIn, email finding, company enrichment).",
+      "source": {
+        "source": "github",
+        "repo": "gooseworks-ai/agent-plugin"
+      },
+      "description": "GooseWorks skills + hosted MCP: brand research, image ads, product photos and video ad planning.",
       "author": {
         "name": "GooseWorks",
         "email": "goose@gooseworks.ai"
@@ -21,7 +24,13 @@
       "homepage": "https://gooseworks.ai",
       "license": "MIT",
       "category": "productivity",
-      "keywords": ["ads", "gtm", "data", "scraping", "leads", "research", "enrichment", "marketing"]
+      "keywords": [
+        "ads",
+        "gtm",
+        "research",
+        "marketing",
+        "product-photography"
+      ]
     }
   ]
 }
