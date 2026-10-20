@@ -148,9 +148,9 @@ export function getGooseAdsSkillContent(): string {
   return `---
 name: goose-ads
 slug: goose-ads
-description: Make, edit and study image ads with GooseWorks in this chat, from the brand's own products and approved sources. Start brand work with brain_map and follow the next_step in every answer.
+description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 3.1.0
+version: 3.2.0
 author: GooseWorks
 ---
 
@@ -161,12 +161,15 @@ direction with a one-line reason and offer at most two others.
 
 - A fact the customer states about the brand (an offer, a price, a rule, their audience): save
   it with brain_save in their words, never in your own notes, and confirm in one line.
-- New ads: pick a source from the brand's own ads and templates, or find one with catalog_search
-  and open it with catalog_fetch. ads_generate makes the ads: get its price first, tell the
-  customer the credit total, and make them only after their yes.
+- New static or image ads, more like a winning ad, new words or a new font on an ad, a rejected
+  ad to fix, or a social graphic: use the make-static-ads skill (installed, or opened with
+  catalog_fetch) and follow it instead of this list.
+- Only when make-static-ads is neither installed nor opened by catalog_fetch: pick a source from
+  the brand's own ads and templates, or find one with catalog_search and open it with
+  catalog_fetch. ads_generate makes the ads: get its price first, tell the customer the credit
+  total, and make them only after their yes.
 - A batch on its way: job_get. Finished ads: ads_read.
-- One ad: another take, an edit, a new size, an animation, its tags or the customer's rating, all
-  with ads_edit.
+- One finished ad: a new size, an animation, its tags or the customer's rating, all with ads_edit.
 - The customer's own image as a template: ads_template_save. Their files: media_upload.
 - Campaigns: campaign_read, campaign_save and campaign_ideas. campaign_generate plans and prices a
   campaign's ads; ads_review makes them once the customer says yes to the total.
