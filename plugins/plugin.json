@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gooseworks",
+  "version": "1.0.8",
+  "description": "GooseWorks helps teams research companies, customers, competitors, creators, and public social data; analyze campaigns and creative performance; and create ads and product images using saved company context and managed workflows.",
+  "author": {
+    "name": "GooseWorks",
+    "url": "https://gooseworks.ai"
+  },
+  "homepage": "https://gooseworks.ai",
+  "keywords": [
+    "marketing",
+    "research",
+    "advertising",
+    "product-photography"
+  ],
+  "repository": "https://github.com/gooseworks-ai/gooseworks",
+  "license": "MIT"
+}

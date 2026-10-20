@@ -32,7 +32,10 @@
     "changeset": "changeset",
     "version-packages": "changeset version && npm install --package-lock-only --ignore-scripts && npm run generate:skills",
     "test:pack": "node scripts/pack-smoke.cjs",
-    "build:parts": "tsx scripts/build-kit-parts.ts"
+    "build:parts": "tsx scripts/build-kit-parts.ts",
+    "build:plugin": "node --import tsx scripts/build-plugin.ts",
+    "test:plugin": "jest tests/plugins --runInBand",
+    "test:plugin:format": "python3 scripts/check-plugin-format.py"
   },
   "dependencies": {
     "chalk": "^4.1.2",
