@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "gooseworks",
-      "source": "distributions/1.0.9/gooseworks",
-      "version": "1.0.9",
+      "source": "distributions/1.0.10/gooseworks",
+      "version": "1.0.10",
       "description": "GooseWorks helps teams research brands, customers and competitors; analyze connected campaigns; create image ads and product photos; and plan video ads using saved brand context. Video production uses the existing local execution handoff when the host cannot run it.",
       "logo": "assets/logo.png"
     }

@@ -1,7 +1,7 @@
 {
   "name": "gooseworks",
   "version": "0.5.9",
-  "description": "GooseWorks CLI — give your coding agent real data tools",
+  "description": "GooseWorks CLI \u2014 give your coding agent real data tools",
   "bin": {
     "gooseworks": "./dist/index.js"
   },
@@ -36,7 +36,8 @@
     "build:plugin": "node --import tsx scripts/build-plugin.ts",
     "export:plugin": "node --import tsx scripts/export-plugin.ts",
     "test:plugin": "jest tests/plugins --runInBand",
-    "test:plugin:format": "python3 scripts/check-plugin-format.py"
+    "test:plugin:format": "python3 scripts/check-plugin-format.py",
+    "import:plugin": "node --import tsx scripts/import-plugin.ts"
   },
   "dependencies": {
     "chalk": "^4.1.2",
