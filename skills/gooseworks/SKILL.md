@@ -9,7 +9,7 @@ description: >
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -97,6 +97,8 @@ In a terminal use the commands:
 
 Before paid calls, tell the customer how many calls it will take and the credit total, and wait
 for their yes. Each paid answer says what it charged.
+
+Send client with skill "gooseworks" and skill_version "2.2.1" on every call that takes it.
 
 ## Rules
 

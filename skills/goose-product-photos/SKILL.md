@@ -3,7 +3,7 @@ name: goose-product-photos
 slug: goose-product-photos
 description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 1.1.0
+version: 1.1.1
 author: GooseWorks
 ---
 
@@ -24,6 +24,8 @@ screen or an app is not a product photo.
 - Keep or drop photos with media_update. Only kept photos join the brand kit and reach ads.
 
 Then follow the next_step in every answer.
+
+Send client with skill "goose-product-photos" and skill_version "1.1.1" on every call that takes it.
 
 ## Rules
 

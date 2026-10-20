@@ -3,7 +3,7 @@ name: goose-ads
 slug: goose-ads
 description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 3.2.0
+version: 3.2.1
 author: GooseWorks
 ---
 
@@ -30,6 +30,8 @@ direction with a one-line reason and offer at most two others.
   through data_get and data_post.
 
 Then follow the next_step in every answer.
+
+Send client with skill "goose-ads" and skill_version "3.2.1" on every call that takes it.
 
 ## Rules
 
