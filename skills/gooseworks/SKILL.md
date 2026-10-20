@@ -2,14 +2,14 @@
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks growth coworker and router. Research brands, customers, competitors, creators,
-  markets and prospects; make and study ads, product photos, graphics and video; search and
-  scrape public web and social data; find and enrich leads. The one GooseWorks entry point
+  GooseWorks growth coworker and router. Research markets, competitors, audiences and
+  creators; plan campaigns; make ads, product photos, graphics, video and content; run paid
+  ads, email, SEO and social; find leads and contacts. The one GooseWorks entry point
   for brand growth, B2B, sales, research and GTM work. Also use it when the user mentions their
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.1.0
+version: 2.2.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -42,33 +42,33 @@ social data. Hand specialist work to its skill; do data work here.
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
-| Make, edit or study image ads: from a template, a source ad or the brand's products; why a campaign underperforms; competitor ads, angles and hooks | **`goose-ads`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
+| Change one ad already made in GooseWorks (an edit, a new size, its tags or rating), or save the customer's image as a template. New image ads: `make-static-ads` | **`goose-ads`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style or format | **`goose-graphics`** | Fetch it with catalog_fetch, or `gooseworks fetch goose-graphics` in a terminal. |
 | Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints. |
 | Make **product photos**: studio, lifestyle, marketplace, social or on a model | **`goose-product-photos`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
 | Animate an approved static ad or product image | **`animate-image`** | Fetch it with catalog_fetch, or `gooseworks fetch animate-image` in a terminal. |
-| Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
+| Anything else: find a skill or a single step | (stay here) | catalog_search, or `gooseworks search` in a terminal; see "Data work". |
 
-## Brand growth skills
+## Marketing playbooks
 
-| Job | Skill |
+| Job | Playbook |
 | --- | --- |
-| Brand foundation | `brand-research` |
-| Competitor ads | `competitor-ad-intelligence` |
-| Customer language and angles | `comment-mining`, `ad-angle-miner` |
-| Competitor social content | `competitor-social-research` |
-| Audience definition | `audience-research` |
-| Creator discovery and evaluation | `influencer-prospecting`, `creator-profile-teardown` |
-| Trends and outlier posts | `trend-discovery`, `outlier-post-finder` |
-| Social listening and product demand | `social-listening-brief`, `product-demand-research` |
-| Long-form source material (calls, podcasts, videos) | `transcript-intelligence` |
-| Meta performance, policy, and landing-page match | `meta-ads-analyzer`, `meta-ad-policy-checker`, `ad-to-landing-page-auditor` |
-| Static ads | `goose-ads`, `remix-graphic-ad-from-reference` |
-| Product photos | `goose-product-photos`, `product-photoshoot` |
-| Written content and repurposing | `content-repurposing` |
-| Graphics and animation | `goose-graphics`, `animate-image` |
+| Not sure what to do first | `where-to-start` |
+| Market size, trends, what people say, brand watch | `research-market` |
+| What rivals run and what works | `research-competitors` |
+| Who buys and why; lists of companies and people | `research-audience` |
+| Cold emails and LinkedIn messages | `write-outreach` |
+| A campaign plan from a budget and a date | `plan-campaign` |
+| New static image ads | `make-static-ads` |
+| Launch, scale or pause paid ads | `run-paid-campaigns` |
+| What worked; performance reports | `analyze-performance` |
+| Email flows and sends to subscribers | `email-lifecycle` |
+| SEO and AI-answer visibility | `improve-search-visibility` |
+| Influencers and UGC creators | `work-with-creators` |
+| One post, article or newsletter | `make-content` |
+| Posting calendar and social plan | `run-organic-social` |
 
-Fetch a skill before following it, and hand it the brand you read.
+Fetch a playbook before following it, and hand it the brand you read.
 
 ## Data work
 

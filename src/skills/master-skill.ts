@@ -58,14 +58,14 @@ export function getMasterSkillContent(): string {
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks growth coworker and router. Research brands, customers, competitors, creators,
-  markets and prospects; make and study ads, product photos, graphics and video; search and
-  scrape public web and social data; find and enrich leads. The one GooseWorks entry point
+  GooseWorks growth coworker and router. Research markets, competitors, audiences and
+  creators; plan campaigns; make ads, product photos, graphics, video and content; run paid
+  ads, email, SEO and social; find leads and contacts. The one GooseWorks entry point
   for brand growth, B2B, sales, research and GTM work. Also use it when the user mentions their
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.1.0
+version: 2.2.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -99,15 +99,15 @@ social data. Hand specialist work to its skill; do data work here.
 | If the user wants… | Route to | How |
 | --- | --- | --- |
 ${renderDomainRouteTable()}
-| Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
+| Anything else: find a skill or a single step | (stay here) | catalog_search, or \`gooseworks search\` in a terminal; see "Data work". |
 
-## Brand growth skills
+## Marketing playbooks
 
-| Job | Skill |
+| Job | Playbook |
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch a skill before following it, and hand it the brand you read.
+Fetch a playbook before following it, and hand it the brand you read.
 
 ## Data work
 
