@@ -34,6 +34,7 @@
     "test:pack": "node scripts/pack-smoke.cjs",
     "build:parts": "tsx scripts/build-kit-parts.ts",
     "build:plugin": "node --import tsx scripts/build-plugin.ts",
+    "export:plugin": "node --import tsx scripts/export-plugin.ts",
     "test:plugin": "jest tests/plugins --runInBand",
     "test:plugin:format": "python3 scripts/check-plugin-format.py"
   },

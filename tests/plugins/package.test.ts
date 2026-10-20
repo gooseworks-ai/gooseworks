@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ACTIVE_SKILLS, buildPlugin, checkPlugin, collectPluginFiles, makeZip, portableSkill, REPO, validateFiles } from '../../scripts/plugin-package';
+import { ACTIVE_SKILLS, buildPlugin, checkPlugin, collectPluginFiles, makeZip, openAiReviewReadiness, portableSkill, REPO, validateFiles } from '../../scripts/plugin-package';
 import * as master from '../../src/skills/master-skill';
+import { distributionFiles } from '../../scripts/export-plugin';
 
 describe('review candidate packaging', () => {
   let work: string;
@@ -40,7 +41,7 @@ describe('review candidate packaging', () => {
   it('keeps source versions and content hashes without leaking local paths', () => {
     const files = collectPluginFiles('portable');
     const lock = JSON.parse(files.get('source-lock.json')!.toString());
-    expect(lock.pluginVersion).toBe('1.0.8');
+    expect(lock.pluginVersion).toBe(JSON.parse(readFileSync(join(REPO, 'plugins/plugin.json'), 'utf8')).version);
     expect(lock.source.cliVersion).toBe(JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version);
     expect(lock.source.commit).toMatch(/^[a-f0-9]{40}$/);
     expect(Object.keys(lock.skills).sort()).toEqual([...ACTIVE_SKILLS].sort());
@@ -72,7 +73,7 @@ describe('review candidate packaging', () => {
     const files = collectPluginFiles('openai');
     const manifest = JSON.parse(files.get('plugin.json')!.toString());
     const ext = manifest.extensions['com.openai'];
-    expect(Object.keys(ext).sort()).toEqual(['interface', 'publication']);
+    expect(Object.keys(ext).sort()).toEqual(['interface', 'publication', 'review']);
     expect(ext.publication.countries).toContain('IN');
     expect(ext.publication.countries).toContain('US');
     for (const country of ['GB', 'DE', 'FR', 'NO', 'IS', 'LI']) expect(ext.publication.countries).not.toContain(country);
@@ -84,6 +85,22 @@ describe('review candidate packaging', () => {
     expect(ext.interface.longDescription).toBe(manifest.description);
     expect(ext.interface.developerName).toBe('GooseWorks');
     expect(ext.interface.websiteURL).toBe(manifest.homepage);
+  });
+
+  it('ships prepared public review cases but reports the missing recording instead of claiming submission readiness', () => {
+    const files = collectPluginFiles('openai');
+    const manifest = JSON.parse(files.get('plugin.json')!.toString());
+    const extension = manifest.extensions['com.openai'];
+    expect(extension.review.test_cases.positive).toHaveLength(5);
+    expect(extension.review.test_cases.negative).toHaveLength(3);
+    expect(extension.review.demo_recording_url).toBeUndefined();
+    expect(extension.review.test_credentials).toBeUndefined();
+    expect(extension.review.reviewer_instructions).toBeUndefined();
+    expect(extension.publication.release_notes).toContain(manifest.version);
+    expect(extension.apps).toBeUndefined();
+    expect(extension.hooks).toBeUndefined();
+    expect(openAiReviewReadiness(files)).toMatchObject({ positiveCases: 5, negativeCases: 3,
+      metadataComplete: false, missing: ['verified accessible demo recording URL'] });
   });
 
   it('fails closed when the canonical registry or generated source changes', () => {
@@ -122,6 +139,21 @@ describe('review candidate packaging', () => {
     expect(existsSync(join(REPO, 'unapproved-output'))).toBe(false);
     symlinkSync(work, join(work, 'link'));
     expect(() => buildPlugin('portable', join(work, 'link', 'candidate'))).toThrow('symlink');
+    symlinkSync(join(work, 'missing'), join(work, 'dangling'));
+    expect(() => buildPlugin('portable', join(work, 'dangling', 'candidate'))).toThrow('symlink');
+  });
+
+  it('generates an installable versioned Git directory and Cursor entry from the same portable package', () => {
+    const candidate = distributionFiles();
+    const manifest = JSON.parse(candidate.files.get('plugin.json')!.toString());
+    const marketplace = JSON.parse(candidate.marketplace.toString());
+    expect(candidate.root).toBe(join(REPO, 'distributions', manifest.version, 'gooseworks'));
+    expect(marketplace.plugins).toEqual([{ name: manifest.name,
+      source: `distributions/${manifest.version}/gooseworks`, version: manifest.version,
+      description: manifest.description, logo: 'assets/logo.png' }]);
+    expect(candidate.files).toEqual(collectPluginFiles('portable'));
+    expect(JSON.parse(candidate.files.get('mcp.json')!.toString()).mcpServers.gooseworks.url).toBe('https://mcp.gooseworks.ai/mcp');
+    expect([...candidate.files.keys()].some(name => /\.app\.json|\.claude-plugin|hooks\//.test(name))).toBe(false);
   });
 
   it('rejects changed files, added files, package symlinks and changed archives', () => {

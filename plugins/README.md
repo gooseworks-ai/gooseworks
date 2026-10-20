@@ -25,11 +25,15 @@ plugins/                         # reviewed package inputs
     README.md
     source-lock.json
   gooseworks.zip
+distributions/<version>/gooseworks/ # generated, committed installable snapshot
+.cursor-plugin/marketplace.json     # generated pointer to that snapshot
 ```
 
 The portable manifest owns the shared product description, publisher name and homepage. The OpenAI export derives those fields from it, so the two descriptions cannot drift. Provider-only fields stay in the OpenAI extension. The description states the existing local video handoff.
 
-The default portable candidate has no client-specific metadata. The OpenAI candidate adds only the existing public listing and country restrictions. Private reviewer accounts, credentials, old test cases and demo URLs remain outside both packages. Those materials need a separate current review before submission. Production is the only configured endpoint; the builder never switches to staging or invents a fallback.
+The default portable candidate has no client-specific metadata. The OpenAI candidate adds its public listing, preserved country restrictions, existing website-payment disclosure, five positive/three negative review scenarios and versioned release notes. Private reviewer accounts and credentials remain outside both packages. A demo URL is included only when a real accessible recording is supplied and verified; no placeholder URL ships. Production is the only configured endpoint; the builder never switches to staging or invents a fallback.
+
+Prepared cases describe intended reviewer behavior; including them is not proof they ran. The OpenAI build reports missing metadata and explicitly requires separate dedicated-account execution and portal evidence. At version 1.0.9 preparation, the accessible demo and reviewer-account runs remain outstanding. Omitting a demo from a later ZIP may preserve an older portal value, so inspect the saved portal details before submission.
 
 ## Build and verify
 
@@ -42,11 +46,23 @@ npm run build:plugin -- portable --check
 npm run build:plugin -- openai --check
 npm run test:plugin
 npm run test:plugin:format -- .plugin-build/portable/gooseworks .plugin-build/openai/gooseworks
+npm run export:plugin
+npm run export:plugin -- --check
 ```
 
 Output paths must be inside `.plugin-build/`. The builder writes only to a new directory and never deletes or replaces existing output. To prepare a revised candidate, supply a fresh directory, for example `npm run build:plugin -- portable .plugin-build/portable-r2`. Use `--check` to verify an existing candidate against the current source.
 
 Every candidate includes a source commit, CLI version, input hashes, individual skill hashes and package-file hashes. Its archive uses fixed timestamps and ordering. Verification checks the exact file set, source parity, production endpoint, referenced image files and archive bytes; it rejects symlinks, asset pointers, common credential formats and unexpected skill registry changes. The explicit allowlist is the main defense against accidentally copying private files; the credential scan is an additional limited check.
+
+## Installable Git distribution
+
+`export:plugin` writes the portable package to `distributions/<plugin-version>/gooseworks/` and generates the repository's Cursor marketplace pointer. These files are committed so a provider can load the actual package from a pinned revision. An ignored build directory or the CLI source repository alone is not the distribution. The same portable folder is the Grok Bot candidate; its actual host installation still needs its own test.
+
+Keep the canonical inputs in `plugins/` and the entry generator. Never edit a distribution's copied skills. Exported version directories are immutable: use a new plugin version for any change after a candidate circulates. The generator may refresh only its own named single-plugin Cursor marketplace; it rejects an unrelated existing marketplace.
+
+For a final snapshot, commit the canonical input changes first, then run `export:plugin` and commit the generated directory and marketplace. The source lock pins the last commit that changed canonical inputs, records those exact input hashes, and marks uncommitted input changes as `modified`. The second commit adds only outputs, so it does not invalidate that source revision. Final review artifacts require `inputState: clean` and successful `--check` runs. A branch commit is an installation/test source, not a public tag, release or marketplace approval.
+
+Cursor's [current plugin reference](https://cursor.com/docs/reference/plugins) documents the root Agent Plugins format and repository marketplace source paths. This HTTPS MCP package uses no unsupported root/data variable expansion. Logo bytes are committed inside the generated plugin folder. The public marketplace submission remains a separate reviewed action.
 
 Tests independently open archives with Python 3's standard-library ZIP reader, verify CRCs and compare every extracted byte with the package. Python is a preparation and test prerequisite; it is not shipped with or required by the installed plugin.
 

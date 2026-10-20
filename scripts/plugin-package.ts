@@ -58,6 +58,22 @@ function openAiExtension(manifest: { description: string; author: { name: string
     longDescription: manifest.description, developerName: manifest.author.name, websiteURL: manifest.homepage } };
 }
 
+/** Metadata completeness only. Reviewer-account execution and portal checks stay external. */
+export function openAiReviewReadiness(files: Files) {
+  const manifest = JSON.parse(files.get('plugin.json')!.toString());
+  const extension = manifest.extensions?.['com.openai'];
+  const cases = extension?.review?.test_cases;
+  const demo = extension?.review?.demo_recording_url;
+  const missing = [];
+  if (cases?.positive?.length !== 5) missing.push('five positive review cases');
+  if (cases?.negative?.length !== 3) missing.push('three negative review cases');
+  if (typeof demo !== 'string' || !/^https:\/\//.test(demo)) missing.push('verified accessible demo recording URL');
+  if (!extension?.publication?.release_notes?.trim()) missing.push('release notes');
+  return { positiveCases: cases?.positive?.length ?? 0, negativeCases: cases?.negative?.length ?? 0,
+    metadataComplete: missing.length === 0, missing,
+    status: 'Draft candidate; dedicated reviewer-account case execution and portal checks require separate evidence.' };
+}
+
 /** Build an explicit file set; private review material is never traversed or copied. */
 export function collectPluginFiles(target: Target): Files {
   assertTarget(target);
@@ -84,12 +100,16 @@ export function collectPluginFiles(target: Target): Files {
   validateFiles(files, target);
   const inputPaths = ['src/skills/master-skill.ts', 'src/skills/server-entry-skills.ts', 'src/skills/routes.ts',
     'plugins/plugin.json', 'plugins/mcp.json', 'plugins/PACKAGE-README.md', 'plugins/assets/logo.png',
-    'scripts/plugin-package.ts', 'plugins/schemas/plugin.schema.json', 'plugins/schemas/mcp.schema.json',
+    'scripts/plugin-package.ts', 'scripts/export-plugin.ts', 'package.json',
+    'plugins/schemas/plugin.schema.json', 'plugins/schemas/mcp.schema.json',
     'LICENSE', ...(target === 'openai' ? ['plugins/openai/extension.json'] : [])];
   const hashMap = (items: Files) => Object.fromEntries([...items].sort(([a], [b]) => a.localeCompare(b)).map(([name, bytes]) => [name, sha256(bytes)]));
-  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim();
+  // A generated export must survive the commit which adds that export. Pin the
+  // most recent canonical-input commit, rather than its own output commit.
+  const commit = execFileSync('git', ['log', '-1', '--format=%H', '--', ...inputPaths], { cwd: REPO, encoding: 'utf8' }).trim();
+  const inputState = execFileSync('git', ['status', '--porcelain', '--', ...inputPaths], { cwd: REPO, encoding: 'utf8' }).trim() ? 'modified' : 'clean';
   files.set('source-lock.json', json({ format: 1, target, pluginVersion: manifest.version,
-    source: { repository: 'https://github.com/gooseworks-ai/gooseworks', commit, cliVersion: readJson('package.json').version },
+    source: { repository: 'https://github.com/gooseworks-ai/gooseworks', commit, inputState, cliVersion: readJson('package.json').version },
     inputs: hashMap(new Map(inputPaths.map(path => [path, readSafe(path)]))),
     skills: Object.fromEntries(ACTIVE_SKILLS.map(name => [name, {
       sourceSha256: sha256(Buffer.from(entries.find(skill => skill.name === name)!.content)),
@@ -119,11 +139,23 @@ export function validateFiles(files: Files, target: Target): void {
   const manifest = JSON.parse(files.get('plugin.json')!.toString());
   const keys = ['$schema', 'name', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords', 'extensions'];
   if (Object.keys(manifest).some(key => !keys.includes(key)) || manifest.$schema !== 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json' ||
-      manifest.name !== 'gooseworks' || manifest.version !== '1.0.8') throw new Error('Unexpected plugin identity/schema');
+      manifest.name !== 'gooseworks' || manifest.version !== readJson('plugins/plugin.json').version ||
+      !/^\d+\.\d+\.\d+$/.test(manifest.version)) throw new Error('Unexpected plugin identity/schema');
   if (target === 'portable' && manifest.extensions) throw new Error('Portable candidate contains provider fields');
   if (target === 'openai') {
     const extension = manifest.extensions?.['com.openai'];
     if (JSON.stringify(extension) !== JSON.stringify(openAiExtension(manifest))) throw new Error('OpenAI public listing or country restrictions changed');
+    if ('apps' in extension || 'hooks' in extension) throw new Error('Public OpenAI candidates cannot reference apps or lifecycle hooks');
+    const review = extension.review;
+    if (review) {
+      if ('test_credentials' in review || 'reviewer_instructions' in review) throw new Error('Private reviewer details cannot ship');
+      if (review.test_cases?.positive?.length !== 5 || review.test_cases?.negative?.length !== 3) throw new Error('Review metadata needs five positive and three negative cases');
+      for (const item of [...review.test_cases.positive, ...review.test_cases.negative]) {
+        for (const key of ['description', 'prompt', 'tools_triggered', 'expected_behavior']) {
+          if (typeof item[key] !== 'string' || !item[key].trim()) throw new Error(`Missing review case field: ${key}`);
+        }
+      }
+    }
     for (const key of ['logo', 'composerIcon']) {
       const path = extension.interface[key];
       if (!path.startsWith('./') || !files.has(path.slice(2))) throw new Error(`Missing manifest asset: ${path}`);
@@ -159,14 +191,16 @@ export function makeZip(files: Files): Buffer {
   return execFileSync('python3', ['-c', script], { input, maxBuffer: 16 * 1024 * 1024 });
 }
 
-function safeDestination(output: string) {
-  const base = join(REPO, '.plugin-build');
+export function safeDestination(output: string, base = join(REPO, '.plugin-build')) {
   const full = resolve(output);
-  if (!full.startsWith(base + sep)) throw new Error('Output must be a new directory below .plugin-build/');
+  if (!full.startsWith(base + sep)) throw new Error(`Output must be a new directory below ${relative(REPO, base)}/`);
   let part = REPO;
   for (const name of relative(REPO, full).split(sep)) {
     part = join(part, name);
-    if (existsSync(part) && (lstatSync(part).isSymbolicLink() || !realpathSync(part).startsWith(REPO + sep))) throw new Error('Output symlink or escaped path');
+    let stat;
+    try { stat = lstatSync(part); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
+    if (stat.isSymbolicLink() || !realpathSync(part).startsWith(REPO + sep)) throw new Error('Output symlink or escaped path');
   }
   return full;
 }
@@ -186,14 +220,13 @@ export function buildPlugin(target: Target, output = join(REPO, '.plugin-build',
   }
   writeFileSync(join(full, 'gooseworks.zip'), archive, { flag: 'wx' });
   checkPlugin(target, full);
-  return { directory: packageRoot, archive: join(full, 'gooseworks.zip'), archiveSha256: sha256(archive) };
+  return { directory: packageRoot, archive: join(full, 'gooseworks.zip'), archiveSha256: sha256(archive),
+    ...(target === 'openai' ? { reviewReadiness: openAiReviewReadiness(files) } : {}) };
 }
 
-export function checkPlugin(target: Target, output = join(REPO, '.plugin-build', target)) {
-  const full = safeDestination(output);
+export function checkPackageDirectory(target: Target, packageRoot: string) {
   const expected = collectPluginFiles(target);
   const actual: Files = new Map();
-  const packageRoot = join(full, 'gooseworks');
   function walk(directory: string) {
     for (const name of readdirSync(directory)) {
       const path = join(directory, name), stat = lstatSync(path);
@@ -207,6 +240,12 @@ export function checkPlugin(target: Target, output = join(REPO, '.plugin-build',
   walk(packageRoot);
   validateFiles(actual, target);
   if (actual.size !== expected.size || [...expected].some(([name, bytes]) => !actual.get(name)?.equals(bytes))) throw new Error('Candidate differs from current canonical source');
+  return actual;
+}
+
+export function checkPlugin(target: Target, output = join(REPO, '.plugin-build', target)) {
+  const full = safeDestination(output);
+  const actual = checkPackageDirectory(target, join(full, 'gooseworks'));
   const archivePath = join(full, 'gooseworks.zip');
   if (lstatSync(archivePath).isSymbolicLink() || !readFileSync(archivePath).equals(makeZip(actual))) throw new Error('Archive differs from reviewed package');
 }
