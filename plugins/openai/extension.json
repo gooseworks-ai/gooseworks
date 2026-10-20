@@ -2,10 +2,7 @@
   "interface": {
     "displayName": "GooseWorks",
     "shortDescription": "Brand growth coworker",
-    "longDescription": "GooseWorks helps teams research companies, customers, competitors, creators, and public social data; analyze campaigns and creative performance; and create ads and product images using saved company context and managed workflows.",
-    "developerName": "Gooseworks",
     "category": "Business & Operations",
-    "websiteURL": "https://gooseworks.ai",
     "supportURL": "https://docs.gooseworks.ai/help-center/troubleshooting",
     "privacyPolicyURL": "https://gooseworks.ai/privacy",
     "termsOfServiceURL": "https://gooseworks.ai/terms",

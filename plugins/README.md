@@ -27,6 +27,8 @@ plugins/                         # reviewed package inputs
   gooseworks.zip
 ```
 
+The portable manifest owns the shared product description, publisher name and homepage. The OpenAI export derives those fields from it, so the two descriptions cannot drift. Provider-only fields stay in the OpenAI extension. The description states the existing local video handoff.
+
 The default portable candidate has no client-specific metadata. The OpenAI candidate adds only the existing public listing and country restrictions. Private reviewer accounts, credentials, old test cases and demo URLs remain outside both packages. Those materials need a separate current review before submission. Production is the only configured endpoint; the builder never switches to staging or invents a fallback.
 
 ## Build and verify

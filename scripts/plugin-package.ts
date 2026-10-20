@@ -51,6 +51,13 @@ export function portableSkill(content: string): string {
   return `---\n${kept.join('\n')}\n---\n${content.slice(match[0].length)}`;
 }
 
+/** Shared listing facts come from the portable manifest, never a second provider copy. */
+function openAiExtension(manifest: { description: string; author: { name: string }; homepage: string }) {
+  const extension = readJson('plugins/openai/extension.json');
+  return { ...extension, interface: { ...extension.interface,
+    longDescription: manifest.description, developerName: manifest.author.name, websiteURL: manifest.homepage } };
+}
+
 /** Build an explicit file set; private review material is never traversed or copied. */
 export function collectPluginFiles(target: Target): Files {
   assertTarget(target);
@@ -60,7 +67,7 @@ export function collectPluginFiles(target: Target): Files {
     throw new Error('Entry registry changed: review the plugin skill allowlist before exporting');
   }
   const manifest = readJson('plugins/plugin.json');
-  if (target === 'openai') manifest.extensions = { 'com.openai': readJson('plugins/openai/extension.json') };
+  if (target === 'openai') manifest.extensions = { 'com.openai': openAiExtension(manifest) };
   const files: Files = new Map([
     ['plugin.json', json(manifest)],
     ['mcp.json', readSafe('plugins/mcp.json')],
@@ -116,7 +123,7 @@ export function validateFiles(files: Files, target: Target): void {
   if (target === 'portable' && manifest.extensions) throw new Error('Portable candidate contains provider fields');
   if (target === 'openai') {
     const extension = manifest.extensions?.['com.openai'];
-    if (JSON.stringify(extension) !== JSON.stringify(readJson('plugins/openai/extension.json'))) throw new Error('OpenAI public listing or country restrictions changed');
+    if (JSON.stringify(extension) !== JSON.stringify(openAiExtension(manifest))) throw new Error('OpenAI public listing or country restrictions changed');
     for (const key of ['logo', 'composerIcon']) {
       const path = extension.interface[key];
       if (!path.startsWith('./') || !files.has(path.slice(2))) throw new Error(`Missing manifest asset: ${path}`);

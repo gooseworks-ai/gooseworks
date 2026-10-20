@@ -79,7 +79,11 @@ describe('review candidate packaging', () => {
     for (const key of ['logo', 'composerIcon']) expect(files.has(ext.interface[key].slice(2))).toBe(true);
     expect(() => validateFiles(files, 'portable')).toThrow('provider fields');
     const source = JSON.parse(readFileSync(join(REPO, 'plugins/openai/extension.json'), 'utf8'));
-    expect(ext).toEqual(source);
+    expect(ext).toEqual({ ...source, interface: { ...source.interface,
+      longDescription: manifest.description, developerName: manifest.author.name, websiteURL: manifest.homepage } });
+    expect(ext.interface.longDescription).toBe(manifest.description);
+    expect(ext.interface.developerName).toBe('GooseWorks');
+    expect(ext.interface.websiteURL).toBe(manifest.homepage);
   });
 
   it('fails closed when the canonical registry or generated source changes', () => {

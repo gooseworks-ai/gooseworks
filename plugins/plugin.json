@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gooseworks",
   "version": "1.0.8",
-  "description": "GooseWorks helps teams research companies, customers, competitors, creators, and public social data; analyze campaigns and creative performance; and create ads and product images using saved company context and managed workflows.",
+  "description": "GooseWorks helps teams research brands, customers and competitors; analyze connected campaigns; create image ads and product photos; and plan video ads using saved brand context. Video production uses the existing local execution handoff when the host cannot run it.",
   "author": {
     "name": "GooseWorks",
     "url": "https://gooseworks.ai"
