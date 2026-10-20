@@ -39,3 +39,4 @@ skills-lock.json
 *.tgz
 packed.json
 release-artifact.json
+.plugin-build/

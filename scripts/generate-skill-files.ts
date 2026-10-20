@@ -1,21 +1,4 @@
-/**
- * Single-source generator for the vendored entry skills.
- *
- * The entry-skill bodies live in ONE place — the pure functions in
- * `src/skills/master-skill.ts` (`getEntrySkills()`), which the CLI uses at
- * install time. This script writes each function's output to a committed
- * `skills/<name>/SKILL.md` so the SAME text is:
- *   - shipped in the npm package (package.json `files: ["skills"]`), and
- *   - fetchable from the public repo raw URL by the backend app-MCP server
- *     (which serves it to cowork clients that have no filesystem to install into).
- *
- * The runtime install path does NOT read these files — it still calls the
- * function — so regenerating here can never change terminal behavior. Run this
- * before publishing (wired into `prepublishOnly`) and commit the result so the
- * public repo always exposes the current skill text.
- *
- *   npm run generate:skills
- */
+/** Generate committed CLI files from the pinned app-owned consumer bundle. */
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,5 +27,24 @@ writeFileSync(routesPath, routesJson, "utf-8");
 console.log(`wrote ${routesPath} (${routesJson.length} bytes)`);
 
 // Compare published release bytes, rather than trusting the running CLI stamp.
-const packageVersion = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")).version;
-writeFileSync(join(skillsRoot, "manifest.json"), JSON.stringify({package: "gooseworks", version: packageVersion, entries: Object.fromEntries(getEntrySkills().map(skill => [skill.name, skillContentHash(skill.content)]))}, null, 2) + "\n", "utf8");
+const packageVersion = JSON.parse(
+  readFileSync(join(here, "..", "package.json"), "utf8"),
+).version;
+writeFileSync(
+  join(skillsRoot, "manifest.json"),
+  JSON.stringify(
+    {
+      package: "gooseworks",
+      version: packageVersion,
+      entries: Object.fromEntries(
+        getEntrySkills().map((skill) => [
+          skill.name,
+          skillContentHash(skill.content),
+        ]),
+      ),
+    },
+    null,
+    2,
+  ) + "\n",
+  "utf8",
+);

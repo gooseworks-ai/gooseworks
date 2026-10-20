@@ -1,0 +1,65 @@
+{
+  "format": 1,
+  "target": "portable",
+  "pluginVersion": "1.0.9",
+  "source": {
+    "repository": "https://github.com/gooseworks-ai/gooseworks",
+    "commit": "5de4ab0af498d052ec9acec2ee2e09fdffcd6069",
+    "inputState": "clean",
+    "cliVersion": "0.5.9"
+  },
+  "inputs": {
+    "LICENSE": "1dce87b2c873b3a1e14c1e17481691b29d909c65ac3abe0498ed92dd8192c348",
+    "package.json": "01e1517b2ed0c3233b387913d15e6f45d3b2ffd40276d075e15e8beb19e182de",
+    "plugins/assets/logo.png": "1c801e13dc8b874d98c40f520909d38f10c8d5e0049c66c0b9c731139893c1e3",
+    "plugins/mcp.json": "a43aa4a6b8ad0781263e061299205d3a0c077c1c45abff6f033abd91d98eaf43",
+    "plugins/PACKAGE-README.md": "7313bdd5fe77d1db692e906c272f2029f05f18ce0df19dda2c0dd72b7997bc2d",
+    "plugins/plugin.json": "089a932045ebde956e6bbf8dadc10e18ae2dcf64438db43e1188baa8a82a7797",
+    "plugins/schemas/mcp.schema.json": "6539175bfcdf43085855183e86da40ea94b166547a72b47ae9a0a390516d3acb",
+    "plugins/schemas/plugin.schema.json": "0a4aad95ce337878ad38802ebf0daa3fde76abe3f65400c86bcbb1ec0b3ab883",
+    "scripts/export-plugin.ts": "ff3bddc73a4b5bb185b86daa2fed92239455347c48f3e3efe63ae6ccdfe2a898",
+    "scripts/plugin-package.ts": "3c49bcb6256744d5a714767b97a0ea6240e6626b90b385c3ff01e356af3b3ef6",
+    "src/skills/master-skill.ts": "bbe7015568f8f557ee957c9ccabe79a0a802b6f1be7aaac88d58aefed74329c8",
+    "src/skills/routes.ts": "e735cec07ddb0844d4e46ab4322d607cdfa4620a73a858abec3b0ff802d10e97",
+    "src/skills/server-entry-skills.ts": "ce41c9ce3fa49821d7cb5b96aa66c9c73f0b1412f36c77292ddb744d10cf0fd2"
+  },
+  "skills": {
+    "gooseworks": {
+      "sourceSha256": "2b5507cd937b2e5371bc1645530a13bda219914c9ecc4b14ea3871a9f43b95db",
+      "exportedSha256": "84c7bea085e7bdb670185735948a3c4ee4eff3e626dd12336a31e3ec0a45e1ad",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-ads": {
+      "sourceSha256": "ee52c2e83edc196bc22121e089b9bce526b789ce762935c35e1c989f918c6569",
+      "exportedSha256": "7a2540bd71acb66ddc40a3ee0803453df068917532131299f1b2a3516f3d15d8",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-product-photos": {
+      "sourceSha256": "a8d04bcb320fb71885ff8df90cb32093b94c38d7cbf70f83d9275c6ff7e0be29",
+      "exportedSha256": "43522a2898df3802dc1a017b5f0450553e760fdd1c353cf2947d5fbb213c30ad",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-video": {
+      "sourceSha256": "3419174c9e984e974b7486a088df480b44fcc2004ad4dcadc9c50bce36d7fdf2",
+      "exportedSha256": "837023007815cbc10c9c0838c4c06e7a6063b8f98b746661b837cbf6ee0c4bb2",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "make-custom-video": {
+      "sourceSha256": "0e29f8f9e7c9900bfd969419cae7c89455def172368a8f15fc34fff4b7ddbe61",
+      "exportedSha256": "7e376ad146c9f313c52017e4756a3c256d6663119f9d9ee788a64c49b12d6f54",
+      "transformation": "agent-skills-frontmatter-v1"
+    }
+  },
+  "files": {
+    "assets/logo.png": "1c801e13dc8b874d98c40f520909d38f10c8d5e0049c66c0b9c731139893c1e3",
+    "LICENSE": "1dce87b2c873b3a1e14c1e17481691b29d909c65ac3abe0498ed92dd8192c348",
+    "mcp.json": "a43aa4a6b8ad0781263e061299205d3a0c077c1c45abff6f033abd91d98eaf43",
+    "plugin.json": "089a932045ebde956e6bbf8dadc10e18ae2dcf64438db43e1188baa8a82a7797",
+    "README.md": "7313bdd5fe77d1db692e906c272f2029f05f18ce0df19dda2c0dd72b7997bc2d",
+    "skills/goose-ads/SKILL.md": "7a2540bd71acb66ddc40a3ee0803453df068917532131299f1b2a3516f3d15d8",
+    "skills/goose-product-photos/SKILL.md": "43522a2898df3802dc1a017b5f0450553e760fdd1c353cf2947d5fbb213c30ad",
+    "skills/goose-video/SKILL.md": "837023007815cbc10c9c0838c4c06e7a6063b8f98b746661b837cbf6ee0c4bb2",
+    "skills/gooseworks/SKILL.md": "84c7bea085e7bdb670185735948a3c4ee4eff3e626dd12336a31e3ec0a45e1ad",
+    "skills/make-custom-video/SKILL.md": "7e376ad146c9f313c52017e4756a3c256d6663119f9d9ee788a64c49b12d6f54"
+  }
+}

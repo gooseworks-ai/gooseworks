@@ -1,0 +1,69 @@
+{
+  "format": 1,
+  "target": "portable",
+  "pluginVersion": "1.0.10",
+  "source": {
+    "repository": "https://github.com/athina-ai/gooseworks-app",
+    "directory": "apps/plugin",
+    "commit": "6ddd81c1fb9199881cc3532d0c66f1e052f3815b",
+    "inputState": "clean"
+  },
+  "inputs": {
+    "apps/plugin/assets/logo.png": "1c801e13dc8b874d98c40f520909d38f10c8d5e0049c66c0b9c731139893c1e3",
+    "apps/plugin/LICENSE": "1dce87b2c873b3a1e14c1e17481691b29d909c65ac3abe0498ed92dd8192c348",
+    "apps/plugin/mcp.json": "a43aa4a6b8ad0781263e061299205d3a0c077c1c45abff6f033abd91d98eaf43",
+    "apps/plugin/migration-baseline.json": "743b39657c90e3966cc5d63866c9dc2d34bfa278ba87832e3760e132611a7c2c",
+    "apps/plugin/openai/extension.json": "4d19f847fb4cc4ec4df7fd69e35b6a4c5d80f5b968002547928619370db0ab1a",
+    "apps/plugin/PACKAGE-README.md": "7313bdd5fe77d1db692e906c272f2029f05f18ce0df19dda2c0dd72b7997bc2d",
+    "apps/plugin/package.json": "29d8811de82e0461321f5e1847a724f5228ca8f5cf982e38edded1449fc7ea2c",
+    "apps/plugin/plugin.json": "b220031db101bf51871e1d7350b69cd33c60acfec4fb32ffae4e27212529eb7e",
+    "apps/plugin/schemas/mcp.schema.json": "6539175bfcdf43085855183e86da40ea94b166547a72b47ae9a0a390516d3acb",
+    "apps/plugin/schemas/plugin.schema.json": "0a4aad95ce337878ad38802ebf0daa3fde76abe3f65400c86bcbb1ec0b3ab883",
+    "apps/plugin/scripts/build-plugin.ts": "8721f427e2cff4da094976f0b630add3d642752af2825f0ead4838362f514c0e",
+    "apps/plugin/scripts/export-consumer.ts": "bf185a91e9274911121534935f5d6da103e7244fcc3a32aa0d005c8a7b05af1d",
+    "apps/plugin/scripts/generate.ts": "3f00d8790e63a65f3c97e2d817433938245bf0135fe39a13f9832d76f5d5c875",
+    "apps/plugin/scripts/plugin-package.ts": "a92a1e9b457bd486afd7c313b01b91dac414f485fab3b22307f00eea686d09e8",
+    "apps/plugin/src/entry-skills.ts": "e00218deafe62440d9f57070cb8b77d1e32aef957494ed0e3b5e80e11ca7cbc8",
+    "apps/plugin/src/routes.ts": "870743d74657229447e7dfeb8dcc18ff7eb1a570539dbee0473294146d782591",
+    "apps/plugin/src/server-entry-skills.ts": "6b040862c5c95105a8543692ad256e08b1d72ed6887b78e0556a17a3e253d8eb"
+  },
+  "skills": {
+    "gooseworks": {
+      "sourceSha256": "2b5507cd937b2e5371bc1645530a13bda219914c9ecc4b14ea3871a9f43b95db",
+      "exportedSha256": "84c7bea085e7bdb670185735948a3c4ee4eff3e626dd12336a31e3ec0a45e1ad",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-ads": {
+      "sourceSha256": "ee52c2e83edc196bc22121e089b9bce526b789ce762935c35e1c989f918c6569",
+      "exportedSha256": "7a2540bd71acb66ddc40a3ee0803453df068917532131299f1b2a3516f3d15d8",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-product-photos": {
+      "sourceSha256": "a8d04bcb320fb71885ff8df90cb32093b94c38d7cbf70f83d9275c6ff7e0be29",
+      "exportedSha256": "43522a2898df3802dc1a017b5f0450553e760fdd1c353cf2947d5fbb213c30ad",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "goose-video": {
+      "sourceSha256": "3419174c9e984e974b7486a088df480b44fcc2004ad4dcadc9c50bce36d7fdf2",
+      "exportedSha256": "837023007815cbc10c9c0838c4c06e7a6063b8f98b746661b837cbf6ee0c4bb2",
+      "transformation": "agent-skills-frontmatter-v1"
+    },
+    "make-custom-video": {
+      "sourceSha256": "0e29f8f9e7c9900bfd969419cae7c89455def172368a8f15fc34fff4b7ddbe61",
+      "exportedSha256": "7e376ad146c9f313c52017e4756a3c256d6663119f9d9ee788a64c49b12d6f54",
+      "transformation": "agent-skills-frontmatter-v1"
+    }
+  },
+  "files": {
+    "assets/logo.png": "1c801e13dc8b874d98c40f520909d38f10c8d5e0049c66c0b9c731139893c1e3",
+    "LICENSE": "1dce87b2c873b3a1e14c1e17481691b29d909c65ac3abe0498ed92dd8192c348",
+    "mcp.json": "a43aa4a6b8ad0781263e061299205d3a0c077c1c45abff6f033abd91d98eaf43",
+    "plugin.json": "b220031db101bf51871e1d7350b69cd33c60acfec4fb32ffae4e27212529eb7e",
+    "README.md": "7313bdd5fe77d1db692e906c272f2029f05f18ce0df19dda2c0dd72b7997bc2d",
+    "skills/goose-ads/SKILL.md": "7a2540bd71acb66ddc40a3ee0803453df068917532131299f1b2a3516f3d15d8",
+    "skills/goose-product-photos/SKILL.md": "43522a2898df3802dc1a017b5f0450553e760fdd1c353cf2947d5fbb213c30ad",
+    "skills/goose-video/SKILL.md": "837023007815cbc10c9c0838c4c06e7a6063b8f98b746661b837cbf6ee0c4bb2",
+    "skills/gooseworks/SKILL.md": "84c7bea085e7bdb670185735948a3c4ee4eff3e626dd12336a31e3ec0a45e1ad",
+    "skills/make-custom-video/SKILL.md": "7e376ad146c9f313c52017e4756a3c256d6663119f9d9ee788a64c49b12d6f54"
+  }
+}

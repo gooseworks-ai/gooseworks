@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "bundleSha256": "5bb32818405a84d509695d56c0014c38395a3ffa43f86e4537ad527a7c69b84e",
+  "repository": "https://github.com/athina-ai/gooseworks-app",
+  "directory": "apps/plugin",
+  "commit": "6ddd81c1fb9199881cc3532d0c66f1e052f3815b"
+}

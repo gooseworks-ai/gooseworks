@@ -1,29 +1,11 @@
-/**
- * THE routing table for the GooseWorks skill family (GOOSE-3190).
- *
- * Routing used to be written out by hand in THREE places that drifted apart:
- *   1. this CLI's `gooseworks` router SKILL.md (`master-skill.ts`),
- *   2. the backend's entry-skill list
- *      (`gooseworks-app/apps/api/src/services/entry-skills.ts`),
- *   3. the public skills repo's `collections/brand-growth`.
- *
- * This file is now the SINGLE SOURCE. `master-skill.ts` renders its markdown
- * tables from here (no hand-written route rows), `npm run generate:skills`
- * emits the machine-readable copy to `skills/routes.json` for the other two
- * repos to derive from, and `tests/skills/route-drift.test.ts` fails when any
- * of the three names a skill the others don't.
- *
- * The two consumers we cannot edit from this repo are represented by checked-in
- * snapshots under `tests/fixtures/`; each snapshot names the file to update when
- * the drift test fires.
- */
+import { pluginSource } from "./plugin-source";
 
 /** How a routed skill reaches the agent. */
 export type RouteDelivery =
   /** Vendored by this CLI and installed to ~/.agents/skills/. */
-  | 'entry'
+  | "entry"
   /** Lives in goose-skills; fetched on demand with `gooseworks fetch <slug>`. */
-  | 'fetch';
+  | "fetch";
 
 export interface DomainRoute {
   /** The skill slug to route to. */
@@ -46,72 +28,23 @@ export interface BrandGrowthRoute {
  * Domain routes — the "Route to the right skill FIRST" table. These are the
  * specialist skills the `gooseworks` router hands whole tasks to.
  */
-export const DOMAIN_ROUTES: DomainRoute[] = [
-  {
-    skill: 'goose-ads',
-    when: 'Make, edit or study image ads: from a template, a source ad or the brand\'s products; why a campaign underperforms; competitor ads, angles and hooks',
-    how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
-    delivery: 'entry',
-  },
-  {
-    skill: 'goose-graphics',
-    when: 'Charts, infographics, slides, social graphics, branded visual designs from a style or format',
-    how: 'Fetch it with catalog_fetch, or `gooseworks fetch goose-graphics` in a terminal.',
-    delivery: 'fetch',
-  },
-  {
-    skill: 'goose-video',
-    when: 'Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started',
-    how: 'Explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints.',
-    delivery: 'entry',
-  },
-  {
-    skill: 'goose-product-photos',
-    when: 'Make **product photos**: studio, lifestyle, marketplace, social or on a model',
-    how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
-    delivery: 'entry',
-  },
-  {
-    skill: 'animate-image',
-    when: 'Animate an approved static ad or product image',
-    how: 'Fetch it with catalog_fetch, or `gooseworks fetch animate-image` in a terminal.',
-    delivery: 'fetch',
-  },
-];
+export const DOMAIN_ROUTES: DomainRoute[] = pluginSource.routes
+  .domain as DomainRoute[];
 
 /**
  * Entry skills the router does not route to. An app may still ask for them
  * by name, so the CLI keeps installing them.
  */
-export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> = {
-  'make-custom-video': 'Keeps an explicit custom choice without a picker, studies its reference and checks custom support; fetching this entry alone does not enable production.',
-  'goose-video-local': 'One line: a next_step that gives the kit command says who starts it.',
-};
+export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> =
+  pluginSource.routes.unrouted;
 
 /**
  * Brand Growth routes — the outcome skills in the `brand-growth` collection.
  * Must stay in sync with `goose-skills/collections/brand-growth/routes.json`,
  * which is derived from this list.
  */
-export const BRAND_GROWTH_ROUTES: BrandGrowthRoute[] = [
-  { job: 'Brand foundation', skills: ['brand-research'] },
-  { job: 'Competitor ads', skills: ['competitor-ad-intelligence'] },
-  { job: 'Customer language and angles', skills: ['comment-mining', 'ad-angle-miner'] },
-  { job: 'Competitor social content', skills: ['competitor-social-research'] },
-  { job: 'Audience definition', skills: ['audience-research'] },
-  { job: 'Creator discovery and evaluation', skills: ['influencer-prospecting', 'creator-profile-teardown'] },
-  { job: 'Trends and outlier posts', skills: ['trend-discovery', 'outlier-post-finder'] },
-  { job: 'Social listening and product demand', skills: ['social-listening-brief', 'product-demand-research'] },
-  { job: 'Long-form source material (calls, podcasts, videos)', skills: ['transcript-intelligence'] },
-  {
-    job: 'Meta performance, policy, and landing-page match',
-    skills: ['meta-ads-analyzer', 'meta-ad-policy-checker', 'ad-to-landing-page-auditor'],
-  },
-  { job: 'Static ads', skills: ['goose-ads', 'remix-graphic-ad-from-reference'] },
-  { job: 'Product photos', skills: ['goose-product-photos', 'product-photoshoot'] },
-  { job: 'Written content and repurposing', skills: ['content-repurposing'] },
-  { job: 'Graphics and animation', skills: ['goose-graphics', 'animate-image'] },
-];
+export const BRAND_GROWTH_ROUTES: BrandGrowthRoute[] =
+  pluginSource.routes.brandGrowth;
 
 /** Every skill slug named by any route, deduped and sorted. */
 export function getRoutedSkillSlugs(): string[] {
@@ -138,7 +71,7 @@ export function getRouteManifest(): {
 } {
   return {
     $comment:
-      'Generated by `npm run generate:skills` from gooseworks/src/skills/routes.ts — the single source for GooseWorks skill routing (GOOSE-3190). Do not hand-edit. Consumers: goose-skills/collections/brand-growth/routes.json.',
+      "Generated by `npm run generate:skills` from gooseworks-app/apps/plugin/src/routes.ts — the single source for GooseWorks skill routing (GOOSE-3190). Do not hand-edit. Consumers: goose-skills/collections/brand-growth/routes.json.",
     version: 1,
     domain_routes: DOMAIN_ROUTES,
     brand_growth_routes: BRAND_GROWTH_ROUTES,
@@ -150,12 +83,12 @@ export function getRouteManifest(): {
 export function renderDomainRouteTable(): string {
   return DOMAIN_ROUTES.map(
     (r) => `| ${r.when} | **\`${r.skill}\`** | ${r.how} |`,
-  ).join('\n');
+  ).join("\n");
 }
 
 /** Render the Brand Growth job→skill table body. */
 export function renderBrandGrowthTable(): string {
   return BRAND_GROWTH_ROUTES.map(
-    (r) => `| ${r.job} | ${r.skills.map((s) => `\`${s}\``).join(', ')} |`,
-  ).join('\n');
+    (r) => `| ${r.job} | ${r.skills.map((s) => `\`${s}\``).join(", ")} |`,
+  ).join("\n");
 }
