@@ -49,7 +49,7 @@ export interface BrandGrowthRoute {
 export const DOMAIN_ROUTES: DomainRoute[] = [
   {
     skill: 'goose-ads',
-    when: 'Make, edit or study image ads: from a template, a source ad or the brand\'s products; why a campaign underperforms; competitor ads, angles and hooks',
+    when: 'Change one ad already made in GooseWorks (an edit, a new size, its tags or rating), or save the customer\'s image as a template. New image ads: `make-static-ads`',
     how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
     delivery: 'entry',
   },
@@ -89,28 +89,25 @@ export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Brand Growth routes — the outcome skills in the `brand-growth` collection.
- * Must stay in sync with `goose-skills/collections/brand-growth/routes.json`,
- * which is derived from this list.
+ * Brand Growth routes — the marketing playbooks in the `brand-growth` collection,
+ * one job and one playbook per row. Must stay in sync with
+ * `goose-skills/collections/brand-growth/routes.json`, which is derived from this list.
  */
 export const BRAND_GROWTH_ROUTES: BrandGrowthRoute[] = [
-  { job: 'Brand foundation', skills: ['brand-research'] },
-  { job: 'Competitor ads', skills: ['competitor-ad-intelligence'] },
-  { job: 'Customer language and angles', skills: ['comment-mining', 'ad-angle-miner'] },
-  { job: 'Competitor social content', skills: ['competitor-social-research'] },
-  { job: 'Audience definition', skills: ['audience-research'] },
-  { job: 'Creator discovery and evaluation', skills: ['influencer-prospecting', 'creator-profile-teardown'] },
-  { job: 'Trends and outlier posts', skills: ['trend-discovery', 'outlier-post-finder'] },
-  { job: 'Social listening and product demand', skills: ['social-listening-brief', 'product-demand-research'] },
-  { job: 'Long-form source material (calls, podcasts, videos)', skills: ['transcript-intelligence'] },
-  {
-    job: 'Meta performance, policy, and landing-page match',
-    skills: ['meta-ads-analyzer', 'meta-ad-policy-checker', 'ad-to-landing-page-auditor'],
-  },
-  { job: 'Static ads', skills: ['goose-ads', 'remix-graphic-ad-from-reference'] },
-  { job: 'Product photos', skills: ['goose-product-photos', 'product-photoshoot'] },
-  { job: 'Written content and repurposing', skills: ['content-repurposing'] },
-  { job: 'Graphics and animation', skills: ['goose-graphics', 'animate-image'] },
+  { job: 'Not sure what to do first', skills: ['where-to-start'] },
+  { job: 'Market size, trends, what people say, brand watch', skills: ['research-market'] },
+  { job: 'What rivals run and what works', skills: ['research-competitors'] },
+  { job: 'Who buys and why; lists of companies and people', skills: ['research-audience'] },
+  { job: 'Cold emails and LinkedIn messages', skills: ['write-outreach'] },
+  { job: 'A campaign plan from a budget and a date', skills: ['plan-campaign'] },
+  { job: 'New static image ads', skills: ['make-static-ads'] },
+  { job: 'Launch, scale or pause paid ads', skills: ['run-paid-campaigns'] },
+  { job: 'What worked; performance reports', skills: ['analyze-performance'] },
+  { job: 'Email flows and sends to subscribers', skills: ['email-lifecycle'] },
+  { job: 'SEO and AI-answer visibility', skills: ['improve-search-visibility'] },
+  { job: 'Influencers and UGC creators', skills: ['work-with-creators'] },
+  { job: 'One post, article or newsletter', skills: ['make-content'] },
+  { job: 'Posting calendar and social plan', skills: ['run-organic-social'] },
 ];
 
 /** Every skill slug named by any route, deduped and sorted. */

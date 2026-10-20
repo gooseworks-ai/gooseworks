@@ -58,12 +58,14 @@ export function getMasterSkillContent(): string {
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks growth coworker and router. Research brands, customers, competitors, creators,
-  markets and prospects; make and study ads, product photos, graphics and video; search and
-  scrape public web and social data; find and enrich leads. The one GooseWorks entry point
-  for brand growth, B2B, sales, research and GTM work.
+  GooseWorks growth coworker and router. Research markets, competitors, audiences and
+  creators; plan campaigns; make ads, product photos, graphics, video and content; run paid
+  ads, email, SEO and social; find leads and contacts. The one GooseWorks entry point
+  for brand growth, B2B, sales, research and GTM work. Also use it when the user mentions their
+  GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
+  (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.0.1
+version: 2.2.0
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -78,25 +80,34 @@ social data. Hand specialist work to its skill; do data work here.
 1. Before the first task, call brand_setup with action status and follow only its next_step;
    save each answer with brand_setup. Once an answer says setup is done, carry on their
    request without asking again.
-2. Read the brand with brand_read, then knowledge_search for this task. Pass both to the skill
-   you route to, and never ask what the customer already answered.
-3. When the customer states a lasting fact or rule about the brand, save it with brand_update
-   and check it with brand_read before saying so.
+2. Before brand work, call brain_map for the brand and read its core (brand_read lists brands;
+   ask which only if there are several). Open the chapters the task needs with brain_open and
+   search gaps with brain_search. Pass what you read to the skill you route to, and never ask
+   what the customer already answered.
+3. When the customer states a fact about their brand (an offer and its dates, a price, a rule
+   like "never say X", their audience or voice, a bestseller, a launch, a correction), save it
+   at once with brain_save in their words, even for a copy-only request; never in your own
+   memory or notes. Only what they state as true and lasting for their marketing: not a
+   question, an idea you're trying, this piece's wording or private business numbers. Confirm
+   in one line. If it waits for their yes, say it's waiting in Marketing Brain, under Waiting
+   on you.
+4. Use brand_update for products, the kit and setup, not facts. A missing fact the task needs:
+   ask one question, then save the answer.
 
 ## Route to the right skill
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
 ${renderDomainRouteTable()}
-| Anything else: scraping, research, lead lists, enrichment, any data lookup | (stay here) | Follow "Data work" below. |
+| Anything else: find a skill or a single step | (stay here) | catalog_search, or \`gooseworks search\` in a terminal; see "Data work". |
 
-## Brand growth skills
+## Marketing playbooks
 
-| Job | Skill |
+| Job | Playbook |
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch a skill before following it, and hand it the brand you read.
+Fetch a playbook before following it, and hand it the brand you read.
 
 ## Data work
 
@@ -137,9 +148,9 @@ export function getGooseAdsSkillContent(): string {
   return `---
 name: goose-ads
 slug: goose-ads
-description: Make, edit and study image ads with GooseWorks in this chat, from the brand's own products and approved sources. Start with brand_read and follow the next_step in every answer.
+description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 3.0.1
+version: 3.2.0
 author: GooseWorks
 ---
 
@@ -148,12 +159,17 @@ author: GooseWorks
 Use GooseWorks to make and improve the customer's image ads, here in this chat. Recommend one
 direction with a one-line reason and offer at most two others.
 
-- New ads: pick a source from the brand's own ads and templates, or find one with catalog_search
-  and open it with catalog_fetch. ads_generate makes the ads: get its price first, tell the
-  customer the credit total, and make them only after their yes.
+- A fact the customer states about the brand (an offer, a price, a rule, their audience): save
+  it with brain_save in their words, never in your own notes, and confirm in one line.
+- New static or image ads, more like a winning ad, new words or a new font on an ad, a rejected
+  ad to fix, or a social graphic: use the make-static-ads skill (installed, or opened with
+  catalog_fetch) and follow it instead of this list.
+- Only when make-static-ads is neither installed nor opened by catalog_fetch: pick a source from
+  the brand's own ads and templates, or find one with catalog_search and open it with
+  catalog_fetch. ads_generate makes the ads: get its price first, tell the customer the credit
+  total, and make them only after their yes.
 - A batch on its way: job_get. Finished ads: ads_read.
-- One ad: another take, an edit, a new size, an animation, its tags or the customer's rating, all
-  with ads_edit.
+- One finished ad: a new size, an animation, its tags or the customer's rating, all with ads_edit.
 - The customer's own image as a template: ads_template_save. Their files: media_upload.
 - Campaigns: campaign_read, campaign_save and campaign_ideas. campaign_generate plans and prices a
   campaign's ads; ads_review makes them once the customer says yes to the total.
@@ -173,9 +189,9 @@ export function getGooseProductPhotosSkillContent(): string {
   return `---
 name: goose-product-photos
 slug: goose-product-photos
-description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start with brand_read and follow the next_step in every answer.
+description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 1.0.1
+version: 1.1.0
 author: GooseWorks
 ---
 
@@ -184,6 +200,8 @@ author: GooseWorks
 Use GooseWorks to photograph the customer's physical products, here in this chat. A software
 screen or an app is not a product photo.
 
+- A fact the customer states about the brand (a price, a rule, their audience): save it with
+  brain_save in their words, never in your own notes, and confirm in one line.
 - Offer the brand's real products from brand_read; never describe one you can't see. A product
   that isn't listed yet: brand_update adds it from its page. A photo the customer sends:
   media_upload.
