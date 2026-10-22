@@ -65,7 +65,7 @@ description: >
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -77,22 +77,15 @@ social data. Hand specialist work to its skill; do data work here.
 
 ## First steps
 
-1. Before the first task, call brand_setup with action status and follow only its next_step;
-   save each answer with brand_setup. Once an answer says setup is done, carry on their
-   request without asking again.
-2. Before brand work, call brain_map for the brand and read its core (brand_read lists brands;
-   ask which only if there are several). Open the chapters the task needs with brain_open and
-   search gaps with brain_search. Pass what you read to the skill you route to, and never ask
-   what the customer already answered.
-3. When the customer states a fact about their brand (an offer and its dates, a price, a rule
-   like "never say X", their audience or voice, a bestseller, a launch, a correction), save it
-   at once with brain_save in their words, even for a copy-only request; never in your own
-   memory or notes. Only what they state as true and lasting for their marketing: not a
-   question, an idea you're trying, this piece's wording or private business numbers. Confirm
-   in one line. If it waits for their yes, say it's waiting in Marketing Brain, under Waiting
-   on you.
-4. Use brand_update for products, the kit and setup, not facts. A missing fact the task needs:
-   ask one question, then save the answer.
+1. Discover the listed setup/status action and read the actual brand/task state. Complete
+   missing factual prerequisites; preserve an already selected brand and task. Continue once
+   setup is done instead of restarting a picker.
+2. Read brand_read, then use the advertised brand-knowledge browse/search/read actions for
+   rules and task evidence. Pass those results into the chosen playbook. Use legacy names
+   only when this connection actually lists them; ask only what remains ambiguous.
+3. Save lasting human brand facts in their words through the listed typed knowledge action;
+   guesses and temporary creative choices remain proposals. Follow actual claim, rights and
+   approval restrictions; a generic context result is not approved product proof.
 
 ## Route to the right skill
 
@@ -107,7 +100,8 @@ ${renderDomainRouteTable()}
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch a playbook before following it, and hand it the brand you read.
+Fetch the playbook with its dependencies and brand context. Static creation requires
+make-static-ads; fetch it or stop. Its research and selection run even for one ad or finals only.
 
 ## Data work
 
@@ -148,35 +142,31 @@ export function getGooseAdsSkillContent(): string {
   return `---
 name: goose-ads
 slug: goose-ads
-description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Start brand work with brain_map and follow the next_step in every answer.
+description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Read the brand and follow the active playbook, preserving factual prerequisites and approvals.
 category: ads
-version: 3.2.0
+version: 3.2.1
 author: GooseWorks
 ---
 
 # GooseWorks ads
 
-Use GooseWorks to make and improve the customer's image ads, here in this chat. Recommend one
-direction with a one-line reason and offer at most two others.
+Use this entry for existing-ad operations and analysis. For new image ads, more ads, a winner's
+variations, copy/font changes, a rejected ad fix or a requested social graphic, fetch
+make-static-ads with catalog_fetch (or use the installed current package) and follow its
+research, selection, claims and quote gates. If it cannot be fetched, report that creation
+is unavailable on this connection and stop. The server generator is a different workflow,
+not a fallback for the missing playbook.
 
-- A fact the customer states about the brand (an offer, a price, a rule, their audience): save
-  it with brain_save in their words, never in your own notes, and confirm in one line.
-- New static or image ads, more like a winning ad, new words or a new font on an ad, a rejected
-  ad to fix, or a social graphic: use the make-static-ads skill (installed, or opened with
-  catalog_fetch) and follow it instead of this list.
-- Only when make-static-ads is neither installed nor opened by catalog_fetch: pick a source from
-  the brand's own ads and templates, or find one with catalog_search and open it with
-  catalog_fetch. ads_generate makes the ads: get its price first, tell the customer the credit
-  total, and make them only after their yes.
+- Save lasting human brand facts with the connection's listed knowledge action in their words.
 - A batch on its way: job_get. Finished ads: ads_read.
 - One finished ad: a new size, an animation, its tags or the customer's rating, all with ads_edit.
 - The customer's own image as a template: ads_template_save. Their files: media_upload.
-- Campaigns: campaign_read, campaign_save and campaign_ideas. campaign_generate plans and prices a
-  campaign's ads; ads_review makes them once the customer says yes to the total.
+- Campaign planning/launch requests use their matching marketing playbook. Static creation for
+  a campaign still uses make-static-ads; a campaign record is input, not a generation fallback.
 - How ads are doing: meta_read, or an analysis skill found with catalog_search, whose data comes
   through data_get and data_post.
 
-Then follow the next_step in every answer.
+For these existing-ad actions, follow the actual execution next_step.
 
 ## Rules
 

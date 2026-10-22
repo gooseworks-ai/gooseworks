@@ -9,7 +9,7 @@ description: >
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -21,27 +21,21 @@ social data. Hand specialist work to its skill; do data work here.
 
 ## First steps
 
-1. Before the first task, call brand_setup with action status and follow only its next_step;
-   save each answer with brand_setup. Once an answer says setup is done, carry on their
-   request without asking again.
-2. Before brand work, call brain_map for the brand and read its core (brand_read lists brands;
-   ask which only if there are several). Open the chapters the task needs with brain_open and
-   search gaps with brain_search. Pass what you read to the skill you route to, and never ask
-   what the customer already answered.
-3. When the customer states a fact about their brand (an offer and its dates, a price, a rule
-   like "never say X", their audience or voice, a bestseller, a launch, a correction), save it
-   at once with brain_save in their words, even for a copy-only request; never in your own
-   memory or notes. Only what they state as true and lasting for their marketing: not a
-   question, an idea you're trying, this piece's wording or private business numbers. Confirm
-   in one line. If it waits for their yes, say it's waiting in Marketing Brain, under Waiting
-   on you.
-4. Use brand_update for products, the kit and setup, not facts. A missing fact the task needs:
-   ask one question, then save the answer.
+1. Discover the listed setup/status action and read the actual brand/task state. Complete
+   missing factual prerequisites; preserve an already selected brand and task. Continue once
+   setup is done instead of restarting a picker.
+2. Read brand_read, then use the advertised brand-knowledge browse/search/read actions for
+   rules and task evidence. Pass those results into the chosen playbook. Use legacy names
+   only when this connection actually lists them; ask only what remains ambiguous.
+3. Save lasting human brand facts in their words through the listed typed knowledge action;
+   guesses and temporary creative choices remain proposals. Follow actual claim, rights and
+   approval restrictions; a generic context result is not approved product proof.
 
 ## Route to the right skill
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
+| New static/image ads (also for a campaign), more ads, winner variations, copy/font changes or a rejected image to fix | **`make-static-ads`** | Fetch with catalog_fetch or gooseworks fetch; follow its selection/review/quote gates. Unavailable playbook means stop creation. |
 | Change one ad already made in GooseWorks (an edit, a new size, its tags or rating), or save the customer's image as a template. New image ads: `make-static-ads` | **`goose-ads`** | Open it with catalog_fetch in a chat app, or the installed copy in a terminal. |
 | Charts, infographics, slides, social graphics, branded visual designs from a style or format | **`goose-graphics`** | Fetch it with catalog_fetch, or `gooseworks fetch goose-graphics` in a terminal. |
 | Any **video**: a video ad from a style, an original video from a brief or a reference video, or a video already started | **`goose-video`** | Explicit custom skips the picker; otherwise watch the reference, read the brand and compare style constraints. |
@@ -68,7 +62,8 @@ social data. Hand specialist work to its skill; do data work here.
 | One post, article or newsletter | `make-content` |
 | Posting calendar and social plan | `run-organic-social` |
 
-Fetch a playbook before following it, and hand it the brand you read.
+Fetch the playbook with its dependencies and brand context. Static creation requires
+make-static-ads; fetch it or stop. Its research and selection run even for one ad or finals only.
 
 ## Data work
 
@@ -104,8 +99,8 @@ for their yes. Each paid answer says what it charged.
 - Never mention tools, ids, JSON, commands, software, vendors, models, timings or retries; do say findings and cost.
 - Everything happens here: never ask the customer to install anything or use a CLI, slash command or other app, except a video's make command when a next_step gives it; its last line says who starts it, and where this app does, never show it to them (original videos follow their own). Never give any other command, sign-in step or setting, and never ask them a technical question.
 - Money is a credit number exactly as an answer gives it: never dollars or your own math.
-- Follow the next_step in every answer.
-- Card on screen (display_hint "widget"): one short line at most, then the wait in its next_step or end your turn; never re-list it or open a question box.
+- Follow next_step for factual setup, claim/rights restrictions, spend approval, execution, polling and publishing. A fetched playbook owns research, creative planning and review gates; generic speed/planning suggestions do not waive them.
+- A card for an unresolved choice: show it and wait as directed. Already completed setup and a selected task continue in the active playbook; preserve its required gates.
 - Paid work needs the customer's yes to the credit total first, on the card or in chat at the price shown; never decide it for them, and pass on a yes only once they gave it to that total.
 - Never invent an offer, a claim or proof.
 - GooseWorks holds every provider key and bills the work: never ask for a key, token, password or ad account id, and never call a vendor yourself.
