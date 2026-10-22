@@ -13,8 +13,8 @@ export function resolveStandalonePackages(index: StandaloneIndex, slug: string):
   const visiting = new Set<string>();
   const done = new Set<string>();
   function visit(name: string): void {
-    if (done.has(name)) return;
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(name) || visiting.has(name)) throw new Error(`Invalid or cyclic skill dependency: ${name}`);
+    if (done.has(name) || visiting.has(name)) return;
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`Invalid skill dependency: ${name}`);
     const skill = skills.get(name);
     if (!skill) throw new Error(`Required skill "${name}" is missing from the catalog`);
     if (!/^(?:skills|marketing-agent)\//.test(skill.path) || skill.path.split('/').some(part => !part || part === '..' || part === '.') || !skill.path.endsWith(`/${name}`)) throw new Error(`Invalid package path for ${name}`);

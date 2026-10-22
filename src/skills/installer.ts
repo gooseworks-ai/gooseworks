@@ -171,9 +171,19 @@ export async function installStandaloneSkill(
     throw new Error(`invalid skill slug '${slug}'. Use a slug like goose-graphics.`);
   }
   const targetDir = path.join(skillsBase(), slug);
-  if (fs.lstatSync(targetDir, { throwIfNoEntry: false }) && !options.overwriteModified) {
-    // Legacy standalone stamps contain no file hashes. Do not guess whether a
-    // saved recipe was edited; explicit replacement is required for those too.
+  const existingTarget = fs.lstatSync(targetDir, { throwIfNoEntry: false });
+  if (existingTarget && !options.overwriteModified) {
+    if (existingTarget.isSymbolicLink?.()) throw new Error(`Existing ${slug} package preserved. Replace the directory link yourself before installing a different package.`);
+    let replacement: string | undefined;
+    try {
+      const signal = AbortSignal.timeout(5000);
+      const source = githubSource();
+      const revision = await fetchGooseSkillsRevision(source, signal);
+      const index = JSON.parse((await fetchRawSkillFile(source.repo, 'skills-index.json', revision, signal)).toString('utf8')) as StandaloneIndex;
+      const retired = index.retired_skills?.find(entry => entry.slug === slug);
+      if (retired && /^[a-z0-9][a-z0-9-]*$/.test(retired.replacement) && index.skills.some(entry => entry.slug === retired.replacement)) replacement = retired.replacement;
+    } catch { /* Offline or invalid metadata must never replace a local package. */ }
+    if (replacement) throw new Error(`Skill "${slug}" was retired. Use "${replacement}" instead. Existing ${slug} package preserved.`);
     throw new Error(`Existing ${slug} package preserved. Back it up and pass --overwrite-modified to replace it; approved projects keep their pinned package.`);
   }
 
@@ -324,16 +334,22 @@ export function removeAllSkills(): void {
   }
 }
 
-async function fetchGooseSkillsTree(source: { repo: string; ref: string }): Promise<{ tree: GitHubTreeEntry[]; revision: string }> {
+async function fetchGooseSkillsRevision(source: { repo: string; ref: string }, signal?: AbortSignal): Promise<string> {
   // A tree SHA is not a commit SHA: raw.githubusercontent requires the commit.
-  const commitResponse = await fetch(`https://api.github.com/repos/${source.repo}/commits/${source.ref.split('/').map(encodeURIComponent).join('/')}`);
+  const url = `https://api.github.com/repos/${source.repo}/commits/${source.ref.split('/').map(encodeURIComponent).join('/')}`;
+  const commitResponse = await (signal ? fetch(url, { signal }) : fetch(url));
   if (!commitResponse.ok) {
     if (commitResponse.status === 403 && commitResponse.headers.get('x-ratelimit-remaining') === '0') throw new Error(`GitHub API rate-limited this IP.${formatRateLimitWait(commitResponse.headers.get('x-ratelimit-reset'))} Set GITHUB_TOKEN to raise the limit.`);
     throw new Error(`could not resolve standalone skill revision (${commitResponse.status})`);
   }
   const commit = await commitResponse.json() as { sha?: string };
   if (!commit.sha || !/^[a-f0-9]{40}$/.test(commit.sha)) throw new Error('Invalid standalone skill commit');
-  const response = await fetch(`https://api.github.com/repos/${source.repo}/git/trees/${commit.sha}?recursive=1`);
+  return commit.sha;
+}
+
+async function fetchGooseSkillsTree(source: { repo: string; ref: string }): Promise<{ tree: GitHubTreeEntry[]; revision: string }> {
+  const revision = await fetchGooseSkillsRevision(source);
+  const response = await fetch(`https://api.github.com/repos/${source.repo}/git/trees/${revision}?recursive=1`);
   if (!response.ok) {
     if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
       throw new Error(
@@ -345,7 +361,7 @@ async function fetchGooseSkillsTree(source: { repo: string; ref: string }): Prom
 
   const data = await response.json() as GitHubTreeResponse;
   if (data.truncated) throw new Error('Incomplete standalone skill tree');
-  return { tree: data.tree || [], revision: commit.sha };
+  return { tree: data.tree || [], revision };
 }
 
 function formatRateLimitWait(resetHeader: string | null): string {
@@ -356,9 +372,9 @@ function formatRateLimitWait(resetHeader: string | null): string {
   return ` Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
 }
 
-async function fetchRawSkillFile(repo: string, filePath: string, revision: string): Promise<Buffer> {
+async function fetchRawSkillFile(repo: string, filePath: string, revision: string, signal?: AbortSignal): Promise<Buffer> {
   const url = `https://raw.githubusercontent.com/${repo}/${revision}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
-  const response = await fetch(url);
+  const response = await (signal ? fetch(url, { signal }) : fetch(url));
   if (!response.ok) {
     throw new Error(`could not download ${filePath} from goose-skills (${response.status})`);
   }

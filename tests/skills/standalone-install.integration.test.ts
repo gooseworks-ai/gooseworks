@@ -11,8 +11,8 @@ test('installs a playbook and its transitive siblings from one commit using real
     { slug: 'step', path: 'marketing-agent/skills/step', metadata: { requires_skills: ['shared'] } },
     { slug: 'second-job', path: 'marketing-agent/skills/second-job', metadata: { requires_skills: ['step'] } },
     { slug: 'third-job', path: 'marketing-agent/skills/third-job', metadata: { requires_skills: ['step'] } },
-    { slug: 'shared', path: 'marketing-agent/skills/shared' }
-  ] };
+    { slug: 'shared', path: 'marketing-agent/skills/shared', metadata: { requires_skills: ['step'] } }
+  ], retired_skills: [{slug: 'old-job', replacement: 'job'}] };
   const requested: string[] = [];
   global.fetch = jest.fn(async (input: string | URL | Request) => {
     const url = String(input);
@@ -26,6 +26,14 @@ test('installs a playbook and its transitive siblings from one commit using real
     await jest.isolateModulesAsync(async () => {
       jest.doMock('os', () => ({ ...jest.requireActual('os'), homedir: () => home }));
       const { installStandaloneSkill } = await import('../../src/skills/installer');
+      const savedOld = path.join(home, '.agents/skills/old-job');
+      fs.mkdirSync(savedOld, {recursive:true});
+      fs.writeFileSync(path.join(savedOld, 'SKILL.md'), 'saved legacy method');
+      await expect(installStandaloneSkill('old-job')).rejects.toThrow(/retired.*job.*preserved/);
+      expect(fs.readFileSync(path.join(savedOld, 'SKILL.md'), 'utf8')).toBe('saved legacy method');
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+      await expect(installStandaloneSkill('old-job')).rejects.toThrow(/Existing old-job package preserved/);
+      expect(fs.readFileSync(path.join(savedOld, 'SKILL.md'), 'utf8')).toBe('saved legacy method');
       await installStandaloneSkill('job');
       const root = path.join(home, '.agents/skills');
       for (const slug of ['job', 'step', 'shared']) {
