@@ -54,6 +54,8 @@ export const ANSWER_FIELDS: readonly string[] = [
   // make-custom-video 3.8.0 (gooseworks-app #2076, carrying the 3.7.x server text): the reviewed changes from the
   // reference, the character step and the measured final check.
   'changes_from_reference', 'make_character', 'final_measure',
+  // Entry skills send their own version so the server can tell a terminal app its copy is old (GOOSE-4055).
+  'skill_version',
 ];
 
 /** author.size_limits: an entry skill is at most 5,000 characters. */

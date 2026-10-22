@@ -52,9 +52,23 @@ export function getEntrySkillNames(): string[] {
   return getEntrySkills().map((s) => s.name);
 }
 
+/**
+ * Adds the line that has the agent send this skill's own name and front-matter version in `client`, so the server can
+ * tell a terminal app whose installed copy is older than the published one to run `gooseworks update`.
+ */
+export function withVersionReport(content: string): string {
+  const front = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? '';
+  const name = /^name:\s*(\S+)\s*$/m.exec(front)?.[1];
+  const version = /^version:\s*(\S+)\s*$/m.exec(front)?.[1];
+  if (!name || !version) throw new Error('An entry skill needs a name and a version in its front matter');
+  const line = `Send client with skill "${name}" and skill_version "${version}" on every call that takes it.`;
+  if (!content.includes('\n## Rules\n')) throw new Error(`${name} has no Rules section to put its version line before`);
+  return content.replace('\n## Rules\n', `\n${line}\n\n## Rules\n`);
+}
+
 /** The router (`gooseworks`): specialist routes, the video pointer and the terminal data commands. */
 export function getMasterSkillContent(): string {
-  return `---
+  return withVersionReport(`---
 name: gooseworks
 slug: gooseworks
 description: >
@@ -65,7 +79,7 @@ description: >
   GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
   (captions, posts, emails), so those facts reach its Marketing Brain.
 category: general
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
@@ -140,17 +154,17 @@ for their yes. Each paid answer says what it charged.
 ## Rules
 
 ${SERVER_ENTRY_SKILL_RULES.all}
-`;
+`);
 }
 
 /** Image ads: make, edit and study them. */
 export function getGooseAdsSkillContent(): string {
-  return `---
+  return withVersionReport(`---
 name: goose-ads
 slug: goose-ads
 description: Edit, resize, animate and study image ads with GooseWorks in this chat. New static or image ads go to the make-static-ads skill when it is installed or catalog_fetch opens it. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 3.2.0
+version: 3.2.1
 author: GooseWorks
 ---
 
@@ -181,17 +195,17 @@ Then follow the next_step in every answer.
 ## Rules
 
 ${SERVER_ENTRY_SKILL_RULES.ads}
-`;
+`);
 }
 
 /** Product photos of the brand's real, physical products. */
 export function getGooseProductPhotosSkillContent(): string {
-  return `---
+  return withVersionReport(`---
 name: goose-product-photos
 slug: goose-product-photos
 description: Make product photos (studio, lifestyle or on a model) of a brand's real products with GooseWorks in this chat. Start brand work with brain_map and follow the next_step in every answer.
 category: ads
-version: 1.1.0
+version: 1.1.1
 author: GooseWorks
 ---
 
@@ -216,7 +230,7 @@ Then follow the next_step in every answer.
 ## Rules
 
 ${SERVER_ENTRY_SKILL_RULES.photos}
-`;
+`);
 }
 
 /** The reviewed goose-video snapshot, including its approval-only backport. */
