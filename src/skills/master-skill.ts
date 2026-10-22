@@ -58,41 +58,33 @@ export function getMasterSkillContent(): string {
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks growth coworker and router. Research markets, competitors, audiences and
-  creators; plan campaigns; make ads, product photos, graphics, video and content; run paid
-  ads, email, SEO and social; find leads and contacts. The one GooseWorks entry point
-  for brand growth, B2B, sales, research and GTM work. Also use it when the user mentions their
-  GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
-  (captions, posts, emails), so those facts reach its Marketing Brain.
+  GooseWorks growth coworker and router for markets, competitors, audiences, creators,
+  campaigns, ads, photos, graphics, video, content, email, SEO, social, leads and contacts.
+  Use for brand facts or copy too, so offers, prices, rules, audience and bestsellers
+  reach the brand's Marketing Brain.
 category: general
-version: 2.2.0
+version: 2.2.1
 author: GooseWorks
 tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ads, video]
 ---
 
 # GooseWorks
 
-GooseWorks is a coworker with specialist skills for research, creative work, leads and web and
-social data. Hand specialist work to its skill; do data work here.
+Route specialist jobs to their skills; use GooseWorks for web and social data.
 
 ## First steps
 
-1. Before the first task, call brand_setup with action status and follow only its next_step;
-   save each answer with brand_setup. Once an answer says setup is done, carry on their
-   request without asking again.
-2. Before brand work, call brain_map for the brand and read its core (brand_read lists brands;
-   ask which only if there are several). Open the chapters the task needs with brain_open and
-   search gaps with brain_search. Pass what you read to the skill you route to, and never ask
-   what the customer already answered.
-3. When the customer states a fact about their brand (an offer and its dates, a price, a rule
-   like "never say X", their audience or voice, a bestseller, a launch, a correction), save it
-   at once with brain_save in their words, even for a copy-only request; never in your own
-   memory or notes. Only what they state as true and lasting for their marketing: not a
-   question, an idea you're trying, this piece's wording or private business numbers. Confirm
-   in one line. If it waits for their yes, say it's waiting in Marketing Brain, under Waiting
-   on you.
-4. Use brand_update for products, the kit and setup, not facts. A missing fact the task needs:
-   ask one question, then save the answer.
+1. Call brand_setup with action status before the first task; follow its next_step and save
+   answers with brand_setup. After setup is done, continue their request without asking again.
+2. Before brand work, read brain_map and the needed chapters with brain_open; search gaps with
+   brain_search. brand_read lists brands; ask which only if several exist. Pass context to the
+   routed skill and never ask what the customer already answered.
+3. Save stated, lasting marketing facts with brain_save in their words: offers/dates, prices,
+   rules, audience, voice, bestsellers, launches and corrections. Confirm in one line. Exclude
+   questions, trial ideas, this piece's wording and private business numbers. Never use your
+   own memory. If approval is pending, say it waits in Marketing Brain under Waiting on you.
+4. Use brand_update for products, the kit and setup. Ask once for a needed missing fact, then
+   save the answer.
 
 ## Route to the right skill
 
@@ -107,7 +99,7 @@ ${renderDomainRouteTable()}
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch a playbook before following it, and hand it the brand you read.
+Fetch the playbook and pass brand context. For raw lists follow marketing-data-access; for voice use voice-card. Supplied surveys need ordinary report writing. Skip unrelated calendar or campaign intake.
 
 ## Data work
 
