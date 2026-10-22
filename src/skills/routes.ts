@@ -48,6 +48,12 @@ export interface BrandGrowthRoute {
  */
 export const DOMAIN_ROUTES: DomainRoute[] = [
   {
+    skill: 'make-static-ads',
+    when: 'New static/image ads (also for a campaign), more ads, winner variations, copy/font changes or a rejected image to fix',
+    how: 'Fetch with catalog_fetch or gooseworks fetch; follow its selection/review/quote gates. Unavailable playbook means stop creation.',
+    delivery: 'fetch',
+  },
+  {
     skill: 'goose-ads',
     when: 'Change one ad already made in GooseWorks (an edit, a new size, its tags or rating), or save the customer\'s image as a template. New image ads: `make-static-ads`',
     how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
