@@ -1,0 +1,1199 @@
+{
+  "source_revision": "21c4f79af4ddf8f7261cc7815d90b2754352fb2a",
+  "playbookSlugs": [
+    "analyze-performance",
+    "email-lifecycle",
+    "improve-search-visibility",
+    "make-content",
+    "make-static-ads",
+    "plan-campaign",
+    "research-audience",
+    "research-competitors",
+    "research-market",
+    "run-organic-social",
+    "run-paid-campaigns",
+    "where-to-start",
+    "work-with-creators",
+    "write-outreach"
+  ],
+  "skills": [
+    {
+      "slug": "ad-policy-check",
+      "path": "marketing-agent/skills/ad-policy-check",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "analyze-performance",
+      "path": "marketing-agent/skills/analyze-performance",
+      "metadata": {
+        "requires_skills": [
+          "analyze-performance-call-and-learn",
+          "analyze-performance-diagnose",
+          "analyze-performance-intake",
+          "analyze-performance-rank-and-read",
+          "analyze-performance-revenue-join",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "analyze-performance-call-and-learn",
+      "path": "marketing-agent/skills/analyze-performance-call-and-learn",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "analyze-performance-diagnose",
+      "path": "marketing-agent/skills/analyze-performance-diagnose",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "analyze-performance-intake",
+      "path": "marketing-agent/skills/analyze-performance-intake",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "analyze-performance-rank-and-read",
+      "path": "marketing-agent/skills/analyze-performance-rank-and-read",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "analyze-performance-revenue-join",
+      "path": "marketing-agent/skills/analyze-performance-revenue-join",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "claims-gate",
+      "path": "marketing-agent/skills/claims-gate",
+      "metadata": {
+        "requires_skills": [
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "email-lifecycle",
+      "path": "marketing-agent/skills/email-lifecycle",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "email-lifecycle-broadcast-planner",
+          "email-lifecycle-flow-writer",
+          "email-lifecycle-lifecycle-audit",
+          "email-lifecycle-offer-math",
+          "email-lifecycle-send-check",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "voice-card",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "email-lifecycle-broadcast-planner",
+      "path": "marketing-agent/skills/email-lifecycle-broadcast-planner",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "email-lifecycle-flow-writer",
+      "path": "marketing-agent/skills/email-lifecycle-flow-writer",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "email-lifecycle-lifecycle-audit",
+      "path": "marketing-agent/skills/email-lifecycle-lifecycle-audit",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "email-lifecycle-offer-math",
+      "path": "marketing-agent/skills/email-lifecycle-offer-math",
+      "metadata": {
+        "requires_skills": [
+          "email-lifecycle"
+        ]
+      }
+    },
+    {
+      "slug": "email-lifecycle-send-check",
+      "path": "marketing-agent/skills/email-lifecycle-send-check",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "email-lifecycle",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "honest-review",
+      "path": "marketing-agent/skills/honest-review",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "improve-search-visibility",
+      "path": "marketing-agent/skills/improve-search-visibility",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "improve-search-visibility-citation-check",
+          "improve-search-visibility-entity-footprint",
+          "improve-search-visibility-fix-writer",
+          "improve-search-visibility-page-and-foundation-check",
+          "improve-search-visibility-question-set",
+          "improve-search-visibility-store-listing-audit",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "improve-search-visibility-citation-check",
+      "path": "marketing-agent/skills/improve-search-visibility-citation-check",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "improve-search-visibility-entity-footprint",
+      "path": "marketing-agent/skills/improve-search-visibility-entity-footprint",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "improve-search-visibility-fix-writer",
+      "path": "marketing-agent/skills/improve-search-visibility-fix-writer",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "improve-search-visibility-page-and-foundation-check",
+      "path": "marketing-agent/skills/improve-search-visibility-page-and-foundation-check",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "improve-search-visibility-question-set",
+      "path": "marketing-agent/skills/improve-search-visibility-question-set",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "improve-search-visibility-store-listing-audit",
+      "path": "marketing-agent/skills/improve-search-visibility-store-listing-audit",
+      "metadata": {
+        "requires_skills": [
+          "improve-search-visibility"
+        ]
+      }
+    },
+    {
+      "slug": "make-content",
+      "path": "marketing-agent/skills/make-content",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "make-content-content-brief",
+          "make-content-source-to-units",
+          "make-content-two-pass-edit",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "voice-card",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-content-content-brief",
+      "path": "marketing-agent/skills/make-content-content-brief",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "make-content",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-content-source-to-units",
+      "path": "marketing-agent/skills/make-content-source-to-units",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "make-content-two-pass-edit",
+      "path": "marketing-agent/skills/make-content-two-pass-edit",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "make-content",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads",
+      "path": "marketing-agent/skills/make-static-ads",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "make-static-ads-concept-grid",
+          "make-static-ads-copy-variants",
+          "make-static-ads-find-references",
+          "make-static-ads-fix-rejected",
+          "make-static-ads-graphic-request",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-ad-copy",
+      "path": "marketing-agent/skills/make-static-ads-ad-copy",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-claims-extract",
+      "path": "marketing-agent/skills/make-static-ads-claims-extract",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-compose",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-compose",
+      "path": "marketing-agent/skills/make-static-ads-compose",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-concept-grid",
+      "path": "marketing-agent/skills/make-static-ads-concept-grid",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "make-static-ads-copy-variants",
+      "path": "marketing-agent/skills/make-static-ads-copy-variants",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-find-references",
+      "path": "marketing-agent/skills/make-static-ads-find-references",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "make-static-ads-fix-rejected",
+      "path": "marketing-agent/skills/make-static-ads-fix-rejected",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-graphic-request",
+      "path": "marketing-agent/skills/make-static-ads-graphic-request",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "honest-review",
+          "make-static-ads",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "make-static-ads-render-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "make-static-ads-render-review",
+      "path": "marketing-agent/skills/make-static-ads-render-review",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "honest-review",
+          "make-static-ads-ad-copy",
+          "make-static-ads-claims-extract",
+          "make-static-ads-compose",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "marketing-data-access",
+      "path": "marketing-agent/skills/marketing-data-access",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "marketing-guide",
+      "path": "marketing-agent/skills/marketing-guide",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "outcomes-ledger",
+      "path": "marketing-agent/skills/outcomes-ledger",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "plan-campaign",
+      "path": "marketing-agent/skills/plan-campaign",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "plan-campaign-brief-and-assets",
+          "plan-campaign-budget-and-tests",
+          "plan-campaign-channel-decision",
+          "plan-campaign-goal-chain",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "plan-campaign-brief-and-assets",
+      "path": "marketing-agent/skills/plan-campaign-brief-and-assets",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "plan-campaign-budget-and-tests",
+      "path": "marketing-agent/skills/plan-campaign-budget-and-tests",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "plan-campaign-channel-decision",
+      "path": "marketing-agent/skills/plan-campaign-channel-decision",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "plan-campaign-goal-chain",
+      "path": "marketing-agent/skills/plan-campaign-goal-chain",
+      "metadata": {
+        "requires_skills": [
+          "plan-campaign"
+        ]
+      }
+    },
+    {
+      "slug": "research-audience",
+      "path": "marketing-agent/skills/research-audience",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "outcomes-ledger",
+          "research-audience-account-sourcing",
+          "research-audience-fit-definition",
+          "research-audience-people-and-contacts",
+          "research-audience-score-segment-qa",
+          "research-audience-segment-pass",
+          "research-audience-signals-and-hooks",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "research-audience-account-sourcing",
+      "path": "marketing-agent/skills/research-audience-account-sourcing",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-audience-fit-definition",
+      "path": "marketing-agent/skills/research-audience-fit-definition",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "research-audience-people-and-contacts",
+      "path": "marketing-agent/skills/research-audience-people-and-contacts",
+      "metadata": {
+        "requires_skills": [
+          "research-audience"
+        ]
+      }
+    },
+    {
+      "slug": "research-audience-score-segment-qa",
+      "path": "marketing-agent/skills/research-audience-score-segment-qa",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "research-audience-segment-pass",
+      "path": "marketing-agent/skills/research-audience-segment-pass",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-audience-signals-and-hooks",
+      "path": "marketing-agent/skills/research-audience-signals-and-hooks",
+      "metadata": {
+        "requires_skills": [
+          "research-audience"
+        ]
+      }
+    },
+    {
+      "slug": "research-competitors",
+      "path": "marketing-agent/skills/research-competitors",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "research-competitors-category-pass",
+          "research-competitors-edge-cases",
+          "research-competitors-rival-pass",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "research-competitors-category-pass",
+      "path": "marketing-agent/skills/research-competitors-category-pass",
+      "metadata": {
+        "requires_skills": [
+          "research-competitors-rival-pass"
+        ]
+      }
+    },
+    {
+      "slug": "research-competitors-edge-cases",
+      "path": "marketing-agent/skills/research-competitors-edge-cases",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-competitors-rival-pass",
+      "path": "marketing-agent/skills/research-competitors-rival-pass",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-market",
+      "path": "marketing-agent/skills/research-market",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "research-market-edge-cases",
+          "research-market-listening",
+          "research-market-market-pass",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "research-market-edge-cases",
+      "path": "marketing-agent/skills/research-market-edge-cases",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-market-listening",
+      "path": "marketing-agent/skills/research-market-listening",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "research-market-market-pass",
+      "path": "marketing-agent/skills/research-market-market-pass",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "run-memory",
+      "path": "marketing-agent/skills/run-memory",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-organic-social",
+      "path": "marketing-agent/skills/run-organic-social",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "honest-review",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "run-organic-social-account-audit",
+          "run-organic-social-plan-calendar",
+          "run-organic-social-platform-research",
+          "run-organic-social-post-check",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "voice-card",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-organic-social-account-audit",
+      "path": "marketing-agent/skills/run-organic-social-account-audit",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "run-organic-social",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-organic-social-plan-calendar",
+      "path": "marketing-agent/skills/run-organic-social-plan-calendar",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-organic-social-platform-research",
+      "path": "marketing-agent/skills/run-organic-social-platform-research",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "run-organic-social",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "voice-card",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-organic-social-post-check",
+      "path": "marketing-agent/skills/run-organic-social-post-check",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "run-organic-social",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-paid-campaigns",
+      "path": "marketing-agent/skills/run-paid-campaigns",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "analyze-performance",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "plan-campaign",
+          "run-memory",
+          "run-paid-campaigns-apply-and-log",
+          "run-paid-campaigns-draft-moves",
+          "run-paid-campaigns-health-gate",
+          "run-paid-campaigns-weekly-read",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "run-paid-campaigns-apply-and-log",
+      "path": "marketing-agent/skills/run-paid-campaigns-apply-and-log",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "run-paid-campaigns-draft-moves",
+      "path": "marketing-agent/skills/run-paid-campaigns-draft-moves",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "run-paid-campaigns-health-gate",
+      "path": "marketing-agent/skills/run-paid-campaigns-health-gate",
+      "metadata": {
+        "requires_skills": [
+          "run-paid-campaigns"
+        ]
+      }
+    },
+    {
+      "slug": "run-paid-campaigns-weekly-read",
+      "path": "marketing-agent/skills/run-paid-campaigns-weekly-read",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "save-learning",
+      "path": "marketing-agent/skills/save-learning",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "save-to-brain",
+      "path": "marketing-agent/skills/save-to-brain",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "spend-gate",
+      "path": "marketing-agent/skills/spend-gate",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "voice-card",
+      "path": "marketing-agent/skills/voice-card",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "where-to-start",
+      "path": "marketing-agent/skills/where-to-start",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "where-to-start-situation-save",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "where-to-start-situation-save",
+      "path": "marketing-agent/skills/where-to-start-situation-save",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "work-with-creators",
+      "path": "marketing-agent/skills/work-with-creators",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "outcomes-ledger",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "work-with-creators-brief-writer",
+          "work-with-creators-creator-discovery",
+          "work-with-creators-creator-vetting",
+          "work-with-creators-rate-and-deal",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "work-with-creators-brief-writer",
+      "path": "marketing-agent/skills/work-with-creators-brief-writer",
+      "metadata": {
+        "requires_skills": [
+          "ad-policy-check",
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "work-with-creators",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "work-with-creators-creator-discovery",
+      "path": "marketing-agent/skills/work-with-creators-creator-discovery",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "work-with-creators-creator-vetting",
+      "path": "marketing-agent/skills/work-with-creators-creator-vetting",
+      "metadata": {
+        "requires_skills": [
+          "work-with-creators"
+        ]
+      }
+    },
+    {
+      "slug": "work-with-creators-rate-and-deal",
+      "path": "marketing-agent/skills/work-with-creators-rate-and-deal",
+      "metadata": {
+        "requires_skills": [
+          "work-with-creators"
+        ]
+      }
+    },
+    {
+      "slug": "write-outreach",
+      "path": "marketing-agent/skills/write-outreach",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "outcomes-ledger",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "voice-card",
+          "write-outreach-draft-sequence",
+          "write-outreach-outreach-qa",
+          "write-outreach-reply-reader",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "write-outreach-draft-sequence",
+      "path": "marketing-agent/skills/write-outreach-draft-sequence",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "write-outreach-outreach-qa",
+      "path": "marketing-agent/skills/write-outreach-outreach-qa",
+      "metadata": {
+        "requires_skills": []
+      }
+    },
+    {
+      "slug": "write-outreach-reply-reader",
+      "path": "marketing-agent/skills/write-outreach-reply-reader",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "outcomes-ledger",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate",
+          "write-report"
+        ]
+      }
+    },
+    {
+      "slug": "write-report",
+      "path": "marketing-agent/skills/write-report",
+      "metadata": {
+        "requires_skills": [
+          "claims-gate",
+          "marketing-data-access",
+          "marketing-guide",
+          "run-memory",
+          "save-learning",
+          "save-to-brain",
+          "spend-gate"
+        ]
+      }
+    }
+  ]
+}
