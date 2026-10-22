@@ -95,7 +95,7 @@ ${renderDomainRouteTable()}
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch playbook dependencies and brand context. Static creation requires make-static-ads;
+Fetch playbook, dependencies and brand context. Static creation requires make-static-ads;
 fetch it or stop. Its research and selection run even for one ad or finals only.
 Raw lists: marketing-data-access; voice: voice-card. Supplied surveys use ordinary report
 writing. Skip unrelated calendar/campaign intake.
