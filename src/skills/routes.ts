@@ -60,6 +60,12 @@ export const DOMAIN_ROUTES: DomainRoute[] = [
     delivery: 'fetch',
   },
   {
+    skill: 'make-static-ads',
+    when: 'Static/image ads, including campaigns, more ads, winner variants, copy/font changes or rejected-image fixes',
+    how: 'Fetch with catalog_fetch or gooseworks fetch; follow selection/review/quote gates. Stop creation if unavailable.',
+    delivery: 'fetch',
+  },
+  {
     skill: 'goose-ads',
     when: 'Change one ad already made in GooseWorks (an edit, a new size, its tags or rating), or save the customer\'s image as a template. New image ads: `make-static-ads`',
     how: 'Open it with catalog_fetch in a chat app, or the installed copy in a terminal.',
