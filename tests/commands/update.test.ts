@@ -1,4 +1,10 @@
+const CATALOG_SKILLS = [
+  { name: 'gooseworks', content: '# gooseworks' },
+  { name: 'goose-ads', content: '# goose-ads' },
+];
+
 jest.mock('../../src/commands/skills', () => ({
+  loadEntryCatalog: jest.fn().mockImplementation(async () => ({ catalog: { source: 'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main', skills: CATALOG_SKILLS, missing: [] } })),
   readEntryFreshnessReport: jest.fn().mockResolvedValue({cli: 'current'}),
   reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
 }));
@@ -13,13 +19,6 @@ jest.mock('../../src/skills/installer', () => ({
     { name: 'goose-ads', action: 'installed' },
   ]),
   removeAllSkills: jest.fn(),
-}));
-
-jest.mock('../../src/skills/master-skill', () => ({
-  getEntrySkills: jest.fn().mockReturnValue([
-    { name: 'gooseworks', content: '# gooseworks' },
-    { name: 'goose-ads', content: '# goose-ads' },
-  ]),
 }));
 
 jest.mock('../../src/agents/claude', () => ({
@@ -57,19 +56,17 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 import { getCredentials } from '../../src/auth/credentials';
-import { getEntrySkills } from '../../src/skills/master-skill';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../../src/agents/codex';
 import { configureCursor, hasExistingCursorMcpEntry } from '../../src/agents/cursor';
 import { isAgentInstalled } from '../../src/agents/detect';
 import * as loggerModule from '../../src/utils/logger';
-import { readEntryFreshnessReport } from '../../src/commands/skills';
+import { loadEntryCatalog, readEntryFreshnessReport } from '../../src/commands/skills';
 import { installManagedEntrySkills, removeAllSkills } from '../../src/skills/installer';
 import { updateCommand } from '../../src/commands/update';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
-const mockGetEntrySkills = getEntrySkills as jest.MockedFunction<typeof getEntrySkills>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
 const mockConfigureCodex = configureCodex as jest.MockedFunction<typeof configureCodex>;
@@ -113,13 +110,28 @@ describe('update command', () => {
     expect(mockConfigureClaude).not.toHaveBeenCalled();
   });
 
-  it('installs the vendored entry skills (gooseworks + goose-ads)', async () => {
+  it('installs the entry skills downloaded from goose-skills', async () => {
     mockGetCredentials.mockReturnValue(baseCreds);
     mockIsAgentInstalled.mockReturnValue(false);
 
     await updateCommand.parseAsync(['node', 'test']);
 
-    expect(mockGetEntrySkills).toHaveBeenCalledWith();
+    expect(loadEntryCatalog).toHaveBeenCalledTimes(1);
+    expect(installManagedEntrySkills).toHaveBeenCalledWith(CATALOG_SKILLS, { overwriteModified: undefined });
+  });
+
+  it('fails clearly and changes nothing when goose-skills cannot be reached', async () => {
+    mockGetCredentials.mockReturnValue(baseCreds);
+    mockIsAgentInstalled.mockReturnValue(true);
+    (loadEntryCatalog as jest.Mock).mockResolvedValueOnce({ error: 'could not reach goose-skills for skills-index.json (fetch failed)' });
+
+    await expect(updateCommand.parseAsync(['node', 'test'])).rejects.toThrow('process.exit called');
+
+    expect(loggerModule.error).toHaveBeenCalledWith(expect.stringContaining('could not reach goose-skills for skills-index.json'));
+    expect(loggerModule.error).toHaveBeenCalledWith(expect.stringContaining('No skill files were changed'));
+    expect(installManagedEntrySkills).not.toHaveBeenCalled();
+    expect(removeAllSkills).not.toHaveBeenCalled();
+    expect(mockConfigureClaude).not.toHaveBeenCalled();
   });
 
   it('reconfigures only Claude when only Claude is installed', async () => {
@@ -209,7 +221,7 @@ describe('update command', () => {
 
     expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
   });
-  it('refuses to reinstall an outdated CLI bundle before any file or agent mutation', async () => {
+  it('refuses to refresh entry skills from an outdated CLI before any file or agent mutation', async () => {
     mockGetCredentials.mockReturnValue(baseCreds);
     (readEntryFreshnessReport as jest.Mock).mockResolvedValueOnce({cli: 'outdated'});
     await expect(updateCommand.parseAsync(['node','test'])).rejects.toThrow('process.exit called');
@@ -217,7 +229,7 @@ describe('update command', () => {
     expect(removeAllSkills).not.toHaveBeenCalled();
     expect(mockConfigureClaude).not.toHaveBeenCalled();
   });
-  it('preserves saved standalone recipes during a bundled entry refresh', async () => {
+  it('preserves saved standalone recipes during an entry refresh', async () => {
     mockGetCredentials.mockReturnValue(baseCreds);
     await updateCommand.parseAsync(['node','test']);
     expect(removeAllSkills).not.toHaveBeenCalled();

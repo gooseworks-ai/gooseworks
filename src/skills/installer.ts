@@ -3,8 +3,7 @@ import * as fs from 'fs';
 import { createHash } from 'crypto';
 import * as path from 'path';
 import * as os from 'os';
-import { isManagedGooseworksSkill, STAMP_FILE } from './names';
-import type { EntrySkill } from './master-skill';
+import { ENTRY_SKILL_NAMES, isManagedGooseworksSkill, STAMP_FILE } from './names';
 import { skillContentHash } from './releases';
 import { getEnvironment, profileRoot, sourceBranch } from '../environment';
 import { stagingContent } from './staging-content';
@@ -82,59 +81,186 @@ export function getSkillsBasePath(): string {
   return skillsBase();
 }
 
-export function installMasterSkill(masterSkillMd: string): void {
-  const masterDir = path.join(skillsBase(), 'gooseworks');
-  fs.mkdirSync(masterDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(masterDir, 'SKILL.md'),
-    masterSkillMd,
-    'utf-8'
-  );
+// ── Entry skills from the goose-skills catalog ──────────────────────────────
+// The entry skills (ENTRY_SKILL_NAMES) live in goose-skills at
+// `skills/entry/<name>/`. install, update and the login refresh download them
+// (`fetchEntrySkills`) and write each one to <skills folder>/<name>/
+// (`installManagedEntrySkills`). Every install is stamped:
+//   - `.gooseworks-version` holds the first 16 hex characters of the SKILL.md
+//     hash, the format older CLIs wrote, so their installs stay recognized;
+//   - `.gooseworks-source.json` records each file's hash, the catalog version
+//     and where the files came from.
+// A folder whose files no longer match its record is the user's edit and is
+// preserved unless they pass --overwrite-modified.
+
+export const ENTRY_SOURCE_FILE = '.gooseworks-source.json';
+const ENTRY_DOWNLOAD_TIMEOUT_MS = 30_000;
+/** Bookkeeping files that are not part of the skill's content. */
+const ENTRY_IGNORED_FILES = new Set([STAMP_FILE, ENTRY_SOURCE_FILE, '.DS_Store']);
+
+export interface EntrySkill {
+  /** Install dir name under the skills folder AND the skill `name`. */
+  name: string;
+  /** The SKILL.md text. */
+  content: string;
+  /** The skill folder's other files, by path relative to the folder. */
+  files?: Record<string, Buffer>;
+  /** The catalog's version of this skill. */
+  version?: string;
+  /** Where the files were downloaded from. */
+  source?: string;
 }
 
-// ── Vendored entry-skill freshness ──────────────────────────────────────────
-// Entry skills (gooseworks, goose-ads, goose-video, goose-product-photos) are
-// vendored in the CLI and written to
-// ~/.agents/skills/<name>/. We stamp each install with a content hash so we can
-// skip rewriting an unchanged skill ("already local → don't call") and rewrite
-// only when the vendored content changed ("updated → call again"). Recipe skills
-// are fetched from the connected catalog; saved packages carry their reported hashes.
+export interface EntrySkillCatalog {
+  /** The goose-skills address the files came from. */
+  source: string;
+  skills: EntrySkill[];
+  /** Entry skill names the catalog does not list. They are left as installed. */
+  missing: string[];
+}
 
-function entryContentHash(content: string): string {
-  return skillContentHash(content).slice(0, 16);
+function entryFiles(skill: EntrySkill): Map<string, Buffer> {
+  const files = new Map<string, Buffer>(Object.entries(skill.files || {}));
+  files.set('SKILL.md', Buffer.from(skill.content, 'utf-8'));
+  return files;
+}
+
+function hashFiles(files: Map<string, Buffer>): Record<string, string> {
+  return Object.fromEntries([...files.keys()].sort().map((name) => [name, skillContentHash(files.get(name)!)]));
+}
+
+/** One hash for a whole skill folder: every file's path and content hash. */
+function folderDigest(hashes: Record<string, string>): string {
+  return skillContentHash(Object.keys(hashes).sort().map((name) => `${name}\0${hashes[name]}\n`).join(''));
+}
+
+/** The digest an installed copy of `skill` has when it is unchanged. */
+export function entrySkillDigest(skill: EntrySkill): string {
+  return folderDigest(hashFiles(entryFiles(skill)));
+}
+
+function isSafeRelativePath(relative: string): boolean {
+  return !!relative && !path.isAbsolute(relative) && !relative.includes('\\')
+    && relative.split('/').every((part) => part && part !== '.' && part !== '..');
+}
+
+function sameHashes(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+
+function isHashRecord(value: unknown): value is Record<string, string> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value as Record<string, unknown>).every((hash) => typeof hash === 'string');
+}
+
+/** Hashes every regular file in the folder; null when it holds a link or anything else. */
+function readEntryFolder(dir: string): Record<string, string> | null {
+  const hashes: Record<string, string> = {};
+  const visit = (current: string, prefix: string): boolean => {
+    for (const name of fs.readdirSync(current)) {
+      if (name === '.DS_Store' || (!prefix && ENTRY_IGNORED_FILES.has(name))) continue;
+      const file = path.join(current, name);
+      const stat = fs.lstatSync(file);
+      if (stat.isDirectory()) { if (!visit(file, `${prefix}${name}/`)) return false; }
+      else if (stat.isFile()) hashes[`${prefix}${name}`] = skillContentHash(fs.readFileSync(file));
+      else return false;
+    }
+    return true;
+  };
+  return visit(dir, '') ? hashes : null;
 }
 
 function hasLinkedEntryPath(dir: string): boolean {
-  return [dir, path.join(dir, 'SKILL.md'), path.join(dir, STAMP_FILE)]
+  return [dir, path.join(dir, 'SKILL.md'), path.join(dir, STAMP_FILE), path.join(dir, ENTRY_SOURCE_FILE)]
     .some((file) => fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink());
 }
 
-export function inspectEntrySkill(name: string): { hash?: string; modified: boolean; missing: boolean } {
+export interface InstalledEntrySkill {
+  /** SHA-256 of the installed SKILL.md. */
+  hash?: string;
+  /** `entrySkillDigest` of the installed folder. */
+  digest?: string;
+  /** The catalog version recorded at install time (older CLIs recorded none). */
+  version?: string;
+  /** Edited, linked, or written by something other than the CLI. */
+  modified: boolean;
+  missing: boolean;
+}
+
+export function inspectEntrySkill(name: string): InstalledEntrySkill {
   const dir = path.join(skillsBase(), name);
   try {
     if (hasLinkedEntryPath(dir)) return { modified: true, missing: !fs.existsSync(path.join(dir, 'SKILL.md')) };
     if (!fs.existsSync(path.join(dir, 'SKILL.md'))) return { modified: fs.existsSync(dir), missing: true };
     const hash = skillContentHash(fs.readFileSync(path.join(dir, 'SKILL.md')));
+    const hashes = readEntryFolder(dir);
+    if (!hashes) return { hash, modified: true, missing: false };
     let stamp = '';
     try { stamp = fs.readFileSync(path.join(dir, STAMP_FILE), 'utf-8').trim(); } catch { /* provenance unknown */ }
-    return { hash, modified: !/^[a-f0-9]{16}$/.test(stamp) || hash.slice(0, 16) !== stamp, missing: false };
+    let record: { version?: unknown; fileHashes?: unknown } | undefined;
+    try { record = JSON.parse(fs.readFileSync(path.join(dir, ENTRY_SOURCE_FILE), 'utf-8')); } catch { /* older CLIs wrote no record */ }
+    // An install from an older CLI holds only SKILL.md and the stamp.
+    const recorded = isHashRecord(record?.fileHashes) ? record!.fileHashes as Record<string, string> : { 'SKILL.md': hash };
+    const modified = !/^[a-f0-9]{16}$/.test(stamp) || hash.slice(0, 16) !== stamp || !sameHashes(hashes, recorded);
+    return { hash, digest: folderDigest(hashes), version: typeof record?.version === 'string' ? record.version : undefined, modified, missing: false };
   } catch {
     return { modified: true, missing: false };
   }
 }
 
-/** Checks the actual file, not just a stamp left behind before a user edit. */
-export function isEntrySkillFresh(name: string, content: string): boolean {
-  return inspectEntrySkill(name).hash === skillContentHash(content);
+/** Checks the actual files, not just a stamp left behind before a user edit. */
+export function isEntrySkillFresh(skill: EntrySkill): boolean {
+  const installed = inspectEntrySkill(skill.name);
+  return !installed.missing && installed.digest === entrySkillDigest(skill);
 }
 
-/** Write one entry skill + its freshness stamp. */
+/**
+ * Write one entry skill with its stamp and record. The folder is built next to
+ * the target and swapped in with a rename, so a failure never leaves a
+ * half-written folder.
+ */
 export function installEntrySkill(skill: EntrySkill): void {
-  const dir = path.join(skillsBase(), skill.name);
+  const base = skillsBase();
+  const dir = path.join(base, skill.name);
   if (hasLinkedEntryPath(dir)) throw new Error(`Linked ${skill.name} entry preserved; replace the link yourself before installing.`);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'SKILL.md'), skill.content, 'utf-8');
-  fs.writeFileSync(path.join(dir, STAMP_FILE), entryContentHash(skill.content), 'utf-8');
+  const files = entryFiles(skill);
+  for (const name of files.keys()) {
+    if (!isSafeRelativePath(name) || ENTRY_IGNORED_FILES.has(name)) throw new Error(`Unsafe file path in ${skill.name}: ${name}`);
+  }
+  fs.mkdirSync(base, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(base, '.entry-installing-'));
+  let keepStaging = false;
+  try {
+    const staged = path.join(staging, skill.name);
+    for (const [name, bytes] of files) {
+      const target = path.join(staged, name);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, bytes);
+    }
+    fs.writeFileSync(path.join(staged, STAMP_FILE), skillContentHash(skill.content).slice(0, 16), 'utf-8');
+    fs.writeFileSync(path.join(staged, ENTRY_SOURCE_FILE), JSON.stringify({
+      environment: getEnvironment(),
+      source: skill.source ?? null,
+      version: skill.version ?? null,
+      fileHashes: hashFiles(files),
+    }, null, 2) + '\n', 'utf-8');
+    const backup = fs.lstatSync(dir, { throwIfNoEntry: false }) ? path.join(staging, `${skill.name}.previous`) : null;
+    if (backup) fs.renameSync(dir, backup);
+    try {
+      fs.renameSync(staged, dir);
+    } catch (error) {
+      if (backup) {
+        try { fs.renameSync(backup, dir); } catch {
+          keepStaging = true;
+          throw new Error(`Could not replace ${skill.name}. The previous copy is preserved at ${backup}.`);
+        }
+      }
+      throw error;
+    }
+  } finally {
+    if (!keepStaging) fs.rmSync(staging, { recursive: true, force: true });
+  }
 }
 
 export interface EntrySkillInstallResult {
@@ -143,24 +269,101 @@ export interface EntrySkillInstallResult {
 }
 
 /**
- * Refresh bundled entry skills. Preserve edited or untracked files unless the
- * user explicitly allows their replacement. `force` never authorizes data loss.
+ * Install or refresh entry skills. Preserve edited or untracked files unless
+ * the user explicitly allows their replacement. `force` never authorizes data loss.
  */
 export function installManagedEntrySkills(
   skills: EntrySkill[],
   { force = false, overwriteModified = false }: { force?: boolean; overwriteModified?: boolean } = {}
 ): EntrySkillInstallResult[] {
   return skills.map((skill) => {
+    const wanted = entrySkillDigest(skill);
     const installed = inspectEntrySkill(skill.name);
-    if (installed.modified && installed.hash !== skillContentHash(skill.content) && !overwriteModified) {
+    if (installed.modified && installed.digest !== wanted && !overwriteModified) {
       return { name: skill.name, action: 'preserved' };
     }
-    if (!force && !installed.modified && isEntrySkillFresh(skill.name, skill.content)) {
+    if (!force && !installed.modified && !installed.missing && installed.digest === wanted) {
       return { name: skill.name, action: 'skipped' };
     }
     installEntrySkill(skill);
     return { name: skill.name, action: 'installed' };
   });
+}
+
+interface IndexEntry { slug?: unknown; path?: unknown; files?: unknown; version?: unknown; metadata?: { version?: unknown } }
+
+/**
+ * Download the entry skills from goose-skills (`gooseSkillsSource()`: `main`
+ * for production, `dev` for staging, or GOOSE_SKILLS_RAW_BASE). Reads
+ * `skills-index.json`, takes each entry skill's listed `files` under
+ * `skills/entry/<name>/`, and downloads all of them before returning, so a
+ * caller writes nothing unless every file arrived. Staging rewrites `.md` files
+ * for the staging server, as standalone installs do.
+ */
+export async function fetchEntrySkills({ timeoutMs = ENTRY_DOWNLOAD_TIMEOUT_MS }: { timeoutMs?: number } = {}): Promise<EntrySkillCatalog> {
+  const source = gooseSkillsSource();
+  const signal = AbortSignal.timeout(timeoutMs);
+  const indexBytes = await fetchCatalogFile(source.rawBase, 'skills-index.json', signal);
+  let index: { skills?: unknown };
+  try { index = JSON.parse(indexBytes.toString('utf8')); } catch { throw new Error('the goose-skills skills-index.json is not valid JSON'); }
+  if (!index || !Array.isArray(index.skills)) throw new Error('the goose-skills index has no skills list');
+  const entries = index.skills as IndexEntry[];
+
+  const plans: Array<{ name: string; version?: string; files: string[]; prefix: string }> = [];
+  const missing: string[] = [];
+  for (const name of ENTRY_SKILL_NAMES) {
+    const entry = entries.find((candidate) => candidate && candidate.slug === name);
+    if (!entry) { missing.push(name); continue; }
+    const expected = `skills/entry/${name}`;
+    if (entry.path !== expected) throw new Error(`goose-skills lists ${name} at ${String(entry.path)}, not ${expected}`);
+    const prefix = `${expected}/`;
+    const files = [...new Set(Array.isArray(entry.files) ? entry.files : [])];
+    if (files.some((file) => typeof file !== 'string' || !file.startsWith(prefix) || !isSafeRelativePath(file.slice(prefix.length)) || ENTRY_IGNORED_FILES.has(file.slice(prefix.length)))) {
+      throw new Error(`goose-skills lists an unsafe file for ${name}`);
+    }
+    if (!files.includes(`${prefix}SKILL.md`)) throw new Error(`the goose-skills index lists no SKILL.md for ${name}`);
+    const version = typeof entry.version === 'string' ? entry.version : typeof entry.metadata?.version === 'string' ? entry.metadata.version : undefined;
+    plans.push({ name, version, files: files as string[], prefix });
+  }
+  if (!plans.some((plan) => plan.name === 'gooseworks')) throw new Error('the goose-skills index has no gooseworks entry skill');
+
+  const downloaded = new Map<string, Buffer>();
+  await withConcurrency(plans.flatMap((plan) => plan.files), DOWNLOAD_CONCURRENCY, async (file) => {
+    downloaded.set(file, await fetchCatalogFile(source.rawBase, file, signal));
+  });
+
+  const staging = getEnvironment() === 'staging';
+  const skills = plans.map((plan): EntrySkill => {
+    let content = '';
+    const files: Record<string, Buffer> = {};
+    for (const file of plan.files) {
+      const relative = file.slice(plan.prefix.length);
+      let bytes = downloaded.get(file)!;
+      if (staging && relative.endsWith('.md')) bytes = Buffer.from(stagingContent(bytes.toString('utf8')), 'utf-8');
+      if (relative === 'SKILL.md') content = bytes.toString('utf8');
+      else files[relative] = bytes;
+    }
+    return { name: plan.name, content, files, version: plan.version, source: source.rawBase };
+  });
+  return { source: source.rawBase, skills, missing };
+}
+
+async function fetchCatalogFile(rawBase: string, filePath: string, signal: AbortSignal): Promise<Buffer> {
+  const url = `${rawBase}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+  let response: Response;
+  try {
+    response = await fetch(url, { signal });
+  } catch (error) {
+    const reason = signal.aborted ? 'timed out' : error instanceof Error ? error.message : String(error);
+    throw new Error(`could not reach goose-skills for ${filePath} (${reason})`);
+  }
+  if (!response.ok) throw new Error(`could not download ${filePath} from goose-skills (${response.status})`);
+  return assertNotLfsPointer(Buffer.from(await response.arrayBuffer()), filePath);
+}
+
+function assertNotLfsPointer(buffer: Buffer, filePath: string): Buffer {
+  if (buffer.subarray(0, 100).toString().startsWith('version https://git-lfs.github.com/spec/v1')) throw new Error(`Unresolved Git LFS asset in ${filePath}`);
+  return buffer;
 }
 
 export async function installStandaloneSkill(
@@ -378,7 +581,5 @@ async function fetchRawSkillFile(repo: string, filePath: string, revision: strin
   if (!response.ok) {
     throw new Error(`could not download ${filePath} from goose-skills (${response.status})`);
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.subarray(0, 100).toString().startsWith('version https://git-lfs.github.com/spec/v1')) throw new Error(`Unresolved Git LFS asset in ${filePath}`);
-  return buffer;
+  return assertNotLfsPointer(Buffer.from(await response.arrayBuffer()), filePath);
 }

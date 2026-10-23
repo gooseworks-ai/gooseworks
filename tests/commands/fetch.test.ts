@@ -23,7 +23,7 @@ jest.mock('../../src/utils/logger', () => ({
 import { getCredentials } from '../../src/auth/credentials';
 import * as loggerModule from '../../src/utils/logger';
 import { fetchCommand, createFetchCommand } from '../../src/commands/fetch';
-import { getGooseVideoSkillContent } from '../../src/skills/master-skill';
+const VIDEO_ENTRY = '---\nname: goose-video\nversion: 4.5.0\n---\n# GooseWorks video entry\n';
 import { skillContentHash } from '../../src/skills/releases';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
@@ -201,7 +201,7 @@ describe('fetch command', () => {
     const target = path.join(dir, 'approved-package.json');
     const old = JSON.stringify({ slug: 'goose-video', version: '0.3.0', content: '# approved old entry', contentHash: skillContentHash('# approved old entry') });
     fs.writeFileSync(target, old);
-    const content = getGooseVideoSkillContent();
+    const content = VIDEO_ENTRY;
     const current = { slug: 'goose-video', name: 'Goose Video', version: '3.0.1', content, contentHash: skillContentHash(content) };
     let requests = 0;
     server = await startServer((req, res) => {
@@ -235,7 +235,7 @@ describe('fetch command', () => {
     // the catalog metadata has no backend brand-context capability declaration.
     const current = {
       slug: 'goose-video', name: 'GooseWorks Video Ads', version: 'cli-current',
-      content: getGooseVideoSkillContent(), scripts: null, files: null, config: {},
+      content: VIDEO_ENTRY, scripts: null, files: null, config: {},
       metadata: { source: 'cli-entry-skill', source_url: 'https://raw.githubusercontent.com/gooseworks-ai/gooseworks/main/skills/goose-video/SKILL.md' },
       requiresSkills: [], dependencySkills: [],
     };

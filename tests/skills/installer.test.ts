@@ -10,7 +10,6 @@ const mockOs = os as jest.Mocked<typeof os>;
 mockOs.homedir.mockReturnValue('/mock-home');
 
 import {
-  installMasterSkill,
   installStandaloneSkill,
   getInstalledSkills,
   removeAllSkills,
@@ -36,22 +35,6 @@ describe('skills/installer', () => {
   describe('getSkillsBasePath', () => {
     it('returns ~/.agents/skills', () => {
       expect(getSkillsBasePath()).toBe(SKILLS_BASE);
-    });
-  });
-
-  describe('installMasterSkill', () => {
-    it('creates master skill directory and writes SKILL.md', () => {
-      installMasterSkill('# GooseWorks Master');
-
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks`,
-        { recursive: true }
-      );
-      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks/SKILL.md`,
-        '# GooseWorks Master',
-        'utf-8'
-      );
     });
   });
 

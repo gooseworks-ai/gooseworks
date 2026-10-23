@@ -18,7 +18,7 @@ try {
   const refused = run(['--env', 'staging', 'install', '--claude']);
   assert.equal(refused.status, 1); assert.match(refused.stderr, /--project/);
   assert.equal(fs.existsSync(path.join(root, '.gooseworks', 'credentials.json')), false);
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', 'gooseworks', 'skills', 'manifest.json')));
-  assert.equal(manifest.version, pkg.version);
+  // Entry skills come from goose-skills at install time; the package ships none.
+  assert.equal(fs.existsSync(path.join(root, 'node_modules', 'gooseworks', 'skills')), false);
   console.log(`Packed CLI ${pkg.version} smoke checks passed.`);
 } finally { fs.rmSync(root, { recursive: true, force: true }); }
