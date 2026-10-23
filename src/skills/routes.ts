@@ -48,9 +48,21 @@ export interface BrandGrowthRoute {
  */
 export const DOMAIN_ROUTES: DomainRoute[] = [
   {
+    skill: 'marketing-data-access',
+    when: 'Raw social post lists, engagement rankings or voices lists',
+    how: 'Fetch marketing-data-access and follow focused-reads.md.',
+    delivery: 'fetch',
+  },
+  {
+    skill: 'voice-card',
+    when: 'Learn a reusable brand or author voice from blog posts or social writing',
+    how: 'Fetch it with catalog_fetch, or `gooseworks fetch voice-card` in a terminal.',
+    delivery: 'fetch',
+  },
+  {
     skill: 'make-static-ads',
-    when: 'New static/image ads (also for a campaign), more ads, winner variations, copy/font changes or a rejected image to fix',
-    how: 'Fetch with catalog_fetch or gooseworks fetch; follow its selection/review/quote gates. Unavailable playbook means stop creation.',
+    when: 'Static/image ads, including campaigns, more ads, winner variants, copy/font changes or rejected-image fixes',
+    how: 'Fetch with catalog_fetch or gooseworks fetch; follow selection/review/quote gates. Stop creation if unavailable.',
     delivery: 'fetch',
   },
   {
@@ -101,19 +113,19 @@ export const UNROUTED_ENTRY_SKILLS: Readonly<Record<string, string>> = {
  */
 export const BRAND_GROWTH_ROUTES: BrandGrowthRoute[] = [
   { job: 'Not sure what to do first', skills: ['where-to-start'] },
-  { job: 'Market size, trends, what people say, brand watch', skills: ['research-market'] },
-  { job: 'What rivals run and what works', skills: ['research-competitors'] },
-  { job: 'Who buys and why; lists of companies and people', skills: ['research-audience'] },
-  { job: 'Cold emails and LinkedIn messages', skills: ['write-outreach'] },
+  { job: 'Market size, trends, brand watch and launch positioning', skills: ['research-market'] },
+  { job: 'Competitor research, battlecards, landing-page tools and post engagers', skills: ['research-competitors'] },
+  { job: 'Who buys and why; prospect lists, lead enrichment and work contacts', skills: ['research-audience'] },
+  { job: 'Cold email and LinkedIn drafts, replies and an import file; you send', skills: ['write-outreach'] },
   { job: 'A campaign plan from a budget and a date', skills: ['plan-campaign'] },
   { job: 'New static image ads', skills: ['make-static-ads'] },
   { job: 'Launch, scale or pause paid ads', skills: ['run-paid-campaigns'] },
   { job: 'What worked; performance reports', skills: ['analyze-performance'] },
-  { job: 'Email flows and sends to subscribers', skills: ['email-lifecycle'] },
-  { job: 'SEO and AI-answer visibility', skills: ['improve-search-visibility'] },
+  { job: 'Subscriber email flows and broadcast drafts; you send', skills: ['email-lifecycle'] },
+  { job: 'SEO audits, metrics, keyword gaps, topic clusters, page-set plans and AI visibility', skills: ['improve-search-visibility'] },
   { job: 'Influencers and UGC creators', skills: ['work-with-creators'] },
-  { job: 'One post, article or newsletter', skills: ['make-content'] },
-  { job: 'Posting calendar and social plan', skills: ['run-organic-social'] },
+  { job: 'Posts, articles, newsletters and one or more content briefs', skills: ['make-content'] },
+  { job: 'Organic social research, posts, voices, calendar and drafts', skills: ['run-organic-social'] },
 ];
 
 /** Every skill slug named by any route, deduped and sorted. */

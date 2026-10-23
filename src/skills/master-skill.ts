@@ -58,12 +58,10 @@ export function getMasterSkillContent(): string {
 name: gooseworks
 slug: gooseworks
 description: >
-  GooseWorks growth coworker and router. Research markets, competitors, audiences and
-  creators; plan campaigns; make ads, product photos, graphics, video and content; run paid
-  ads, email, SEO and social; find leads and contacts. The one GooseWorks entry point
-  for brand growth, B2B, sales, research and GTM work. Also use it when the user mentions their
-  GooseWorks brand's offers, prices, rules, audience or bestsellers, or wants copy for it
-  (captions, posts, emails), so those facts reach its Marketing Brain.
+  GooseWorks growth coworker and router for markets, competitors, audiences, creators,
+  campaigns, ads, photos, graphics, video, content, email, SEO, social, leads and contacts.
+  Use for brand facts or copy too, so offers, prices, rules, audience and bestsellers
+  reach the brand's Marketing Brain.
 category: general
 version: 2.2.1
 author: GooseWorks
@@ -72,22 +70,19 @@ tags: [gooseworks, data, scraping, search, research, gtm, leads, prospecting, ad
 
 # GooseWorks
 
-GooseWorks is a coworker with specialist skills for research, creative work, leads and web and
-social data. Hand specialist work to its skill; do data work here.
+Route specialist jobs to their skills; use GooseWorks for web and social data.
 
 ## First steps
 
-1. Discover the listed setup/status action and read the actual brand/task state. Complete
-   missing factual prerequisites; preserve an already selected brand and task. Continue once
-   setup is done instead of restarting a picker.
-2. Read brand_read, then use the advertised brand-knowledge browse/search/read actions for
-   rules and task evidence. Pass those results into the chosen playbook. Use legacy names
-   only when this connection actually lists them; ask only what remains ambiguous.
-3. Save lasting human brand facts in their words through the listed typed knowledge action;
-   guesses and temporary creative choices remain proposals. Follow actual claim, rights and
-   approval restrictions; a generic context result is not approved product proof.
+1. Discover the listed setup/status action and read brand/task state. Complete missing facts;
+   preserve the selected brand/task and continue once setup is done.
+2. Read brand_read and advertised knowledge actions for rules/evidence; pass results to the
+   playbook. Use legacy action names only when listed; ask only what remains ambiguous.
+3. Save lasting human brand facts in their words through the listed typed knowledge action.
+   Keep guesses and temporary creative choices as proposals; follow claim, rights and approval
+   rules. Generic context is not approved product proof.
 
-## Route to the right skill
+## Skill routes
 
 | If the user wants… | Route to | How |
 | --- | --- | --- |
@@ -100,20 +95,21 @@ ${renderDomainRouteTable()}
 | --- | --- |
 ${renderBrandGrowthTable()}
 
-Fetch the playbook with its dependencies and brand context. Static creation requires
-make-static-ads; fetch it or stop. Its research and selection run even for one ad or finals only.
+Fetch playbook, dependencies and brand context. Static creation requires make-static-ads;
+fetch it or stop. Its research and selection run even for one ad or finals only.
+Raw lists: marketing-data-access; voice: voice-card. Supplied surveys use ordinary report
+writing. Skip unrelated calendar/campaign intake.
 
 ## Data work
 
-In a chat app use the actions: catalog_search finds a skill, catalog_fetch opens it, data_get
-and data_post make its paid data calls, and account_whoami shows credits.
+In chat, catalog_search finds skills, catalog_fetch opens them, data_get/data_post run paid
+data calls and account_whoami shows credits.
 
-In a terminal use the commands:
+In a terminal:
 
-- \`gooseworks search "<task>"\` finds a skill; \`gooseworks fetch <slug>\` prints its instructions,
-  scripts, files and dependencies.
-- Save every script and file under \`/tmp/gooseworks-scripts/<slug>/\` (files under \`tools/\` go to
-  \`/tmp/gooseworks-scripts/tools/\`), never in the user's project, then follow the skill's steps.
+- \`gooseworks search "<task>"\` finds a skill; \`gooseworks fetch <slug>\` prints instructions and dependencies.
+- Save scripts/files under \`/tmp/gooseworks-scripts/<slug>/\` (files under \`tools/\` go to
+  \`/tmp/gooseworks-scripts/tools/\`), never in the user's project.
 - \`gooseworks call <provider> <path>\` calls a provider through GooseWorks; \`--query\` and \`--body\`
   take JSON. Use it in place of any raw request a skill shows. A script that needs the GooseWorks
   settings gets them from \`gooseworks env\`.
@@ -128,8 +124,8 @@ In a terminal use the commands:
 - Results go in \`~/Gooseworks/\` unless the customer names a place. Ask before saving, and never
   overwrite a file.
 
-Before paid calls, tell the customer how many calls it will take and the credit total, and wait
-for their yes. Each paid answer says what it charged.
+Before paid calls, state the call count and total credits; wait for the customer's yes.
+Each paid answer reports its charge.
 
 ## Rules
 
