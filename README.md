@@ -56,11 +56,12 @@ Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the 
 ### Other install methods
 
 ```bash
-# Via Vercel skills.sh
-npx skills add gooseworks-ai/gooseworks
+# Via Vercel skills.sh (the skills live in goose-skills)
+npx skills add gooseworks-ai/goose-skills
 
-# Via Claude Code plugins
-/plugin install gooseworks
+# Via Claude Code plugins (this repo is the marketplace; the plugin is goose-skills' skills/entry)
+/plugin marketplace add gooseworks-ai/gooseworks
+/plugin install gooseworks@gooseworks
 
 # Via OpenClaw ClawHub
 clawhub skill install gooseworks

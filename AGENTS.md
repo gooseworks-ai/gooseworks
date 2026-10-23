@@ -29,6 +29,8 @@ renders the router's tables). This package ships no skill files.
 
 ## Plugin files
 
-`.claude-plugin/` (plugin.json + marketplace.json) and `.codex-plugin/` make this
-repo installable as a Claude Code plugin marketplace
-(`/plugin marketplace add gooseworks-ai/gooseworks`).
+`.claude-plugin/marketplace.json` makes this repo a Claude Code plugin marketplace
+(`/plugin marketplace add gooseworks-ai/gooseworks`). Its `gooseworks` plugin is not
+in this repo: the entry points at goose-skills' `skills/entry` (git-subdir, `main`),
+where the entry skills and the plugin manifests (`.claude-plugin/`, `.codex-plugin/`)
+live. Raise the version in those manifests when the entry skills change.
