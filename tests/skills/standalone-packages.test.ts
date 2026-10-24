@@ -31,3 +31,8 @@ test.each(published.playbookSlugs)('resolves the released %s package graph inclu
     for (const dependency of skill!.metadata?.requires_skills || []) expect(names.has(dependency)).toBe(true);
   }
 });
+
+it('explains a skill removed with no replacement instead of naming "null"', () => {
+  const index = { skills: [{ slug: 'make-content', path: 'skills/marketing/make-content' }], retired_skills: [{ slug: 'weather', replacement: null, reason: 'Single-provider utility removed.' }] };
+  expect(() => resolveStandalonePackages(index, 'weather')).toThrow('Skill "weather" was removed from the catalog. Single-provider utility removed.');
+});

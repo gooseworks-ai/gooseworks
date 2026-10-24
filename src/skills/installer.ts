@@ -384,7 +384,8 @@ export async function installStandaloneSkill(
       const revision = await fetchGooseSkillsRevision(source, signal);
       const index = JSON.parse((await fetchRawSkillFile(source.repo, 'skills-index.json', revision, signal)).toString('utf8')) as StandaloneIndex;
       const retired = index.retired_skills?.find(entry => entry.slug === slug);
-      if (retired && /^[a-z0-9][a-z0-9-]*$/.test(retired.replacement) && index.skills.some(entry => entry.slug === retired.replacement)) replacement = retired.replacement;
+      const successor = retired?.replacement;
+      if (successor && /^[a-z0-9][a-z0-9-]*$/.test(successor) && index.skills.some(entry => entry.slug === successor)) replacement = successor;
     } catch { /* Offline or invalid metadata must never replace a local package. */ }
     if (replacement) throw new Error(`Skill "${slug}" was retired. Use "${replacement}" instead. Existing ${slug} package preserved.`);
     throw new Error(`Existing ${slug} package preserved. Back it up and pass --overwrite-modified to replace it; approved projects keep their pinned package.`);
