@@ -56,8 +56,9 @@ Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the 
 ### Other install methods
 
 ```bash
-# Via Vercel skills.sh (the skills live in goose-skills)
-npx skills add gooseworks-ai/goose-skills
+# Via Vercel skills.sh: only goose-skills' skills/entry folder (the six entry skills).
+# Add --skill gooseworks for the router alone.
+npx skills add https://github.com/gooseworks-ai/goose-skills/tree/main/skills/entry
 
 # Via Claude Code plugins (this repo is the marketplace; the plugin is goose-skills' skills/entry)
 /plugin marketplace add gooseworks-ai/gooseworks
