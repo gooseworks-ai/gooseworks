@@ -26,10 +26,8 @@ jest.mock('../../src/skills/installer', () => ({
   getInstalledSkills: jest.fn().mockReturnValue([]),
   installManagedEntrySkills: jest.fn().mockReturnValue([]),
 }));
-jest.mock('../../src/skills/master-skill', () => ({
-  getEntrySkills: jest.fn().mockReturnValue([]),
-}));
 jest.mock('../../src/commands/skills', () => ({
+  loadEntryCatalog: jest.fn().mockResolvedValue({ catalog: { source: 'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main', skills: [{ name: 'gooseworks', content: '# router' }], missing: [] } }),
   readEntryFreshnessReport: jest.fn().mockResolvedValue({ cli: 'current' }),
   reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
 }));
@@ -53,6 +51,8 @@ import * as logger from '../../src/utils/logger';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { isAgentInstalled } from '../../src/agents/detect';
 import { createLoginCommand, ensureLoggedIn } from '../../src/commands/login';
+import { getInstalledSkills, installManagedEntrySkills } from '../../src/skills/installer';
+import { loadEntryCatalog } from '../../src/commands/skills';
 
 const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCredentials>;
 const mockRunOAuthFlow = runOAuthFlow as jest.MockedFunction<typeof runOAuthFlow>;
@@ -132,6 +132,31 @@ describe('login command', () => {
     expect(mockRunDeviceFlow).toHaveBeenCalledWith(API, { ref: undefined, wait: true });
     expect(logger.success).toHaveBeenCalledWith('Logged in as user@example.com');
     expect(logger.info).not.toHaveBeenCalledWith(AFTER_APPROVE);
+  });
+
+  it('refreshes installed entry skills from goose-skills after signing in', async () => {
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue(result);
+    (getInstalledSkills as jest.Mock).mockReturnValueOnce(['gooseworks']);
+    (installManagedEntrySkills as jest.Mock).mockReturnValueOnce([{ name: 'gooseworks', action: 'installed' }]);
+
+    await login('--browser');
+
+    expect(installManagedEntrySkills).toHaveBeenCalledWith([{ name: 'gooseworks', content: '# router' }]);
+    expect(logger.success).toHaveBeenCalledWith('Refreshed skills: gooseworks');
+  });
+
+  it('still signs in, and changes no skill, when goose-skills cannot be reached', async () => {
+    mockChooseLoginMode.mockReturnValue({ mode: 'browser', reason: 'default' });
+    mockRunOAuthFlow.mockResolvedValue(result);
+    (getInstalledSkills as jest.Mock).mockReturnValueOnce(['gooseworks']);
+    (loadEntryCatalog as jest.Mock).mockResolvedValueOnce({ error: 'could not reach goose-skills for skills-index.json (fetch failed)' });
+
+    await login('--browser');
+
+    expect(logger.success).toHaveBeenCalledWith('Logged in as user@example.com');
+    expect(installManagedEntrySkills).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('uses the browser flow when the mode says browser', async () => {

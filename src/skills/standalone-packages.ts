@@ -1,12 +1,15 @@
 export interface StandaloneIndex {
   skills: Array<{ slug: string; path: string; metadata?: { requires_skills?: string[] } }>;
-  retired_skills?: Array<{ slug: string; replacement: string }>;
+  retired_skills?: Array<{ slug: string; replacement: string | null; reason?: string }>;
 }
 
 /** Resolve the complete package before downloading or replacing any local file. */
 export function resolveStandalonePackages(index: StandaloneIndex, slug: string): Array<{ slug: string; prefix: string }> {
   const retired = index.retired_skills?.find(entry => entry.slug === slug);
-  if (retired) throw new Error(`Skill "${slug}" was retired. Use "${retired.replacement}" instead.`);
+  if (retired) {
+    if (!retired.replacement) throw new Error(`Skill "${slug}" was removed from the catalog.${retired.reason ? ` ${retired.reason}` : ''}`);
+    throw new Error(`Skill "${slug}" was retired. Use "${retired.replacement}" instead.`);
+  }
   if (!Array.isArray(index.skills) || index.skills.length === 0) throw new Error('Incomplete skill index');
   const skills = new Map(index.skills.map(skill => [skill.slug, skill]));
   const result: Array<{ slug: string; prefix: string }> = [];

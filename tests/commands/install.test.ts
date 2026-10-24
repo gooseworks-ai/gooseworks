@@ -1,4 +1,10 @@
+const CATALOG_SKILLS = [
+  { name: 'gooseworks', content: '# gooseworks' },
+  { name: 'goose-ads', content: '# goose-ads' },
+];
+
 jest.mock('../../src/commands/skills', () => ({
+  loadEntryCatalog: jest.fn().mockImplementation(async () => ({ catalog: { source: 'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main', skills: CATALOG_SKILLS, missing: [] } })),
   readEntryFreshnessReport: jest.fn().mockResolvedValue({cli: 'current'}),
   reportEntrySkillFreshness: jest.fn().mockResolvedValue(undefined),
 }));
@@ -42,13 +48,6 @@ jest.mock('../../src/skills/installer', () => ({
   installStandaloneSkill: jest.fn(),
   removeAllSkills: jest.fn(),
   getInstalledSkills: jest.fn().mockReturnValue([]),
-}));
-
-jest.mock('../../src/skills/master-skill', () => ({
-  getEntrySkills: jest.fn().mockReturnValue([
-    { name: 'gooseworks', content: '# gooseworks' },
-    { name: 'goose-ads', content: '# goose-ads' },
-  ]),
 }));
 
 jest.mock('../../src/agents/claude', () => ({
@@ -98,7 +97,7 @@ import { getCredentials } from '../../src/auth/credentials';
 import { runOAuthFlow } from '../../src/auth/oauth-server';
 import { runDeviceFlow } from '../../src/auth/device-flow';
 import { installManagedEntrySkills, installStandaloneSkill } from '../../src/skills/installer';
-import { getEntrySkills } from '../../src/skills/master-skill';
+import { loadEntryCatalog } from '../../src/commands/skills';
 import { configureClaude } from '../../src/agents/claude';
 import { configureClaudeMcp } from '../../src/agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../../src/agents/codex';
@@ -113,7 +112,6 @@ const mockGetCredentials = getCredentials as jest.MockedFunction<typeof getCrede
 const mockRunOAuthFlow = runOAuthFlow as jest.MockedFunction<typeof runOAuthFlow>;
 const mockInstallManagedEntrySkills = installManagedEntrySkills as jest.MockedFunction<typeof installManagedEntrySkills>;
 const mockInstallStandaloneSkill = installStandaloneSkill as jest.MockedFunction<typeof installStandaloneSkill>;
-const mockGetEntrySkills = getEntrySkills as jest.MockedFunction<typeof getEntrySkills>;
 const mockConfigureClaude = configureClaude as jest.MockedFunction<typeof configureClaude>;
 const mockConfigureClaudeMcp = configureClaudeMcp as jest.MockedFunction<typeof configureClaudeMcp>;
 const mockConfigureCodex = configureCodex as jest.MockedFunction<typeof configureCodex>;
@@ -171,9 +169,9 @@ describe('install command', () => {
 
     // Should NOT call OAuth
     expect(mockRunOAuthFlow).not.toHaveBeenCalled();
-    // Should install master skill
-    expect(mockGetEntrySkills).toHaveBeenCalledWith();
-    expect(mockInstallManagedEntrySkills).toHaveBeenCalled();
+    // Should install the entry skills downloaded from goose-skills
+    expect(loadEntryCatalog).toHaveBeenCalledTimes(1);
+    expect(mockInstallManagedEntrySkills).toHaveBeenCalledWith(CATALOG_SKILLS, { overwriteModified: undefined });
     // Should report success
     expect(loggerModule.success).toHaveBeenCalledWith(
       expect.stringContaining('Logged in as test@example.com')
@@ -192,16 +190,21 @@ describe('install command', () => {
     expect(loggerModule.success).toHaveBeenCalledWith('Claude Code configured');
   });
 
-  it('installs master skill without passing api_base (content is self-contained)', async () => {
-    const customCreds = { ...mockCreds, api_base: 'http://localhost:5999' };
-    mockGetCredentials.mockReturnValue(customCreds);
+  it('fails clearly and changes no skill or agent when goose-skills cannot be reached', async () => {
+    mockGetCredentials.mockReturnValue(mockCreds);
+    (loadEntryCatalog as jest.Mock).mockResolvedValueOnce({ error: 'could not reach goose-skills for skills-index.json (fetch failed)' });
 
     const { createInstallCommand } = await import("../../src/commands/install");
     const installCommand = createInstallCommand();
 
-    await installCommand.parseAsync(['node', 'test', '--claude']);
+    await expect(installCommand.parseAsync(['node', 'test', '--claude', '--mcp', '--with', 'goose-graphics'])).rejects.toThrow('process.exit called');
 
-    expect(mockGetEntrySkills).toHaveBeenCalledWith();
+    expect(loggerModule.error).toHaveBeenCalledWith(expect.stringContaining('could not reach goose-skills for skills-index.json'));
+    expect(loggerModule.error).toHaveBeenCalledWith(expect.stringContaining('No skill files were changed'));
+    expect(mockInstallManagedEntrySkills).not.toHaveBeenCalled();
+    expect(mockInstallStandaloneSkill).not.toHaveBeenCalled();
+    expect(mockConfigureClaude).not.toHaveBeenCalled();
+    expect(mockConfigureClaudeMcp).not.toHaveBeenCalled();
   });
 
   it('shows done message with agent name', async () => {

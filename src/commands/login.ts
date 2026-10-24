@@ -5,30 +5,32 @@ import { DeviceFlowUnavailableError, readPendingDeviceLogin, runDeviceFlow } fro
 import { chooseLoginMode } from '../auth/login-mode';
 import { pasteLogin } from '../auth/paste-login';
 import { getInstalledSkills, installManagedEntrySkills } from '../skills/installer';
-import { getEntrySkills } from '../skills/master-skill';
 import { configureClaude } from '../agents/claude';
 import { configureClaudeMcp } from '../agents/claude-mcp';
 import { isAgentInstalled } from '../agents/detect';
 import * as logger from '../utils/logger';
 import { API_BASE } from '../config';
 import { recordAttributionRef } from '../auth/attribution';
-import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { loadEntryCatalog, readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 import { assertConnection, getEnvironment } from '../environment';
 
 /**
- * Refresh vendored entry skills on login for users who have already set up
- * (`gooseworks` skill present). This is the "update skills on login": it picks up
- * new or content-changed entry skills (e.g. the goose-ads skill) without
- * rewriting unchanged ones, then re-symlinks Claude so the new skill is visible.
- * Bootstrapping a first-time install stays the job of `gooseworks install`.
+ * Refresh entry skills from goose-skills on login for users who have already
+ * set up (`gooseworks` skill present). This is the "update skills on login": it
+ * picks up new or content-changed entry skills (e.g. the goose-ads skill)
+ * without rewriting unchanged ones, then re-symlinks Claude so the new skill is
+ * visible. An unreachable catalog never fails the login; the installed skills
+ * stay as they are. Bootstrapping a first-time install stays the job of
+ * `gooseworks install`.
  */
 async function refreshEntrySkillsOnLogin(): Promise<void> {
   if (getEnvironment() === 'staging') return;
   if (!getInstalledSkills().includes('gooseworks')) return;
-  const freshness = await readEntryFreshnessReport();
+  const loaded = await loadEntryCatalog();
+  const freshness = await readEntryFreshnessReport(loaded);
   await reportEntrySkillFreshness(freshness);
-  if (freshness.cli === 'outdated') return;
-  const changed = installManagedEntrySkills(getEntrySkills())
+  if (freshness.cli === 'outdated' || !loaded.catalog) return;
+  const changed = installManagedEntrySkills(loaded.catalog.skills)
     .filter((r) => r.action === 'installed')
     .map((r) => r.name);
   if (changed.length === 0) return;

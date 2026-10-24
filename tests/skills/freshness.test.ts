@@ -1,60 +1,30 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
-import { compareReleaseVersion, getReleasedSkills, readReleasedSkillHashes, skillContentHash } from '../../src/skills/releases';
+import { compareReleaseVersion, getPublishedCli, skillContentHash } from '../../src/skills/releases';
 import { compareSavedPackage } from '../../src/skills/package-freshness';
 
-function archive(files: Record<string, string>): Buffer {
-  const chunks: Buffer[] = [];
-  for (const [name, text] of Object.entries(files)) {
-    const content = Buffer.from(text), header = Buffer.alloc(512);
-    header.write(name); header.write('0000644\0', 100); header.write('0000000\0', 108); header.write('0000000\0', 116);
-    header.write(content.length.toString(8).padStart(11, '0') + '\0', 124); header.write('00000000000\0', 136);
-    header.fill(32, 148, 156); header[156] = 48;
-    header.write('ustar\0', 257); header.write('00', 263);
-    const sum = header.reduce((total, byte) => total + byte, 0);
-    header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148);
-    chunks.push(header, content, Buffer.alloc((512 - content.length % 512) % 512));
-  }
-  return gzipSync(Buffer.concat([...chunks, Buffer.alloc(1024)]));
-}
+const catalogOf = (...skills: Array<{ name: string; content: string; version?: string }>) =>
+  ({ catalog: { source: 'https://raw.githubusercontent.com/gooseworks-ai/goose-skills/main', skills, missing: [] } });
 
-const files = {
-  'package/package.json': JSON.stringify({ name: 'gooseworks', version: '1.2.3' }),
-  'package/skills/gooseworks/SKILL.md': '# released',
-};
-
-describe('published release identity', () => {
+describe('published CLI version', () => {
   const originalFetch = global.fetch;
   afterEach(() => { global.fetch = originalFetch; });
-  test('verifies release integrity and extracts only shipped skill bytes without writing files', async () => {
-    const tar = archive(files);
-    const source = 'https://registry.npmjs.org/gooseworks/-/gooseworks-1.2.3.tgz';
-    global.fetch = jest.fn(async (url) => new Response(String(url).endsWith('/latest') ? JSON.stringify({ name: 'gooseworks', version: '1.2.3', dist: { tarball: source, integrity: 'sha512-' + createHash('sha512').update(tar).digest('base64') } }) : tar)) as typeof fetch;
-    expect(await getReleasedSkills()).toEqual({ version: '1.2.3', source, hashes: { gooseworks: skillContentHash('# released') } });
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-  });
-  test('rejects changed release bytes despite valid tar headers', async () => {
-    const good = archive(files), bad = archive({ ...files, 'package/skills/gooseworks/SKILL.md': '# changed' });
-    global.fetch = jest.fn(async (url) => new Response(String(url).endsWith('/latest') ? JSON.stringify({ name: 'gooseworks', version: '1.2.3', dist: { tarball: 'https://registry.npmjs.org/gooseworks/-/gooseworks-1.2.3.tgz', integrity: 'sha512-' + createHash('sha512').update(good).digest('base64') } }) : bad)) as typeof fetch;
-    await expect(getReleasedSkills()).rejects.toThrow('integrity mismatch');
-  });
-  test('rejects manifest/body disagreement and wrong package identity', () => {
-    const manifest = JSON.stringify({ package: 'gooseworks', version: '1.2.3', entries: { gooseworks: skillContentHash('# wrong') } });
-    expect(() => readReleasedSkillHashes(archive({ ...files, 'package/skills/manifest.json': manifest }), '1.2.3')).toThrow('manifest mismatch');
-    expect(() => readReleasedSkillHashes(archive(files), '9.0.0')).toThrow('identity mismatch');
-  });
-  test('rejects registry-supplied external archive URLs', async () => {
-    global.fetch = jest.fn(async () => new Response(JSON.stringify({ name: 'gooseworks', version: '1.2.3', dist: { tarball: 'https://example.test/file', integrity: 'sha512-AA==' } }))) as typeof fetch;
-    await expect(getReleasedSkills()).rejects.toThrow('Invalid published package integrity');
+  test('reads only the version from npm, never a package archive', async () => {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({ name: 'gooseworks', version: '1.2.3' }))) as typeof fetch;
+    expect(await getPublishedCli()).toEqual({ version: '1.2.3', source: 'https://registry.npmjs.org/gooseworks/latest' });
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+  test('rejects metadata for another package or an invalid version', async () => {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({ name: 'other', version: '1.2.3' }))) as typeof fetch;
+    await expect(getPublishedCli()).rejects.toThrow('Invalid published package metadata');
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({ name: 'gooseworks', version: 'latest' }))) as typeof fetch;
+    await expect(getPublishedCli()).rejects.toThrow('Invalid published package metadata');
   });
   test('aborts a hung release check within its bound', async () => {
     global.fetch = jest.fn((_url, options) => new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new Error('aborted'))))) as typeof fetch;
     const start = Date.now();
-    await expect(getReleasedSkills(30)).rejects.toThrow('aborted');
+    await expect(getPublishedCli(30)).rejects.toThrow('aborted');
     expect(Date.now() - start).toBeLessThan(1000);
   });
   test.each([
@@ -85,7 +55,7 @@ describe('real local entry preservation', () => {
     expect(installer.installManagedEntrySkills([next])[0].action).toBe('installed');
     const target = path.join(installer.getSkillsBasePath(), old.name, 'SKILL.md');
     fs.writeFileSync(target, '# my edit');
-    expect(installer.isEntrySkillFresh(old.name, next.content)).toBe(false);
+    expect(installer.isEntrySkillFresh(next)).toBe(false);
     expect(installer.installManagedEntrySkills([old], { force: true })[0].action).toBe('preserved');
     expect(fs.readFileSync(target, 'utf8')).toBe('# my edit');
     expect(installer.installManagedEntrySkills([next], { overwriteModified: true })[0].action).toBe('installed');
@@ -120,16 +90,26 @@ describe('real local entry preservation', () => {
     } finally { global.fetch = originalFetch; }
   });
 
-  test('reports release vs bundle vs modified content, and offline never means current', async () => {
-    const skill = {name:'gooseworks',content:'# local bundle'};
+  test('reports catalog vs modified content, and offline never means current', async () => {
+    const skill = { name: 'gooseworks', content: '# installed', version: '2.2.0' };
     installer.installManagedEntrySkills([skill]);
-    const release = {version:'9.0.0',source:'https://registry.npmjs.org/gooseworks/-/gooseworks-9.0.0.tgz',hashes:{gooseworks:skillContentHash('# newer release')}};
-    expect(status.entryFreshnessReport([skill],'1.0.0',release)).toMatchObject({cli:'outdated',entries:[{local:'bundled',published:'different_from_release'}]});
-    fs.writeFileSync(path.join(installer.getSkillsBasePath(),skill.name,'SKILL.md'),'# modified');
-    expect(status.entryFreshnessReport([skill],'1.0.0',release).entries[0].local).toBe('modified_or_untracked');
-    const original = global.fetch; global.fetch = jest.fn(async()=>{throw new Error('offline');});
-    try {expect(await status.readEntryFreshnessReport()).toMatchObject({cli:'unavailable',releasedVersion:null});}
-    finally {global.fetch=original;}
+    const newer = catalogOf({ name: 'gooseworks', content: '# newer catalog', version: '2.2.1' });
+    const release = { version: '9.0.0', source: 'https://registry.npmjs.org/gooseworks/latest' };
+    const report = status.entryFreshnessReport(newer, '1.0.0', release);
+    expect(report).toMatchObject({ cli: 'outdated', catalogSource: newer.catalog.source });
+    expect(report.entries.map((entry) => entry.name)).toEqual(['gooseworks', 'goose-ads', 'goose-video', 'goose-video-local', 'make-custom-video', 'goose-product-photos']);
+    expect(report.entries[0]).toMatchObject({ name: 'gooseworks', local: 'managed', catalog: 'different_from_catalog', installedVersion: '2.2.0', catalogVersion: '2.2.1' });
+    expect(status.entryFreshnessReport(catalogOf(skill), '9.0.0', release).entries[0]).toMatchObject({ local: 'managed', catalog: 'current' });
+    expect(status.entryFreshnessReport(catalogOf(skill), '9.0.0', release).entries.find((entry) => entry.name === 'goose-ads')).toMatchObject({ local: 'missing', catalog: 'not_in_catalog' });
+    fs.writeFileSync(path.join(installer.getSkillsBasePath(), skill.name, 'SKILL.md'), '# modified');
+    expect(status.entryFreshnessReport(newer, '1.0.0', release).entries[0].local).toBe('modified_or_untracked');
+    const original = global.fetch; global.fetch = jest.fn(async () => { throw new Error('offline'); });
+    try {
+      const offline = await status.readEntryFreshnessReport();
+      expect(offline).toMatchObject({ cli: 'unavailable', releasedVersion: null, catalogSource: null });
+      expect(offline.catalogError).toContain('could not reach goose-skills');
+      expect(offline.entries[0].catalog).toBe('unavailable');
+    } finally { global.fetch = original; }
   });
   test('detects an old independent Codex entry even when the shared entry is current, without replacing it', () => {
     const skill = { name: 'goose-video', content: '# current video workflow' };
@@ -139,11 +119,10 @@ describe('real local entry preservation', () => {
     const hostFile = path.join(hostDir, 'SKILL.md');
     const old = '---\nname: goose-video\nversion: 0.3.0\n---\n# old local workflow';
     fs.writeFileSync(hostFile, old);
-    const release = { version: '0.4.4', source: 'test-release', hashes: { [skill.name]: skillContentHash(skill.content) } };
-    const entry = status.entryFreshnessReport([skill], '0.4.4', release).entries[0];
-    expect(entry.local).toBe('bundled');
-    expect(entry.published).toBe('current');
-    expect(entry.hosts).toEqual([expect.objectContaining({ host: 'codex', path: hostFile, location: 'independent', local: 'different_from_bundle', published: 'different_from_release' })]);
+    const entry = status.entryFreshnessReport(catalogOf(skill), '0.4.4').entries.find((candidate) => candidate.name === skill.name)!;
+    expect(entry.local).toBe('managed');
+    expect(entry.catalog).toBe('current');
+    expect(entry.hosts).toEqual([expect.objectContaining({ host: 'codex', path: hostFile, location: 'independent', catalog: 'different_from_catalog' })]);
     installer.installManagedEntrySkills([skill]);
     expect(fs.readFileSync(hostFile, 'utf8')).toBe(old);
   });
@@ -154,14 +133,11 @@ describe('real local entry preservation', () => {
     fs.mkdirSync(hostRoot, { recursive: true });
     const link = path.join(hostRoot, skill.name);
     fs.symlinkSync(path.join(installer.getSkillsBasePath(), skill.name), link, 'dir');
-    expect(status.entryFreshnessReport([skill], '0.4.4').entries[0].hosts).toEqual([
-      expect.objectContaining({ location: 'managed_link', local: 'bundled', published: 'unavailable' }),
-    ]);
+    const hostsOf = () => status.entryFreshnessReport(catalogOf(skill), '0.4.4').entries.find((candidate) => candidate.name === skill.name)!.hosts;
+    expect(hostsOf()).toEqual([expect.objectContaining({ location: 'managed_link', catalog: 'current' })]);
     fs.unlinkSync(link);
     fs.symlinkSync(path.join(home, 'missing-approved-package'), link, 'dir');
-    expect(status.entryFreshnessReport([skill], '0.4.4').entries[0].hosts).toEqual([
-      expect.objectContaining({ location: 'unreadable', hash: null, local: 'unreadable', published: 'unavailable' }),
-    ]);
+    expect(hostsOf()).toEqual([expect.objectContaining({ location: 'unreadable', hash: null, catalog: 'unreadable' })]);
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
   });
   test('does not write through an entry symlink into a different directory', () => {
