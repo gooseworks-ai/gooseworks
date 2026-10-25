@@ -5,33 +5,32 @@
 Routine CLI releases use **patch bumps**: `0.4.4 → 0.4.5 → 0.4.6`.
 Select `patch` in Changesets for ordinary fixes and new commands. Use `minor`
 or `major` only when the user explicitly requests that version change.
-Keep the package lock and generated skill manifest aligned with the version.
+Keep the package lock aligned with the version.
 
-## `skills/` is generated AND committed — never delete it
+## Entry skills live in goose-skills, not here
 
-The vendored entry skills under `skills/` (`gooseworks`, `goose-ads`, `goose-video`)
-are generated from the single source of truth in `src/skills/master-skill.ts` by
-`npm run generate:skills`. They are committed on purpose:
+The six entry skills (`gooseworks`, `goose-ads`, `goose-video`, `goose-video-local`,
+`make-custom-video`, `goose-product-photos`) live in the public
+[goose-skills](https://github.com/gooseworks-ai/goose-skills) repo at `skills/entry/<slug>/`.
+Routing lives there too, in `skills/entry/gooseworks/routes.json` (its `scripts/build-router.js`
+renders the router's tables). This package ships no skill files.
 
-- the npm package ships them (`package.json` `files: ["skills"]`), and
-- the backend app-MCP server serves the copies the **published npm package**
-  ships, at the version it hands out as the video kit (dist-tag `latest` on
-  production, `next` on staging), to Cowork clients that have no filesystem to
-  install into. A skill change reaches staging with the next dev publish and
-  production with the next release.
-- No skill spells out the video kit's command or version: each server answer
-  hands over its own exact command, and its last line says who starts it.
-
-They are NOT stale installed copies. Do not `rm -rf` them when cleaning up
-`~/.agents/skills/` or `~/.claude/skills/` installs — those live in the home
-directory, not here. If a skill body changes, edit `master-skill.ts`, run
-`npm run generate:skills`, and commit the regenerated output.
-
-`skills/goose-product-photos/` is a standalone (non-generated) skill; it is also
-committed and must not be deleted.
+- **To change an entry skill or a route, open a PR in goose-skills.** Its CI runs the
+  entry-skill lint. goose-skills `dev` feeds staging and `main` feeds production.
+- `install`, `update` and the login refresh download each entry's listed `files` from the
+  goose-skills `skills-index.json` (`fetchEntrySkills` in `src/skills/installer.ts`) and write
+  them to `~/.agents/skills/<slug>/` (staging: the staging profile). Test a branch with
+  `GOOSE_SKILLS_RAW_BASE=https://raw.githubusercontent.com/gooseworks-ai/goose-skills/<branch>`.
+- Which folders the CLI owns (and may delete) is the fixed `ENTRY_SKILL_NAMES` list in
+  `src/skills/names.ts`, never the downloaded index. Add a name there when goose-skills adds an
+  entry skill.
+- `skills status` compares installed files with the catalog by hash. Edited, linked or
+  untracked entry folders are preserved unless the user passes `--overwrite-modified`.
 
 ## Plugin files
 
-`.claude-plugin/` (plugin.json + marketplace.json) and `.codex-plugin/` make this
-repo installable as a Claude Code plugin marketplace
-(`/plugin marketplace add gooseworks-ai/gooseworks`).
+`.claude-plugin/marketplace.json` makes this repo a Claude Code plugin marketplace
+(`/plugin marketplace add gooseworks-ai/gooseworks`). Its `gooseworks` plugin is not
+in this repo: the entry points at goose-skills' `skills/entry` (git-subdir, `main`),
+where the entry skills and the plugin manifests (`.claude-plugin/`, `.codex-plugin/`)
+live. Raise the version in those manifests when the entry skills change.

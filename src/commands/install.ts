@@ -9,13 +9,12 @@ import { configureCodex, configureCodexMcp } from '../agents/codex';
 import { configureCursor } from '../agents/cursor';
 import { detectAgents, type AgentType } from '../agents/detect';
 import * as logger from '../utils/logger';
-import { getEntrySkills } from '../skills/master-skill';
 import { API_BASE } from '../config';
 import { getVersion } from '../version';
 import { runDoctorChecks } from './doctor';
-import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { loadEntryCatalog, readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 import { getEnvironment } from '../environment';
-import { assertCleanProject, installStagingProject, projectProfile, stagingContent } from '../agents/staging';
+import { assertCleanProject, installStagingProject, projectProfile } from '../agents/staging';
 
 interface InstallOptions {
   claude?: boolean;
@@ -62,8 +61,9 @@ Examples:
       if (targetAgents.some(agent => agent === 'cursor')) throw new Error('Cursor staging isolation is not verified. Use --claude or --codex.');
       assertCleanProject(projectProfile(opts.project || '').project);
       await ensureLoggedIn(opts.apiBase, opts.ref);
-      const entries = getEntrySkills().map(skill => ({ ...skill, content: stagingContent(skill.content) }));
-      const results = installManagedEntrySkills(entries, { overwriteModified: opts.overwriteModified });
+      const loaded = await loadEntryCatalog();
+      if (!loaded.catalog) throw new Error(`Could not download the GooseWorks entry skills from goose-skills (${loaded.error}). No skill files were changed.`);
+      const results = installManagedEntrySkills(loaded.catalog.skills, { overwriteModified: opts.overwriteModified });
       if (results.some(result => result.action === 'preserved')) throw new Error('Staging entry has edits. Review/back up the files before --overwrite-modified.');
       for (const slug of opts.with || []) await installStandaloneSkill(slug, { overwriteModified: opts.overwriteModified });
       installStagingProject(opts.project!, targetAgents);
@@ -84,7 +84,7 @@ Examples:
     const creds = await ensureLoggedIn(opts.apiBase, opts.ref);
     logger.success(`Logged in as ${creds.email}`);
 
-    // Step 2: Refresh bundled entries; preserve standalone and edited copies.
+    // Step 2: Install entry skills from goose-skills; preserve standalone and edited copies.
     if (!(await installSkillFiles(opts, 2, 3))) return;
 
     // Step 3: Configure agents
@@ -194,20 +194,26 @@ Examples:
 export const installCommand = createInstallCommand();
 
 /**
- * Refreshes the bundled entry skills (after the freshness check) and installs
- * any `--with` standalone skills into ~/.agents/skills. Returns false when the
- * refresh was refused (the process has been told to exit).
+ * Downloads the entry skills from goose-skills, reports their freshness,
+ * installs them and any `--with` standalone skills into ~/.agents/skills.
+ * Returns false when the install was refused (the process has been told to exit).
  */
 async function installSkillFiles(opts: InstallOptions, step: number, totalSteps: number): Promise<boolean> {
-  const freshness = await readEntryFreshnessReport();
+  const loaded = await loadEntryCatalog();
+  const freshness = await readEntryFreshnessReport(loaded);
   await reportEntrySkillFreshness(freshness);
   if (freshness.cli === 'outdated') {
-    logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
+    logger.error('Entry refresh refused: upgrade this CLI first; the current entry skills are written for the published CLI. No skill files were changed.');
+    process.exit(1);
+    return false;
+  }
+  if (!loaded.catalog) {
+    logger.error(`Could not download the GooseWorks entry skills from goose-skills (${loaded.error}). No skill files were changed; run this command again once goose-skills is reachable.`);
     process.exit(1);
     return false;
   }
   logger.step(step, totalSteps, 'Installing GooseWorks skills...');
-  for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
+  for (const r of installManagedEntrySkills(loaded.catalog.skills, { overwriteModified: opts.overwriteModified })) {
     if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
     else logger.success(`${r.action === 'installed' ? 'Installed' : 'Kept'} ${r.name} skill at ~/.agents/skills/${r.name}/`);
   }

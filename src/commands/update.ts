@@ -6,14 +6,13 @@ import { configureClaudeMcp } from '../agents/claude-mcp';
 import { configureCodex, configureCodexMcp } from '../agents/codex';
 import { configureCursor, hasExistingCursorMcpEntry } from '../agents/cursor';
 import { isAgentInstalled } from '../agents/detect';
-import { getEntrySkills } from '../skills/master-skill';
 import * as logger from '../utils/logger';
-import { readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
+import { loadEntryCatalog, readEntryFreshnessReport, reportEntrySkillFreshness } from './skills';
 import { getEnvironment } from '../environment';
-import { installStagingProject, stagingContent, stagingLaunch } from '../agents/staging';
+import { installStagingProject, stagingLaunch } from '../agents/staging';
 
 export const updateCommand = new Command('update')
-  .description('Refresh entry skills from this installed CLI; preserve edited files and saved recipes')
+  .description('Refresh entry skills from the GooseWorks skill catalog; preserve edited files and saved recipes')
   .option('--overwrite-modified', 'Replace edited or untracked managed entry files after you back them up')
   .option('--project <folder>', 'Required for the staging installation to refresh')
   .action(async (opts: { overwriteModified?: boolean; project?: string }) => {
@@ -23,7 +22,9 @@ export const updateCommand = new Command('update')
       const fs = await import('node:fs');
       const manifest = JSON.parse(fs.readFileSync(projectProfile(opts.project).manifest, 'utf8'));
       for (const agent of manifest.agents) stagingLaunch(opts.project, agent);
-      const results = installManagedEntrySkills(getEntrySkills().map(skill => ({ ...skill, content: stagingContent(skill.content) })), { overwriteModified: opts.overwriteModified });
+      const loaded = await loadEntryCatalog();
+      if (!loaded.catalog) throw new Error(`Could not download the GooseWorks entry skills from goose-skills (${loaded.error}). No skill files were changed.`);
+      const results = installManagedEntrySkills(loaded.catalog.skills, { overwriteModified: opts.overwriteModified });
       if (results.some(result => result.action === 'preserved')) throw new Error('Review/back up edited staging entry files before --overwrite-modified');
       installStagingProject(opts.project, manifest.agents);
       logger.done('Staging updated. Close the previous staging session and launch a fresh one.');
@@ -36,15 +37,21 @@ export const updateCommand = new Command('update')
       process.exit(1);
     }
 
-    const freshness = await readEntryFreshnessReport();
+    const loaded = await loadEntryCatalog();
+    const freshness = await readEntryFreshnessReport(loaded);
     await reportEntrySkillFreshness(freshness);
     if (freshness.cli === 'outdated') {
-      logger.error('Entry refresh refused: upgrade this CLI before installing its bundled instructions. No skill files were changed.');
+      logger.error('Entry refresh refused: upgrade this CLI first; the current entry skills are written for the published CLI. No skill files were changed.');
+      process.exit(1);
+      return;
+    }
+    if (!loaded.catalog) {
+      logger.error(`Could not download the GooseWorks entry skills from goose-skills (${loaded.error}). No skill files were changed; run gooseworks update again once goose-skills is reachable.`);
       process.exit(1);
       return;
     }
     logger.step(1, 2, 'Updating skills...');
-    for (const r of installManagedEntrySkills(getEntrySkills(), { overwriteModified: opts.overwriteModified })) {
+    for (const r of installManagedEntrySkills(loaded.catalog.skills, { overwriteModified: opts.overwriteModified })) {
       if (r.action === 'preserved') logger.warn(`Preserved edited or untracked ${r.name}; review/back up before --overwrite-modified.`);
       else logger.success(`${r.action === 'installed' ? 'Updated' : 'Kept'} ${r.name} skill`);
     }
@@ -86,5 +93,5 @@ export const updateCommand = new Command('update')
       }
     }
 
-    logger.done('Bundled entry refresh complete. Standalone recipes and project-pinned packages were preserved.');
+    logger.done('Entry skill refresh complete. Standalone recipes and project-pinned packages were preserved.');
   });

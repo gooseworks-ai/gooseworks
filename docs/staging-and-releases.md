@@ -25,6 +25,8 @@ gooseworks --env staging launch --agent codex --project /tmp/goose-staging-test 
 gooseworks --env staging update --project /tmp/goose-staging-test
 ```
 
+Entry skills come from the goose-skills catalog at install and update time, not from the npm package: staging reads its `dev` branch and production its `main` branch (`skills/entry/<slug>/`). A goose-skills change reaches staging when it merges to `dev`, with no CLI release.
+
 Close and restart after updating. Edited isolated skill files are preserved by refusing refresh; review them or use a new test folder. Cursor staging and Windows staging launch are refused until their discovery isolation is verified. Production Cursor installation continues to work.
 
 ## Set up publishing once
