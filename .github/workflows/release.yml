@@ -59,7 +59,7 @@ jobs:
       - id: plan
         run: node scripts/release.cjs prepare
       - if: steps.plan.outputs.publish == 'true'
-        run: npm run generate:skills && npm run build && npm test -- --runInBand
+        run: npm run build && npm test -- --runInBand
       - if: steps.plan.outputs.publish == 'true'
         id: pack
         run: node scripts/release.cjs pack

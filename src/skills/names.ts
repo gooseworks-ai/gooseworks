@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getEntrySkillNames } from './master-skill';
 
 /**
  * Which directories under ~/.agents/skills/ the CLI is allowed to DELETE.
@@ -13,8 +12,8 @@ import { getEntrySkillNames } from './master-skill';
  *
  * The rule now, in order of authority:
  *
- *   1. **Known entry-skill slugs** (`gooseworks`, `goose-ads`, `goose-video`,
- *      `goose-product-photos`, plus the legacy `ads-remix` name) are ours by
+ *   1. **Known entry-skill slugs** (`ENTRY_SKILL_NAMES`, plus the legacy
+ *      `ads-remix` name) are ours by
  *      definition — they are the dirs the CLI itself writes on every install, so
  *      we delete them regardless of whether they carry a stamp. This is what
  *      keeps upgrades from an old CLI working.
@@ -36,17 +35,31 @@ import { getEntrySkillNames } from './master-skill';
 export const STAMP_FILE = '.gooseworks-version';
 
 /**
+ * The entry skills every install writes. Their files live in the public
+ * goose-skills catalog at `skills/entry/<name>/`; the CLI downloads them.
+ *
+ * This list is fixed in the CLI on purpose: it decides which directories the
+ * CLI may delete, and that must never come from a downloaded file. A new entry
+ * skill in goose-skills is installed once its name is added here.
+ */
+export const ENTRY_SKILL_NAMES = [
+  'gooseworks',
+  'goose-ads',
+  'goose-video',
+  'goose-video-local',
+  'make-custom-video',
+  'goose-product-photos',
+] as const;
+
+/**
  * Entry-skill dir names the CLI no longer writes but must still clean up.
  * `ads-remix` was renamed to `goose-ads`.
  */
 export const LEGACY_ENTRY_SKILL_NAMES = ['ads-remix'] as const;
 
-/**
- * Every skill directory name the CLI itself owns and writes. Derived from
- * `getEntrySkills()` so the registry stays the single source (GOOSE-3190).
- */
+/** Every skill directory name the CLI itself owns and writes. */
 export function getManagedEntrySkillNames(): string[] {
-  return [...getEntrySkillNames(), ...LEGACY_ENTRY_SKILL_NAMES];
+  return [...ENTRY_SKILL_NAMES, ...LEGACY_ENTRY_SKILL_NAMES];
 }
 
 /** True when `name` is a skill directory the CLI itself installs. */

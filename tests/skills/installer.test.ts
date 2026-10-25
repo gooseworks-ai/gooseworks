@@ -10,7 +10,6 @@ const mockOs = os as jest.Mocked<typeof os>;
 mockOs.homedir.mockReturnValue('/mock-home');
 
 import {
-  installMasterSkill,
   installStandaloneSkill,
   getInstalledSkills,
   removeAllSkills,
@@ -26,6 +25,7 @@ describe('skills/installer', () => {
     jest.clearAllMocks();
     mockOs.homedir.mockReturnValue('/mock-home');
     originalFetch = global.fetch;
+    mockFs.mkdtempSync.mockReturnValue(`${SKILLS_BASE}/.packages-installing-test`);
   });
 
   afterEach(() => {
@@ -35,22 +35,6 @@ describe('skills/installer', () => {
   describe('getSkillsBasePath', () => {
     it('returns ~/.agents/skills', () => {
       expect(getSkillsBasePath()).toBe(SKILLS_BASE);
-    });
-  });
-
-  describe('installMasterSkill', () => {
-    it('creates master skill directory and writes SKILL.md', () => {
-      installMasterSkill('# GooseWorks Master');
-
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks`,
-        { recursive: true }
-      );
-      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/gooseworks/SKILL.md`,
-        '# GooseWorks Master',
-        'utf-8'
-      );
     });
   });
 
@@ -93,6 +77,7 @@ describe('skills/installer', () => {
     it('downloads every file into a staging dir then atomically renames it into place', async () => {
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
+        if (value.endsWith('/skills-index.json')) return { ok: true, arrayBuffer: async () => Uint8Array.from(Buffer.from(JSON.stringify({ skills: [{ slug: 'goose-graphics', path: 'skills/composites/goose-graphics' }, { slug: 'goose-aeo', path: 'skills/composites/goose-aeo' }] }))).buffer } as any;
         if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
         if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {
@@ -117,23 +102,23 @@ describe('skills/installer', () => {
       await installStandaloneSkill('goose-graphics');
 
       expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/.goose-graphics.installing/SKILL.md`,
+        `${SKILLS_BASE}/.packages-installing-test/goose-graphics/SKILL.md`,
         expect.any(Buffer)
       );
       expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/.goose-graphics.installing/scripts/render.py`,
+        `${SKILLS_BASE}/.packages-installing-test/goose-graphics/scripts/render.py`,
         expect.any(Buffer)
       );
       expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/.goose-graphics.installing/scripts`,
+        `${SKILLS_BASE}/.packages-installing-test/goose-graphics/scripts`,
         { recursive: true }
       );
-      expect(mockFs.rmSync).toHaveBeenCalledWith(
+      expect(mockFs.rmSync).not.toHaveBeenCalledWith(
         `${SKILLS_BASE}/goose-graphics`,
-        { recursive: true, force: true }
+        expect.anything()
       );
       expect(mockFs.renameSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/.goose-graphics.installing`,
+        `${SKILLS_BASE}/.packages-installing-test/goose-graphics`,
         `${SKILLS_BASE}/goose-graphics`
       );
     });
@@ -142,6 +127,7 @@ describe('skills/installer', () => {
       let rawCalls = 0;
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
+        if (value.endsWith('/skills-index.json')) return { ok: true, arrayBuffer: async () => Uint8Array.from(Buffer.from(JSON.stringify({ skills: [{ slug: 'goose-graphics', path: 'skills/composites/goose-graphics' }, { slug: 'goose-aeo', path: 'skills/composites/goose-aeo' }] }))).buffer } as any;
         if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
         if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {
@@ -168,7 +154,7 @@ describe('skills/installer', () => {
       await expect(installStandaloneSkill('goose-graphics')).rejects.toThrow(/could not download/);
 
       expect(mockFs.rmSync).toHaveBeenCalledWith(
-        `${SKILLS_BASE}/.goose-graphics.installing`,
+        `${SKILLS_BASE}/.packages-installing-test`,
         { recursive: true, force: true }
       );
       expect(mockFs.renameSync).not.toHaveBeenCalled();
@@ -198,8 +184,9 @@ describe('skills/installer', () => {
     });
 
     it('throws a clear not-found error listing available skills', async () => {
-      global.fetch = jest.fn(async () => ({
+      global.fetch = jest.fn(async (url: string | URL | Request) => ({
         ok: true,
+        arrayBuffer: async () => Uint8Array.from(Buffer.from(JSON.stringify({ skills: [{ slug: 'goose-graphics', path: 'skills/composites/goose-graphics' }, { slug: 'goose-aeo', path: 'skills/composites/goose-aeo' }] }))).buffer,
         json: async () => ({
           sha: 'a'.repeat(40),
               tree: [
@@ -210,13 +197,14 @@ describe('skills/installer', () => {
       })) as any;
 
       await expect(installStandaloneSkill('goose-grphics')).rejects.toThrow(
-        "skill 'goose-grphics' not found. Available: goose-aeo, goose-graphics"
+        'Required skill "goose-grphics" is missing from the catalog'
       );
     });
 
     it('reports progress while downloading standalone skill files', async () => {
       global.fetch = jest.fn(async (url: string | URL | Request) => {
         const value = String(url);
+        if (value.endsWith('/skills-index.json')) return { ok: true, arrayBuffer: async () => Uint8Array.from(Buffer.from(JSON.stringify({ skills: [{ slug: 'goose-graphics', path: 'skills/composites/goose-graphics' }, { slug: 'goose-aeo', path: 'skills/composites/goose-aeo' }] }))).buffer } as any;
         if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
         if (value.includes('/git/trees/' + 'a'.repeat(40) + '?recursive=1')) {
           return {

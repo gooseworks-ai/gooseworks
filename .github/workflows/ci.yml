@@ -18,8 +18,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/check-changeset.cjs
-      - run: npm run generate:skills
-      - run: git diff --exit-code -- skills
       - run: npm run build
       - run: npm test -- --runInBand
       - name: Test the shipped package

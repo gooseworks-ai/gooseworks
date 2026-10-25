@@ -56,11 +56,13 @@ Use `--with <skill-slug>` to install standalone GooseWorks skills alongside the 
 ### Other install methods
 
 ```bash
-# Via Vercel skills.sh
-npx skills add gooseworks-ai/gooseworks
+# Via Vercel skills.sh: only goose-skills' skills/entry folder (the six entry skills).
+# Add --skill gooseworks for the router alone.
+npx skills add https://github.com/gooseworks-ai/goose-skills/tree/main/skills/entry
 
-# Via Claude Code plugins
-/plugin install gooseworks
+# Via Claude Code plugins (this repo is the marketplace; the plugin is goose-skills' skills/entry)
+/plugin marketplace add gooseworks-ai/gooseworks
+/plugin install gooseworks@gooseworks
 
 # Via OpenClaw ClawHub
 clawhub skill install gooseworks
@@ -87,7 +89,11 @@ npx gooseworks install --all --ref <campaign-or-referral-code>
 
 **What it does:**
 - Runs `login` if you don't have credentials yet
-- Writes the GooseWorks skill to `~/.agents/skills/gooseworks/SKILL.md`
+- Downloads the six GooseWorks entry skills (`gooseworks`, `goose-ads`, `goose-video`,
+  `goose-video-local`, `make-custom-video`, `goose-product-photos`) from the
+  [`gooseworks-ai/goose-skills`](https://github.com/gooseworks-ai/goose-skills) catalog
+  (`skills/entry/<slug>/`) into `~/.agents/skills/<slug>/`. If the catalog can't be reached,
+  the install stops and changes no skill files.
 - Downloads any `--with` standalone skills from `gooseworks-ai/goose-skills` into `~/.agents/skills/<slug>/`
 - Creates symlinks in `~/.claude/skills/` (Claude) or `~/.codex/skills/` (Codex), or writes MCP config (Cursor)
 
@@ -171,23 +177,25 @@ Credits: 847 available (500 subscription + 347 purchased)
 
 ### `update`
 
-Refresh the entry instructions bundled in your installed CLI without re-authenticating.
-The command checks the published release first and refuses to reinstall a known older CLI
-bundle. Edited or untracked entry files and standalone recipe packages are preserved.
+Refresh the entry skills from the GooseWorks skill catalog (goose-skills) without
+re-authenticating. The command checks the published CLI version first and refuses to run from
+a known older CLI. Edited or untracked entry files and standalone recipe packages are preserved.
+If the catalog can't be reached, nothing is changed.
 
 ```bash
 npx gooseworks skills status
 npx gooseworks update
 ```
 
-Use `gooseworks skills status --json` for release, bundle and actual-file hashes. Upgrade an
-outdated CLI with `npm install -g gooseworks@latest` before updating its entries. Review and
+Use `gooseworks skills status --json` for the catalog's versions and hashes next to the
+installed files' hashes. Upgrade an outdated CLI with `npm install -g gooseworks@latest` before
+updating its entries. Review and
 back up local edits before explicitly using `gooseworks update --overwrite-modified`.
 An unavailable release check means freshness is unknown, not current.
 
 ## How It Works
 
-1. **Install** — authenticates you and installs a master skill file into your coding agent
+1. **Install** — authenticates you and installs the GooseWorks entry skills (from the goose-skills catalog) into your coding agent
 2. **Ask your agent anything** — "scrape r/ClaudeAI", "find CTOs at AI startups", "research competitor pricing"
 3. **Agent finds the right skill** — searches the GooseWorks catalog of 100+ skills
 4. **Runs it** — downloads and executes the skill's Python scripts, which call GooseWorks APIs
@@ -316,11 +324,14 @@ from versioned parts, each checked against the video's parts list before anythin
 
 ### Keeping skills up to date
 
-- **Entry skills** are bundled in the CLI. `skills status` compares their actual installed bytes,
-  bundled bytes and the integrity-verified published npm package. Install/update/login warn
-  about an outdated CLI, different instructions, modified files or an unavailable release check.
-  They preserve edited or untracked files by default. A development build ahead of the release
-  is reported as unreleased; it is not silently downgraded.
+- **Entry skills** come from the goose-skills catalog: `skills/entry/<slug>/` on the `main`
+  branch for production and `dev` for staging (`GOOSE_SKILLS_RAW_BASE` points at another
+  branch for testing). Routing lives in `skills/entry/gooseworks/routes.json` there.
+  `skills status` compares every installed file's hash with the catalog's copy and this CLI
+  with the published npm version. Install/update/login warn about an outdated CLI, different
+  instructions, modified files or an unreachable catalog. They preserve edited or untracked
+  files by default. A development build ahead of the release is reported as unreleased; it is
+  not silently downgraded.
 - **Saved recipe packages** use the connected catalog's `version` / `contentHash` and dependency
   hashes. `gooseworks fetch <slug> --saved-package <json-file>` compares a saved fetch response
   and returns the current package without replacing the file. Canonical MCP `catalog_fetch`
@@ -345,10 +356,14 @@ from versioned parts, each checked against the video's parts list before anythin
 ```
 ~/.agents/skills/
 ├── gooseworks/
-│   ├── SKILL.md          # GTM skill — teaches your agent to use 100+ data tools
-│   └── .gooseworks-version  # content-hash stamp (freshness check; skip rewrite if unchanged)
+│   ├── SKILL.md          # GTM router skill — teaches your agent to use 100+ data tools
+│   ├── routes.json       # routing table, as published in goose-skills
+│   ├── skill.meta.json   # catalog metadata (version)
+│   ├── .gooseworks-version   # SKILL.md hash stamp (marks a folder the CLI wrote)
+│   └── .gooseworks-source.json  # every file's hash, catalog version and source (edit detection)
 ├── goose-ads/
 │   ├── SKILL.md          # Ads entry skill (create + analyze; creation requires MCP)
+│   ├── skill.meta.json
 │   └── .gooseworks-version
 └── goose-graphics/
     └── SKILL.md          # Optional standalone skill installed with --with

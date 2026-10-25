@@ -7,13 +7,18 @@
   },
   "metadata": {
     "description": "GooseWorks — AI coworkers for GTM. Ads, research, and 100+ data tools for your coding agent.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "gooseworks",
-      "source": "./",
-      "description": "GooseWorks skills + MCP server: create and remix ads, generate product photos and video, plus 100+ data tools for scraping, research, lead generation, and enrichment (Twitter/X, Reddit, LinkedIn, email finding, company enrichment).",
+      "source": {
+        "source": "git-subdir",
+        "url": "gooseworks-ai/goose-skills",
+        "path": "skills/entry",
+        "ref": "main"
+      },
+      "description": "GooseWorks skills for your coding agent: the gooseworks router plus ads, video and product-photo skills. Connect your account with `npx gooseworks@latest install --mcp`.",
       "author": {
         "name": "GooseWorks",
         "email": "goose@gooseworks.ai"
@@ -21,7 +26,16 @@
       "homepage": "https://gooseworks.ai",
       "license": "MIT",
       "category": "productivity",
-      "keywords": ["ads", "gtm", "data", "scraping", "leads", "research", "enrichment", "marketing"]
+      "keywords": [
+        "ads",
+        "gtm",
+        "data",
+        "scraping",
+        "leads",
+        "research",
+        "enrichment",
+        "marketing"
+      ]
     }
   ]
 }
