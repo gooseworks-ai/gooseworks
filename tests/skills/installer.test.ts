@@ -230,6 +230,34 @@ describe('skills/installer', () => {
       expect(onProgress).toHaveBeenCalledWith({ downloaded: 1, total: 2 });
       expect(onProgress).toHaveBeenCalledWith({ downloaded: 2, total: 2 });
     });
+
+    it.each([
+      ['sends GITHUB_TOKEN to the GitHub API only', 'ghp_test', 'Bearer ghp_test'],
+      ['calls the GitHub API anonymously without GITHUB_TOKEN', undefined, '-'],
+    ])('%s', async (_name, token, apiAuth) => {
+      const savedToken = process.env.GITHUB_TOKEN;
+      if (token) process.env.GITHUB_TOKEN = token;
+      else delete process.env.GITHUB_TOKEN;
+      global.fetch = jest.fn(async (url: string | URL | Request) => {
+        const value = String(url);
+        if (value.endsWith('/skills-index.json')) return { ok: true, arrayBuffer: async () => Uint8Array.from(Buffer.from(JSON.stringify({ skills: [{ slug: 'goose-graphics', path: 'skills/composites/goose-graphics' }] }))).buffer } as any;
+        if (value.includes('/commits/main')) return { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) } as any;
+        if (value.includes('/git/trees/')) return { ok: true, json: async () => ({ tree: [{ path: 'skills/composites/goose-graphics/SKILL.md', type: 'blob' }] }) } as any;
+        return { ok: true, arrayBuffer: async () => Buffer.from('# Graphics', 'utf-8').buffer } as any;
+      }) as any;
+
+      try {
+        await installStandaloneSkill('goose-graphics');
+      } finally {
+        if (savedToken === undefined) delete process.env.GITHUB_TOKEN;
+        else process.env.GITHUB_TOKEN = savedToken;
+      }
+
+      const authByHost = (global.fetch as jest.Mock).mock.calls.map(
+        ([url, init]) => `${new URL(String(url)).hostname} ${init?.headers?.Authorization ?? '-'}`
+      );
+      expect(new Set(authByHost)).toEqual(new Set([`api.github.com ${apiAuth}`, 'raw.githubusercontent.com -']));
+    });
   });
 
   describe('removeAllSkills', () => {

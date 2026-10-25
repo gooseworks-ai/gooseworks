@@ -538,10 +538,15 @@ export function removeAllSkills(): void {
   }
 }
 
+function fetchGitHubApi(url: string, signal?: AbortSignal): Promise<Response> {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  return fetch(url, { signal, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+}
+
 async function fetchGooseSkillsRevision(source: { repo: string; ref: string }, signal?: AbortSignal): Promise<string> {
   // A tree SHA is not a commit SHA: raw.githubusercontent requires the commit.
   const url = `https://api.github.com/repos/${source.repo}/commits/${source.ref.split('/').map(encodeURIComponent).join('/')}`;
-  const commitResponse = await (signal ? fetch(url, { signal }) : fetch(url));
+  const commitResponse = await fetchGitHubApi(url, signal);
   if (!commitResponse.ok) {
     if (commitResponse.status === 403 && commitResponse.headers.get('x-ratelimit-remaining') === '0') throw new Error(`GitHub API rate-limited this IP.${formatRateLimitWait(commitResponse.headers.get('x-ratelimit-reset'))} Set GITHUB_TOKEN to raise the limit.`);
     throw new Error(`could not resolve standalone skill revision (${commitResponse.status})`);
@@ -553,7 +558,7 @@ async function fetchGooseSkillsRevision(source: { repo: string; ref: string }, s
 
 async function fetchGooseSkillsTree(source: { repo: string; ref: string }): Promise<{ tree: GitHubTreeEntry[]; revision: string }> {
   const revision = await fetchGooseSkillsRevision(source);
-  const response = await fetch(`https://api.github.com/repos/${source.repo}/git/trees/${revision}?recursive=1`);
+  const response = await fetchGitHubApi(`https://api.github.com/repos/${source.repo}/git/trees/${revision}?recursive=1`);
   if (!response.ok) {
     if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
       throw new Error(
