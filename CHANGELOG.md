@@ -1,5 +1,30 @@
 # gooseworks
 
+## 0.6.0
+
+### Minor Changes
+
+- 58ea955: The six entry skills (gooseworks, goose-ads, goose-video, goose-video-local, make-custom-video, goose-product-photos) now come from the public goose-skills catalog (`skills/entry/<slug>/`) instead of being built into the CLI. `install`, `update` and the login refresh download every file each entry lists in the catalog index and write them to the same skills folder, with the same protection for edited files. If the catalog can't be reached, the command says so and changes no skill files. `skills status` now compares installed files with the catalog's copies, and the CLI with the published npm version. The npm package no longer ships a `skills/` folder.
+
+### Patch Changes
+
+- 0b86cd2: Start new videos from a real reference ad by default: the goose-video entry skill now picks the product, finds ads like the brand's (or takes the customer's own), and remakes the pick as a custom video. Ready-made styles stay available when nothing fits or the customer asks for one. The make-custom-video entry (3.8.0) follows the same order: without a reference it finds ads like the brand's and uses the customer's pick, never a template's demo. Release with the matching server support for finding reference ads.
+- 37e3826: Custom videos follow the approved format rather than a universal phone look. The entry reaches shared guidance for three actor options when needed, playable voice choices beside the selected actor, and comparison of the generated performance with its audition. Release with the companion shared production harness update.
+- 90864bf: The make-custom-video entry (3.6.1) prices paid requests with one read-only data_price_provider call instead of estimate_only=1, so Codex's auto-review no longer reviews, and can no longer refuse, a price check. Release with the server's data_price_provider (gooseworks-app #2082) and the matching entry text (#2086).
+- 65d29fa: Custom videos show two script prices, Standard and Best, each with how much it covers. The customer picks one (Standard by default) and the approval carries that choice and its total. Drafts save the shot list so GooseWorks can price both. Release with the matching server support.
+- 3aef3c3: Route focused marketing jobs to their existing playbooks and shared voice step, and keep outreach sending boundaries clear.
+- 1024eee: goose-ads 3.2.0 sends new static or image ads (more like a winner, new words or font, a rejected ad, a social graphic) to the make-static-ads skill when it is installed or catalog_fetch opens it, instead of ads_generate. ads_generate stays only as the fallback while make-static-ads is not in the catalog. Pairs with the server's connect-note change (gooseworks-app, stacked on #2105).
+- 9768504: The gooseworks router (2.2.0) routes marketing work to the 14 marketing playbooks: where-to-start, research-market, research-competitors, research-audience, write-outreach, plan-campaign, make-static-ads, run-paid-campaigns, analyze-performance, email-lifecycle, improve-search-visibility, work-with-creators, make-content and run-organic-social. They replace the older Brand Growth skills in its table (one job and one playbook per row). New static image ads go to make-static-ads; goose-ads now covers changing one ad already made in GooseWorks and saving the customer's image as a template. The router's description says "find leads and contacts" instead of promising enrichment, and "anything else" now means finding a skill or a single step with catalog search.
+
+  Fetches of the playbooks succeed once the goose-skills catalog publishes them.
+
+- cff8bce: Entry skills read the Marketing Brain first and save brand facts to it. The gooseworks router (2.1.0) starts brand work with brain_map, uses brain_open and brain_search for details, and saves any lasting fact the customer states about their brand (an offer and its dates, a price, a "never say X" rule, their audience, a bestseller, a correction) with brain_save in their words, even when they only asked for copy. Facts never go to the agent's own memory, and brand_update stays for products, the kit and setup. Its description now also loads it when the customer talks about their GooseWorks brand's offers, prices, rules or audience or asks for captions and other copy. goose-ads (3.1.0) and goose-product-photos (1.1.0) carry the same save rule, and their rules blocks move to the server's rulebook 1.5.3, which starts brand work with brain_map.
+
+  Release with the matching server Brand Brain tools (gooseworks-app #2104, #2107); don't promote to main until they are in production.
+
+- c0ee7bf: Explain replacements for retired skill names. Install every transitive playbook dependency from one pinned catalog revision, preserving existing packages and rolling back failed writes.
+- adb6286: Route static-ad creation directly to the current make-static-ads playbook, remove the legacy-generator fallback, and preserve its research/selection gates alongside factual setup and spending prerequisites.
+
 ## 0.5.9
 
 ### Patch Changes
