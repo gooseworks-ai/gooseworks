@@ -7,7 +7,7 @@ Put your AI agent on the growth team. GooseWorks gives Claude Code, Cursor, and 
 **Paste this into your agent** (Claude Code, Cursor, Codex, or a chat app like Claude or ChatGPT):
 
 ```text
-Install gooseworks: https://gooseworks.ai/install.md
+Install gooseworks: https://gooseworks.ai/creative-agent/install.md
 ```
 
 Your agent reads that page and follows it. The page is short and you can read it too. It makes the agent:
@@ -18,7 +18,7 @@ Your agent reads that page and follows it. The page is short and you can read it
 4. **Check the install** with `npx gooseworks@latest doctor`.
 5. **Set up your company** in the same session: it asks for your website and saves what it learns as a reusable **Company Brain** that improves every later research, creative, and growth task.
 
-Want a specific skill too? Say so: `Install gooseworks: https://gooseworks.ai/install.md, including the goose-graphics skill.`
+Want a specific skill too? Say so: `Install gooseworks: https://gooseworks.ai/creative-agent/install.md, including the goose-graphics skill.`
 
 If your agent cannot run terminal commands (claude.ai, ChatGPT), the page tells it to give you the MCP connector address (`https://mcp.gooseworks.ai/mcp`) instead.
 
