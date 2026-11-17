@@ -1,0 +1,33 @@
+name: Rebuild CLI preview
+
+on:
+  pull_request:
+    paths:
+      - rebuild-cli/**
+      - .github/workflows/rebuild-cli-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: rebuild-cli
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: rebuild-cli/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run check-types
+      - run: npm run build
+      - run: node dist/index.js --help
